@@ -112,3 +112,4 @@ Current blockers:
 The tracked publishing checklist lives in [`PUBLISHING.md`](./PUBLISHING.md).
 The GitHub repo and first-push checklist lives in
 [`REPOSITORY_SETUP.md`](./REPOSITORY_SETUP.md).
+License guidance lives in [`LICENSE_DECISION.md`](./LICENSE_DECISION.md).

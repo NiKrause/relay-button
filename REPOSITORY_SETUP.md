@@ -26,7 +26,14 @@ Recommended initial visibility:
 
 - private first, until license and first publish decisions are final
 
-After creation:
+If you want to create it with the GitHub CLI:
+
+```bash
+cd /Users/nandi/Documents/projekte/DecentraSol/shared-aleph-tooling
+gh repo create <owner>/shared-aleph-tooling --private --source=. --remote=origin --push
+```
+
+If you create it in the GitHub UI instead, run:
 
 ```bash
 cd /Users/nandi/Documents/projekte/DecentraSol/shared-aleph-tooling
@@ -47,11 +54,23 @@ Recommended branch protection checks:
 
 - CI
 
+Recommended repository features:
+
+- Issues: enabled
+- Discussions: optional
+- Wiki: disabled unless you want separate long-form notes
+- Actions: enabled
+
 ## Configure Secrets
 
 Required for real npm publishing:
 
 - `NPM_TOKEN`
+
+Recommended GitHub variables or future secrets:
+
+- `NPM_TAG_DEFAULT`
+- `NPM_SCOPE`
 
 Recommended before real publish:
 
@@ -74,6 +93,22 @@ Recommended before real publish:
 - `homepage`
 - `bugs` URL
 - final npm scope decision
+
+## Recommended Initial Commands After Push
+
+```bash
+cd /Users/nandi/Documents/projekte/DecentraSol/shared-aleph-tooling
+git status
+pnpm test
+pnpm docs:build
+pnpm release:preview
+```
+
+Then in GitHub:
+
+1. open the `Release Packages` workflow
+2. run it with `dry_run = true`
+3. inspect the uploaded tarballs
 
 ## First Real Publish Order
 
