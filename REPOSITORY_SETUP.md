@@ -33,6 +33,13 @@ cd /Users/nandi/Documents/projekte/DecentraSol/shared-aleph-tooling
 gh repo create <owner>/shared-aleph-tooling --private --source=. --remote=origin --push
 ```
 
+If you want the repo commands printed for a specific owner:
+
+```bash
+cd /Users/nandi/Documents/projekte/DecentraSol/shared-aleph-tooling
+pnpm repo:setup:print -- <owner>
+```
+
 If you create it in the GitHub UI instead, run:
 
 ```bash
