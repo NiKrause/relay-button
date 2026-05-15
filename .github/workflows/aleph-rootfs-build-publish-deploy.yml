@@ -1,0 +1,31 @@
+name: Aleph Rootfs Build Publish Deploy
+
+on:
+  workflow_call:
+    inputs:
+      profile:
+        description: Profile identifier, for example uc-go-peer
+        required: true
+        type: string
+      publish:
+        description: Whether to publish the built rootfs
+        required: false
+        default: false
+        type: boolean
+      deploy_vm:
+        description: Whether to deploy a VM from the published rootfs
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Placeholder
+        run: |
+          echo "Shared reusable workflow scaffold"
+          echo "profile=${{ inputs.profile }}"
+          echo "publish=${{ inputs.publish }}"
+          echo "deploy_vm=${{ inputs.deploy_vm }}"
+

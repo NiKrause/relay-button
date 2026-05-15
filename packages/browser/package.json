@@ -1,0 +1,14 @@
+{
+  "name": "@shared-aleph/browser",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "echo \"browser build placeholder\"",
+    "test": "echo \"browser test placeholder\"",
+    "lint": "echo \"browser lint placeholder\""
+  }
+}
+

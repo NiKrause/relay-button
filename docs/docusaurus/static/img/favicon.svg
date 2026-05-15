@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Shared Aleph Tooling">
+  <defs>
+    <linearGradient id="g" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#14b8a6"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#08111d"/>
+  <path d="M32 86 61 34h7l28 52h-15l-6-12H52l-6 12H32Zm27-24h10L64 50 59 62Z" fill="url(#g)"/>
+</svg>
