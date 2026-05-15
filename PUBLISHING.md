@@ -11,6 +11,11 @@ The safest initial publish set is:
 - `@shared-aleph/core`
 - `@shared-aleph/node`
 
+The release workflow can rewrite those package names to the active npm publish
+scope at release time. The preferred default scope is now:
+
+- `@le-space/*`
+
 Keep these private for now:
 
 - `@shared-aleph/browser`

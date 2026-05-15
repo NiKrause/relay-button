@@ -79,6 +79,10 @@ Recommended GitHub variables or future secrets:
 - `NPM_TAG_DEFAULT`
 - `NPM_SCOPE`
 
+Recommended default value:
+
+- `NPM_SCOPE=le-space`
+
 Recommended before real publish:
 
 - verify npm package ownership on the chosen scope
@@ -89,6 +93,7 @@ Recommended before real publish:
 1. Run `Release Packages` with:
    - `dry_run = true`
    - `npm_tag = next`
+   - `npm_scope = le-space`
 2. Download and inspect the generated tarballs.
 3. Confirm package names, versions, dependencies, and contents.
 4. Only then run a real publish.
@@ -122,6 +127,12 @@ Then in GitHub:
 1. `@shared-aleph/shared-types`
 2. `@shared-aleph/core`
 3. `@shared-aleph/node`
+
+Those are the source package names. The preferred published names are:
+
+1. `@le-space/shared-types`
+2. `@le-space/core`
+3. `@le-space/node`
 
 Keep these private for now:
 

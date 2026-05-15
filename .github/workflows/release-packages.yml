@@ -16,7 +16,7 @@ on:
       npm_scope:
         description: npm scope to publish under without the leading @
         required: false
-        default: nandiji
+        default: le-space
         type: string
 
 permissions:
