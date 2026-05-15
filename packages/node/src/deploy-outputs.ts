@@ -1,4 +1,23 @@
+import type {
+  CrnRecord,
+  InstanceAllocation,
+  PortMapping,
+  RuntimeDiagnostics
+} from '@shared-aleph/shared-types'
+
 import { appendGithubOutput, appendGithubSummary } from './github-outputs.ts'
+
+export interface DeployMetadataResult {
+  peer_id?: string
+  probe_multiaddrs?: string[]
+  browser_bootstrap_multiaddrs?: string[]
+  [key: string]: unknown
+}
+
+export interface DeployConfigurationResult {
+  metadata?: DeployMetadataResult | null
+  [key: string]: unknown
+}
 
 export interface DeployOutputResult {
   sender?: string
@@ -14,34 +33,22 @@ export interface DeployOutputResult {
     aggregateStatus?: string
   } | null
   runtime?: {
-    allocation?: {
-      crnUrl?: string | null
-    } | null
+    allocation?: InstanceAllocation | null
     hostIpv4?: string | null
     ipv6?: string | null
     proxyUrl?: string | null
     sshCommand?: string | null
     setupHealth?: {
       ok?: boolean
+      status?: number
+      url?: string
+      error?: string
     } | null
-    mappedPorts?: Record<string, unknown>
-    diagnostics?: {
-      state?: string
-      timedOut?: boolean
-      reason?: string
-    } | null
-    selectedCrn?: {
-      hash?: string
-      name?: string
-    } | null
+    mappedPorts?: Record<string, PortMapping>
+    diagnostics?: RuntimeDiagnostics | null
+    selectedCrn?: CrnRecord | null
   } | null
-  configuration?: {
-    metadata?: {
-      peer_id?: string
-      probe_multiaddrs?: string[]
-      browser_bootstrap_multiaddrs?: string[]
-    } | null
-  } | null
+  configuration?: DeployConfigurationResult | null
   verification?: {
     ok?: boolean
     [key: string]: unknown

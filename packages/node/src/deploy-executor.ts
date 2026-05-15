@@ -25,7 +25,7 @@ import type {
   RootfsManifest
 } from '@shared-aleph/shared-types'
 
-import type { DeployOutputResult } from './deploy-outputs.ts'
+import type { DeployConfigurationResult, DeployOutputResult } from './deploy-outputs.ts'
 import type { DeployPlan } from './deploy-plan.ts'
 import { createPrivateKeyIdentity } from './signer.ts'
 
@@ -119,17 +119,12 @@ function buildManifest(plan: DeployPlan, manifest: RootfsManifest | null | undef
     manifest ?? {
       version: '1.0',
       profile: plan.profile,
-      image: {
-        build_source: 'shared-aleph-tooling',
-        source_root: '.',
-        output_file: 'rootfs.img'
-      },
-      install: {
-        strategy: 'copy'
-      },
-      runtime: {
-        required_port_forwards: plan.requiredPorts
-      }
+      rootfsItemHash: plan.rootfsItemHash,
+      rootfsSizeMiB: plan.rootfsSizeMiB,
+      rootfsInstallStrategy: 'thin',
+      requiredPortForwards: plan.requiredPorts,
+      createdAt: new Date().toISOString(),
+      notes: 'Synthetic manifest assembled by the shared deploy executor.'
     }
   )
 }
@@ -248,18 +243,26 @@ export async function executeDeployPlan(
       sleep: sleepImpl
     }).catch(() => null)
 
-    const runtimeMetadata = runtime
+    const runtimeMetadata: NonNullable<DeployOutputResult['runtime']> = runtime
       ? {
           allocation: runtime.allocation,
           hostIpv4: runtime.hostIpv4,
           ipv6: runtime.ipv6,
           proxyUrl: runtime.proxyUrl,
           sshCommand: runtime.sshCommand,
+          setupHealth: null,
           mappedPorts: runtime.mappedPorts,
           diagnostics: runtime.diagnostics,
           selectedCrn: runtime.selectedCrn ?? { hash: candidateCrn.hash, name: candidateCrn.name ?? '' }
         }
       : {
+          allocation: null,
+          hostIpv4: null,
+          ipv6: null,
+          proxyUrl: null,
+          sshCommand: null,
+          setupHealth: null,
+          mappedPorts: {},
           diagnostics: diagnosticsFromInspection(inspection, plan),
           selectedCrn: { hash: candidateCrn.hash, name: candidateCrn.name ?? '' }
         }
@@ -355,7 +358,7 @@ export async function executeDeployPlan(
           ...(configureResult && typeof configureResult === 'object' ? (configureResult as Record<string, unknown>) : {}),
           metadata:
             metadataResult && typeof metadataResult === 'object'
-              ? ((metadataResult as { metadata?: unknown }).metadata ?? null) as DeployOutputResult['configuration']['metadata']
+              ? ((metadataResult as { metadata?: unknown }).metadata ?? null) as DeployConfigurationResult['metadata']
               : null
         }
 

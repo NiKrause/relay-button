@@ -9,6 +9,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "build": "node --check ./src/index.ts",
+    "build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json",
     "test": "node --test ./test/**/*.test.ts",
     "lint": "echo \"shared-types lint placeholder\""
   }

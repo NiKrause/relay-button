@@ -1,9 +1,10 @@
 import { pathToFileURL } from 'node:url'
 
+import type { PortMapping } from '@shared-aleph/shared-types'
 import { listGeocodedCrns, retainSuccessfulDeployments } from '../../core/src/index.ts'
 
 import { integerEnv, jsonEnv, optionalEnv, requiredEnv } from './env.ts'
-import { emitDeployOutputs, emitGeocodedCrnOutputs } from './deploy-outputs.ts'
+import { emitDeployOutputs, emitGeocodedCrnOutputs, type DeployOutputResult } from './deploy-outputs.ts'
 import { appendGithubOutput, appendGithubSummary, actionLog } from './github-outputs.ts'
 import { executeDeployPlan } from './deploy-executor.ts'
 import { parseDeployPlan } from './deploy-plan.ts'
@@ -14,7 +15,7 @@ function parseOptionalJson<T>(raw: string | undefined): T | null {
   return JSON.parse(raw) as T
 }
 
-export function buildScaffoldDeployResult(env: NodeJS.ProcessEnv = process.env) {
+export function buildScaffoldDeployResult(env: NodeJS.ProcessEnv = process.env): DeployOutputResult {
   const profile = optionalEnv('ALEPH_VM_PROFILE', 'uc-go-peer', env)
   const itemHash = optionalEnv('ALEPH_VM_INSTANCE_ITEM_HASH', '', env)
   const status = optionalEnv('ALEPH_VM_INSTANCE_STATUS', itemHash ? 'processed' : 'unknown', env)
@@ -29,6 +30,7 @@ export function buildScaffoldDeployResult(env: NodeJS.ProcessEnv = process.env) 
     },
     runtime: {
       allocation: {
+        source: 'manual',
         crnUrl: optionalEnv('ALEPH_VM_CRN_URL', '', env)
       },
       hostIpv4: optionalEnv('ALEPH_VM_HOST_IPV4', '', env),
@@ -38,7 +40,7 @@ export function buildScaffoldDeployResult(env: NodeJS.ProcessEnv = process.env) 
       setupHealth: {
         ok: optionalEnv('ALEPH_VM_SETUP_ENDPOINT_OK', '', env) === 'true'
       },
-      mappedPorts: parseOptionalJson<Record<string, unknown>>(env.ALEPH_VM_MAPPED_PORTS_JSON) ?? {},
+      mappedPorts: parseOptionalJson<Record<string, PortMapping>>(env.ALEPH_VM_MAPPED_PORTS_JSON) ?? {},
       diagnostics: {
         state: 'scaffold',
         timedOut: false,
@@ -139,8 +141,8 @@ export async function runActionMode(
     throw new Error(`Unsupported ALEPH_VM_MODE "${mode}" in shared action runner.`)
   }
 
-  const providedDeployResult = parseOptionalJson<Record<string, unknown>>(env.ALEPH_VM_DEPLOY_RESULT_JSON)
-  let deployResult = providedDeployResult
+  const providedDeployResult = parseOptionalJson<DeployOutputResult>(env.ALEPH_VM_DEPLOY_RESULT_JSON)
+  let deployResult: DeployOutputResult | null = providedDeployResult
   if (!deployResult) {
     try {
       deployResult = await (hooks.deployExecutor ?? executeDeployPlan)(parseDeployPlan(env))
@@ -151,6 +153,10 @@ export async function runActionMode(
         throw error
       }
     }
+  }
+
+  if (!deployResult) {
+    throw new Error('Shared action runner did not produce a deploy result.')
   }
 
   await emitDeployOutputs(deployResult, env)

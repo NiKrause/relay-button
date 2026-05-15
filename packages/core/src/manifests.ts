@@ -7,6 +7,7 @@ export const DEFAULT_IPFS_GATEWAY_BASE_URL = 'https://ipfs.aleph.cloud/ipfs/'
 export interface FetchLikeResponse {
   ok: boolean
   status: number
+  url?: string
   json(): Promise<unknown>
 }
 

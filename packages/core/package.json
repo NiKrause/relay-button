@@ -12,6 +12,7 @@
   },
   "scripts": {
     "build": "node --check ./src/index.ts && node --check ./src/manifests.ts && node --check ./src/crns.ts",
+    "build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json",
     "test": "node --test ./test/**/*.test.ts",
     "lint": "echo \"core lint placeholder\""
   }

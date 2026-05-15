@@ -40,6 +40,19 @@ public packages.
 - generate publishable files into `dist/`
 - point `main`, `module`, `types`, and `exports` to `dist/`
 
+## Current Preview Build Path
+
+The repo now has non-destructive preview build scripts for the three likely
+first-publish packages:
+
+- `pnpm --filter @shared-aleph/shared-types run build:publish`
+- `pnpm --filter @shared-aleph/core run build:publish`
+- `pnpm --filter @shared-aleph/node run build:publish`
+- `pnpm build:publishable`
+
+These scripts are meant to validate the publish path before we switch the
+packages away from their current source-first `main` and `types` fields.
+
 ## Confirmed Technical Blockers
 
 The first publish-prep pass surfaced concrete blockers we still need to solve:
