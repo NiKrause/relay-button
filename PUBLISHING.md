@@ -49,9 +49,19 @@ first-publish packages:
 - `pnpm --filter @shared-aleph/core run build:publish`
 - `pnpm --filter @shared-aleph/node run build:publish`
 - `pnpm build:publishable`
+- `pnpm publish:prepare`
 
 These scripts are meant to validate the publish path before we switch the
 packages away from their current source-first `main` and `types` fields.
+
+`pnpm publish:prepare` now generates publish-ready manifests in:
+
+- `packages/shared-types/dist/package.json`
+- `packages/core/dist/package.json`
+- `packages/node/dist/package.json`
+
+That keeps the workspace source-first while still proving a realistic npm
+publish artifact shape.
 
 ## Confirmed Technical Blockers
 

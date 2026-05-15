@@ -15,6 +15,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "build:publishable": "pnpm --filter @shared-aleph/shared-types run build:publish && pnpm --filter @shared-aleph/core run build:publish && pnpm --filter @shared-aleph/node run build:publish",
+    "publish:prepare": "pnpm build:publishable && node ./scripts/prepare-publish.mjs",
     "test": "pnpm --filter @shared-aleph/core test && pnpm --filter @shared-aleph/shared-types test && pnpm --filter @shared-aleph/node test",
     "lint": "pnpm -r lint",
     "docs:dev": "pnpm --dir docs/docusaurus start",
