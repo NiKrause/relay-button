@@ -11,7 +11,8 @@ const targets = ['shared-types', 'core', 'node']
 function parseArgs(argv) {
   const options = {
     dryRun: false,
-    tag: 'latest'
+    tag: 'latest',
+    provenance: false
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -23,6 +24,10 @@ function parseArgs(argv) {
     if (arg === '--tag') {
       options.tag = argv[index + 1] ?? 'latest'
       index += 1
+      continue
+    }
+    if (arg === '--provenance') {
+      options.provenance = true
     }
   }
 
@@ -78,11 +83,12 @@ async function main() {
       continue
     }
 
-    await runCommand(
-      'npm',
-      ['publish', '--access', 'public', '--provenance', '--tag', options.tag],
-      distDir
-    )
+    const publishArgs = ['publish', '--access', 'public', '--tag', options.tag]
+    if (options.provenance) {
+      publishArgs.splice(3, 0, '--provenance')
+    }
+
+    await runCommand('npm', publishArgs, distDir)
   }
 }
 

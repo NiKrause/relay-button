@@ -18,6 +18,11 @@ on:
         required: false
         default: le-space
         type: string
+      provenance:
+        description: Enable npm provenance publishing (requires a public GitHub repository)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -90,4 +95,9 @@ jobs:
         env:
           NPM_SCOPE: ${{ inputs.npm_scope }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: node ./scripts/publish-from-dist.mjs --tag "${{ inputs.npm_tag }}"
+        run: |
+          args=(--tag "${{ inputs.npm_tag }}")
+          if [[ "${{ inputs.provenance }}" == "true" ]]; then
+            args+=(--provenance)
+          fi
+          node ./scripts/publish-from-dist.mjs "${args[@]}"
