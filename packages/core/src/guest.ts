@@ -100,6 +100,7 @@ export async function waitForSetupEndpoint(args: {
   delayMs?: number
   httpTimeoutMs?: number
   sleep?: (ms: number) => Promise<void>
+  onAttempt?: (result: HttpProbeResult, attempt: number, attempts: number) => void
 }): Promise<HttpProbeResult> {
   const attempts = Math.max(1, Number(args.attempts ?? 15))
   const delayMs = Math.max(0, Number(args.delayMs ?? 4000))
@@ -107,10 +108,12 @@ export async function waitForSetupEndpoint(args: {
   const url = `http://${args.hostIpv4}:${args.setupPort}/health`
 
   let result = await defaultHttpProbe(args.fetch, url, Number(args.httpTimeoutMs ?? 10000))
+  args.onAttempt?.(result, 1, attempts)
   for (let attempt = 1; attempt < attempts; attempt += 1) {
     if (result.ok) return result
     await sleep(delayMs)
     result = await defaultHttpProbe(args.fetch, url, Number(args.httpTimeoutMs ?? 10000))
+    args.onAttempt?.(result, attempt + 1, attempts)
   }
 
   return result
@@ -174,6 +177,7 @@ export async function fetchUcGoPeerMetadata(args: {
   delayMs?: number
   timeoutMs?: number
   sleep?: (ms: number) => Promise<void>
+  onAttempt?: (payload: unknown, ready: boolean, attempt: number, attempts: number) => void
 }): Promise<unknown> {
   const attempts = Math.max(1, Number(args.attempts ?? 60))
   const delayMs = Math.max(0, Number(args.delayMs ?? 3000))
@@ -189,6 +193,13 @@ export async function fetchUcGoPeerMetadata(args: {
       })
       const payload = await response.json().catch(() => null)
       lastPayload = payload
+
+      args.onAttempt?.(
+        payload,
+        Boolean(response.ok && payload && typeof payload === 'object' && (payload as { status?: unknown }).status === 'ready'),
+        attempt + 1,
+        attempts
+      )
 
       if (response.ok && payload && typeof payload === 'object' && (payload as { status?: unknown }).status === 'ready') {
         return payload

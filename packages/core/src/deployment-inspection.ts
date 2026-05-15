@@ -162,6 +162,7 @@ export async function waitForDeploymentResult(
     attempts?: number
     delayMs?: number
     sleep?: (ms: number) => Promise<void>
+    onAttempt?: (result: DeploymentInspectionResult, attempt: number, attempts: number) => void
   }
 ): Promise<DeploymentInspectionResult> {
   const attempts = Math.max(1, Number(options.attempts ?? 15))
@@ -169,12 +170,14 @@ export async function waitForDeploymentResult(
   const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)))
 
   let lastResult = await inspectDeploymentResult(itemHash, options)
+  options.onAttempt?.(lastResult, 1, attempts)
   for (let attempt = 1; attempt < attempts; attempt += 1) {
     if (lastResult.status === 'processed' || lastResult.status === 'rejected') {
       return lastResult
     }
     await sleep(delayMs)
     lastResult = await inspectDeploymentResult(itemHash, options)
+    options.onAttempt?.(lastResult, attempt + 1, attempts)
   }
 
   return lastResult

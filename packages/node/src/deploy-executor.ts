@@ -37,6 +37,7 @@ export interface DeployExecutorDependencies {
   sender?: string
   hasher?: MessageHasher
   manifest?: RootfsManifest | null
+  log?: (message: string) => void
 }
 
 function defaultHasher(payload: string): string {
@@ -141,6 +142,7 @@ export async function executeDeployPlan(
   const hasher = dependencies.hasher ?? defaultHasher
   const tcpProbe = dependencies.tcpProbe ?? defaultTcpProbe
   const sleepImpl = dependencies.sleep ?? ((ms) => sleep(ms).then(() => undefined))
+  const log = dependencies.log ?? ((message: string) => console.log(message))
   const identity =
     dependencies.sender && dependencies.signer
       ? { address: dependencies.sender, signer: dependencies.signer }
@@ -151,9 +153,19 @@ export async function executeDeployPlan(
     throw new Error('No compatible CRN was available for deployment.')
   }
 
+  log(`[deploy] profile=${plan.profile} sender=${identity.address}`)
+  log(
+    `[deploy] candidate CRNs=${candidateCrns
+      .map((crn) => `${crn.name ?? crn.hash}:${crn.hash}`)
+      .join(', ')}`
+  )
+
   let lastError: Error | null = null
 
-  for (const candidateCrn of candidateCrns) {
+  for (const [candidateIndex, candidateCrn] of candidateCrns.entries()) {
+    log(
+      `[deploy] attempting CRN ${candidateIndex + 1}/${candidateCrns.length}: ${candidateCrn.name ?? candidateCrn.hash} (${candidateCrn.hash})`
+    )
     const content = createInstanceContent({
       address: identity.address,
       name: plan.name,
@@ -179,16 +191,30 @@ export async function executeDeployPlan(
       sync: true
     })
 
+    log(`[deploy] broadcasted INSTANCE message ${deployment.itemHash} on ${candidateCrn.name ?? candidateCrn.hash}`)
+
     const inspection = await waitForDeploymentResult(deployment.itemHash, {
       rootfsRef: plan.rootfsItemHash,
       apiHost: plan.apiHost,
       fetch: fetchImpl,
       attempts: plan.waitAttempts,
       delayMs: plan.waitDelayMs,
-      sleep: sleepImpl
+      sleep: sleepImpl,
+      onAttempt: (result, attempt, attempts) => {
+        log(
+          `[deploy] Aleph processing ${attempt}/${attempts} for ${deployment.itemHash}: status=${result.status}${
+            result.rejectionReason ? ` reason=${result.rejectionReason}` : ''
+          }`
+        )
+      }
     })
 
     if (inspection.status === 'rejected') {
+      log(
+        `[deploy] CRN ${candidateCrn.name ?? candidateCrn.hash} rejected deployment ${deployment.itemHash}: ${
+          inspection.rejectionReason ?? 'no additional reason'
+        }`
+      )
       lastError = new Error(
         `Deployment on ${candidateCrn.name ?? candidateCrn.hash} was rejected: ${inspection.rejectionReason ?? 'no additional rejection reason from Aleph'}.`
       )
@@ -196,6 +222,9 @@ export async function executeDeployPlan(
     }
 
     if (inspection.status !== 'processed') {
+      log(
+        `[deploy] deployment ${deployment.itemHash} on ${candidateCrn.name ?? candidateCrn.hash} did not become processed; cleaning up`
+      )
       await cleanupFailedDeployment({
         sender: identity.address,
         instanceItemHash: deployment.itemHash,
@@ -214,6 +243,7 @@ export async function executeDeployPlan(
 
     let portForwarding: DeployOutputResult['portForwarding'] = null
     if (plan.publishPortForwards && plan.requiredPorts.length > 0) {
+      log(`[deploy] publishing required port-forward aggregate for ${deployment.itemHash}`)
       const aggregate = await ensureInstancePortForwards({
         sender: identity.address,
         instanceItemHash: deployment.itemHash,
@@ -230,8 +260,12 @@ export async function executeDeployPlan(
         aggregateItemHash: aggregate.aggregateItemHash,
         aggregateStatus: aggregate.aggregateStatus
       }
+      log(
+        `[deploy] port-forward aggregate published: item_hash=${aggregate.aggregateItemHash} status=${aggregate.aggregateStatus}`
+      )
     }
 
+    log(`[deploy] waiting for runtime networking on ${candidateCrn.name ?? candidateCrn.hash}`)
     const runtime = await waitForVmRuntime({
       itemHash: deployment.itemHash,
       fetch: fetchImpl,
@@ -240,7 +274,16 @@ export async function executeDeployPlan(
       crnListUrl: plan.crnListUrl,
       attempts: plan.runtimeAttempts,
       delayMs: plan.runtimeDelayMs,
-      sleep: sleepImpl
+      sleep: sleepImpl,
+      onAttempt: (runtimeAttempt, attempt, attempts) => {
+        log(
+          `[deploy] runtime ${attempt}/${attempts} for ${deployment.itemHash}: state=${
+            runtimeAttempt.diagnostics?.state ?? 'unknown'
+          } host=${runtimeAttempt.hostIpv4 ?? '-'} mapped_ports=${
+            Object.keys(runtimeAttempt.mappedPorts ?? {}).length
+          }`
+        )
+      }
     }).catch(() => null)
 
     const runtimeMetadata: NonNullable<DeployOutputResult['runtime']> = runtime
@@ -268,6 +311,11 @@ export async function executeDeployPlan(
         }
 
     if (!runtime?.hostIpv4 || Object.keys(runtime?.mappedPorts ?? {}).length === 0) {
+      log(
+        `[deploy] processed deployment ${deployment.itemHash} never exposed usable runtime networking on ${
+          candidateCrn.name ?? candidateCrn.hash
+        }; cleaning up`
+      )
       await cleanupFailedDeployment({
         sender: identity.address,
         instanceItemHash: deployment.itemHash,
@@ -288,6 +336,7 @@ export async function executeDeployPlan(
     let verification: DeployOutputResult['verification'] = null
 
     if (runtime.selectedCrn?.address) {
+      log(`[deploy] notifying CRN allocation endpoint ${runtime.selectedCrn.address}`)
       await notifyCrnAllocation({
         crnUrl: runtime.selectedCrn.address,
         itemHash: deployment.itemHash,
@@ -304,6 +353,7 @@ export async function executeDeployPlan(
       const proxyUrl = plan.enableCaddyProxy ? runtime.proxyUrl ?? null : null
 
       if (setupPort && runtime.hostIpv4) {
+        log(`[deploy] waiting for temporary setup endpoint on http://${runtime.hostIpv4}:${setupPort}/health`)
         const setupHealth = await waitForSetupEndpoint({
           hostIpv4: runtime.hostIpv4,
           setupPort,
@@ -311,11 +361,19 @@ export async function executeDeployPlan(
           attempts: plan.setupAttempts,
           delayMs: plan.setupDelayMs,
           httpTimeoutMs: plan.httpTimeoutMs,
-          sleep: sleepImpl
+          sleep: sleepImpl,
+          onAttempt: (result, attempt, attempts) => {
+            log(
+              `[deploy] setup endpoint ${attempt}/${attempts}: ok=${result.ok} status=${
+                result.status ?? '-'
+              } error=${result.error ?? '-'}`
+            )
+          }
         })
 
         runtimeMetadata.setupHealth = setupHealth
         if (!setupHealth.ok) {
+          log(`[deploy] setup endpoint never became reachable; cleaning up ${deployment.itemHash}`)
           await cleanupFailedDeployment({
             sender: identity.address,
             instanceItemHash: deployment.itemHash,
@@ -330,6 +388,7 @@ export async function executeDeployPlan(
           continue
         }
 
+        log(`[deploy] calling guest /configure for ${deployment.itemHash}`)
         const configureResult = await configureUcGoPeer({
           hostIpv4: runtime.hostIpv4,
           publicIpv6: runtime.ipv6,
@@ -344,6 +403,7 @@ export async function executeDeployPlan(
           timeoutMs: plan.configureTimeoutMs
         })
 
+        log(`[deploy] polling guest /metadata until ready`)
         const metadataResult = await fetchUcGoPeerMetadata({
           hostIpv4: runtime.hostIpv4,
           setupPort,
@@ -351,7 +411,10 @@ export async function executeDeployPlan(
           attempts: plan.metadataAttempts,
           delayMs: plan.metadataDelayMs,
           timeoutMs: plan.metadataTimeoutMs,
-          sleep: sleepImpl
+          sleep: sleepImpl,
+          onAttempt: (_payload, ready, attempt, attempts) => {
+            log(`[deploy] guest metadata ${attempt}/${attempts}: ready=${ready}`)
+          }
         })
 
         configuration = {
@@ -365,6 +428,7 @@ export async function executeDeployPlan(
         if (plan.verifyReachability !== false) {
           let latestVerification: DeployOutputResult['verification'] = null
           for (let attempt = 0; attempt < plan.verifyAttempts; attempt += 1) {
+            log(`[deploy] reachability verification ${attempt + 1}/${plan.verifyAttempts}`)
             latestVerification = await verifyUcGoPeerReachability({
               hostIpv4: runtime.hostIpv4,
               mappedPorts,
@@ -377,9 +441,11 @@ export async function executeDeployPlan(
               tcpProbe
             })
             if (latestVerification?.ok) {
+              log(`[deploy] reachability verification succeeded`)
               break
             }
             if (attempt < plan.verifyAttempts - 1) {
+              log(`[deploy] reachability verification not ready yet; sleeping ${plan.verifyDelayMs}ms`)
               await sleepImpl(plan.verifyDelayMs)
             }
           }
@@ -408,5 +474,6 @@ export async function executeDeployPlan(
     }
   }
 
+  log(`[deploy] no candidate CRN succeeded`)
   throw lastError ?? new Error('No compatible CRN deployment attempt succeeded.')
 }

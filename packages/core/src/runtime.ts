@@ -342,18 +342,21 @@ export async function waitForVmRuntime(args: {
   attempts?: number
   delayMs?: number
   sleep?: (ms: number) => Promise<void>
+  onAttempt?: (runtime: Omit<InstanceRuntimeDetails, 'messageStatus'>, attempt: number, attempts: number) => void
 }): Promise<Omit<InstanceRuntimeDetails, 'messageStatus'>> {
   const attempts = Math.max(1, Number(args.attempts ?? 20))
   const delayMs = Math.max(0, Number(args.delayMs ?? 4000))
   const sleep = args.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)))
 
   let lastRuntime = await fetchVmRuntime(args)
+  args.onAttempt?.(lastRuntime, 1, attempts)
   for (let attempt = 0; attempt < attempts - 1; attempt += 1) {
     if (lastRuntime.hostIpv4 && Object.keys(lastRuntime.mappedPorts ?? {}).length > 0) {
       return lastRuntime
     }
     await sleep(delayMs)
     lastRuntime = await fetchVmRuntime(args)
+    args.onAttempt?.(lastRuntime, attempt + 2, attempts)
   }
 
   if (lastRuntime.diagnostics) {
