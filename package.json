@@ -16,6 +16,7 @@
     "build": "pnpm -r build",
     "build:publishable": "pnpm --filter @shared-aleph/shared-types run build:publish && pnpm --filter @shared-aleph/core run build:publish && pnpm --filter @shared-aleph/node run build:publish",
     "publish:prepare": "pnpm build:publishable && node ./scripts/prepare-publish.mjs",
+    "publish:prepare:npm": "NPM_SCOPE=${NPM_SCOPE:-nandiji} pnpm publish:prepare",
     "release:preview": "pnpm publish:prepare && node ./scripts/publish-from-dist.mjs --dry-run --tag next",
     "repo:setup:print": "node ./scripts/print-repo-setup-commands.mjs",
     "test": "pnpm --filter @shared-aleph/core test && pnpm --filter @shared-aleph/shared-types test && pnpm --filter @shared-aleph/node test",

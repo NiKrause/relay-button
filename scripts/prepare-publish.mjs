@@ -4,6 +4,7 @@ import process from 'node:process'
 
 const repoRoot = process.cwd()
 const packagesDir = join(repoRoot, 'packages')
+const publishScope = process.env.NPM_SCOPE?.trim().replace(/^@/, '') || null
 
 const publishTargets = [
   {
@@ -27,13 +28,19 @@ function normalizeDependencies(dependencies, versionsByName) {
   const normalized = Object.fromEntries(
     Object.entries(dependencies).map(([name, version]) => {
       if (typeof version === 'string' && version.startsWith('workspace:')) {
-        return [name, versionsByName.get(name) ?? version]
+        return [toPublishedPackageName(name), versionsByName.get(name) ?? version]
       }
       return [name, version]
     })
   )
 
   return Object.keys(normalized).length > 0 ? normalized : undefined
+}
+
+function toPublishedPackageName(name) {
+  if (!publishScope) return name
+  if (!name.startsWith('@')) return name
+  return name.replace(/^@[^/]+\//, `@${publishScope}/`)
 }
 
 async function main() {
@@ -55,7 +62,7 @@ async function main() {
     await mkdir(distDir, { recursive: true })
 
     const publishManifest = {
-      name: packageJson.name,
+      name: toPublishedPackageName(packageJson.name),
       version: packageJson.version,
       description: packageJson.description,
       license: packageJson.license,

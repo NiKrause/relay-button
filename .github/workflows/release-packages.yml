@@ -13,6 +13,11 @@ on:
         required: false
         default: next
         type: string
+      npm_scope:
+        description: npm scope to publish under without the leading @
+        required: false
+        default: nandiji
+        type: string
 
 permissions:
   contents: read
@@ -44,10 +49,14 @@ jobs:
         run: pnpm test
 
       - name: Build publishable artifacts
+        env:
+          NPM_SCOPE: ${{ inputs.npm_scope }}
         run: pnpm publish:prepare
 
       - name: Pack dist packages
         if: ${{ inputs.dry_run }}
+        env:
+          NPM_SCOPE: ${{ inputs.npm_scope }}
         run: node ./scripts/publish-from-dist.mjs --dry-run --tag "${{ inputs.npm_tag }}"
 
       - name: Upload dry-run tarballs
@@ -79,5 +88,6 @@ jobs:
       - name: Publish dist packages
         if: ${{ !inputs.dry_run }}
         env:
+          NPM_SCOPE: ${{ inputs.npm_scope }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node ./scripts/publish-from-dist.mjs --tag "${{ inputs.npm_tag }}"
