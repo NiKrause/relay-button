@@ -59,6 +59,9 @@ on:
       rootfs_version:
         description: Derived or supplied rootfs version
         value: ${{ jobs.build-rootfs.outputs.rootfs_version }}
+      rootfs_manifest_json:
+        description: Generated rootfs manifest JSON content
+        value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_json }}
       rootfs_manifest_path:
         description: Workspace path to the generated rootfs manifest
         value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_path }}
@@ -92,6 +95,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       rootfs_version: ${{ steps.run_rootfs.outputs.rootfs_version }}
+      rootfs_manifest_json: ${{ steps.export_manifest.outputs.rootfs_manifest_json }}
       rootfs_manifest_path: ${{ steps.run_rootfs.outputs.rootfs_manifest_path }}
       rootfs_manifest_copy_target_path: ${{ steps.run_rootfs.outputs.rootfs_manifest_copy_target_path }}
       rootfs_manifest_versioned_path: ${{ steps.run_rootfs.outputs.rootfs_manifest_versioned_path }}
@@ -200,3 +204,30 @@ jobs:
           ALEPH_ROOTFS_SKIP_UPLOAD: ${{ inputs.publish && 'false' || 'true' }}
         run: |
           node ./packages/node/src/rootfs-runner.ts
+
+      - name: Export rootfs manifest content
+        id: export_manifest
+        shell: bash
+        run: |
+          manifest_path='${{ steps.run_rootfs.outputs.rootfs_manifest_path }}'
+          if [[ -z "${manifest_path}" || ! -f "${manifest_path}" ]]; then
+            echo "Missing generated rootfs manifest at ${manifest_path}" >&2
+            exit 1
+          fi
+          {
+            echo "rootfs_manifest_json<<EOF"
+            cat "${manifest_path}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload rootfs workspace artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs-${{ inputs.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          path: |
+            ${{ steps.run_rootfs.outputs.rootfs_manifest_path }}
+            ${{ steps.run_rootfs.outputs.rootfs_manifest_copy_target_path }}
+            ${{ steps.run_rootfs.outputs.rootfs_manifest_versioned_path }}
+            ${{ steps.run_rootfs.outputs.rootfs_image_path }}
