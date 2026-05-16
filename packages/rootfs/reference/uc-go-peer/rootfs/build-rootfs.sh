@@ -112,9 +112,10 @@ build_with_docker() {
     -e ROOTFS_IMAGE_SIZE="${ROOTFS_IMAGE_SIZE}" \
     -e PROJECT_DIR=/workspace/universal-connectivity \
     -v "${PROJECT_DIR}:/workspace/universal-connectivity" \
-    -w /workspace/universal-connectivity/go-peer/aleph \
+    -v "${SCRIPT_DIR}:/workspace/shared-rootfs" \
+    -w /workspace/shared-rootfs \
     uc-go-peer-rootfs-builder:local \
-    bash rootfs/build-rootfs-image.sh
+    /bin/bash /workspace/shared-rootfs/build-rootfs-image.sh
 }
 
 sync_manifest_copy_target() {
