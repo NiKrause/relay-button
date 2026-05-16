@@ -3,8 +3,11 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { emitRootfsOutputs, parseRootfsRunnerInputs, runRootfsMode } from '../src/rootfs-runner.ts'
+
+const rootfsContractPath = fileURLToPath(new URL('../../rootfs/reference/uc-go-peer/contract.json', import.meta.url))
 
 async function createActionEnv(prefix: string) {
   const dir = await mkdtemp(join(tmpdir(), prefix))
@@ -15,7 +18,7 @@ async function createActionEnv(prefix: string) {
       GITHUB_OUTPUT: outputFile,
       GITHUB_STEP_SUMMARY: summaryFile,
       ALEPH_ROOTFS_PROJECT_DIR: '/workspace/universal-connectivity',
-      ALEPH_ROOTFS_CONTRACT_PATH: '/Users/nandi/Documents/projekte/DecentraSol/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/contract.json',
+      ALEPH_ROOTFS_CONTRACT_PATH: rootfsContractPath,
       ALEPH_ROOTFS_REFERENCE_ROOTFS_DIR: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
     },
     outputFile,
