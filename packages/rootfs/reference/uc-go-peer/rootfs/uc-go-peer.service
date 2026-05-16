@@ -1,0 +1,19 @@
+[Unit]
+Description=universal-connectivity go-peer relay node
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/default/uc-go-peer.ready
+
+[Service]
+Type=simple
+User=uc-go-peer
+Group=uc-go-peer
+WorkingDirectory=/var/lib/uc-go-peer
+EnvironmentFile=-/etc/default/uc-go-peer
+ExecStart=/bin/sh -lc 'exec /usr/local/bin/universal-chat-go -headless -identity "${GO_PEER_IDENTITY_PATH:-/var/lib/uc-go-peer/identity.key}" -port "${GO_PEER_TCP_PORT:-9095}" -ws-port "${GO_PEER_WS_PORT:-9096}" -wss-port "${GO_PEER_WSS_PORT:-9097}"'
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

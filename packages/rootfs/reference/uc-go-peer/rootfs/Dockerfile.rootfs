@@ -1,0 +1,24 @@
+FROM debian:12
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LIBGUESTFS_BACKEND=direct
+ARG GO_VERSION=1.25.4
+ENV PATH=/usr/local/go/bin:${PATH}
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    jq \
+    libguestfs-tools \
+    linux-image-amd64 \
+    python3 \
+    qemu-system-x86 \
+    qemu-utils \
+    tar \
+  && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz \
+  && tar -C /usr/local -xzf /tmp/go.tgz \
+  && rm -f /tmp/go.tgz \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace/universal-connectivity/go-peer/aleph

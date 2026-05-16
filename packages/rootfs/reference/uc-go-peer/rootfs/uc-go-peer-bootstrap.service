@@ -1,0 +1,17 @@
+[Unit]
+Description=Temporary universal-connectivity go-peer setup endpoint
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!/etc/default/uc-go-peer.ready
+
+[Service]
+Environment=ENV_FILE=/etc/default/uc-go-peer
+Environment=READY_FILE=/etc/default/uc-go-peer.ready
+ExecStart=/usr/bin/python3 /usr/local/sbin/uc-go-peer-setup-server.py
+StandardOutput=journal
+StandardError=journal
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target

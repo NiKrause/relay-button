@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "id": "uc-go-peer",
+  "displayName": "Universal Connectivity Go Relay",
+  "source": {
+    "repository": "self",
+    "subdirectory": "go-peer"
+  },
+  "rootfs": {
+    "profile": "uc-go-peer",
+    "installMode": "prebaked",
+    "installDir": "/opt/go-peer",
+    "binaryPath": "/usr/local/bin/universal-chat-go",
+    "dataDir": "/var/lib/uc-go-peer",
+    "envFile": "/etc/default/uc-go-peer"
+  },
+  "services": {
+    "bootstrap": "uc-go-peer-bootstrap.service",
+    "main": "uc-go-peer.service",
+    "autotlsRefresh": "uc-go-peer-autotls-refresh.service"
+  },
+  "ports": [
+    {
+      "port": 22,
+      "tcp": true,
+      "udp": false,
+      "purpose": "SSH"
+    },
+    {
+      "port": 80,
+      "tcp": true,
+      "udp": false,
+      "purpose": "Temporary setup endpoint"
+    },
+    {
+      "port": 443,
+      "tcp": true,
+      "udp": false,
+      "purpose": "Caddy HTTPS and WSS proxy"
+    },
+    {
+      "port": 9097,
+      "tcp": true,
+      "udp": false,
+      "purpose": "libp2p secure websocket listener"
+    },
+    {
+      "port": 9095,
+      "tcp": true,
+      "udp": true,
+      "purpose": "libp2p raw TCP and UDP transports"
+    }
+  ],
+  "manifest": {
+    "copyTarget": "js-peer/public/rootfs/uc-go-peer/latest.json",
+    "notes": "The go-peer image keeps the raw relay on internal port 9095, uses an internal plain websocket backend on 9096 for Caddy, exposes a dedicated internal secure websocket listener on 9097 for AutoTLS/direct WSS, advertises the actual Aleph host port mappings for direct TCP/UDP and AutoTLS websocket transports after deployment, and can optionally add a proxy-backed secure WebSocket address on port 443 via Caddy."
+  }
+}

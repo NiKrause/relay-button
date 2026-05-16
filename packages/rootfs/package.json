@@ -1,14 +1,15 @@
 {
   "name": "@shared-aleph/rootfs",
   "version": "0.0.0",
+  "description": "Shared rootfs contract parsing, reference profile assets, and build helpers.",
   "license": "MIT",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "build": "echo \"rootfs build placeholder\"",
-    "test": "echo \"rootfs test placeholder\"",
+    "build": "node --check ./src/index.ts && node --check ./src/contract.ts && node --check ./src/build-plan.ts",
+    "test": "node --test ./test/**/*.test.ts",
     "lint": "echo \"rootfs lint placeholder\""
   }
 }

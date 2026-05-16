@@ -1,0 +1,23 @@
+[Unit]
+Description=Persist AutoTLS secure announce addresses for uc-go-peer
+After=uc-go-peer.service
+Wants=uc-go-peer.service
+ConditionPathExists=/etc/default/uc-go-peer.ready
+ConditionPathExists=!/etc/default/uc-go-peer.autotls-ready
+
+[Service]
+Type=oneshot
+Environment=ENV_FILE=/etc/default/uc-go-peer
+Environment=READY_FILE=/etc/default/uc-go-peer.ready
+Environment=AUTOTLS_READY_FILE=/etc/default/uc-go-peer.autotls-ready
+Environment=AUTOTLS_ZONE_FILE=/etc/default/uc-go-peer.autotls-zone
+Environment=AUTOTLS_HOSTS_FILE=/etc/default/uc-go-peer.autotls-hosts
+Environment=AUTOTLS_CADDY_READY_FILE=/etc/default/uc-go-peer.caddy-ready
+Environment=SERVICE_NAME=uc-go-peer.service
+Environment=WS_BACKEND_PORT=9097
+ExecStart=/usr/bin/python3 /usr/local/sbin/uc-go-peer-autotls-refresh.py
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
