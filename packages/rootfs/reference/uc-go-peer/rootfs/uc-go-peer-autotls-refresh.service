@@ -16,6 +16,9 @@ Environment=AUTOTLS_CADDY_READY_FILE=/etc/default/uc-go-peer.caddy-ready
 Environment=SERVICE_NAME=uc-go-peer.service
 Environment=WS_BACKEND_PORT=9097
 ExecStart=/usr/bin/python3 /usr/local/sbin/uc-go-peer-autotls-refresh.py
+Restart=on-failure
+RestartSec=43200
+StartLimitIntervalSec=0
 StandardOutput=journal
 StandardError=journal
 
