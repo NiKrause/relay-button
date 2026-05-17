@@ -60,7 +60,7 @@ Current responsibilities:
 - private-key signing with `ethers`
 - deploy plan parsing
 - deploy executor composition
-- shared action runner entrypoint
+- Aleph action runner entrypoint
 
 This package is the correct place for:
 

@@ -129,7 +129,7 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
   }
 
   await appendGithubSummary([
-    '## Shared Site Runner',
+    '## Aleph Site Runner',
     '',
     `- Site directory: \`${siteDirectory}\``,
     `- IPFS CID v0: \`${cidV0}\``,
@@ -161,7 +161,7 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): P
   await appendGithubOutput('url', `https://${domain}`, env)
 
   await appendGithubSummary([
-    '## Shared Site Runner',
+    '## Aleph Site Runner',
     '',
     `- Linked domain: \`${domain}\``,
     `- Aleph item hash: \`${itemHash}\``,
@@ -211,5 +211,5 @@ export async function runSiteMode(env: NodeJS.ProcessEnv = process.env): Promise
   if (mode === 'site-domain-link') return await runDomainLinkMode(env)
   if (mode === 'relay-probe') return await runProbeMode(env)
   if (mode === 'bootstrap-env') return await runBootstrapEnvMode(env)
-  throw new Error(`Unsupported ALEPH_VM_MODE "${mode}" in shared site runner.`)
+  throw new Error(`Unsupported ALEPH_VM_MODE "${mode}" in Aleph site runner.`)
 }

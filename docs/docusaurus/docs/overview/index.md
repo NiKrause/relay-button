@@ -42,7 +42,7 @@ Some parts are intentionally still early:
   on GitHub Actions, browsers, or Node-specific environment parsing.
 - `packages/node`
   Node adapters for private-key signing, GitHub output emission, deploy-plan
-  parsing, and the shared action runner.
+  parsing, and the Aleph action runner.
 - `packages/browser`
   Reserved for wallet-driven browser flows used by the PWA later.
 - `packages/rootfs`

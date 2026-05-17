@@ -1,115 +1,99 @@
 # shared-aleph-tooling
 
-Shared Aleph VM deployment, rootfs, and automation tooling for the Aleph-based
-deployment flows used by:
+Reusable Aleph Cloud deployment tooling for projects that need to:
 
-- `universal-connectivity`
-- `relay-deployer-pwa`
+- build and publish RootFS images
+- deploy Aleph VM instances
+- publish static sites through Aleph/IPFS
+- verify deployed relays and bootstrap addresses
+- clean up older Aleph deployment records
 
-The long-term goal is to make this repository the source of truth for shared
-Aleph logic, while consumer repos keep only thin wrappers and app-specific
-behavior.
+This repository is the implementation layer behind the Aleph deployment flows
+used by consumer projects such as `universal-connectivity`.
 
-## Current Status
+## What It Contains
 
-This repository is no longer only a folder layout. It already contains working
-shared implementation for:
-
-- rootfs manifest validation
-- Aleph message broadcasting and inspection
-- CRN discovery, ranking, and retry
-- runtime polling and diagnostics
-- `uc-go-peer` guest configuration and verification
-- successful-deployment retention cleanup
-- a shared GitHub deploy action
-- a working Docusaurus docs app
-
-Still intentionally early:
-
-- `@shared-aleph/browser` is scaffold-only
-- `@shared-aleph/rootfs` is scaffold-only
-- the shared reusable workflow is still placeholder-level
-
-## Workspace Packages
+### Packages
 
 - `@shared-aleph/shared-types`
-  Shared contracts used across packages.
+  Shared types and contracts used across the workspace.
 - `@shared-aleph/core`
-  Reusable Aleph deployment, runtime, CRN, guest, and retention logic.
+  Aleph-specific deployment, runtime, CRN, guest, and retention logic.
 - `@shared-aleph/node`
-  Node adapters for signing, env parsing, GitHub outputs, and action runner
-  orchestration.
-- `@shared-aleph/browser`
-  Reserved for future browser and wallet-driven flows.
+  Node entrypoints and adapters for:
+  - RootFS build/publish
+  - site publish and domain link
+  - VM deploy and retention actions
+  - GitHub Actions output and summary handling
 - `@shared-aleph/rootfs`
-  Reserved for reusable rootfs build and guest-script packaging.
+  RootFS planning, manifests, reference assets, and build helpers.
+- `@shared-aleph/browser`
+  Reserved for future browser and wallet-driven Aleph flows.
 
-## Automation Entry Points
+### GitHub Automation
 
-- GitHub Action: [`.github/actions/aleph-vm-deploy/action.yml`](./.github/actions/aleph-vm-deploy/action.yml)
-- Reusable workflow: [`.github/workflows/aleph-rootfs-build-publish-deploy.yml`](./.github/workflows/aleph-rootfs-build-publish-deploy.yml)
+- [`.github/actions/aleph-vm-deploy/action.yml`](./.github/actions/aleph-vm-deploy/action.yml)
+  GitHub Action wrapper for Aleph VM deployment operations.
+- [`.github/workflows/release-packages.yml`](./.github/workflows/release-packages.yml)
+  Package release workflow.
+- [`.github/workflows/aleph-rootfs-build-publish-deploy.yml`](./.github/workflows/aleph-rootfs-build-publish-deploy.yml)
+  Shared Aleph workflow entrypoint.
 
-## Docs
+## How Consumer Repos Use It
 
-The docs app lives in [`docs/docusaurus`](./docs/docusaurus). The current docs
-cover:
+The intended consumer model is:
 
-- overview
-- package boundaries
-- deployment lifecycle
-- GitHub Action reference
-- rootfs contract direction
-- reusable workflow status
+1. keep project-specific contracts, workflow structure, and app behavior in the
+   consumer repo
+2. install the published package entrypoints from this repo
+3. call the Aleph runners from CI
+
+In practice that usually means installing `@le-space/node` and using one or
+more of these runner modes:
+
+- `runRootfsMode(...)`
+- `runSiteMode(...)`
+- `runActionMode(...)`
+
+This keeps Aleph-specific implementation reusable while letting each consumer
+repo control its own workflow structure and product-specific behavior.
+
+## Typical Responsibilities
+
+Use this repo when you need reusable support for:
+
+- publishing a qcow2 RootFS image to IPFS and pinning it on Aleph
+- creating an Aleph VM instance from a published RootFS
+- configuring and verifying an Aleph-hosted relay
+- publishing a site with deployment-specific relay bootstrap addresses
+- managing retention of older successful Aleph deployments
 
 ## Quick Start
 
 ```bash
 pnpm install
 pnpm test
-pnpm docs:build
 ```
 
 Useful commands:
 
-- `pnpm docs:dev`
-- `pnpm docs:build`
 - `pnpm --filter @shared-aleph/core test`
 - `pnpm --filter @shared-aleph/node test`
+- `pnpm docs:dev`
+- `pnpm docs:build`
 
-## Repository Shape
+## Documentation
 
-```text
-shared-aleph-tooling/
-  packages/
-  .github/actions/
-  .github/workflows/
-  docs/docusaurus/
-  examples/
-```
+Project docs live in [docs/docusaurus](./docs/docusaurus).
 
-## Near-Term Roadmap
+Useful references:
 
-1. Extract reusable rootfs logic into `@shared-aleph/rootfs`.
-2. Replace the placeholder reusable workflow with the real shared pipeline.
-3. Push the standalone repo to GitHub and wire the first release workflow run.
-4. Make `universal-connectivity` consume the shared repo through a real external
-   reference instead of a local relative path.
+- [docs/docusaurus/docs/overview/index.md](./docs/docusaurus/docs/overview/index.md)
+- [docs/docusaurus/docs/architecture/package-boundaries.md](./docs/docusaurus/docs/architecture/package-boundaries.md)
+- [docs/docusaurus/docs/reference/github-action.md](./docs/docusaurus/docs/reference/github-action.md)
 
-## npm Publishing Direction
+## Publishing And Setup
 
-Publishing from the standalone repo is the right long-term model, but this
-monorepo is not fully npm-ready yet.
-
-Current blockers:
-
-- the package set that should become public is not finalized yet
-- several packages still intentionally remain scaffold-only
-- package entrypoints still point at source files instead of a dedicated publish
-  build output
-- release automation and npm credentials are not configured yet
-- the final public repository URL still needs to be added to package metadata
-
-The tracked publishing checklist lives in [`PUBLISHING.md`](./PUBLISHING.md).
-The GitHub repo and first-push checklist lives in
-[`REPOSITORY_SETUP.md`](./REPOSITORY_SETUP.md).
-License guidance lives in [`LICENSE_DECISION.md`](./LICENSE_DECISION.md).
+- package publishing notes: [PUBLISHING.md](./PUBLISHING.md)
+- repository setup notes: [REPOSITORY_SETUP.md](./REPOSITORY_SETUP.md)
+- license notes: [LICENSE_DECISION.md](./LICENSE_DECISION.md)

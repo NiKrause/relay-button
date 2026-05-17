@@ -106,7 +106,7 @@ export async function emitRootfsOutputs(result: RootfsPublishExecutionResult, en
     await appendGithubOutput('rootfs_source_size_bytes', result.finalized.publication.sourceSizeBytes, env);
   }
   await appendGithubSummary([
-    '## Shared Rootfs Runner',
+    '## Aleph Rootfs Runner',
     '',
     `- Version: \`${result.finalized.manifest.version}\``,
     `- Execution mode: \`${result.pipeline.executionPlan.mode}\``,
@@ -162,7 +162,7 @@ export async function runRootfsMode(
     return;
   }
 
-  throw new Error(`Unsupported ALEPH_VM_MODE "${mode}" in shared rootfs runner.`);
+  throw new Error(`Unsupported ALEPH_VM_MODE "${mode}" in Aleph rootfs runner.`);
 }
 
 export async function rootfsMain(): Promise<void> {

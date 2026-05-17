@@ -104,7 +104,7 @@ test('runActionMode emits scaffold deploy outputs in deploy mode', async () => {
 
   assert.match(outputs, /instance_item_hash=instanceHash/)
   assert.match(outputs, /action_runner_mode=deploy/)
-  assert.match(summary, /Shared Action Runner/)
+  assert.match(summary, /Aleph Action Runner/)
   assert.match(writes.join(''), /instanceHash/)
 })
 

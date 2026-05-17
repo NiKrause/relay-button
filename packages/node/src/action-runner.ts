@@ -139,7 +139,7 @@ export async function runActionMode(
   }
 
   if (mode !== 'deploy') {
-    throw new Error(`Unsupported ALEPH_VM_MODE "${mode}" in shared action runner.`)
+    throw new Error(`Unsupported ALEPH_VM_MODE "${mode}" in Aleph action runner.`)
   }
 
   const providedDeployResult = parseOptionalJson<DeployOutputResult>(env.ALEPH_VM_DEPLOY_RESULT_JSON)
@@ -157,7 +157,7 @@ export async function runActionMode(
   }
 
   if (!deployResult) {
-    throw new Error('Shared action runner did not produce a deploy result.')
+    throw new Error('Aleph action runner did not produce a deploy result.')
   }
 
   await emitDeployOutputs(deployResult, env)
@@ -165,12 +165,12 @@ export async function runActionMode(
   await appendGithubOutput('action_runner_profile', optionalEnv('ALEPH_VM_PROFILE', 'uc-go-peer', env), env)
   await appendGithubSummary([
     '',
-    '### Shared Action Runner',
+    '### Aleph Action Runner',
     '',
     `- Mode: \`${mode}\``,
     `- Profile: \`${optionalEnv('ALEPH_VM_PROFILE', 'uc-go-peer', env)}\``
   ], env)
-  actionLog('notice', `Shared action runner executed in ${mode} mode for profile ${optionalEnv('ALEPH_VM_PROFILE', 'uc-go-peer', env)}.`)
+  actionLog('notice', `Aleph action runner executed in ${mode} mode for profile ${optionalEnv('ALEPH_VM_PROFILE', 'uc-go-peer', env)}.`)
   stdout(`${JSON.stringify(deployResult)}\n`)
 }
 

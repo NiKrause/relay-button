@@ -177,7 +177,7 @@ test('emitRootfsOutputs writes shared rootfs publish outputs', async () => {
   const summary = await readFile(summaryFile, 'utf8')
   assert.match(outputs, /rootfs_cid=bafyrootfs/)
   assert.match(outputs, /rootfs_item_hash=store-item-hash/)
-  assert.match(summary, /Shared Rootfs Runner/)
+  assert.match(summary, /Aleph Rootfs Runner/)
 })
 
 test('runRootfsMode executes rootfs-publish and emits outputs', async () => {
