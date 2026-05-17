@@ -4,46 +4,63 @@ The shared GitHub Action lives at:
 
 - `.github/actions/aleph-vm-deploy/action.yml`
 
-It is the main automation entrypoint for shared VM deployment logic today.
+This action is the main shared entrypoint for Aleph VM deployment work today.
 
-## Current Modes
+It wraps the Aleph Action Runner from `@shared-aleph/node` and exposes a GitHub
+Actions-friendly input/output contract for consumer workflows.
+
+## Supported Modes
+
+Current action modes:
 
 - `deploy`
-  Deploy an Aleph VM, optionally configure `uc-go-peer`, and emit runtime and
-  verification outputs.
+  Deploy an Aleph VM, optionally auto-configure the guest, optionally publish
+  required port forwards, and emit runtime and verification outputs.
 - `list-crns`
-  Return geocoded CRN data for selection and diagnostics.
+  Return ranked and geocoded CRN data for selection and diagnostics.
 
-The Node runner also supports `retain-successful-deployments`, but that mode is
-currently used directly by the UC reusable workflow rather than being exposed as
-an action input contract.
+The Node runner also supports additional modes such as retention handling, but
+those are not currently exposed through this specific composite action input
+surface.
 
-## Important Inputs
+## Core Inputs
 
-Core deployment inputs:
+Deployment identity and signing:
 
 - `mode`
 - `profile`
 - `aleph_private_key`
 - `api_host`
 - `name`
-- `ssh_public_key`
+- `channel`
+
+RootFS and VM sizing:
+
 - `rootfs_item_hash`
 - `rootfs_version`
 - `rootfs_size_mib`
 - `vcpus`
 - `memory_mib`
-- `channel`
+- `seconds`
 
-CRN selection inputs:
+CRN selection:
 
 - `crn_hash`
 - `preferred_country_code`
-- `geo_crn_limit`
 - `max_crn_attempts`
+- `geo_crn_limit`
 - `crn_list_url`
 
-Polling and runtime inputs:
+Guest access and lifecycle:
+
+- `ssh_public_key`
+- `enable_caddy_proxy`
+- `auto_configure`
+- `verify_reachability`
+- `publish_port_forwards`
+- `required_ports_json`
+
+Polling and timeout controls:
 
 - `wait_attempts`
 - `wait_delay_ms`
@@ -53,15 +70,34 @@ Polling and runtime inputs:
 - `setup_delay_ms`
 - `verify_attempts`
 - `verify_delay_ms`
+- `metadata_attempts`
+- `metadata_delay_ms`
+- `metadata_timeout_ms`
+- `configure_timeout_ms`
 - `tcp_timeout_ms`
 - `http_timeout_ms`
 
-`uc-go-peer` lifecycle inputs:
+## Important Behavior
 
-- `enable_caddy_proxy`
-- `auto_configure`
-- `verify_reachability`
-- `required_ports_json`
+### `deploy`
+
+In deploy mode, the action can:
+
+1. sign and publish an Aleph `INSTANCE` message
+2. poll Aleph until the deployment is processed
+3. inspect CRN runtime networking
+4. optionally publish a required-port `AGGREGATE`
+5. optionally call the guest setup endpoint for `uc-go-peer`
+6. collect relay peer and bootstrap metadata
+7. optionally verify mapped ports and proxy reachability
+
+### `list-crns`
+
+In list mode, the action:
+
+1. fetches the CRN list
+2. ranks or filters it according to the shared selection logic
+3. returns geocoded CRN data for diagnostics and manual selection
 
 ## Important Outputs
 
@@ -89,7 +125,7 @@ Selected CRN and runtime details:
 - `mapped_ports_json`
 - `runtime_json`
 
-Guest configuration outputs:
+Guest configuration and relay outputs:
 
 - `setup_endpoint_ok`
 - `configuration_json`
@@ -107,21 +143,28 @@ CRN listing outputs:
 - `geocoded_crns_json`
 - `geocoded_crn_count`
 
-## Runtime Dependency Note
+## Current Implementation Notes
 
-The shared action currently installs `ethers` at runtime before deploy-mode
-execution. That is temporary but intentional: the shared Node signer path uses
-`ethers`, while the repo is still in the early scaffold stage and does not yet
-ship a fully installed packaged action bundle.
+The action is a composite GitHub Action.
+
+Today it does three main things:
+
+1. sets up Node
+2. installs the small runtime dependency it still needs dynamically for
+   deploy-mode signing
+3. runs the shared action runner with inputs mapped into environment variables
+
+That runtime dependency install is still intentional for now. The action is not
+yet shipped as a fully bundled standalone distribution artifact.
 
 ## Example
 
 ```yaml
 - name: Deploy uc-go-peer VM
-  uses: ./shared-aleph-tooling/.github/actions/aleph-vm-deploy
+  uses: ./.github/actions/aleph-vm-deploy
   with:
-    profile: uc-go-peer
     mode: deploy
+    profile: uc-go-peer
     aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
     name: uc-go-peer
     ssh_public_key: ${{ secrets.VM_SSH_PUBLIC_KEY }}
@@ -129,4 +172,19 @@ ship a fully installed packaged action bundle.
     preferred_country_code: DE
     max_crn_attempts: 5
     enable_caddy_proxy: true
+    auto_configure: true
+    verify_reachability: true
+    publish_port_forwards: true
 ```
+
+## When To Use This Action
+
+Use this action when a consumer workflow wants to keep control of its own
+workflow structure but reuse the shared Aleph deployment logic.
+
+That is the current recommended pattern for repositories such as
+`universal-connectivity`:
+
+- keep project-specific workflow orchestration in the consumer repo
+- call the shared deploy action for Aleph VM deployment work
+- keep repo-specific site publish, probing, and reporting around it as needed
