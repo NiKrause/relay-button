@@ -1,6 +1,6 @@
 {
   "name": "@shared-aleph/core",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Reusable Aleph deployment, runtime, and guest lifecycle logic.",
   "license": "MIT",
   "private": true,
