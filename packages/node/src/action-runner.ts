@@ -131,7 +131,8 @@ export async function runActionMode(
       `- Keep count: \`${payload.keepCount}\``,
       `- Retained deployments: \`${payload.retainedRecords?.length ?? 0}\``,
       `- Pruned deployments: \`${payload.prunedRecords?.length ?? 0}\``,
-      `- Forgotten hashes: \`${(payload.forgetHashes ?? []).length}\``
+      `- Forgotten hashes: \`${(payload.forgottenHashes ?? payload.forgetHashes ?? []).length}\``,
+      `- Outstanding forget hashes: \`${(payload.outstandingForgetHashes ?? []).length}\``
     ], env)
     stdout(`${JSON.stringify(payload)}\n`)
     return

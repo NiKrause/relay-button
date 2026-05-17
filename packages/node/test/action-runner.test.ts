@@ -181,6 +181,8 @@ test('runActionMode emits retention outputs in retain-successful-deployments mod
           retainedRecords: [{ instance_item_hash: 'instanceHash' }],
           prunedRecords: [{ instance_item_hash: 'oldInstanceHash' }],
           forgetHashes: ['oldInstanceHash', 'siteHash'],
+          forgottenHashes: ['oldInstanceHash'],
+          outstandingForgetHashes: ['siteHash'],
           forgetResult: {
             itemHash: 'forgetHash',
             status: 'processed'
@@ -197,5 +199,7 @@ test('runActionMode emits retention outputs in retain-successful-deployments mod
   assert.match(outputs, /retention_retained_count=1/)
   assert.match(outputs, /retention_forget_hashes_json=\["oldInstanceHash","siteHash"\]/)
   assert.match(summary, /Successful deployment retention/)
+  assert.match(summary, /Forgotten hashes: `1`/)
+  assert.match(summary, /Outstanding forget hashes: `1`/)
   assert.match(writes.join(''), /aggregateHash/)
 })

@@ -149,6 +149,43 @@ export async function publishAggregateKey(args: {
   }
 }
 
+async function fetchMessageStatus(args: {
+  hash: string
+  fetch: JsonFetchLike
+  apiHost?: string
+}): Promise<string> {
+  const requestUrl = new URL(`/api/v0/messages/${args.hash}`, args.apiHost ?? 'https://api2.aleph.im')
+  const response = await args.fetch(requestUrl.toString(), { cache: 'no-cache' })
+  if (response.status === 404) return 'missing'
+  if (!response.ok) return 'unknown'
+
+  const payload = (await response.json()) as { status?: unknown }
+  return asString(payload?.status) ?? 'unknown'
+}
+
+async function classifyForgetHashes(args: {
+  hashes: string[]
+  fetch: JsonFetchLike
+  apiHost?: string
+}): Promise<{ forgottenHashes: string[]; outstandingForgetHashes: string[]; statuses: Record<string, string> }> {
+  const statuses: Record<string, string> = {}
+  for (const hash of args.hashes) {
+    statuses[hash] = await fetchMessageStatus({
+      hash,
+      fetch: args.fetch,
+      apiHost: args.apiHost
+    })
+  }
+
+  const forgottenHashes = args.hashes.filter((hash) => statuses[hash] === 'forgotten')
+  const outstandingForgetHashes = args.hashes.filter((hash) => statuses[hash] !== 'forgotten')
+  return {
+    forgottenHashes,
+    outstandingForgetHashes,
+    statuses
+  }
+}
+
 export async function retainSuccessfulDeployments(args: {
   sender: string
   currentRecord: unknown
@@ -216,18 +253,70 @@ export async function retainSuccessfulDeployments(args: {
   })
 
   let forgetResult = null
+  let followUpForgetResults: Array<{ hash: string; result: Awaited<ReturnType<typeof forgetAlephMessages>> }> = []
+  let forgottenHashes: string[] = []
+  let outstandingForgetHashes: string[] = []
+  let forgetStatuses: Record<string, string> = {}
+
   if (forgetHashes.length > 0) {
-    forgetResult = await forgetAlephMessages({
-      sender: args.sender,
+    const initiallyOutstanding = await classifyForgetHashes({
       hashes: forgetHashes,
-      reason: args.reason ?? `Prune successful deployments beyond retention limit ${keepCount}`,
-      signer: args.signer,
-      hasher: args.hasher,
       fetch: args.fetch,
-      channel: args.channel,
-      apiHost: args.apiHost,
-      now: args.now
+      apiHost: args.apiHost
     })
+
+    forgottenHashes = initiallyOutstanding.forgottenHashes
+    outstandingForgetHashes = initiallyOutstanding.outstandingForgetHashes
+    forgetStatuses = initiallyOutstanding.statuses
+
+    if (outstandingForgetHashes.length > 0) {
+      forgetResult = await forgetAlephMessages({
+        sender: args.sender,
+        hashes: outstandingForgetHashes,
+        reason: args.reason ?? `Prune successful deployments beyond retention limit ${keepCount}`,
+        signer: args.signer,
+        hasher: args.hasher,
+        fetch: args.fetch,
+        channel: args.channel,
+        apiHost: args.apiHost,
+        now: args.now
+      })
+
+      let postBatch = await classifyForgetHashes({
+        hashes: forgetHashes,
+        fetch: args.fetch,
+        apiHost: args.apiHost
+      })
+      forgottenHashes = postBatch.forgottenHashes
+      outstandingForgetHashes = postBatch.outstandingForgetHashes
+      forgetStatuses = postBatch.statuses
+
+      if (outstandingForgetHashes.length > 0) {
+        for (const hash of outstandingForgetHashes) {
+          const result = await forgetAlephMessages({
+            sender: args.sender,
+            hashes: [hash],
+            reason: args.reason ?? `Prune successful deployments beyond retention limit ${keepCount}`,
+            signer: args.signer,
+            hasher: args.hasher,
+            fetch: args.fetch,
+            channel: args.channel,
+            apiHost: args.apiHost,
+            now: args.now
+          })
+          followUpForgetResults.push({ hash, result })
+        }
+
+        postBatch = await classifyForgetHashes({
+          hashes: forgetHashes,
+          fetch: args.fetch,
+          apiHost: args.apiHost
+        })
+        forgottenHashes = postBatch.forgottenHashes
+        outstandingForgetHashes = postBatch.outstandingForgetHashes
+        forgetStatuses = postBatch.statuses
+      }
+    }
   }
 
   return {
@@ -238,6 +327,10 @@ export async function retainSuccessfulDeployments(args: {
     retainedRecords,
     prunedRecords,
     forgetHashes,
-    forgetResult
+    forgottenHashes,
+    outstandingForgetHashes,
+    forgetStatuses,
+    forgetResult,
+    followUpForgetResults
   }
 }
