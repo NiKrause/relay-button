@@ -95,6 +95,7 @@ async function main() {
 
     if (packageJson.name === '@shared-aleph/node') {
       await cp(join(packagesDir, 'rootfs', 'reference'), join(distDir, 'reference'), { recursive: true })
+      await cp(join(packageRoot, 'reference'), join(distDir, 'reference'), { recursive: true })
     }
   }
 }

@@ -1,5 +1,6 @@
 import process from "node:process"
 import { spawn } from "node:child_process"
+import { fileURLToPath } from "node:url"
 
 import { inspectMessageResult } from "../../core/src/deployment-inspection.ts"
 
@@ -66,6 +67,10 @@ async function waitForAlephMessage(itemHash: string, env: NodeJS.ProcessEnv = pr
   throw new Error(`Aleph STORE message ${itemHash} did not become processed in time.`)
 }
 
+function defaultSitePublishScriptPath(): string {
+  return fileURLToPath(new URL('../reference/publish-static-site.py', import.meta.url))
+}
+
 function mergedAddrs(env: NodeJS.ProcessEnv = process.env): string[] {
   const combined: string[] = []
   for (const key of ['PROBE_MULTIADDRS_JSON', 'BROWSER_BOOTSTRAP_MULTIADDRS_JSON']) {
@@ -82,7 +87,7 @@ function mergedAddrs(env: NodeJS.ProcessEnv = process.env): string[] {
 
 export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const projectDir = requiredEnv('ALEPH_SITE_PROJECT_DIR', env)
-  const publishScript = optionalEnv('ALEPH_SITE_PUBLISH_SCRIPT', 'go-peer/aleph/publish-static-site.py', env)
+  const publishScript = optionalEnv('ALEPH_SITE_PUBLISH_SCRIPT', defaultSitePublishScriptPath(), env)
   const siteDirectory = requiredEnv('ALEPH_SITE_DIRECTORY', env)
   const pythonBin = optionalEnv('ALEPH_SITE_PYTHON', 'python3', env)
   const alephBin = optionalEnv('ALEPH_SITE_ALEPH_BIN', 'aleph', env)
