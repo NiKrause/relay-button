@@ -51,6 +51,23 @@ The package should *not* own:
 - prepaid vault product logic
 - app-specific wording and presentation
 
+## Preferred Public Surface
+
+`@le-space/browser` should no longer grow only as a flat bag of helpers.
+
+The preferred public entrypoint is a typed browser client factory:
+
+- `createAlephBrowserClient({ apiHost?, crnListUrl? })`
+
+That client is the stable shared surface we want future PWAs to code against.
+Standalone exports are still useful, especially for tests and small utilities,
+but new extractions should prefer one of these shapes:
+
+- add a method to `AlephBrowserClient`
+- add a browser-neutral result type used by that method
+
+This keeps the package easier to understand for a second, simpler PWA.
+
 ## File-By-File Source Map
 
 The current `relay-deployer-pwa/src/lib/` files map roughly like this.
@@ -118,7 +135,9 @@ Own:
 - `fetchCrns`
 - `fetchInstances`
 - `fetchMessageEnvelope`
+- `createAlephBrowserClient`
 - `broadcastAlephMessage`
+- `broadcastInstanceMessage`
 - `inspectDeploymentResult`
 - `waitForDeploymentResult`
 - `fetchInstanceRuntimeDetails`

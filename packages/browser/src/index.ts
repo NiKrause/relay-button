@@ -1,5 +1,6 @@
 export * from './types'
 export * from './http'
 export * from './aleph-api'
+export * from './client'
 export * from './rootfs'
 export * from './pricing'

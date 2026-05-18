@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  broadcastInstanceMessage,
+  createAlephBrowserClient,
   fetchBalance,
   fetchCrns,
   fetchInstances,
@@ -39,6 +41,96 @@ test('fetchBalance requests the public balance API path', async () => {
     const balance = await fetchBalance('0xabc')
     assert.equal(balance.credit_balance, 2)
     assert.match(capturedUrl, /\/api\/v0\/addresses\/0xabc\/balance/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('broadcastInstanceMessage posts signed messages to the Aleph API', async () => {
+  const originalFetch = globalThis.fetch
+
+  try {
+    let requestBody = null
+    let capturedUrl = ''
+    globalThis.fetch = async (input, init) => {
+      capturedUrl = String(input)
+      requestBody = JSON.parse(String(init?.body))
+      return new Response(JSON.stringify({ publication_status: { status: 'success' } }), { status: 200 })
+    }
+
+    const result = await broadcastInstanceMessage({
+      sender: '0xabc',
+      chain: 'ETH',
+      signature: '0x1234',
+      type: 'INSTANCE',
+      item_hash: 'a'.repeat(64),
+      item_type: 'inline',
+      item_content: '{}',
+      time: 1,
+      channel: 'ALEPH-CLOUDSOLUTIONS'
+    })
+
+    assert.match(capturedUrl, /\/api\/v0\/messages/)
+    assert.equal(requestBody.message.signature, '0x1234')
+    assert.equal(result.httpStatus, 200)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('broadcastInstanceMessage retries with the flattened payload after InvalidMessageFormat', async () => {
+  const originalFetch = globalThis.fetch
+
+  try {
+    const requestBodies = []
+    globalThis.fetch = async (_input, init) => {
+      requestBodies.push(JSON.parse(String(init?.body)))
+
+      if (requestBodies.length === 1) {
+        return new Response(JSON.stringify({ details: 'InvalidMessageFormat' }), { status: 422 })
+      }
+
+      return new Response(JSON.stringify({ publication_status: { status: 'success' } }), { status: 200 })
+    }
+
+    await broadcastInstanceMessage({
+      sender: '0xabc',
+      chain: 'ETH',
+      signature: '0x1234',
+      type: 'INSTANCE',
+      item_hash: 'a'.repeat(64),
+      item_type: 'inline',
+      item_content: '{}',
+      time: 1,
+      channel: 'ALEPH-CLOUDSOLUTIONS'
+    })
+
+    assert.deepEqual(requestBodies[0], {
+      sync: false,
+      message: {
+        sender: '0xabc',
+        chain: 'ETH',
+        signature: '0x1234',
+        type: 'INSTANCE',
+        item_hash: 'a'.repeat(64),
+        item_type: 'inline',
+        item_content: '{}',
+        time: 1,
+        channel: 'ALEPH-CLOUDSOLUTIONS'
+      }
+    })
+    assert.deepEqual(requestBodies[1], {
+      sender: '0xabc',
+      chain: 'ETH',
+      signature: '0x1234',
+      type: 'INSTANCE',
+      item_hash: 'a'.repeat(64),
+      item_type: 'inline',
+      item_content: '{}',
+      time: 1,
+      channel: 'ALEPH-CLOUDSOLUTIONS',
+      sync: false
+    })
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -173,5 +265,45 @@ test('waitForDeploymentResult polls until the message reaches a terminal state',
   } finally {
     globalThis.fetch = originalFetch
     globalThis.setTimeout = originalSetTimeout
+  }
+})
+
+test('createAlephBrowserClient binds apiHost and crnListUrl defaults into reusable methods', async () => {
+  const originalFetch = globalThis.fetch
+
+  try {
+    const urls = []
+    globalThis.fetch = async (input) => {
+      urls.push(String(input))
+
+      if (String(input).includes('/balance')) {
+        return new Response(
+          JSON.stringify({
+            address: '0xabc',
+            balance: '1',
+            locked_amount: '0',
+            credit_balance: 2
+          }),
+          { status: 200 }
+        )
+      }
+
+      return new Response(JSON.stringify({ crns: [] }), { status: 200 })
+    }
+
+    const client = createAlephBrowserClient({
+      apiHost: 'https://api.example',
+      crnListUrl: 'https://crns.example/list.json'
+    })
+
+    await client.fetchBalance('0xabc')
+    await client.fetchCrns()
+
+    assert.equal(client.apiHost, 'https://api.example')
+    assert.equal(client.crnListUrl, 'https://crns.example/list.json')
+    assert.match(urls[0], /https:\/\/api\.example\/api\/v0\/addresses\/0xabc\/balance/)
+    assert.match(urls[1], /https:\/\/crns\.example\/list\.json/)
+  } finally {
+    globalThis.fetch = originalFetch
   }
 })

@@ -1,13 +1,13 @@
 {
   "name": "@le-space/browser",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Shared browser-safe Aleph deployment and polling helpers.",
   "license": "MIT",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "build": "node --check ./src/index.ts && node --check ./src/types.ts && node --check ./src/http.ts && node --check ./src/aleph-api.ts && node --check ./src/rootfs.ts && node --check ./src/pricing.ts",
+    "build": "node --check ./src/index.ts && node --check ./src/types.ts && node --check ./src/http.ts && node --check ./src/aleph-api.ts && node --check ./src/client.ts && node --check ./src/rootfs.ts && node --check ./src/pricing.ts",
     "build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json",
     "test": "pnpm run build:publish && node --test ./test/**/*.test.mjs",
     "lint": "echo \"browser lint placeholder\""

@@ -13,6 +13,25 @@ The package should stay UI-neutral. It should provide browser-safe helpers, but
 it should not own app-specific Svelte state, prepaid product logic, or wallet
 UX.
 
+## Client Surface
+
+The preferred public entrypoint is a typed browser client factory:
+
+- `createAlephBrowserClient({ apiHost?, crnListUrl? })`
+
+That client should remain small and stable. It currently owns:
+
+- balance lookup
+- CRN listing
+- instance listing
+- message envelope lookup
+- deployment result inspection and polling
+- Aleph message broadcast helpers
+
+Lower-level helper functions remain exported too, but new extractions should
+prefer hanging reusable behavior off the client surface unless there is a good
+reason to keep them as standalone utilities.
+
 ## Planned v1 Scope
 
 The first real extraction wave should cover:
@@ -23,6 +42,7 @@ The first real extraction wave should cover:
   - balance fetch
   - CRN fetch
   - instance listing
+  - typed browser client factory
   - Aleph message broadcast helpers
   - deployment polling and result inspection
   - runtime detail inspection

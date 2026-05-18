@@ -12,6 +12,8 @@ export const BROWSER_PACKAGE_PLAN: BrowserPackagePlan = {
 
 export type MessageStatus = 'processed' | 'pending' | 'rejected' | 'unknown'
 export type ReferenceStatus = MessageStatus | 'missing'
+export type AlephSenderChain = 'ETH'
+export type AlephMessageType = 'INSTANCE' | 'FORGET' | 'AGGREGATE'
 
 export interface BalanceResponse {
   address: string
@@ -137,6 +139,50 @@ export interface DeploymentInspectionResult {
   details: Record<string, unknown> | null
   rejectionReason: string | null
   references: MessageReference[]
+}
+
+export interface AlephBroadcastMessage {
+  sender: string
+  chain: AlephSenderChain
+  signature: string
+  type: AlephMessageType
+  item_hash: string
+  item_type: 'inline'
+  item_content: string
+  time: number
+  channel: string
+}
+
+export interface AlephBroadcastResponse {
+  publication_status?: {
+    status: string
+    failed?: unknown[]
+  }
+  message_status?: MessageStatus
+  [key: string]: unknown
+}
+
+export interface BroadcastResult {
+  response: AlephBroadcastResponse
+  httpStatus: number
+}
+
+export interface AlephBrowserClient {
+  apiHost: string
+  crnListUrl: string
+  fetchBalance(address: string): Promise<BalanceResponse>
+  fetchCrns(): Promise<Crn[]>
+  fetchInstances(address: string): Promise<InstanceMessage[]>
+  fetchMessageEnvelope(itemHash: string): Promise<AlephMessageEnvelope | null>
+  inspectDeploymentResult(itemHash: string, rootfsRef?: string): Promise<DeploymentInspectionResult>
+  waitForDeploymentResult(
+    itemHash: string,
+    rootfsRef?: string,
+    attempts?: number,
+    delayMs?: number
+  ): Promise<DeploymentInspectionResult>
+  broadcastInstanceMessage(message: AlephBroadcastMessage, sync?: boolean): Promise<BroadcastResult>
+  broadcastAlephMessage(message: AlephBroadcastMessage, sync?: boolean): Promise<BroadcastResult>
 }
 
 export interface RootfsRequiredPortForward {
