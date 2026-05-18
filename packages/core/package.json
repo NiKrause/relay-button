@@ -1,6 +1,6 @@
 {
   "name": "@le-space/core",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "Reusable Aleph deployment, runtime, and guest lifecycle logic.",
   "license": "MIT",
   "private": true,
