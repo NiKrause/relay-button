@@ -31,6 +31,79 @@ export interface RootfsManifestOutputPaths {
   versionedTargetPath?: string;
 }
 
+export interface RootfsManifestState {
+  manifest: RootfsManifest | null;
+  valid: boolean;
+  errors: string[];
+}
+
+export const ITEM_HASH_RE = /^[a-fA-F0-9]{64}$/u;
+
+export function validateRootfsManifest(manifest: RootfsManifest | null): RootfsManifestState {
+  const errors: string[] = [];
+
+  if (!manifest) {
+    return { manifest, valid: false, errors: ["Rootfs manifest is missing."] };
+  }
+
+  if (!manifest.version) errors.push("Rootfs manifest version is missing.");
+  if (
+    manifest.rootfsInstallStrategy != null &&
+    manifest.rootfsInstallStrategy !== "thin" &&
+    manifest.rootfsInstallStrategy !== "prebaked"
+  ) {
+    errors.push('Rootfs install strategy must be "thin" or "prebaked" when provided.');
+  }
+  if (
+    manifest.requiresBootstrapNetwork != null &&
+    typeof manifest.requiresBootstrapNetwork !== "boolean"
+  ) {
+    errors.push("Rootfs bootstrap network flag must be a boolean when provided.");
+  }
+  if (manifest.bootstrapSummary != null && !manifest.bootstrapSummary.trim()) {
+    errors.push("Rootfs bootstrap summary must be non-empty when provided.");
+  }
+  if (manifest.requiredPortForwards != null) {
+    if (!Array.isArray(manifest.requiredPortForwards)) {
+      errors.push("Rootfs required port forwards must be an array when provided.");
+    } else {
+      manifest.requiredPortForwards.forEach((entry, index) => {
+        if (!entry || typeof entry !== "object") {
+          errors.push(`Rootfs required port forward #${index + 1} must be an object.`);
+          return;
+        }
+
+        if (!Number.isInteger(entry.port) || entry.port < 1 || entry.port > 65535) {
+          errors.push(`Rootfs required port forward #${index + 1} must use a TCP/UDP port between 1 and 65535.`);
+        }
+        if (entry.tcp !== true && entry.udp !== true) {
+          errors.push(`Rootfs required port forward #${index + 1} must enable TCP or UDP.`);
+        }
+        if (entry.purpose != null && (typeof entry.purpose !== "string" || !entry.purpose.trim())) {
+          errors.push(`Rootfs required port forward #${index + 1} purpose must be non-empty when provided.`);
+        }
+      });
+    }
+  }
+  if (!ITEM_HASH_RE.test(manifest.rootfsItemHash || "")) {
+    errors.push("Rootfs ItemHash must be a 64 character hex value.");
+  }
+  if (!Number.isInteger(manifest.rootfsSizeMiB) || manifest.rootfsSizeMiB <= 0) {
+    errors.push("Rootfs size must be a positive MiB integer.");
+  }
+  if (
+    manifest.rootfsSourceSizeBytes != null &&
+    (!Number.isInteger(manifest.rootfsSourceSizeBytes) || manifest.rootfsSourceSizeBytes <= 0)
+  ) {
+    errors.push("Rootfs source size must be a positive byte integer when provided.");
+  }
+  if (!manifest.createdAt || Number.isNaN(new Date(manifest.createdAt).getTime())) {
+    errors.push("Rootfs creation date is missing or invalid.");
+  }
+
+  return { manifest, valid: errors.length === 0, errors };
+}
+
 export function rootfsSourceSizeBytesFromIpfsAddResponse(content: string): number | undefined {
   const lines = content
     .split(/\r?\n/u)
