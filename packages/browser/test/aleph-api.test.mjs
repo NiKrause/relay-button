@@ -8,6 +8,7 @@ import {
   fetchCrns,
   fetchInstances,
   fetchMessageEnvelope,
+  notifyCrnAllocation,
   fetchSchedulerAllocation,
   inspectDeploymentResult,
   normalizeMessageStatus,
@@ -239,6 +240,42 @@ test('fetchSchedulerAllocation requests the scheduler allocation endpoint and no
   }
 })
 
+test('notifyCrnAllocation posts to the CRN control allocation endpoint', async () => {
+  const originalFetch = globalThis.fetch
+
+  try {
+    let capturedUrl = ''
+    let capturedMethod = ''
+    globalThis.fetch = async (input, init) => {
+      capturedUrl = String(input)
+      capturedMethod = String(init?.method ?? '')
+      return new Response('{}', { status: 200 })
+    }
+
+    const result = await notifyCrnAllocation('https://selected-crn.example/', 'a'.repeat(64))
+    assert.equal(result.status, 'confirmed')
+    assert.match(capturedUrl, /https:\/\/selected-crn\.example\/control\/allocation\/notify/)
+    assert.equal(capturedMethod, 'POST')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('notifyCrnAllocation treats browser-blocked requests as unconfirmed', async () => {
+  const originalFetch = globalThis.fetch
+
+  try {
+    globalThis.fetch = async () => {
+      throw new TypeError('Failed to fetch')
+    }
+
+    const result = await notifyCrnAllocation('https://selected-crn.example/', 'a'.repeat(64))
+    assert.deepEqual(result, { status: 'unconfirmed' })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('fetchMessageEnvelope returns null for a missing message', async () => {
   const originalFetch = globalThis.fetch
 
@@ -352,6 +389,7 @@ test('createAlephBrowserClient binds apiHost and crnListUrl defaults into reusab
 
     assert.equal(client.apiHost, 'https://api.example')
     assert.equal(client.crnListUrl, 'https://crns.example/list.json')
+    assert.equal(client.schedulerApiHost, 'https://scheduler.api.aleph.cloud')
     assert.match(urls[0], /https:\/\/api\.example\/api\/v0\/addresses\/0xabc\/balance/)
     assert.match(urls[1], /https:\/\/crns\.example\/list\.json/)
   } finally {

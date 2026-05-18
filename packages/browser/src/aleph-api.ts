@@ -1,5 +1,6 @@
 import { fetchWithTimeout } from './http'
 import type {
+  AllocationNotifyResult,
   AlephMessageEnvelope,
   AlephBroadcastMessage,
   AlephBroadcastResponse,
@@ -50,6 +51,11 @@ function asString(value: unknown): string | null {
 
 function asNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function isUnconfirmedNetworkError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return error instanceof TypeError || message.includes('Failed to fetch') || message.includes('Request timed out')
 }
 
 export async function fetchBalance(address: string, apiHost = DEFAULT_ALEPH_API_HOST): Promise<BalanceResponse> {
@@ -128,6 +134,34 @@ export async function fetchSchedulerAllocation(
           duration_seconds: asNumber(payload.period.duration_seconds) ?? undefined
         }
       : null
+  }
+}
+
+export async function notifyCrnAllocation(crnUrl: string, itemHash: string): Promise<AllocationNotifyResult> {
+  const normalizedCrnUrl = crnUrl.replace(/\/+$/, '')
+
+  try {
+    const response = await fetchWithTimeout(`${normalizedCrnUrl}/control/allocation/notify`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'text/plain;charset=UTF-8'
+      },
+      body: JSON.stringify({ instance: itemHash }),
+      mode: 'cors'
+    })
+
+    if (!response.ok) {
+      const responseText = await response.text().catch(() => '')
+      throw new Error(`CRN allocation notify failed: ${response.status}${responseText ? ` ${responseText}` : ''}`)
+    }
+
+    return { status: 'confirmed' }
+  } catch (error) {
+    if (isUnconfirmedNetworkError(error)) {
+      return { status: 'unconfirmed' }
+    }
+
+    throw error
   }
 }
 

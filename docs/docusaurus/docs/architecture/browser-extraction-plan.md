@@ -136,6 +136,7 @@ Own:
 - `fetchInstances`
 - `fetchMessageEnvelope`
 - `fetchSchedulerAllocation`
+- `notifyCrnAllocation`
 - `createAlephBrowserClient`
 - `broadcastAlephMessage`
 - `broadcastInstanceMessage`

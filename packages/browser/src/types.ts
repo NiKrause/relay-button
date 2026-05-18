@@ -162,6 +162,10 @@ export interface InstanceAllocation {
   period?: InstanceAllocationPeriod | null
 }
 
+export interface AllocationNotifyResult {
+  status: 'confirmed' | 'unconfirmed'
+}
+
 export interface AlephBroadcastMessage {
   sender: string
   chain: AlephSenderChain
@@ -191,11 +195,13 @@ export interface BroadcastResult {
 export interface AlephBrowserClient {
   apiHost: string
   crnListUrl: string
+  schedulerApiHost: string
   fetchBalance(address: string): Promise<BalanceResponse>
   fetchCrns(): Promise<Crn[]>
   fetchInstances(address: string): Promise<InstanceMessage[]>
   fetchMessageEnvelope(itemHash: string): Promise<AlephMessageEnvelope | null>
   fetchSchedulerAllocation(itemHash: string): Promise<InstanceAllocation | null>
+  notifyCrnAllocation(crnUrl: string, itemHash: string): Promise<AllocationNotifyResult>
   inspectDeploymentResult(itemHash: string, rootfsRef?: string): Promise<DeploymentInspectionResult>
   waitForDeploymentResult(
     itemHash: string,
