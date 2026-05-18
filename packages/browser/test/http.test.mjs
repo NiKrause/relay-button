@@ -38,3 +38,24 @@ test('fetchWithTimeout translates AbortError into a timeout error', async () => 
     globalThis.fetch = originalFetch
   }
 })
+
+test('fetchWithTimeout preserves relative string inputs when no base URL is available', async () => {
+  const originalFetch = globalThis.fetch
+  const originalLocation = globalThis.location
+
+  try {
+    let capturedInput = ''
+    globalThis.fetch = async (input) => {
+      capturedInput = String(input)
+      return new Response('{}', { status: 200 })
+    }
+    delete globalThis.location
+
+    await fetchWithTimeout('./rootfs-manifest.json')
+
+    assert.equal(capturedInput, './rootfs-manifest.json')
+  } finally {
+    globalThis.fetch = originalFetch
+    globalThis.location = originalLocation
+  }
+})

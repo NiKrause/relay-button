@@ -7,11 +7,30 @@ export async function fetchWithTimeout(
   const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    if (typeof input === 'string' || input instanceof URL) {
-      const url = new URL(String(input), globalThis.location?.href)
+    if (input instanceof URL) {
+      const url = new URL(input.toString())
       url.searchParams.set('_ts', String(Date.now()))
 
       return await fetch(url, {
+        ...init,
+        cache: init.cache ?? 'no-store',
+        signal: init.signal ?? controller.signal
+      })
+    }
+
+    if (typeof input === 'string') {
+      let requestInput: RequestInfo | URL = input
+
+      try {
+        const url = new URL(input, globalThis.location?.href)
+        url.searchParams.set('_ts', String(Date.now()))
+        requestInput = url
+      } catch {
+        // Keep relative or otherwise non-URL-like strings untouched when no
+        // usable base URL exists in the current runtime.
+      }
+
+      return await fetch(requestInput, {
         ...init,
         cache: init.cache ?? 'no-store',
         signal: init.signal ?? controller.signal

@@ -79,3 +79,45 @@ export interface InstanceMessage {
   confirmed?: boolean
   status?: string
 }
+
+export interface RootfsRequiredPortForward {
+  port: number
+  tcp?: boolean
+  udp?: boolean
+  purpose?: string
+}
+
+export interface RootfsManifest {
+  profile?: string
+  version: string
+  rootfsInstallStrategy?: 'thin' | 'prebaked' | string
+  requiresBootstrapNetwork?: boolean
+  bootstrapSummary?: string
+  requiredPortForwards?: RootfsRequiredPortForward[]
+  rootfsItemHash: string
+  rootfsSizeMiB: number
+  rootfsSourceSizeBytes?: number
+  createdAt: string
+  notes?: string
+}
+
+export interface RootfsManifestState {
+  manifest: RootfsManifest | null
+  valid: boolean
+  errors: string[]
+}
+
+export type GatewayProbeStatus = 'reachable' | 'timeout' | 'error' | 'unavailable' | 'unknown'
+
+export interface RootfsResolution {
+  itemHash: string
+  messageStatus: MessageStatus
+  messageType: string | null
+  cid: string | null
+  receptionTime?: string | null
+  rejectionErrorCode?: number | null
+  rejectionReason?: string | null
+  gatewayUrl: string | null
+  gatewayStatus: GatewayProbeStatus
+  gatewayError?: string | null
+}
