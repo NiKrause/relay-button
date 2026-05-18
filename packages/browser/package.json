@@ -9,7 +9,7 @@
   "scripts": {
     "build": "node --check ./src/index.ts && node --check ./src/types.ts && node --check ./src/http.ts && node --check ./src/aleph-api.ts && node --check ./src/rootfs.ts && node --check ./src/pricing.ts",
     "build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json",
-    "test": "node --test ./test/**/*.test.ts",
+    "test": "pnpm run build:publish && node --test ./test/**/*.test.mjs",
     "lint": "echo \"browser lint placeholder\""
   }
 }

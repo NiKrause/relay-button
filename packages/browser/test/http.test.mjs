@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { fetchWithTimeout } from '../src/http.ts'
+import { fetchWithTimeout } from '../dist/index.js'
 
 test('fetchWithTimeout adds a cache-busting timestamp for URL-like inputs', async () => {
   const originalFetch = globalThis.fetch
 
   try {
     let capturedUrl = ''
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
+    globalThis.fetch = async (input) => {
       capturedUrl = String(input)
       return new Response('{}', { status: 200 })
-    }) as typeof fetch
+    }
 
     await fetchWithTimeout('https://example.com/test?x=1')
 
@@ -27,9 +27,9 @@ test('fetchWithTimeout translates AbortError into a timeout error', async () => 
   const originalFetch = globalThis.fetch
 
   try {
-    globalThis.fetch = (async () => {
+    globalThis.fetch = async () => {
       throw new DOMException('aborted', 'AbortError')
-    }) as typeof fetch
+    }
 
     await assert.rejects(() => fetchWithTimeout('https://example.com/test', {}, 1000), {
       message: 'Request timed out after 1s.'
