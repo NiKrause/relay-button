@@ -20,6 +20,40 @@ export interface BalanceResponse {
   credit_balance: number
 }
 
+export interface Price {
+  payg?: string | number | null
+  holding?: string | number | null
+  fixed?: string | number | null
+  credit?: string | number | null
+}
+
+export interface ComputeUnit {
+  vcpus: number
+  memory_mib: number
+  disk_mib: number
+}
+
+export interface Tier {
+  id: string
+  compute_units: number
+  vram?: number | null
+  model?: string | null
+}
+
+export interface InstancePricing {
+  price: {
+    storage?: Price
+    compute_unit?: Price
+  }
+  compute_unit: ComputeUnit
+  tiers: Tier[]
+}
+
+export interface PricingState {
+  pricing: InstancePricing | null
+  fetchedAt: number | null
+}
+
 export interface CrnUsage {
   cpu?: { count?: number }
   mem?: { available_kB?: number }
