@@ -25,6 +25,7 @@ That client should remain small and stable. It currently owns:
 - CRN listing
 - instance listing
 - message envelope lookup
+- scheduler allocation lookup
 - deployment result inspection and polling
 - Aleph message broadcast helpers
 

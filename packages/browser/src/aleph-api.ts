@@ -8,6 +8,7 @@ import type {
   Crn,
   CrnListResponse,
   DeploymentInspectionResult,
+  InstanceAllocation,
   InstanceMessage,
   MessageReference,
   MessageStatus
@@ -15,6 +16,22 @@ import type {
 
 export const DEFAULT_ALEPH_API_HOST = 'https://api2.aleph.im'
 export const DEFAULT_CRN_LIST_URL = 'https://crns-list.aleph.sh/crns.json'
+export const DEFAULT_ALEPH_SCHEDULER_API_HOST = 'https://scheduler.api.aleph.cloud'
+
+type SchedulerAllocationPayload = {
+  vm_hash?: unknown
+  vm_ipv6?: unknown
+  period?: {
+    start_timestamp?: unknown
+    duration_seconds?: unknown
+  } | null
+  node?: {
+    node_id?: unknown
+    url?: unknown
+    ipv6?: unknown
+    supports_ipv6?: unknown
+  } | null
+}
 
 export function normalizeMessageStatus(status: unknown): MessageStatus {
   if (typeof status !== 'string') return 'unknown'
@@ -25,6 +42,14 @@ export function normalizeMessageStatus(status: unknown): MessageStatus {
   }
 
   return 'unknown'
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 export async function fetchBalance(address: string, apiHost = DEFAULT_ALEPH_API_HOST): Promise<BalanceResponse> {
@@ -69,6 +94,41 @@ export async function fetchInstances(address: string, apiHost = DEFAULT_ALEPH_AP
           ? 'processed'
           : message.status
   }))
+}
+
+export async function fetchSchedulerAllocation(
+  itemHash: string,
+  schedulerApiHost = DEFAULT_ALEPH_SCHEDULER_API_HOST
+): Promise<InstanceAllocation | null> {
+  const response = await fetchWithTimeout(`${schedulerApiHost}/api/v0/allocation/${itemHash}`, {
+    cache: 'no-cache'
+  })
+
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error(`Scheduler allocation request failed: ${response.status}`)
+
+  const payload = (await response.json()) as SchedulerAllocationPayload
+  const node = payload.node
+
+  return {
+    source: 'scheduler',
+    crnUrl: asString(node?.url),
+    node: node
+      ? {
+          node_id: asString(node.node_id) ?? undefined,
+          url: asString(node.url) ?? undefined,
+          ipv6: asString(node.ipv6),
+          supports_ipv6: typeof node.supports_ipv6 === 'boolean' ? node.supports_ipv6 : undefined
+        }
+      : null,
+    vmIpv6: asString(payload.vm_ipv6),
+    period: payload.period
+      ? {
+          start_timestamp: asString(payload.period.start_timestamp) ?? undefined,
+          duration_seconds: asNumber(payload.period.duration_seconds) ?? undefined
+        }
+      : null
+  }
 }
 
 function messageTypeFromEnvelope(payload: AlephMessageEnvelope | null): string | null {

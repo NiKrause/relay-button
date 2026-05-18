@@ -8,6 +8,7 @@ import {
   fetchCrns,
   fetchInstances,
   fetchMessageEnvelope,
+  fetchSchedulerAllocation,
   inspectDeploymentResult,
   normalizeMessageStatus,
   waitForDeploymentResult
@@ -190,6 +191,54 @@ test('fetchInstances requests instance messages and normalizes confirmed items t
   }
 })
 
+test('fetchSchedulerAllocation requests the scheduler allocation endpoint and normalizes the response', async () => {
+  const originalFetch = globalThis.fetch
+
+  try {
+    let capturedUrl = ''
+    globalThis.fetch = async (input) => {
+      capturedUrl = String(input)
+      return new Response(
+        JSON.stringify({
+          vm_hash: 'a'.repeat(64),
+          vm_ipv6: '2a02:c207:1:2178::2',
+          period: {
+            start_timestamp: '2026-04-21T10:00:00Z',
+            duration_seconds: 30
+          },
+          node: {
+            node_id: 'crn-dc-12',
+            url: 'https://dv1ca.deepvalley.cloud',
+            ipv6: '2604:4300::1',
+            supports_ipv6: true
+          }
+        }),
+        { status: 200 }
+      )
+    }
+
+    const allocation = await fetchSchedulerAllocation('a'.repeat(64))
+    assert.match(capturedUrl, /https:\/\/scheduler\.api\.aleph\.cloud\/api\/v0\/allocation\//)
+    assert.deepEqual(allocation, {
+      source: 'scheduler',
+      crnUrl: 'https://dv1ca.deepvalley.cloud',
+      node: {
+        node_id: 'crn-dc-12',
+        url: 'https://dv1ca.deepvalley.cloud',
+        ipv6: '2604:4300::1',
+        supports_ipv6: true
+      },
+      vmIpv6: '2a02:c207:1:2178::2',
+      period: {
+        start_timestamp: '2026-04-21T10:00:00Z',
+        duration_seconds: 30
+      }
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('fetchMessageEnvelope returns null for a missing message', async () => {
   const originalFetch = globalThis.fetch
 
@@ -298,6 +347,8 @@ test('createAlephBrowserClient binds apiHost and crnListUrl defaults into reusab
 
     await client.fetchBalance('0xabc')
     await client.fetchCrns()
+    globalThis.fetch = async () => new Response('', { status: 404 })
+    await client.fetchSchedulerAllocation('a'.repeat(64))
 
     assert.equal(client.apiHost, 'https://api.example')
     assert.equal(client.crnListUrl, 'https://crns.example/list.json')

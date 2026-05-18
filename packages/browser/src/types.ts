@@ -141,6 +141,27 @@ export interface DeploymentInspectionResult {
   references: MessageReference[]
 }
 
+export interface InstanceAllocationNode {
+  node_id?: string
+  url?: string
+  ipv6?: string | null
+  supports_ipv6?: boolean
+}
+
+export interface InstanceAllocationPeriod {
+  start_timestamp?: string
+  duration_seconds?: number
+}
+
+export interface InstanceAllocation {
+  source: 'scheduler' | 'manual'
+  crnHash?: string | null
+  crnUrl?: string | null
+  node?: InstanceAllocationNode | null
+  vmIpv6?: string | null
+  period?: InstanceAllocationPeriod | null
+}
+
 export interface AlephBroadcastMessage {
   sender: string
   chain: AlephSenderChain
@@ -174,6 +195,7 @@ export interface AlephBrowserClient {
   fetchCrns(): Promise<Crn[]>
   fetchInstances(address: string): Promise<InstanceMessage[]>
   fetchMessageEnvelope(itemHash: string): Promise<AlephMessageEnvelope | null>
+  fetchSchedulerAllocation(itemHash: string): Promise<InstanceAllocation | null>
   inspectDeploymentResult(itemHash: string, rootfsRef?: string): Promise<DeploymentInspectionResult>
   waitForDeploymentResult(
     itemHash: string,

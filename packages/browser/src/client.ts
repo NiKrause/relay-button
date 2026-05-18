@@ -7,6 +7,7 @@ import {
   fetchCrns,
   fetchInstances,
   fetchMessageEnvelope,
+  fetchSchedulerAllocation,
   inspectDeploymentResult,
   waitForDeploymentResult
 } from './aleph-api'
@@ -35,6 +36,9 @@ export function createAlephBrowserClient(options: CreateAlephBrowserClientOption
     },
     fetchMessageEnvelope(itemHash) {
       return fetchMessageEnvelope(itemHash, apiHost)
+    },
+    fetchSchedulerAllocation(itemHash) {
+      return fetchSchedulerAllocation(itemHash)
     },
     inspectDeploymentResult(itemHash, rootfsRef) {
       return inspectDeploymentResult(itemHash, rootfsRef, apiHost)
