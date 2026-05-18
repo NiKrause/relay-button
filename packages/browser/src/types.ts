@@ -11,6 +11,7 @@ export const BROWSER_PACKAGE_PLAN: BrowserPackagePlan = {
 }
 
 export type MessageStatus = 'processed' | 'pending' | 'rejected' | 'unknown'
+export type ReferenceStatus = MessageStatus | 'missing'
 
 export interface BalanceResponse {
   address: string
@@ -112,6 +113,30 @@ export interface InstanceMessage {
   reception_time?: string
   confirmed?: boolean
   status?: string
+}
+
+export interface AlephMessageEnvelope {
+  status?: unknown
+  type?: unknown
+  error_code?: unknown
+  details?: unknown
+  message?: { type?: unknown } | null
+  messages?: Array<{ type?: unknown }> | null
+  [key: string]: unknown
+}
+
+export interface MessageReference {
+  itemHash: string
+  status: ReferenceStatus
+  type: string | null
+}
+
+export interface DeploymentInspectionResult {
+  status: MessageStatus
+  errorCode: number | null
+  details: Record<string, unknown> | null
+  rejectionReason: string | null
+  references: MessageReference[]
 }
 
 export interface RootfsRequiredPortForward {
