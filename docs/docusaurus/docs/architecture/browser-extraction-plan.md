@@ -137,6 +137,7 @@ Own:
 - `fetchMessageEnvelope`
 - `fetchSchedulerAllocation`
 - `notifyCrnAllocation`
+- `configureOrbitdbRelaySetup`
 - `createAlephBrowserClient`
 - `broadcastAlephMessage`
 - `broadcastInstanceMessage`

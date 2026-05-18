@@ -27,6 +27,7 @@ That client should remain small and stable. It currently owns:
 - message envelope lookup
 - scheduler allocation lookup
 - CRN allocation notify
+- relay setup-server configure request
 - deployment result inspection and polling
 - Aleph message broadcast helpers
 

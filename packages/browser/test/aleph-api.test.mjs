@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   broadcastInstanceMessage,
+  configureOrbitdbRelaySetup,
   createAlephBrowserClient,
   fetchBalance,
   fetchCrns,
@@ -270,6 +271,71 @@ test('notifyCrnAllocation treats browser-blocked requests as unconfirmed', async
     }
 
     const result = await notifyCrnAllocation('https://selected-crn.example/', 'a'.repeat(64))
+    assert.deepEqual(result, { status: 'unconfirmed' })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('configureOrbitdbRelaySetup posts the relay setup payload to the setup endpoint', async () => {
+  const originalFetch = globalThis.fetch
+
+  try {
+    let capturedUrl = ''
+    let capturedBody = null
+    globalThis.fetch = async (input, init) => {
+      capturedUrl = String(input)
+      capturedBody = JSON.parse(String(init?.body))
+      return new Response(JSON.stringify({ status: 'configured' }), { status: 200 })
+    }
+
+    const result = await configureOrbitdbRelaySetup({
+      hostIpv4: '62.141.40.252',
+      publicIpv6: '2a01:4f8:c010:4b5::42',
+      setupPort: 28080,
+      tcpPort: 28191,
+      wsPort: 28192,
+      proxyUrl: 'https://dragon-belt-friend-share.2n6.me',
+      metricsPort: 28190,
+      metricsHttpsPort: 29443,
+      webrtcPort: 28193,
+      quicPort: 28194
+    })
+
+    assert.deepEqual(result, { status: 'configured' })
+    assert.match(capturedUrl, /^http:\/\/62\.141\.40\.252:28080\/configure\?_ts=\d+$/)
+    assert.deepEqual(capturedBody, {
+      public_ipv4: '62.141.40.252',
+      public_ipv6: '2a01:4f8:c010:4b5::42',
+      tcp_port: 28191,
+      ws_port: 28192,
+      proxy_url: 'https://dragon-belt-friend-share.2n6.me',
+      metrics_port: 28190,
+      metrics_https_port: 29443,
+      webrtc_port: 28193,
+      quic_port: 28194
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('configureOrbitdbRelaySetup treats timed out setup requests as unconfirmed', async () => {
+  const originalFetch = globalThis.fetch
+
+  try {
+    globalThis.fetch = async () =>
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new DOMException('The operation was aborted.', 'AbortError')), 0)
+      })
+
+    const result = await configureOrbitdbRelaySetup({
+      hostIpv4: '62.141.40.252',
+      setupPort: 28080,
+      tcpPort: 28191,
+      wsPort: 28192
+    })
+
     assert.deepEqual(result, { status: 'unconfirmed' })
   } finally {
     globalThis.fetch = originalFetch

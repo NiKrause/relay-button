@@ -12,7 +12,9 @@ import type {
   InstanceAllocation,
   InstanceMessage,
   MessageReference,
-  MessageStatus
+  MessageStatus,
+  RelaySetupRequest,
+  RelaySetupResult
 } from './types'
 
 export const DEFAULT_ALEPH_API_HOST = 'https://api2.aleph.im'
@@ -156,6 +158,48 @@ export async function notifyCrnAllocation(crnUrl: string, itemHash: string): Pro
     }
 
     return { status: 'confirmed' }
+  } catch (error) {
+    if (isUnconfirmedNetworkError(error)) {
+      return { status: 'unconfirmed' }
+    }
+
+    throw error
+  }
+}
+
+export async function configureOrbitdbRelaySetup(args: RelaySetupRequest): Promise<RelaySetupResult> {
+  const targetUrl = `http://${args.hostIpv4}:${args.setupPort}/configure`
+
+  try {
+    const response = await fetchWithTimeout(
+      targetUrl,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'text/plain;charset=UTF-8'
+        },
+        body: JSON.stringify({
+          public_ipv4: args.hostIpv4,
+          public_ipv6: args.publicIpv6 ?? undefined,
+          tcp_port: args.tcpPort,
+          ws_port: args.wsPort,
+          proxy_url: args.proxyUrl ?? undefined,
+          metrics_port: args.metricsPort ?? undefined,
+          metrics_https_port: args.metricsHttpsPort ?? undefined,
+          webrtc_port: args.webrtcPort ?? undefined,
+          quic_port: args.quicPort ?? undefined
+        }),
+        mode: 'cors'
+      },
+      30000
+    )
+
+    if (!response.ok) {
+      const responseText = await response.text().catch(() => '')
+      throw new Error(`Relay setup request failed: ${response.status}${responseText ? ` ${responseText}` : ''}`)
+    }
+
+    return { status: 'configured' }
   } catch (error) {
     if (isUnconfirmedNetworkError(error)) {
       return { status: 'unconfirmed' }

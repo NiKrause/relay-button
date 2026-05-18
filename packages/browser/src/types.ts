@@ -166,6 +166,23 @@ export interface AllocationNotifyResult {
   status: 'confirmed' | 'unconfirmed'
 }
 
+export interface RelaySetupRequest {
+  hostIpv4: string
+  publicIpv6?: string | null
+  setupPort: number
+  tcpPort: number
+  wsPort: number
+  proxyUrl?: string | null
+  metricsPort?: number | null
+  metricsHttpsPort?: number | null
+  webrtcPort?: number | null
+  quicPort?: number | null
+}
+
+export interface RelaySetupResult {
+  status: 'configured' | 'unconfirmed'
+}
+
 export interface AlephBroadcastMessage {
   sender: string
   chain: AlephSenderChain
@@ -202,6 +219,7 @@ export interface AlephBrowserClient {
   fetchMessageEnvelope(itemHash: string): Promise<AlephMessageEnvelope | null>
   fetchSchedulerAllocation(itemHash: string): Promise<InstanceAllocation | null>
   notifyCrnAllocation(crnUrl: string, itemHash: string): Promise<AllocationNotifyResult>
+  configureOrbitdbRelaySetup(args: RelaySetupRequest): Promise<RelaySetupResult>
   inspectDeploymentResult(itemHash: string, rootfsRef?: string): Promise<DeploymentInspectionResult>
   waitForDeploymentResult(
     itemHash: string,

@@ -1,6 +1,7 @@
 import {
   broadcastAlephMessage,
   broadcastInstanceMessage,
+  configureOrbitdbRelaySetup,
   DEFAULT_ALEPH_API_HOST,
   DEFAULT_CRN_LIST_URL,
   DEFAULT_ALEPH_SCHEDULER_API_HOST,
@@ -47,6 +48,9 @@ export function createAlephBrowserClient(options: CreateAlephBrowserClientOption
     },
     notifyCrnAllocation(crnUrl, itemHash) {
       return notifyCrnAllocation(crnUrl, itemHash)
+    },
+    configureOrbitdbRelaySetup(args) {
+      return configureOrbitdbRelaySetup(args)
     },
     inspectDeploymentResult(itemHash, rootfsRef) {
       return inspectDeploymentResult(itemHash, rootfsRef, apiHost)
