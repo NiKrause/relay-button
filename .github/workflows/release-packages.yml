@@ -73,6 +73,7 @@ jobs:
             packages/shared-types/dist/*.tgz
             packages/core/dist/*.tgz
             packages/rootfs/dist/*.tgz
+            packages/browser/dist/*.tgz
             packages/node/dist/*.tgz
 
       - name: Verify npm token is configured

@@ -15,12 +15,12 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "build:publishable": "pnpm --filter @le-space/shared-types run build:publish && pnpm --filter @le-space/core run build:publish && pnpm --filter @le-space/rootfs run build:publish && pnpm --filter @le-space/node run build:publish",
+    "build:publishable": "pnpm --filter @le-space/shared-types run build:publish && pnpm --filter @le-space/core run build:publish && pnpm --filter @le-space/rootfs run build:publish && pnpm --filter @le-space/browser run build:publish && pnpm --filter @le-space/node run build:publish",
     "publish:prepare": "pnpm build:publishable && node ./scripts/prepare-publish.mjs",
     "publish:prepare:npm": "NPM_SCOPE=${NPM_SCOPE:-le-space} pnpm publish:prepare",
     "release:preview": "pnpm publish:prepare && node ./scripts/publish-from-dist.mjs --dry-run --tag next",
     "repo:setup:print": "node ./scripts/print-repo-setup-commands.mjs",
-    "test": "pnpm --filter @le-space/core test && pnpm --filter @le-space/shared-types test && pnpm --filter @le-space/rootfs test && pnpm --filter @le-space/node test",
+    "test": "pnpm --filter @le-space/core test && pnpm --filter @le-space/shared-types test && pnpm --filter @le-space/rootfs test && pnpm --filter @le-space/browser test && pnpm --filter @le-space/node test",
     "lint": "pnpm -r lint",
     "docs:dev": "pnpm --dir docs/docusaurus start",
     "docs:build": "pnpm --dir docs/docusaurus build"

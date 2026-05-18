@@ -72,18 +72,27 @@ This package is the correct place for:
 
 ## `@le-space/browser`
 
-Not released yet.
+Not released yet, but now has a concrete extraction plan.
 
-This package is reserved for the browser and PWA integration path.
+This package is for the browser and PWA integration path.
 
-Expected later responsibilities:
+Planned first-wave responsibilities:
 
-- wallet-driven signing
 - browser fetch composition
-- deployment polling helpers for UI flows
+- Aleph API polling and result normalization
+- RootFS manifest load and resolution helpers
+- pricing fetch helpers
 - browser-safe wrappers around the shared core
 
-It is still intentionally early.
+Keep local to apps for now:
+
+- wallet-provider integrations
+- prepaid product logic
+- UI state and rendering
+
+See also:
+
+- `browser-extraction-plan`
 
 ## `@le-space/rootfs`
 

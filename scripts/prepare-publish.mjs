@@ -17,6 +17,9 @@ const publishTargets = [
     dir: 'rootfs'
   },
   {
+    dir: 'browser'
+  },
+  {
     dir: 'node'
   }
 ]
