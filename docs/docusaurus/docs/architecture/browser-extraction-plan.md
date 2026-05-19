@@ -14,16 +14,23 @@ The goals are:
 
 The current PWA already reuses shared logic for:
 
-- RootFS manifest validation
+- RootFS manifest validation and browser-side RootFS resolution
 - FORGET message construction helpers
-- selected deployment helpers
+- selected deployment helpers and deployment intent helpers
+- Aleph API polling, deployment-result inspection, and scheduler lookup
+- browser EVM helpers:
+  - `ethCall`
+  - `sendTransaction`
+  - `personalSign`
+- prepaid vault protocol helpers:
+  - chain-id mapping
+  - budget formatting
+  - vault balance/reservation reads
+  - vault transaction helpers
 - contract-driven `uc-go-peer` rootfs paths and guest-script behavior
 
-The remaining browser-side code still lives mostly in
-`relay-deployer-pwa/src/lib/`.
-
-Some of those files already contain unrelated local work in progress, so the
-browser extraction path should start with the cleanest reusable modules first.
+The remaining browser-side code still lives partly in
+`relay-deployer-pwa/src/lib/`, but the package boundary is much clearer now.
 
 ## Extraction Principles
 
@@ -48,7 +55,7 @@ The package should *not* own:
 
 - Svelte/UI state
 - MetaMask or wallet-provider UX flows
-- prepaid vault product logic
+- prepaid enforcement policy and app-specific warnings
 - app-specific wording and presentation
 
 ## Preferred Public Surface
@@ -72,27 +79,34 @@ This keeps the package easier to understand for a second, simpler PWA.
 
 The current `relay-deployer-pwa/src/lib/` files map roughly like this.
 
-### First-wave shared browser candidates
+### Completed first-wave shared browser slices
 
 - `http.ts`
-  - move into `@le-space/browser` as-is
+  - moved into `@le-space/browser`
 - `alephApi.ts`
-  - extract reusable HTTP, polling, envelope parsing, status normalization, and
-    runtime inspection helpers
+  - reusable HTTP, polling, envelope parsing, status normalization, and
+    selected runtime inspection helpers extracted
 - `rootfsManifest.ts`
-  - continue moving rootfs lookup and resolution helpers into shared browser
-    code
+  - rootfs lookup and resolution helpers extracted
 - `pricing.ts`
-  - move Aleph pricing aggregate fetch/parse helpers into shared browser code
+  - pricing aggregate fetch/parse helpers extracted
+- low-level wallet RPC helpers
+  - `ethCall`
+  - `sendTransaction`
+  - `personalSign`
+- prepaid vault protocol helpers
+  - balance/reservation reads
+  - vault transaction helpers
 
-### Second-wave shared browser candidates
+### Remaining second-wave shared browser candidates
 
 - `portForwarding.ts`
-  - reusable if multiple deployer UIs will manage instance networking
+  - already mostly shared through `@le-space/core`; browser-side review only if
+    a second deployer UI needs a cleaner direct surface
 - selective pieces of `deployment.ts`
   - only UI-neutral validation and quoting helpers, not the full form model
 - selected browser-facing types from `types.ts`
-  - extract only after the shared browser API is clearer
+  - continue shrinking local aliases where the shared browser API is now stable
 
 ### Likely app-local for now
 
@@ -107,7 +121,7 @@ foundational enough for the first browser package.
 
 ## Proposed `@le-space/browser` v1 Layout
 
-Start with a small package structure:
+Current package structure:
 
 ```text
 packages/browser/
@@ -115,6 +129,9 @@ packages/browser/
     index.ts
     http.ts
     aleph-api.ts
+    client.ts
+    evm.ts
+    prepaid.ts
     rootfs.ts
     pricing.ts
     types.ts
@@ -140,14 +157,39 @@ Own:
 - `fetchCrnExecutionMap`
 - `notifyCrnAllocation`
 - `configureOrbitdbRelaySetup`
-- `createAlephBrowserClient`
 - `broadcastAlephMessage`
 - `broadcastInstanceMessage`
 - `inspectDeploymentResult`
 - `waitForDeploymentResult`
-- `fetch2n6WebAccessUrl`
 - `normalizeExecution`
-- `fetchInstanceRuntimeDetails`
+
+### `client.ts`
+
+Own:
+
+- `createAlephBrowserClient`
+
+### `evm.ts`
+
+Own:
+
+- `ethCall`
+- `sendTransaction`
+- `personalSign`
+
+### `prepaid.ts`
+
+Own:
+
+- `paymentChainFromChainId`
+- `formatBudgetUnits`
+- `loadPrepaidReservation`
+- `loadPrepaidVaultSnapshot`
+- `approvePrepaidBudget`
+- `depositPrepaidBudget`
+- `reserveDeploymentBudget`
+- `consumeDeploymentReservation`
+- `refundExpiredReservation`
 
 ### `rootfs.ts`
 
@@ -176,16 +218,19 @@ Own only browser-neutral exported result shapes needed by the modules above.
 4. Extract `alephApi.ts` into `@le-space/browser`.
 5. Extract `pricing.ts` into `@le-space/browser`.
 6. Extract the remaining `rootfsManifest.ts` browser helpers.
-7. Adopt those modules back into `relay-deployer-pwa`.
-8. Reassess what a second simpler PWA still needs.
+7. Extract generic browser EVM helpers.
+8. Extract prepaid vault protocol helpers.
+9. Reassess what a second simpler PWA still needs.
 
 ## Why This Order
 
-`alephApi.ts` plus `http.ts` gives the biggest reusable value first:
+`alephApi.ts` plus `http.ts` gave the biggest reusable value first:
 
 - a shared browser-safe Aleph client layer
 - shared polling and normalization behavior
 - less duplicated network logic in future browser apps
 
-That is a better first milestone than starting with wallet or prepaid code,
-which are more app-specific.
+The later EVM and prepaid extractions are intentionally narrower:
+
+- share the protocol client pieces
+- keep wallet UX and prepaid enforcement policy local to apps

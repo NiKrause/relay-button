@@ -72,22 +72,29 @@ This package is the correct place for:
 
 ## `@le-space/browser`
 
-Not released yet, but now has a concrete extraction plan.
+This package is the shared browser and PWA integration layer.
 
-This package is for the browser and PWA integration path.
-
-Planned first-wave responsibilities:
+Current responsibilities:
 
 - browser fetch composition
 - Aleph API polling and result normalization
+- typed browser client surface
 - RootFS manifest load and resolution helpers
 - pricing fetch helpers
-- browser-safe wrappers around the shared core
+- browser-safe EVM helpers:
+  - `ethCall`
+  - `sendTransaction`
+  - `personalSign`
+- browser-safe prepaid vault protocol helpers:
+  - chain-id mapping
+  - budget formatting
+  - vault balance/reservation reads
+  - vault transaction helpers
 
 Keep local to apps for now:
 
-- wallet-provider integrations
-- prepaid product logic
+- wallet-provider UX and account connection flow
+- prepaid enforcement policy and warnings
 - UI state and rendering
 
 See also:
