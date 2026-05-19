@@ -12,6 +12,26 @@ import { DEFAULT_ALEPH_CHANNEL } from './constants.ts'
 export const SSH_PUBLIC_KEY_PATTERN =
   /^(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com)\s+[A-Za-z0-9+/]+={0,3}(?:\s+.+)?$/
 
+export interface TierSpec {
+  vcpus: number
+  memoryMiB: number
+  diskMiB: number
+}
+
+export interface PaymentQuote {
+  required: number
+  available: number
+  computeUnits: number
+  unitPrice: number
+  label: 'credits'
+}
+
+function toFiniteNumber(value: unknown): number {
+  if (typeof value === 'number') return value
+  if (typeof value === 'string' && value.trim()) return Number(value)
+  return Number.NaN
+}
+
 export function normalizeSshPublicKey(value: string): string {
   return value
     .split(/\r?\n/g)
@@ -32,6 +52,63 @@ export function createReleaseMetadata(name: string, rootfsVersion: string, deplo
     rootfs_version: rootfsVersion,
     deployer
   }
+}
+
+export function selectedTier<TTier extends { id: string }>(
+  pricing: { tiers: TTier[] } | null,
+  tierId: string
+): TTier | null {
+  return pricing?.tiers.find((tier) => tier.id === tierId) ?? null
+}
+
+export function tierSpec<TTier extends { compute_units: number }>(
+  pricing: {
+    compute_unit: {
+      vcpus: number
+      memory_mib: number
+      disk_mib: number
+    }
+  },
+  tier: TTier
+): TierSpec {
+  return {
+    vcpus: pricing.compute_unit.vcpus * tier.compute_units,
+    memoryMiB: pricing.compute_unit.memory_mib * tier.compute_units,
+    diskMiB: pricing.compute_unit.disk_mib * tier.compute_units
+  }
+}
+
+export function buildPaymentQuote<TTier extends { compute_units: number }>(
+  tier: TTier,
+  pricing: {
+    price: {
+      compute_unit?: {
+        credit?: string | number | null
+      } | null
+    }
+  },
+  balance: {
+    credit_balance?: number | null
+  }
+): PaymentQuote | null {
+  const computeUnitPrice = pricing.price.compute_unit
+  if (!computeUnitPrice) return null
+
+  const unitPrice = toFiniteNumber(computeUnitPrice.credit)
+  if (!Number.isFinite(unitPrice)) return null
+
+  return {
+    required: unitPrice * tier.compute_units,
+    available: Number(balance.credit_balance ?? 0),
+    computeUnits: tier.compute_units,
+    unitPrice,
+    label: 'credits'
+  }
+}
+
+export function quoteRequiredBudgetUnits(quote: PaymentQuote | null): bigint {
+  if (!quote) return 0n
+  return BigInt(Math.ceil(quote.required * 1_000_000_000_000_000_000))
 }
 
 export function createInstanceContent(args: {

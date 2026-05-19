@@ -2,13 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  buildPaymentQuote,
   createDeploymentIntent,
   createInstanceContent,
   createReleaseMetadata,
   createUnsignedInstanceMessage,
   deployInstance,
   isValidSshPublicKey,
-  normalizeSshPublicKey
+  normalizeSshPublicKey,
+  quoteRequiredBudgetUnits,
+  selectedTier,
+  tierSpec
 } from '../src/instance-deployment.ts'
 
 test('normalizeSshPublicKey collapses multiline and repeated whitespace', () => {
@@ -30,6 +34,80 @@ test('createReleaseMetadata returns the shared metadata shape', () => {
     rootfs_version: 'v1',
     deployer: 'custom-deployer'
   })
+})
+
+test('selectedTier finds the matching tier by id', () => {
+  assert.deepEqual(
+    selectedTier(
+      {
+        tiers: [
+          { id: 'tier-1', compute_units: 1 },
+          { id: 'tier-2', compute_units: 2 }
+        ]
+      },
+      'tier-2'
+    ),
+    { id: 'tier-2', compute_units: 2 }
+  )
+  assert.equal(selectedTier({ tiers: [{ id: 'tier-1', compute_units: 1 }] }, 'missing'), null)
+})
+
+test('tierSpec expands pricing compute units into concrete resources', () => {
+  assert.deepEqual(
+    tierSpec(
+      {
+        compute_unit: {
+          vcpus: 1,
+          memory_mib: 2048,
+          disk_mib: 20480
+        }
+      },
+      { id: 'tier-3', compute_units: 4 }
+    ),
+    {
+      vcpus: 4,
+      memoryMiB: 8192,
+      diskMiB: 81920
+    }
+  )
+})
+
+test('buildPaymentQuote computes required credits from tier compute units', () => {
+  const quote = buildPaymentQuote(
+    { id: 'tier-2', compute_units: 2 },
+    {
+      price: {
+        compute_unit: {
+          credit: '14250'
+        }
+      }
+    },
+    {
+      credit_balance: 60000
+    }
+  )
+
+  assert.deepEqual(quote, {
+    required: 28500,
+    available: 60000,
+    computeUnits: 2,
+    unitPrice: 14250,
+    label: 'credits'
+  })
+})
+
+test('quoteRequiredBudgetUnits rounds credit quotes to wei-like bigint units', () => {
+  assert.equal(
+    quoteRequiredBudgetUnits({
+      required: 1.25,
+      available: 10,
+      computeUnits: 1,
+      unitPrice: 1.25,
+      label: 'credits'
+    }),
+    1250000000000000000n
+  )
+  assert.equal(quoteRequiredBudgetUnits(null), 0n)
 })
 
 test('createInstanceContent builds a valid Aleph instance payload', () => {
