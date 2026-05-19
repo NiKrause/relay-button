@@ -21,7 +21,7 @@ export interface CrnRecord {
   hash: string
   name?: string
   address?: string
-  score?: number | string
+  score?: number | string | null
   qemu_support?: boolean
   city?: string | null
   region?: string | null

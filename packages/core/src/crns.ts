@@ -62,7 +62,10 @@ function countryNameFromCode(value: string | null): string | null {
   }
 }
 
-function compatibleCrns(crns: ReadonlyArray<CrnRecord>, excludedHashes: ReadonlyArray<string> = []): CrnRecord[] {
+function compatibleCrns<TCrn extends CrnRecord>(
+  crns: ReadonlyArray<TCrn>,
+  excludedHashes: ReadonlyArray<string> = []
+): TCrn[] {
   const excluded = new Set(excludedHashes.filter(Boolean))
 
   return [...crns].filter((crn) => {
@@ -86,7 +89,7 @@ function hasCrnCapacity(crn: CrnRecord, spec: CrnCapacitySpec | null | undefined
   return cpuOk && memoryOk && diskOk
 }
 
-function scoreSortedCrns(crns: ReadonlyArray<CrnRecord>): CrnRecord[] {
+function scoreSortedCrns<TCrn extends CrnRecord>(crns: ReadonlyArray<TCrn>): TCrn[] {
   return [...crns].sort((left, right) => {
     const rightScore = typeof right.score === 'number' ? right.score : Number(right.score ?? Number.NEGATIVE_INFINITY)
     const leftScore = typeof left.score === 'number' ? left.score : Number(left.score ?? Number.NEGATIVE_INFINITY)
@@ -98,13 +101,13 @@ function scoreSortedCrns(crns: ReadonlyArray<CrnRecord>): CrnRecord[] {
   })
 }
 
-export function filterDeployableCrns(
-  crns: ReadonlyArray<CrnRecord>,
+export function filterDeployableCrns<TCrn extends CrnRecord>(
+  crns: ReadonlyArray<TCrn>,
   options: {
     excludedHashes?: ReadonlyArray<string>
     spec?: CrnCapacitySpec | null
   } = {}
-): CrnRecord[] {
+): TCrn[] {
   return scoreSortedCrns(
     compatibleCrns(crns, options.excludedHashes).filter((crn) => hasCrnCapacity(crn, options.spec))
   )
