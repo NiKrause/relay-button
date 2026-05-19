@@ -39,8 +39,8 @@ The repository currently contains working Aleph-specific support for:
 Some parts are still intentionally incomplete:
 
 - `@le-space/browser`
-  not released yet
-  future-facing
+  now published and usable
+  still evolving, but already owns shared browser/PWA deployment helpers
 - the reusable workflow layer is still evolving
 - some docs still describe current direction rather than final public API shape
 
@@ -58,8 +58,9 @@ Some parts are still intentionally incomplete:
   Node adapters and Aleph runner entrypoints for CI and automation.
 - `packages/browser`
   package: `@le-space/browser`
-  not released yet
-  Reserved for browser and wallet-driven Aleph flows.
+  Browser-safe Aleph deployment helpers for PWAs and other browser clients.
+  Current scope includes API polling, RootFS resolution, pricing, browser EVM
+  helpers, and prepaid vault protocol helpers.
 - `packages/rootfs`
   package: `@le-space/rootfs`
   RootFS planning, manifests, reference assets, and build helpers.

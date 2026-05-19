@@ -30,8 +30,9 @@ Packages use the `@le-space/*` scope.
 - `@le-space/rootfs`
   RootFS planning, manifests, reference assets, and build helpers.
 - `@le-space/browser`
-  not released yet
-  Reserved for future browser and wallet-driven Aleph flows.
+  Browser-safe Aleph deployment helpers for PWAs and other browser clients.
+  Current scope includes Aleph API polling, RootFS resolution, pricing,
+  browser EVM helpers, and prepaid vault protocol helpers.
 
 ### GitHub Automation
 

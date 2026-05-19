@@ -1,6 +1,6 @@
 # @le-space/browser
 
-This package is the planned browser/PWA-facing layer for reusable Aleph
+This package is the browser/PWA-facing shared layer for reusable Aleph
 deployment primitives.
 
 It is intended to sit between:
@@ -9,8 +9,8 @@ It is intended to sit between:
 - `@le-space/rootfs`
 - browser applications such as deployment PWAs
 
-The package should stay UI-neutral. It should provide browser-safe helpers, but
-it should not own app-specific Svelte state, prepaid product logic, or wallet
+The package should stay UI-neutral. It provides browser-safe helpers, but it
+does not own app-specific Svelte state, prepaid enforcement policy, or wallet
 UX.
 
 ## Client Surface
@@ -46,7 +46,7 @@ The package also exports lower-level browser/EVM helpers for:
 
 ## Planned v1 Scope
 
-The first real extraction wave should cover:
+The package currently covers:
 
 - `http.ts`
   - `fetchWithTimeout`
@@ -54,16 +54,21 @@ The first real extraction wave should cover:
   - balance fetch
   - CRN fetch
   - instance listing
-  - typed browser client factory
   - Aleph message broadcast helpers
   - deployment polling and result inspection
-  - runtime detail inspection
+  - scheduler and CRN runtime lookup helpers
+- `client.ts`
+  - typed browser client factory
 - `rootfs.ts`
   - RootFS manifest load
   - RootFS existence check
   - RootFS reference resolution
 - `pricing.ts`
   - instance pricing fetch and parse helpers
+- `evm.ts`
+  - `ethCall`
+  - `sendTransaction`
+  - `personalSign`
 - `prepaid.ts`
   - reusable prepaid vault protocol helpers
 
