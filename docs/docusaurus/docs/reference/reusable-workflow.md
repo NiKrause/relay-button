@@ -32,6 +32,11 @@ Specifically:
 If `deploy_vm=true` is passed today, the workflow fails fast on purpose and
 tells the caller to use the shared deploy action separately.
 
+This limitation applies to the shared reusable workflow in
+`shared-aleph-tooling` itself. Consumer repositories such as
+`universal-connectivity` may still layer their own VM deployment workflow on
+top of the shared RootFS stage.
+
 ## Inputs
 
 Current supported inputs:
