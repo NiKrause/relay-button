@@ -100,6 +100,11 @@ Useful references:
 - [docs/docusaurus/docs/architecture/package-boundaries.md](./docs/docusaurus/docs/architecture/package-boundaries.md)
 - [docs/docusaurus/docs/reference/github-action.md](./docs/docusaurus/docs/reference/github-action.md)
 
+## Support
+
+If this repo helps your Aleph, libp2p, or deployment work, you can support it via
+[GitHub Sponsors](https://github.com/sponsors/NiKrause).
+
 ## Examples And Real Integrations
 
 The `examples/` directory contains thin reference skeletons and integration
