@@ -70,6 +70,7 @@ ROOTFS_BUILD_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/uc-go-peer-build.XXXXXX")"
   cd "${PROJECT_DIR}/go-peer"
   GOMODCACHE="${ROOTFS_BUILD_TMPDIR}/gomodcache" \
   GOCACHE="${ROOTFS_BUILD_TMPDIR}/gocache" \
+  GOFLAGS="-modcacherw" \
   CGO_ENABLED=0 \
   go build -ldflags="-w -s" -o "${APP_BINARY}" .
 )
