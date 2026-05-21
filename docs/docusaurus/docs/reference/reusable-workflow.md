@@ -147,3 +147,17 @@ That package-based approach is still the more flexible option when:
 
 The reusable workflow is best understood as a shared RootFS stage, not yet a
 complete shared deployment system.
+
+## Site Publish Consumers
+
+When a consumer repository uses `@le-space/node` directly for site publishing,
+install the shared Python helper requirements from the tooling repository
+instead of naming those packages ad hoc in the consumer workflow:
+
+```bash
+python3 -m pip install -r packages/node/reference/requirements-site-publish.txt
+python3 -m pip install aleph-client
+```
+
+That keeps the dependency contract for `publish-static-site.py` owned by
+`shared-aleph-tooling`.

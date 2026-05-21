@@ -71,6 +71,10 @@ function defaultSitePublishScriptPath(): string {
   return fileURLToPath(new URL('../reference/publish-static-site.py', import.meta.url))
 }
 
+function defaultSitePublishRequirementsPath(): string {
+  return fileURLToPath(new URL('../reference/requirements-site-publish.txt', import.meta.url))
+}
+
 function mergedAddrs(env: NodeJS.ProcessEnv = process.env): string[] {
   const combined: string[] = []
   for (const key of ['PROBE_MULTIADDRS_JSON', 'BROWSER_BOOTSTRAP_MULTIADDRS_JSON']) {
@@ -88,6 +92,7 @@ function mergedAddrs(env: NodeJS.ProcessEnv = process.env): string[] {
 export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const projectDir = requiredEnv('ALEPH_SITE_PROJECT_DIR', env)
   const publishScript = optionalEnv('ALEPH_SITE_PUBLISH_SCRIPT', defaultSitePublishScriptPath(), env)
+  const publishRequirements = optionalEnv('ALEPH_SITE_PUBLISH_REQUIREMENTS', defaultSitePublishRequirementsPath(), env)
   const siteDirectory = requiredEnv('ALEPH_SITE_DIRECTORY', env)
   const pythonBin = optionalEnv('ALEPH_SITE_PYTHON', 'python3', env)
   const alephBin = optionalEnv('ALEPH_SITE_ALEPH_BIN', 'aleph', env)
@@ -97,6 +102,12 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
   process.stdout.write(publish.stdout)
   if (publish.stderr) process.stderr.write(publish.stderr)
   if (publish.exitCode !== 0) {
+    if (publish.stderr.includes('No module named') || publish.stderr.includes('cannot import name')) {
+      throw new Error(
+        `${publishScript} is missing Python dependencies. Install them with ` +
+        `"${pythonBin} -m pip install -r ${publishRequirements}".`
+      )
+    }
     throw new Error(`${publishScript} failed with exit code ${publish.exitCode}`)
   }
 

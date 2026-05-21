@@ -90,6 +90,14 @@ Useful commands:
 - `pnpm docs:dev`
 - `pnpm docs:build`
 
+Site publishing through `runSiteMode(...)` also needs the Python requirements
+used by `packages/node/reference/publish-static-site.py`:
+
+```bash
+python3 -m pip install -r packages/node/reference/requirements-site-publish.txt
+python3 -m pip install aleph-client
+```
+
 ## Documentation
 
 Docs site:
