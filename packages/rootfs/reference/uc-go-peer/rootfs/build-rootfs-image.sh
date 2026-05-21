@@ -12,6 +12,8 @@ IMAGE="${OUT_DIR}/aleph-uc-go-peer.qcow2"
 APP_BINARY="${OUT_DIR}/universal-chat-go"
 ROOTFS_IMAGE_SIZE="${ROOTFS_IMAGE_SIZE:-20G}"
 ROOTFS_BUILD_TMPDIR=""
+HOST_UID="${HOST_UID:-}"
+HOST_GID="${HOST_GID:-}"
 
 require() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -103,3 +105,7 @@ virt-customize \
   --run-command "systemctl enable ${ROOTFS_CONTRACT_MAIN_SERVICE}"
 
 echo "Rootfs image ready at ${IMAGE}"
+
+if [ -n "${HOST_UID}" ] && [ -n "${HOST_GID}" ]; then
+  chown -R "${HOST_UID}:${HOST_GID}" "${OUT_DIR}"
+fi

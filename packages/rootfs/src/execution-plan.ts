@@ -87,6 +87,8 @@ export function createDockerRootfsExecutionPlan(
   const containerProjectDir = projectMountPath;
   const containerContractPath = containerPathForProjectFile(plan.contractPath, plan.projectDir, projectMountPath, 'contractPath');
   const containerOutDir = containerPathForProjectFile(plan.outDir, plan.projectDir, projectMountPath, 'outDir');
+  const hostUid = typeof process.getuid === 'function' ? String(process.getuid()) : '1000';
+  const hostGid = typeof process.getgid === 'function' ? String(process.getgid()) : '1000';
 
   return {
     mode: 'docker',
@@ -123,6 +125,10 @@ export function createDockerRootfsExecutionPlan(
         `ROOTFS_IMAGE_SIZE=${plan.rootfsImageSize}`,
         '-e',
         `PROJECT_DIR=${containerProjectDir}`,
+        '-e',
+        `HOST_UID=${hostUid}`,
+        '-e',
+        `HOST_GID=${hostGid}`,
         '-v',
         `${plan.projectDir}:${projectMountPath}`,
         '-v',
