@@ -7,6 +7,7 @@ import { inspectMessageResult } from "../../core/src/deployment-inspection.ts"
 
 import { optionalEnv, requiredEnv } from "./env.ts"
 import { appendGithubOutput, appendGithubSummary } from "./github-outputs.ts"
+import { createPrivateKeyIdentity } from "./signer.ts"
 
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 const BASE32_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567'
@@ -75,6 +76,27 @@ async function waitForAlephMessage(itemHash: string, env: NodeJS.ProcessEnv = pr
 interface SitePublishResult {
   cidV0: string
   cidV1: string
+}
+
+interface AlephIpfsPinRequest {
+  message: {
+    chain: 'ETH'
+    channel: string
+    type: 'IPFS_PIN'
+    timestamp: number
+    content: {
+      hash: string
+    }
+  }
+  signature: string
+  address: string
+}
+
+interface AlephIpfsPinResponse {
+  item_hash?: unknown
+  status?: unknown
+  error?: unknown
+  details?: unknown
 }
 
 function encodeVarint(value: number): Uint8Array {
@@ -224,11 +246,53 @@ function mergedAddrs(env: NodeJS.ProcessEnv = process.env): string[] {
   return Array.from(new Set(combined))
 }
 
+async function pinIpfsCidOnAleph(cidV0: string, env: NodeJS.ProcessEnv = process.env): Promise<string> {
+  const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
+  const channel = optionalEnv('ALEPH_SITE_CHANNEL', 'TEST', env)
+  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api2.aleph.im', env)
+  const identity = await createPrivateKeyIdentity(privateKey)
+  const timestamp = Math.floor(Date.now() / 1000)
+  const message: AlephIpfsPinRequest['message'] = {
+    chain: 'ETH',
+    channel,
+    type: 'IPFS_PIN',
+    timestamp,
+    content: {
+      hash: cidV0,
+    },
+  }
+  const serializedMessage = JSON.stringify(message)
+  const rawSignature = await identity.signer(identity.address, serializedMessage)
+  const signature = rawSignature.startsWith('0x') ? rawSignature : `0x${rawSignature}`
+  const requestBody: AlephIpfsPinRequest = {
+    message,
+    signature,
+    address: identity.address,
+  }
+
+  const response = await fetch(new URL('/api/v0/ipfs/pin', apiHost), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  })
+  const payload = (await response.json().catch(() => ({}))) as AlephIpfsPinResponse
+  if (!response.ok) {
+    throw new Error(`Aleph IPFS pin failed with ${response.status}: ${JSON.stringify(payload)}`)
+  }
+
+  const itemHash = typeof payload.item_hash === 'string' ? payload.item_hash : ''
+  if (!itemHash) {
+    throw new Error(`Aleph pin response did not include item_hash: ${JSON.stringify(payload)}`)
+  }
+  return itemHash
+}
+
 export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const projectDir = optionalEnv('ALEPH_SITE_PROJECT_DIR', process.cwd(), env)
   const siteDirectory = requiredEnv('ALEPH_SITE_DIRECTORY', env)
   const ipfsGateway = optionalEnv('ALEPH_SITE_IPFS_GATEWAY', 'https://ipfs-2.aleph.im', env)
-  const alephBin = optionalEnv('ALEPH_SITE_ALEPH_BIN', 'aleph', env)
   const pin = optionalEnv('ALEPH_SITE_PIN', 'true', env) === 'true'
 
   const publish = await uploadStaticSiteDirectory(siteDirectory, ipfsGateway)
@@ -241,17 +305,7 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
 
   let itemHash = ''
   if (pin) {
-    const pinResult = await runCapture(alephBin, ['file', 'pin', cidV0], { cwd: projectDir })
-    if (pinResult.stdout) process.stdout.write(pinResult.stdout)
-    if (pinResult.stderr) process.stderr.write(pinResult.stderr)
-    if (pinResult.exitCode !== 0) {
-      throw new Error(`aleph file pin ${cidV0} failed with exit code ${pinResult.exitCode}`)
-    }
-    const pinPayload = parseLastJsonObject(pinResult.stdout)
-    itemHash = String(pinPayload.item_hash ?? '')
-    if (!itemHash) {
-      throw new Error(`Aleph pin response did not include item_hash: ${JSON.stringify(pinPayload)}`)
-    }
+    itemHash = await pinIpfsCidOnAleph(cidV0, env)
     await appendGithubOutput('item_hash', itemHash, env)
     await waitForAlephMessage(itemHash, env)
   }

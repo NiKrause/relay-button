@@ -141,6 +141,67 @@ test('runSitePublishMode uploads dist through the Node IPFS client and emits out
   assert.match(summary, /IPFS CID v1: `bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku`/)
 })
 
+test('runSitePublishMode pins the CID through the direct Aleph REST API', async () => {
+  const { dir, outputFile, summaryFile } = await createOutputEnv('site-publish-pin-')
+  const siteDir = join(dir, 'dist')
+  await mkdir(siteDir, { recursive: true })
+  await writeFile(join(siteDir, 'index.html'), '<!doctype html><title>blog</title>')
+
+  const originalFetch = globalThis.fetch
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+  globalThis.fetch = (async (input, init) => {
+    calls.push({ url: String(input), init })
+    if (String(input).startsWith('https://ipfs-2.aleph.im/api/v0/add')) {
+      return new Response(JSON.stringify({ Name: '', Hash: 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (String(input) === 'https://api2.aleph.im/api/v0/ipfs/pin') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        message?: { type?: string; content?: { hash?: string }; channel?: string }
+        signature?: string
+        address?: string
+      }
+      assert.equal(init?.method, 'POST')
+      assert.equal(body.message?.type, 'IPFS_PIN')
+      assert.equal(body.message?.content?.hash, 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n')
+      assert.equal(body.message?.channel, 'TEST')
+      assert.match(String(body.signature ?? ''), /^0x[0-9a-fA-F]+$/)
+      assert.match(String(body.address ?? ''), /^0x[0-9a-fA-F]{40}$/)
+      return new Response(JSON.stringify({ item_hash: 'store123' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (String(input) === 'https://api2.aleph.im/api/v0/messages/store123') {
+      return new Response(JSON.stringify({ status: 'processed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    throw new Error(`Unexpected fetch call: ${String(input)}`)
+  }) as typeof fetch
+
+  try {
+    await runSitePublishMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_SITE_PROJECT_DIR: dir,
+      ALEPH_SITE_DIRECTORY: siteDir,
+      ALEPH_SITE_IPFS_GATEWAY: 'https://ipfs-2.aleph.im',
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+      ALEPH_SITE_PIN: 'true',
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, /item_hash=store123/)
+  assert.equal(calls.filter((call) => call.url === 'https://api2.aleph.im/api/v0/ipfs/pin').length, 1)
+})
+
 test('parseLastJsonObject parses multiline trailing JSON output', () => {
   const payload = parseLastJsonObject('prefix\n{\n  "item_hash": "abc123",\n  "content": {\n    "item_hash": "QmExample"\n  }\n}')
   assert.equal(payload.item_hash, 'abc123')
