@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { chmod, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -55,33 +55,43 @@ test('runProbeMode merges unique probe addresses and emits outputs', async () =>
 })
 
 test('runDomainLinkMode detaches and attaches the production domain', async () => {
-  const { dir, outputFile, summaryFile } = await createOutputEnv('site-domain-')
-  const fakeAleph = join(dir, 'aleph')
-  const commandLog = join(dir, 'commands.log')
-  await writeFile(fakeAleph, [
-    '#!/bin/sh',
-    'printf "%s\\n" "$*" >> "' + commandLog + '"',
-    'exit 0',
-    '',
-  ].join('\n'))
-  await chmod(fakeAleph, 0o755)
+  const { outputFile, summaryFile } = await createOutputEnv('site-domain-')
+  const originalFetch = globalThis.fetch
+  const requests: Array<Record<string, unknown>> = []
+  globalThis.fetch = (async (input, init) => {
+    if (String(input) !== 'https://api2.aleph.im/api/v0/messages') {
+      throw new Error(`Unexpected fetch call: ${String(input)}`)
+    }
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+    requests.push(body)
+    return new Response(JSON.stringify({ item_hash: `msg-${requests.length}`, message_status: 'processed' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }) as typeof fetch
 
-  await runDomainLinkMode({
-    GITHUB_OUTPUT: outputFile,
-    GITHUB_STEP_SUMMARY: summaryFile,
-    ALEPH_SITE_PROJECT_DIR: dir,
-    ALEPH_SITE_ALEPH_BIN: fakeAleph,
-    ALEPH_SITE_DOMAIN: 'relay.example.com',
-    ALEPH_SITE_ITEM_HASH: 'abcd1234',
-  })
+  try {
+    await runDomainLinkMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+      ALEPH_SITE_DOMAIN: 'relay.example.com',
+      ALEPH_SITE_ITEM_HASH: 'abcd1234',
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 
   const outputs = await readFile(outputFile, 'utf8')
-  const commands = await readFile(commandLog, 'utf8')
   assert.match(outputs, /domain=relay.example.com/)
   assert.match(outputs, /item_hash=abcd1234/)
   assert.match(outputs, /url=https:\/\/relay.example.com/)
-  assert.match(commands, /domain detach relay.example.com --no-ask/)
-  assert.match(commands, /domain attach relay.example.com --item-hash abcd1234 --catch-all-path \/index.html --no-ask/)
+  assert.match(outputs, /domain_message_hash=[a-f0-9]{64}/)
+  assert.equal(requests.length, 2)
+  const detachMessage = (((requests[0]?.message as Record<string, unknown>)?.item_content as string | undefined) ?? '')
+  const attachMessage = (((requests[1]?.message as Record<string, unknown>)?.item_content as string | undefined) ?? '')
+  assert.match(detachMessage, /"relay\.example\.com":null/)
+  assert.match(attachMessage, /"relay\.example\.com":\{"message_id":"abcd1234","type":"ipfs","programType":"ipfs","options":\{"catch_all_path":"\/index\.html"\}\}/)
 })
 
 test('cidV0ToV1 converts dag-pb CIDv0 values to lowercase base32 CIDv1', () => {
@@ -157,18 +167,34 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (String(input) === 'https://api2.aleph.im/api/v0/ipfs/pin') {
+    if (String(input) === 'https://api2.aleph.im/api/v0/messages') {
       const body = JSON.parse(String(init?.body ?? '{}')) as {
-        message?: { type?: string; content?: { hash?: string }; channel?: string }
+        message?: {
+          type?: string
+          channel?: string
+          item_content?: string
+          signature?: string
+        }
         signature?: string
-        address?: string
+      }
+      const message = (body.message ?? {}) as {
+        type?: string
+        channel?: string
+        item_content?: string
+        signature?: string
       }
       assert.equal(init?.method, 'POST')
-      assert.equal(body.message?.type, 'IPFS_PIN')
-      assert.equal(body.message?.content?.hash, 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n')
-      assert.equal(body.message?.channel, 'TEST')
-      assert.match(String(body.signature ?? ''), /^0x[0-9a-fA-F]+$/)
-      assert.match(String(body.address ?? ''), /^0x[0-9a-fA-F]{40}$/)
+      assert.equal(message.type, 'STORE')
+      assert.equal(message.channel, 'TEST')
+      assert.match(String(message.signature ?? body.signature ?? ''), /^0x[0-9a-fA-F]+$/)
+      const itemContent = JSON.parse(String(message.item_content ?? '{}')) as {
+        item_type?: string
+        item_hash?: string
+        address?: string
+      }
+      assert.equal(itemContent.item_type, 'ipfs')
+      assert.equal(itemContent.item_hash, 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n')
+      assert.match(String(itemContent.address ?? ''), /^0x[0-9a-fA-F]{40}$/)
       return new Response(JSON.stringify({ item_hash: 'store123' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -199,7 +225,7 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
 
   const outputs = await readFile(outputFile, 'utf8')
   assert.match(outputs, /item_hash=store123/)
-  assert.equal(calls.filter((call) => call.url === 'https://api2.aleph.im/api/v0/ipfs/pin').length, 1)
+  assert.equal(calls.filter((call) => call.url === 'https://api2.aleph.im/api/v0/messages').length, 1)
 })
 
 test('parseLastJsonObject parses multiline trailing JSON output', () => {

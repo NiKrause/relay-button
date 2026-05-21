@@ -1,8 +1,10 @@
 import process from "node:process"
 import { spawn } from "node:child_process"
+import { createHash } from "node:crypto"
 import { readFile, readdir } from "node:fs/promises"
 import { join, relative } from "node:path"
 
+import { broadcastAlephMessage, normalizeBroadcastStatus, publishAggregateKey, signAlephMessage } from "../../core/src/index.ts"
 import { inspectMessageResult } from "../../core/src/deployment-inspection.ts"
 
 import { optionalEnv, requiredEnv } from "./env.ts"
@@ -78,25 +80,21 @@ interface SitePublishResult {
   cidV1: string
 }
 
-interface AlephIpfsPinRequest {
-  message: {
-    chain: 'ETH'
-    channel: string
-    type: 'IPFS_PIN'
-    timestamp: number
-    content: {
-      hash: string
-    }
-  }
-  signature: string
+interface AlephStoreContent {
   address: string
+  time: number
+  item_type: 'ipfs'
+  item_hash: string
+  ref?: string
 }
 
-interface AlephIpfsPinResponse {
-  item_hash?: unknown
-  status?: unknown
-  error?: unknown
-  details?: unknown
+interface DomainAggregateEntry {
+  message_id: string
+  type: 'ipfs'
+  programType: 'ipfs'
+  options?: {
+    catch_all_path: string
+  } | null
 }
 
 function encodeVarint(value: number): Uint8Array {
@@ -246,45 +244,48 @@ function mergedAddrs(env: NodeJS.ProcessEnv = process.env): string[] {
   return Array.from(new Set(combined))
 }
 
+function defaultHasher(payload: string): string {
+  return createHash('sha256').update(payload).digest('hex')
+}
+
 async function pinIpfsCidOnAleph(cidV0: string, env: NodeJS.ProcessEnv = process.env): Promise<string> {
   const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
   const channel = optionalEnv('ALEPH_SITE_CHANNEL', 'TEST', env)
   const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api2.aleph.im', env)
+  const ref = optionalEnv('ALEPH_SITE_REF', '', env).trim() || undefined
   const identity = await createPrivateKeyIdentity(privateKey)
-  const timestamp = Math.floor(Date.now() / 1000)
-  const message: AlephIpfsPinRequest['message'] = {
-    chain: 'ETH',
-    channel,
-    type: 'IPFS_PIN',
-    timestamp,
-    content: {
-      hash: cidV0,
-    },
-  }
-  const serializedMessage = JSON.stringify(message)
-  const rawSignature = await identity.signer(identity.address, serializedMessage)
-  const signature = rawSignature.startsWith('0x') ? rawSignature : `0x${rawSignature}`
-  const requestBody: AlephIpfsPinRequest = {
-    message,
-    signature,
+  const now = Date.now() / 1000
+  const content: AlephStoreContent = {
     address: identity.address,
+    time: now,
+    item_type: 'ipfs',
+    item_hash: cidV0,
+    ...(ref ? { ref } : {}),
   }
-
-  const response = await fetch(new URL('/api/v0/ipfs/pin', apiHost), {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(requestBody),
+  const itemContent = JSON.stringify(content)
+  const unsignedMessage = {
+    sender: identity.address,
+    chain: 'ETH' as const,
+    type: 'STORE' as const,
+    item_hash: defaultHasher(itemContent),
+    item_type: 'inline' as const,
+    item_content: itemContent,
+    time: now,
+    channel,
+  }
+  const message = await signAlephMessage(unsignedMessage, identity.signer)
+  const { response, httpStatus } = await broadcastAlephMessage(message, {
+    apiHost,
+    sync: true,
+    fetch,
   })
-  const payload = (await response.json().catch(() => ({}))) as AlephIpfsPinResponse
-  if (!response.ok) {
-    throw new Error(`Aleph IPFS pin failed with ${response.status}: ${JSON.stringify(payload)}`)
+  const status = normalizeBroadcastStatus(httpStatus, response?.message_status)
+  if (status === 'rejected') {
+    throw new Error(`Aleph STORE pin was rejected: ${JSON.stringify(response?.details ?? response ?? {})}`)
   }
-
-  const itemHash = typeof payload.item_hash === 'string' ? payload.item_hash : ''
+  const itemHash = typeof response?.item_hash === 'string' ? response.item_hash : message.item_hash
   if (!itemHash) {
-    throw new Error(`Aleph pin response did not include item_hash: ${JSON.stringify(payload)}`)
+    throw new Error(`Aleph pin response did not include item_hash: ${JSON.stringify(response ?? {})}`)
   }
   return itemHash
 }
@@ -321,32 +322,58 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
 }
 
 export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): Promise<void> {
-  const projectDir = optionalEnv('ALEPH_SITE_PROJECT_DIR', process.cwd(), env)
+  const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
   const domain = requiredEnv('ALEPH_SITE_DOMAIN', env)
   const itemHash = requiredEnv('ALEPH_SITE_ITEM_HASH', env)
   const catchAllPath = optionalEnv('ALEPH_SITE_DOMAIN_CATCH_ALL_PATH', '/index.html', env)
-  const alephBin = optionalEnv('ALEPH_SITE_ALEPH_BIN', 'aleph', env)
+  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api2.aleph.im', env)
+  const identity = await createPrivateKeyIdentity(privateKey)
 
-  const detach = await runCapture(alephBin, ['domain', 'detach', domain, '--no-ask'], { cwd: projectDir })
-  if (detach.stdout) process.stdout.write(detach.stdout)
-  if (detach.stderr) process.stderr.write(detach.stderr)
+  const detachPublication = await publishAggregateKey({
+    sender: identity.address,
+    key: 'domains',
+    content: { [domain]: null },
+    signer: identity.signer,
+    hasher: async (payload) => defaultHasher(payload),
+    fetch,
+    channel: 'ALEPH-CLOUDSOLUTIONS',
+    apiHost,
+  })
+  if (detachPublication.status === 'rejected') {
+    throw new Error(`Aleph domain detach ${domain} was rejected: ${JSON.stringify(detachPublication.response ?? {})}`)
+  }
 
-  const attach = await runCapture(alephBin, ['domain', 'attach', domain, '--item-hash', itemHash, '--catch-all-path', catchAllPath, '--no-ask'], { cwd: projectDir })
-  if (attach.stdout) process.stdout.write(attach.stdout)
-  if (attach.stderr) process.stderr.write(attach.stderr)
-  if (attach.exitCode !== 0) {
-    throw new Error(`aleph domain attach ${domain} failed with exit code ${attach.exitCode}`)
+  const attachEntry: DomainAggregateEntry = {
+    message_id: itemHash,
+    type: 'ipfs',
+    programType: 'ipfs',
+    options: catchAllPath.startsWith('/') ? { catch_all_path: catchAllPath } : null,
+  }
+  const attachPublication = await publishAggregateKey({
+    sender: identity.address,
+    key: 'domains',
+    content: { [domain]: attachEntry },
+    signer: identity.signer,
+    hasher: async (payload) => defaultHasher(payload),
+    fetch,
+    channel: 'ALEPH-CLOUDSOLUTIONS',
+    apiHost,
+  })
+  if (attachPublication.status === 'rejected') {
+    throw new Error(`Aleph domain attach ${domain} was rejected: ${JSON.stringify(attachPublication.response ?? {})}`)
   }
 
   await appendGithubOutput('domain', domain, env)
   await appendGithubOutput('item_hash', itemHash, env)
   await appendGithubOutput('url', `https://${domain}`, env)
+  await appendGithubOutput('domain_message_hash', attachPublication.itemHash, env)
 
   await appendGithubSummary([
     '## Aleph Site Runner',
     '',
     `- Linked domain: \`${domain}\``,
     `- Aleph item hash: \`${itemHash}\``,
+    `- Domain aggregate hash: \`${attachPublication.itemHash}\``,
     `- Catch-all path: \`${catchAllPath}\``,
   ], env)
 }

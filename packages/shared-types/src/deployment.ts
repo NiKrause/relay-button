@@ -10,7 +10,7 @@ export interface DeploymentResult {
 }
 
 export type AlephSenderChain = 'ETH'
-export type AlephMessageType = 'INSTANCE' | 'FORGET' | 'AGGREGATE'
+export type AlephMessageType = 'INSTANCE' | 'FORGET' | 'AGGREGATE' | 'STORE'
 
 export interface AlephBroadcastMessage {
   sender: string
