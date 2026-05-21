@@ -267,9 +267,7 @@ export async function runRootfsMode(
     stdout?: (text: string) => void;
     parseInputs?: typeof parseRootfsRunnerInputs;
     buildRootfs?: typeof buildRootfs;
-    publishRootfs?: typeof publishRootfs;
     runCommand?: typeof runLocalCommand;
-    readText?: (targetPath: string) => Promise<string>;
   } = {},
 ): Promise<void> {
   const mode = optionalEnv('ALEPH_VM_MODE', 'rootfs-publish', env);
