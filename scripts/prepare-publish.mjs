@@ -21,6 +21,9 @@ const publishTargets = [
     dir: 'browser'
   },
   {
+    dir: 'ui'
+  },
+  {
     dir: 'node'
   }
 ]
@@ -83,18 +86,37 @@ async function main() {
       description: packageJson.description,
       license: packageJson.license,
       type: packageJson.type,
-      main: './index.js',
-      types: './index.d.ts',
-      exports: {
-        '.': {
-          types: './index.d.ts',
-          import: './index.js'
-        }
-      },
+      main: packageJson.name === '@le-space/ui' ? './shared/index.js' : './index.js',
+      types: packageJson.name === '@le-space/ui' ? './shared/index.d.ts' : './index.d.ts',
+      exports:
+        packageJson.name === '@le-space/ui'
+          ? {
+              '.': {
+                types: './shared/index.d.ts',
+                import: './shared/index.js'
+              },
+              './shared': {
+                types: './shared/index.d.ts',
+                import: './shared/index.js'
+              },
+              './react': {
+                types: './react/index.d.ts',
+                import: './react/index.js'
+              },
+              './svelte': './svelte/index.js',
+              './styles.css': './styles.css'
+            }
+          : {
+              '.': {
+                types: './index.d.ts',
+                import: './index.js'
+              }
+            },
       publishConfig: {
         access: 'public'
       },
-      dependencies: normalizeDependencies(packageJson.dependencies, versionsByName)
+      dependencies: normalizeDependencies(packageJson.dependencies, versionsByName),
+      peerDependencies: normalizeDependencies(packageJson.peerDependencies, versionsByName)
     }
 
     await writeFile(join(distDir, 'package.json'), `${JSON.stringify(publishManifest, null, 2)}\n`)
@@ -104,6 +126,11 @@ async function main() {
 
     if (packageJson.name === '@le-space/rootfs') {
       await cp(join(packageRoot, 'reference'), join(distDir, 'reference'), { recursive: true })
+    }
+
+    if (packageJson.name === '@le-space/ui') {
+      await cp(join(packageRoot, 'src', 'svelte'), join(distDir, 'svelte'), { recursive: true })
+      await cp(join(packageRoot, 'src', 'svelte', 'styles', 'theme.css'), join(distDir, 'styles.css'))
     }
 
     if (packageJson.name === '@le-space/node') {

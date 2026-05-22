@@ -67,8 +67,26 @@ function runCommand(command, args, cwd, env = process.env) {
   })
 }
 
+async function assertNpmPublishAuth() {
+  try {
+    await runCommand('npm', ['whoami'], repoRoot)
+  } catch (error) {
+    throw new Error(
+      [
+        'npm authentication check failed before publish.',
+        'The active npm token or login is not valid for https://registry.npmjs.org/.',
+        'Refresh ~/.npmrc or export a valid NPM_TOKEN for the @le-space scope, then retry.'
+      ].join(' ')
+    )
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2))
+
+  if (!options.dryRun) {
+    await assertNpmPublishAuth()
+  }
 
   for (const target of targets) {
     const distDir = join(repoRoot, 'packages', target, 'dist')
@@ -88,7 +106,21 @@ async function main() {
       publishArgs.splice(3, 0, '--provenance')
     }
 
-    await runCommand('npm', publishArgs, distDir)
+    try {
+      await runCommand('npm', publishArgs, distDir)
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('npm publish')) {
+        throw new Error(
+          [
+            `${manifest.name}@${manifest.version} failed to publish.`,
+            'If npm reported E404 for a scoped package, that usually means the active npm account/token cannot publish to the @le-space scope.',
+            'Validate npm auth with `npm whoami` and confirm the account has publish rights for @le-space.'
+          ].join(' ')
+        )
+      }
+
+      throw error
+    }
   }
 }
 

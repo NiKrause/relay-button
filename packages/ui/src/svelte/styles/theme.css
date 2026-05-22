@@ -1,0 +1,17 @@
+:root {
+  --relay-font-heading:
+    "Epilogue", "Avenir Next", "Segoe UI", sans-serif;
+  --relay-font-body:
+    "DM Sans", "Inter", "Segoe UI", sans-serif;
+  --relay-font-mono:
+    "DM Mono", "SFMono-Regular", "Menlo", monospace;
+  --relay-panel-bg: rgba(12, 20, 31, 0.92);
+  --relay-panel-border: rgba(255, 255, 255, 0.12);
+  --relay-panel-shadow: 0 28px 80px rgba(3, 8, 20, 0.45);
+  --relay-text: #f8fafc;
+  --relay-muted: #9fb2ca;
+  --relay-blue: #0176ce;
+  --relay-red: #e91315;
+  --relay-yellow: #ffc83f;
+  --relay-green: #37d67a;
+}
