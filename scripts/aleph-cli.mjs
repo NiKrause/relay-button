@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 
-import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import path from 'node:path'
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const nodeRunner = path.join(repoRoot, 'packages/node/src/action-runner.ts')
-const rootfsRunner = path.join(repoRoot, 'packages/node/src/rootfs-runner.ts')
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+const nodeRunner = path.join(repoRoot, "packages/node/src/action-runner.ts");
+const rootfsRunner = path.join(repoRoot, "packages/node/src/rootfs-runner.ts");
 
 function printHelp() {
   console.log(`shared-aleph-tooling CLI
@@ -32,6 +35,7 @@ Required environment for deploy:
   ALEPH_VM_NAME
   ALEPH_VM_SSH_PUBLIC_KEY
   ALEPH_VM_ROOTFS_ITEM_HASH
+    or ALEPH_VM_ROOTFS_MANIFEST_URL
 
 Required environment for rootfs-publish:
   ALEPH_ROOTFS_PROJECT_DIR
@@ -39,6 +43,7 @@ Required environment for rootfs-publish:
 
 Typical optional environment:
   ALEPH_VM_PROFILE
+  ALEPH_VM_ROOTFS_MANIFEST_URL
   ALEPH_VM_ROOTFS_VERSION
   ALEPH_VM_ROOTFS_SIZE_MIB
   ALEPH_VM_VCPUS
@@ -54,79 +59,79 @@ Typical optional environment:
 This CLI is a thin wrapper around:
   - packages/node/src/action-runner.ts
   - packages/node/src/rootfs-runner.ts
-`)
+`);
 }
 
 function resolveCommand(argv) {
-  const [command] = argv
+  const [command] = argv;
   switch (command) {
-    case 'deploy':
+    case "deploy":
       return {
         script: nodeRunner,
-        env: { ALEPH_VM_MODE: 'deploy' }
-      }
-    case 'list-crns':
+        env: { ALEPH_VM_MODE: "deploy" },
+      };
+    case "list-crns":
       return {
         script: nodeRunner,
-        env: { ALEPH_VM_MODE: 'list-crns' }
-      }
-    case 'retain':
+        env: { ALEPH_VM_MODE: "list-crns" },
+      };
+    case "retain":
       return {
         script: nodeRunner,
-        env: { ALEPH_VM_MODE: 'retain-successful-deployments' }
-      }
-    case 'rootfs-plan':
+        env: { ALEPH_VM_MODE: "retain-successful-deployments" },
+      };
+    case "rootfs-plan":
       return {
         script: rootfsRunner,
-        env: { ALEPH_VM_MODE: 'rootfs-build-plan' }
-      }
-    case 'rootfs-build':
+        env: { ALEPH_VM_MODE: "rootfs-build-plan" },
+      };
+    case "rootfs-build":
       return {
         script: rootfsRunner,
-        env: { ALEPH_VM_MODE: 'rootfs-build' }
-      }
-    case 'rootfs-publish':
+        env: { ALEPH_VM_MODE: "rootfs-build" },
+      };
+    case "rootfs-publish":
       return {
         script: rootfsRunner,
-        env: { ALEPH_VM_MODE: 'rootfs-publish' }
-      }
-    case 'help':
-    case '--help':
-    case '-h':
+        env: { ALEPH_VM_MODE: "rootfs-publish" },
+      };
+    case "help":
+    case "--help":
+    case "-h":
     case undefined:
-      return null
+      return null;
     default:
-      throw new Error(`Unknown command "${command}". Run "pnpm aleph help".`)
+      throw new Error(`Unknown command "${command}". Run "pnpm aleph help".`);
   }
 }
 
 async function main() {
-  const [, , ...argv] = process.argv
-  const resolved = resolveCommand(argv)
+  const [, , ...argv] = process.argv;
+  const resolved = resolveCommand(argv);
   if (!resolved) {
-    printHelp()
-    return
+    printHelp();
+    return;
   }
 
   await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [resolved.script], {
       cwd: repoRoot,
       env: { ...process.env, ...resolved.env },
-      stdio: 'inherit'
-    })
+      stdio: "inherit",
+    });
 
-    child.on('error', reject)
-    child.on('exit', (code) => {
+    child.on("error", reject);
+    child.on("exit", (code) => {
       if (code === 0) {
-        resolve()
+        resolve();
       } else {
-        reject(new Error(`Command failed with exit code ${code ?? 'unknown'}`))
+        reject(new Error(`Command failed with exit code ${code ?? "unknown"}`));
       }
-    })
-  })
+    });
+  });
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exitCode = 1
-})
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

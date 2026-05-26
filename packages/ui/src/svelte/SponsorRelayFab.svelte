@@ -1,7 +1,7 @@
 <script>
   import { onDestroy, onMount } from 'svelte'
 
-  import { createSponsorRelayController, formatDateTime, formatNumber, joinMappedPorts, shortHash } from '../shared/index'
+  import { createSponsorRelayController, formatDateTime, formatNumber, joinMappedPorts, joinRequiredPortForwards, shortHash } from '../shared/index'
   import AccordionSection from './components/AccordionSection.svelte'
   import CopyButton from './components/CopyButton.svelte'
   import LauncherButton from './components/LauncherButton.svelte'
@@ -148,6 +148,11 @@ export let apiHost = undefined
         <span>CRN</span>
         <strong>{state.selectedCrn?.name ?? shortHash(state.selectedCrn?.hash)}</strong>
         <small>{state.selectedCrn?.address ?? 'Auto-picked best compatible CRN'}</small>
+      </div>
+      <div class="metric-card">
+        <span>Required ports</span>
+        <strong>{joinRequiredPortForwards(state.manifest?.requiredPortForwards ?? [])}</strong>
+        <small>Derived from the active rootfs manifest</small>
       </div>
     </div>
 

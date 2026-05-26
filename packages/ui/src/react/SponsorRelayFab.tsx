@@ -4,6 +4,7 @@ import {
   formatDateTime,
   formatNumber,
   joinMappedPorts,
+  joinRequiredPortForwards,
   shortHash,
   type SponsorRelayProps,
   type SponsorRelayState,
@@ -80,7 +81,10 @@ function isDeploymentProgressVisible(state: SponsorRelayState): boolean {
   }
 
   if (stage === "completed") {
-    return Date.now() - state.deploymentProgress.timestamp < COMPLETED_PROGRESS_VISIBLE_MS;
+    return (
+      Date.now() - state.deploymentProgress.timestamp <
+      COMPLETED_PROGRESS_VISIBLE_MS
+    );
   }
 
   return true;
@@ -707,6 +711,12 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               <div>{state.rootfsHealth.label}</div>
               <div>
                 {state.selectedCrn?.name ?? shortHash(state.selectedCrn?.hash)}
+              </div>
+              <div>
+                Ports{" "}
+                {joinRequiredPortForwards(
+                  state.manifest?.requiredPortForwards ?? [],
+                )}
               </div>
             </div>
 

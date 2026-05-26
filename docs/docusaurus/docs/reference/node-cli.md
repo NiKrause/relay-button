@@ -43,6 +43,32 @@ pnpm exec shared-aleph rootfs-publish
 
 ## Deploy A VM
 
+Manifest-driven `uc-go-peer` example:
+
+```bash
+cd /path/to/shared-aleph-tooling
+
+export ALEPH_VM_PRIVATE_KEY=0x...
+export ALEPH_VM_NAME=uc-go-peer
+export ALEPH_VM_SSH_PUBLIC_KEY="$(cat ~/.ssh/id_ed25519.pub)"
+export ALEPH_VM_ROOTFS_MANIFEST_URL='https://connect.nicokrause.com/rootfs/uc-go-peer/latest.json'
+export ALEPH_VM_PREFERRED_COUNTRY_CODE=DE
+export ALEPH_VM_ENABLE_CADDY_PROXY=true
+
+pnpm aleph deploy
+```
+
+When `ALEPH_VM_ROOTFS_MANIFEST_URL` is set, the shared CLI derives:
+
+- `rootfsItemHash`
+- `rootfsSizeMiB`
+- `requiredPortForwards`
+- the manifest version string
+
+from the remote manifest automatically.
+
+Direct item-hash example:
+
 ```bash
 cd /path/to/shared-aleph-tooling
 
@@ -68,16 +94,23 @@ export ALEPH_VM_REQUIRED_PORTS_JSON='[
 pnpm aleph deploy
 ```
 
+Important:
+
+- `ALEPH_VM_REQUIRED_PORTS_JSON` must be a JSON array of structured port-forward objects.
+- Do not pass raw port numbers like `[22,80,443,9095,9097]`.
+- For `uc-go-peer`, use the manifest-derived shape shown above so the required Aleph port-forward aggregate is published correctly.
+
 Minimum required environment for `deploy`:
 
 - `ALEPH_VM_PRIVATE_KEY`
 - `ALEPH_VM_NAME`
 - `ALEPH_VM_SSH_PUBLIC_KEY`
-- `ALEPH_VM_ROOTFS_ITEM_HASH`
+- either `ALEPH_VM_ROOTFS_ITEM_HASH` or `ALEPH_VM_ROOTFS_MANIFEST_URL`
 
 Common optional environment:
 
 - `ALEPH_VM_PROFILE`
+- `ALEPH_VM_ROOTFS_MANIFEST_URL`
 - `ALEPH_VM_ROOTFS_VERSION`
 - `ALEPH_VM_ROOTFS_SIZE_MIB`
 - `ALEPH_VM_VCPUS`

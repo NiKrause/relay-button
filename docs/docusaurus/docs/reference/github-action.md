@@ -60,6 +60,22 @@ Guest access and lifecycle:
 - `publish_port_forwards`
 - `required_ports_json`
 
+`required_ports_json` must be a JSON array of structured objects such as:
+
+```json
+[
+  { "port": 22, "tcp": true, "udp": false, "purpose": "SSH" },
+  {
+    "port": 80,
+    "tcp": true,
+    "udp": false,
+    "purpose": "Temporary setup endpoint"
+  }
+]
+```
+
+Do not pass raw port numbers such as `[22,80]`.
+
 Polling and timeout controls:
 
 - `wait_attempts`

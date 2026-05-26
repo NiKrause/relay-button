@@ -120,6 +120,14 @@ pnpm aleph deploy
 pnpm aleph rootfs-publish
 ```
 
+When deploying from the CLI, `ALEPH_VM_REQUIRED_PORTS_JSON` must be a JSON
+array of structured port-forward objects, not raw port numbers. See the Node
+CLI reference for the working `uc-go-peer` example shape.
+
+You can now also set `ALEPH_VM_ROOTFS_MANIFEST_URL` and let the shared CLI
+derive the rootfs item hash, manifest version, disk size, and required
+port-forward declarations directly from the published manifest.
+
 For the working OrbitDB relay profile, the shared rootfs runner now supports
 the external source checkout directly:
 
