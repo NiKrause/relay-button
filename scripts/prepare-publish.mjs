@@ -6,6 +6,19 @@ import process from 'node:process'
 const repoRoot = process.cwd()
 const packagesDir = join(repoRoot, 'packages')
 const publishScope = process.env.NPM_SCOPE?.trim().replace(/^@/, '') || null
+const dependencyVersionOverrides = (() => {
+  const raw = process.env.PUBLISH_DEP_VERSION_OVERRIDES?.trim()
+  if (!raw) return {}
+
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch (error) {
+    throw new Error(
+      `Invalid PUBLISH_DEP_VERSION_OVERRIDES JSON: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+})()
 
 const publishTargets = [
   {
@@ -46,6 +59,10 @@ function normalizeDependencies(dependencies, versionsByName) {
 
   const normalized = Object.fromEntries(
     Object.entries(dependencies).map(([name, version]) => {
+      const overriddenVersion = dependencyVersionOverrides[toPublishedPackageName(name)] ?? dependencyVersionOverrides[name]
+      if (typeof overriddenVersion === 'string' && overriddenVersion.trim()) {
+        return [toPublishedPackageName(name), overriddenVersion.trim()]
+      }
       if (typeof version === 'string' && version.startsWith('workspace:')) {
         return [toPublishedPackageName(name), versionsByName.get(name) ?? version]
       }

@@ -67,6 +67,25 @@ function progressBadgeLabel(stage: string): string {
   }
 }
 
+const COMPLETED_PROGRESS_VISIBLE_MS = 12_000;
+
+function isDeploymentProgressVisible(state: SponsorRelayState): boolean {
+  const stage = state.deploymentProgress.stage;
+  if (stage === "idle") {
+    return false;
+  }
+
+  if (stage === "error") {
+    return true;
+  }
+
+  if (stage === "completed") {
+    return Date.now() - state.deploymentProgress.timestamp < COMPLETED_PROGRESS_VISIBLE_MS;
+  }
+
+  return true;
+}
+
 function launcherIndicator(state: SponsorRelayState): {
   label: string;
   detail: string | null;
@@ -86,7 +105,10 @@ function launcherIndicator(state: SponsorRelayState): {
     };
   }
 
-  if (state.deploymentProgress.stage === "completed") {
+  if (
+    state.deploymentProgress.stage === "completed" &&
+    isDeploymentProgressVisible(state)
+  ) {
     return {
       label: "DONE",
       detail: state.deploymentProgress.label,
@@ -175,6 +197,20 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
   ]);
 
   React.useEffect(() => {
+    if (state.deploymentProgress.stage !== "completed") {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setSuccessFlash(false);
+    }, COMPLETED_PROGRESS_VISIBLE_MS);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [state.deploymentProgress.stage, state.deploymentProgress.timestamp]);
+
+  React.useEffect(() => {
     if (launcherMode !== "inline" || !state.open) {
       return;
     }
@@ -232,6 +268,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
     state.deploymentProgress.stage !== "idle" &&
     state.deploymentProgress.stage !== "completed" &&
     state.deploymentProgress.stage !== "error";
+  const deploymentProgressVisible = isDeploymentProgressVisible(state);
   const pulseScale = progressActive ? 1.03 : hovered ? 1.015 : 1;
   const pulseShadow = progressActive
     ? `0 0 0 4px ${progressToneColor(indicator.tone)}22, 0 12px 28px rgba(15, 23, 42, 0.22)`
@@ -457,7 +494,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               <p style={{ color: "#ffd9d9" }}>{state.errorText}</p>
             ) : null}
 
-            {state.deploymentProgress.stage !== "idle" ? (
+            {deploymentProgressVisible ? (
               <div
                 style={{
                   marginTop: "0.85rem",

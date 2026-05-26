@@ -26,10 +26,12 @@ import {
   DEFAULT_MANIFEST_URL,
   DEFAULT_TIER_ID,
   IDLE_DEPLOYMENT_PROGRESS,
+  RECENT_INSTANCE_RUNTIME_GRACE_MS,
   REFRESH_INTERVAL_MS,
   RELAY_PING_IDLE_STATE,
   RELAY_PING_INTERVAL_MS,
   ROOTFS_MISSING_STATE,
+  STALE_INSTANCE_ALLOCATION_COOLDOWN_MS,
 } from "./constants";
 import { createDeploymentProgressEmitter } from "./events";
 import { buildSshCommand } from "./format";
@@ -283,6 +285,18 @@ async function inspectInstanceRuntime(args: {
   }
 }
 
+function instanceTimestampMs(instance: InstanceMessage): number | null {
+  const value = instance.reception_time ?? instance.time
+  if (!value) return null
+
+  if (typeof value === "number") {
+    return value > 0 && value < 10_000_000_000 ? value * 1000 : value
+  }
+
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
 function compatibleCrnsForTier(crns: Crn[], state: SponsorRelayState): Crn[] {
   if (!state.pricingSummary.pricing || !state.pricingSummary.tier) {
     return [];
@@ -376,6 +390,7 @@ export class SponsorRelayController {
   private stopWalletWatch: (() => void) | null = null;
   private props: SponsorRelayProps;
   private progressEmitter = createDeploymentProgressEmitter();
+  private runtimeCooldownByHash = new Map<string, number>();
 
   constructor(props: SponsorRelayProps = {}) {
     this.props = props;
@@ -444,6 +459,51 @@ export class SponsorRelayController {
           : this.state.errorText,
     });
     this.progressEmitter.emit(nextEvent);
+  }
+
+  private canSkipRuntimeRefresh(instance: InstanceMessage): boolean {
+    if (instance.item_hash === this.state.lastDeploymentHash) {
+      return false
+    }
+
+    const cooldownUntil = this.runtimeCooldownByHash.get(instance.item_hash)
+    if (!cooldownUntil) {
+      return false
+    }
+
+    return cooldownUntil > Date.now()
+  }
+
+  private noteRuntimeRefreshResult(
+    instance: InstanceMessage,
+    details: CompactInstanceDetails,
+  ): void {
+    const hasRuntimeData =
+      Boolean(details.crnUrl) ||
+      Boolean(details.hostIpv4) ||
+      Boolean(details.vmIpv4) ||
+      details.mappedPorts.length > 0 ||
+      Boolean(details.webUrl) ||
+      Boolean(details.execution)
+
+    if (hasRuntimeData || details.error || details.messageStatus !== "processed") {
+      this.runtimeCooldownByHash.delete(instance.item_hash)
+      return
+    }
+
+    const timestampMs = instanceTimestampMs(instance)
+    const isRecent =
+      timestampMs != null && Date.now() - timestampMs < RECENT_INSTANCE_RUNTIME_GRACE_MS
+
+    if (isRecent) {
+      this.runtimeCooldownByHash.delete(instance.item_hash)
+      return
+    }
+
+    this.runtimeCooldownByHash.set(
+      instance.item_hash,
+      Date.now() + STALE_INSTANCE_ALLOCATION_COOLDOWN_MS,
+    )
   }
 
   async init(): Promise<void> {
@@ -589,25 +649,11 @@ export class SponsorRelayController {
     });
 
     try {
-      this.emitProgress({
-        stage: "loading-manifest",
-        label: "Loading manifest",
-        progress: 8,
-        status: "info",
-        detail: this.state.manifestUrl,
-      });
       const manifestState = await resolveManifest({
         manifestUrl: this.state.manifestUrl,
         manifestJson: this.state.manifestJson,
       });
       const manifest = manifestState.manifest;
-      this.emitProgress({
-        stage: "loading-pricing",
-        label: "Loading pricing and CRNs",
-        progress: 18,
-        status: "info",
-        detail: "Fetching live Aleph pricing and compatible CRNs.",
-      });
       const [pricingSummary, crns] = await Promise.all([
         fetchInstancePricing(this.client.apiHost),
         this.client.fetchCrns(),
@@ -616,13 +662,6 @@ export class SponsorRelayController {
       let balance = this.state.balance;
       let instances: CompactInstanceRecord[] = [];
       if (this.state.wallet.address) {
-        this.emitProgress({
-          stage: "loading-balance",
-          label: "Loading wallet balance",
-          progress: 28,
-          status: "info",
-          detail: this.state.wallet.address,
-        });
         const [nextBalance, rawInstances] = await Promise.all([
           this.client.fetchBalance(this.state.wallet.address),
           this.state.showInstances
@@ -631,27 +670,43 @@ export class SponsorRelayController {
         ]);
         balance = nextBalance;
         instances = await Promise.all(
-          rawInstances.map(async (instance) => ({
-            instance,
-            details: await inspectInstanceRuntime({
-              client: this.client,
+          rawInstances.map(async (instance) => {
+            const details = this.canSkipRuntimeRefresh(instance)
+              ? {
+                  messageStatus: String(
+                    instance.status ??
+                      (instance.confirmed ? "processed" : "pending"),
+                  ).toLowerCase(),
+                  allocationSource: null,
+                  crnUrl: null,
+                  hostIpv4: null,
+                  ipv6: null,
+                  vmIpv4: null,
+                  webUrl: null,
+                  sshCommand: null,
+                  mappedPorts: [],
+                  execution: null,
+                  error: null,
+                }
+              : await inspectInstanceRuntime({
+                  client: this.client,
+                  instance,
+                  crns,
+                })
+
+            this.noteRuntimeRefreshResult(instance, details)
+
+            return {
               instance,
-              crns,
-            }),
-          })),
+              details,
+            }
+          }),
         );
       }
 
       let rootfsVerified = false;
       let rootfsResolution = null;
       if (manifestState.valid && manifest) {
-        this.emitProgress({
-          stage: "verifying-rootfs",
-          label: "Verifying rootfs",
-          progress: 38,
-          status: "info",
-          detail: manifest.rootfsItemHash,
-        });
         rootfsVerified = await verifyRootfsExists(
           manifest.rootfsItemHash,
           this.client.apiHost,
@@ -683,25 +738,11 @@ export class SponsorRelayController {
         statusText: "Relay sponsor data ready",
       });
       this.recomputePricingSummary();
-      this.emitProgress({
-        stage: "completed",
-        label: "Data ready",
-        progress: 100,
-        status: "success",
-        detail: "Manifest, pricing, and wallet state are ready.",
-      });
     } catch (error) {
       this.patch({
         busy: { refreshing: false },
         errorText: error instanceof Error ? error.message : String(error),
         statusText: "Refresh failed",
-      });
-      this.emitProgress({
-        stage: "error",
-        label: "Refresh failed",
-        progress: 100,
-        status: "error",
-        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
