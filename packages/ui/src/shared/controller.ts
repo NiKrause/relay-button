@@ -15,10 +15,13 @@ import {
   buildPaymentQuote,
   createInstanceContent,
   deployInstance as deploySharedInstance,
+  ensureInstancePortForwards,
   filterDeployableCrns,
   forgetAlephMessages,
   notifyCrnAllocationWithRetry,
   tierSpec,
+  waitForDeploymentResult,
+  waitForVmRuntime,
 } from "../../../core/src/index.ts";
 
 import {
@@ -51,6 +54,7 @@ import type {
   DeploymentProgressEvent,
   DeploymentProgressListener,
 } from "../../../shared-types/src/deployment.ts";
+import type { RootfsManifest as SharedRootfsManifest } from "../../../shared-types/src/manifest.ts";
 
 function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
   return {
@@ -372,6 +376,11 @@ async function pingPeer(libp2p: unknown): Promise<RelayPingState> {
   }
 }
 
+const UI_DEPLOY_WAIT_ATTEMPTS = 60;
+const UI_DEPLOY_WAIT_DELAY_MS = 5_000;
+const UI_RUNTIME_WAIT_ATTEMPTS = 40;
+const UI_RUNTIME_WAIT_DELAY_MS = 5_000;
+
 type SponsorRelayStatePatch = Omit<
   Partial<SponsorRelayState>,
   "busy" | "wallet" | "pricingSummary" | "relayPing"
@@ -390,6 +399,32 @@ function hasUsableRuntime(details: CompactInstanceDetails): boolean {
     Boolean(details.webUrl) ||
     Boolean(details.execution)
   );
+}
+
+function toSharedRootfsManifest(
+  manifest: SponsorRelayState["manifest"],
+): SharedRootfsManifest | null {
+  if (!manifest) {
+    return null;
+  }
+
+  return {
+    profile: manifest.profile,
+    version: manifest.version,
+    rootfsInstallStrategy:
+      manifest.rootfsInstallStrategy === "thin" ||
+      manifest.rootfsInstallStrategy === "prebaked"
+        ? manifest.rootfsInstallStrategy
+        : undefined,
+    requiresBootstrapNetwork: manifest.requiresBootstrapNetwork,
+    bootstrapSummary: manifest.bootstrapSummary,
+    rootfsItemHash: manifest.rootfsItemHash,
+    rootfsSizeMiB: manifest.rootfsSizeMiB,
+    rootfsSourceSizeBytes: manifest.rootfsSourceSizeBytes,
+    requiredPortForwards: manifest.requiredPortForwards,
+    createdAt: manifest.createdAt,
+    notes: manifest.notes,
+  };
 }
 
 export class SponsorRelayController {
@@ -918,12 +953,88 @@ export class SponsorRelayController {
       });
 
       this.patch({
-        busy: { deploying: false },
         statusText: `Deployment submitted: ${result.itemHash}`,
         lastDeploymentHash: result.itemHash,
       });
 
-      if (result.status === "processed" && this.state.selectedCrn?.address) {
+      const inspection = await waitForDeploymentResult(result.itemHash, {
+        rootfsRef: this.state.manifest.rootfsItemHash,
+        apiHost: this.client.apiHost,
+        fetch: (url, init) => fetch(url, init),
+        attempts: UI_DEPLOY_WAIT_ATTEMPTS,
+        delayMs: UI_DEPLOY_WAIT_DELAY_MS,
+        onAttempt: (inspectionResult) => {
+          if (inspectionResult.status === "processed") {
+            this.emitProgress({
+              stage: "deployment-confirmed",
+              label: "Deployment accepted by Aleph",
+              progress: 82,
+              status: "success",
+              itemHash: result.itemHash,
+              detail: "Aleph processed the instance message.",
+            });
+            return;
+          }
+
+          if (inspectionResult.status === "rejected") {
+            this.emitProgress({
+              stage: "deployment-rejected",
+              label: "Deployment rejected",
+              progress: 100,
+              status: "error",
+              itemHash: result.itemHash,
+              detail:
+                inspectionResult.rejectionReason ??
+                "Aleph rejected the deployment.",
+              error:
+                inspectionResult.rejectionReason ??
+                "Aleph rejected the deployment.",
+            });
+            return;
+          }
+
+          this.emitProgress({
+            stage: "waiting-for-aleph",
+            label: "Waiting for Aleph",
+            progress: 76,
+            status: "info",
+            itemHash: result.itemHash,
+            detail:
+              "Deployment submitted. Waiting for Aleph to process the instance message.",
+          });
+        },
+      });
+
+      if (inspection.status !== "processed") {
+        throw new Error(
+          inspection.rejectionReason ??
+            `Deployment ${result.itemHash} stayed ${inspection.status} on Aleph.`,
+        );
+      }
+
+      if ((this.state.manifest.requiredPortForwards?.length ?? 0) > 0) {
+        this.emitProgress({
+          stage: "refreshing-instances",
+          label: "Publishing port forwards",
+          progress: 86,
+          status: "info",
+          itemHash: result.itemHash,
+          detail:
+            "Publishing the required Aleph port-forward aggregate from the manifest.",
+        });
+        await ensureInstancePortForwards({
+          sender: this.state.wallet.address,
+          instanceItemHash: result.itemHash,
+          manifest: toSharedRootfsManifest(this.state.manifest),
+          signer: personalSign,
+          hasher: sha256Hex,
+          fetch: (url, init) => fetch(url, init),
+          apiHost: this.client.apiHost,
+          sync: true,
+        });
+      }
+
+      if (this.state.selectedCrn?.address) {
         await notifyCrnAllocationWithRetry({
           crnUrl: this.state.selectedCrn.address,
           itemHash: result.itemHash,
@@ -935,9 +1046,70 @@ export class SponsorRelayController {
       }
 
       this.emitProgress({
+        stage: "deployment-confirmed",
+        label: "Waiting for runtime",
+        progress: 90,
+        status: "warning",
+        itemHash: result.itemHash,
+        detail:
+          "Aleph accepted the deployment. Waiting for runtime networking and mapped ports.",
+      });
+
+      const runtime = await waitForVmRuntime({
+        itemHash: result.itemHash,
+        fetch: (url, init) => fetch(url, init),
+        crnHash: this.state.selectedCrn?.hash,
+        crns: this.state.crns,
+        crnListUrl: this.props.crnListUrl,
+        attempts: UI_RUNTIME_WAIT_ATTEMPTS,
+        delayMs: UI_RUNTIME_WAIT_DELAY_MS,
+        onAttempt: (runtime) => {
+          if (
+            runtime.hostIpv4 &&
+            Object.keys(runtime.mappedPorts ?? {}).length > 0
+          ) {
+            this.emitProgress({
+              stage: "completed",
+              label: "Runtime ready",
+              progress: 100,
+              status: "success",
+              itemHash: result.itemHash,
+              detail: "Runtime networking and mapped ports are now available.",
+            });
+            return;
+          }
+
+          this.emitProgress({
+            stage: "deployment-confirmed",
+            label: "Waiting for runtime",
+            progress: 90,
+            status: "warning",
+            itemHash: result.itemHash,
+            detail:
+              runtime.diagnostics?.reason ??
+              "Waiting for CRN runtime networking and mapped ports.",
+          });
+        },
+      });
+
+      if (
+        !runtime.hostIpv4 ||
+        Object.keys(runtime.mappedPorts ?? {}).length === 0
+      ) {
+        throw new Error(
+          runtime.diagnostics?.reason ??
+            "Deployment was processed, but runtime networking never exposed mapped ports.",
+        );
+      }
+
+      this.patch({
+        busy: { deploying: false },
+      });
+
+      this.emitProgress({
         stage: "refreshing-instances",
         label: "Refreshing instances",
-        progress: 92,
+        progress: 96,
         status: "info",
         itemHash: result.itemHash,
         detail: "Reloading deployments and runtime state.",
