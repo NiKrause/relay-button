@@ -391,7 +391,7 @@ export async function createLibp2pAlephBootstrap(
     timeout?: number;
     tagName?: string;
   } = {},
-) {
+): Promise<ReturnType<typeof bootstrap>> {
   const list = await discoverAlephBootstrapMultiaddrs(options);
   return bootstrap({
     list,
