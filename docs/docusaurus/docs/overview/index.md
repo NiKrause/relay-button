@@ -25,6 +25,7 @@ For example:
 The repository currently contains working Aleph-specific support for:
 
 - shared manifest and runtime types
+- Aleph-backed relay bootstrap registration and discovery
 - RootFS planning and publish helpers
 - Aleph `STORE`, `INSTANCE`, `AGGREGATE`, and `FORGET` flows
 - CRN discovery, ranking, and retry selection
@@ -54,6 +55,9 @@ Some parts are still intentionally incomplete:
   package: `@le-space/core`
   Deployment, runtime, CRN, guest, and retention logic that should not depend
   on GitHub Actions, browsers, or Node-specific environment parsing.
+- `packages/aleph-bootstrap`
+  package: `@le-space/aleph-bootstrap`
+  Shared relay bootstrap registration and Aleph-backed bootstrap discovery.
 - `packages/node`
   package: `@le-space/node`
   Node adapters and Aleph runner entrypoints for CI and automation.
@@ -62,6 +66,10 @@ Some parts are still intentionally incomplete:
   Browser-safe Aleph deployment helpers for PWAs and other browser clients.
   Current scope includes API polling, RootFS resolution, pricing, browser EVM
   helpers, and prepaid vault protocol helpers.
+- `packages/ui`
+  package: `@le-space/ui`
+  Shared React and Svelte UI components for relay deployment, status display,
+  and Sponsor Relay browser flows.
 - `packages/rootfs`
   package: `@le-space/rootfs`
   RootFS planning, manifests, reference assets, and build helpers.
@@ -96,7 +104,10 @@ See also:
 2. [Examples And Real Integrations](../architecture/examples-and-integrations.md)
 3. [Browser Guest Setup Refactor Plan](../architecture/browser-guest-setup-refactor-plan.md)
 4. [Deployment Lifecycle](../architecture/deployment-lifecycle.md)
-5. [Node CLI Reference](../reference/node-cli.md)
-6. [GitHub Action Reference](../reference/github-action.md)
-7. [Rootfs Contract Reference](../reference/rootfs-contract.md)
-8. [Reusable Workflow Reference](../reference/reusable-workflow.md)
+5. [Aleph Bootstrap Reference](../reference/aleph-bootstrap.md)
+6. [Aleph Bootstrap Operations](../reference/aleph-bootstrap-operations.md)
+7. [UI Package Reference](../reference/ui.md)
+8. [Node CLI Reference](../reference/node-cli.md)
+9. [GitHub Action Reference](../reference/github-action.md)
+10. [Rootfs Contract Reference](../reference/rootfs-contract.md)
+11. [Reusable Workflow Reference](../reference/reusable-workflow.md)

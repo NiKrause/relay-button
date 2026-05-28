@@ -9,17 +9,12 @@ The release process is already live and is handled through GitHub Actions.
 The currently maintained publishable packages are:
 
 - `@le-space/shared-types`
+- `@le-space/aleph-bootstrap`
 - `@le-space/core`
+- `@le-space/browser`
 - `@le-space/node`
 - `@le-space/rootfs`
 - `@le-space/ui`
-
-Not currently published:
-
-- `@le-space/browser`
-
-`browser` remains intentionally unreleased until the browser and wallet-driven
-deployment API is real and stable.
 
 ## Release Workflow
 
@@ -50,7 +45,9 @@ This repo currently uses aligned package versions across the publishable set.
 That means a normal release updates:
 
 - `packages/shared-types/package.json`
+- `packages/aleph-bootstrap/package.json`
 - `packages/core/package.json`
+- `packages/browser/package.json`
 - `packages/node/package.json`
 - `packages/rootfs/package.json`
 - `packages/ui/package.json`
@@ -72,10 +69,21 @@ Focused package checks:
 
 ```bash
 pnpm --filter @le-space/shared-types test
+pnpm --filter @le-space/aleph-bootstrap test
 pnpm --filter @le-space/core test
 pnpm --filter @le-space/rootfs test
 pnpm --filter @le-space/node test
+pnpm --filter @le-space/ui test
 ```
+
+Optional live Aleph bootstrap round-trip:
+
+```bash
+ALEPH_BOOTSTRAP_TEST_PRIVATE_KEY=0xyourkey pnpm test:aleph-bootstrap:live
+```
+
+The live test publishes dummy public multiaddrs to Aleph, polls them back via
+`posts.json`, and verifies that localhost/private multiaddrs are filtered out.
 
 ## Dry Run
 
@@ -129,8 +137,10 @@ After a release, consumer repositories such as `universal-connectivity` may
 need to:
 
 1. bump the `@le-space/node` version in workflows
-2. rerun their Aleph workflows
-3. verify that the new shared package version behaves correctly end to end
+2. bump `@le-space/aleph-bootstrap` in browser/libp2p consumers
+3. rerun installs or lockfile refreshes
+4. rerun their Aleph workflows
+5. verify that the new shared package version behaves correctly end to end
 
 That final consumer validation is especially important after:
 

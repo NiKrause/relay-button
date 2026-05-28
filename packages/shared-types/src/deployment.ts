@@ -24,6 +24,7 @@ export type DeploymentProgressStage =
   | "waiting-for-aleph"
   | "deployment-confirmed"
   | "deployment-rejected"
+  | "publishing-bootstrap"
   | "building-delete-message"
   | "signing-delete-message"
   | "broadcasting-delete"
@@ -48,7 +49,7 @@ export type DeploymentProgressListener = (
 ) => void;
 
 export type AlephSenderChain = "ETH";
-export type AlephMessageType = "INSTANCE" | "FORGET" | "AGGREGATE" | "STORE";
+export type AlephMessageType = "INSTANCE" | "FORGET" | "AGGREGATE" | "STORE" | "POST";
 
 export interface AlephBroadcastMessage {
   sender: string;

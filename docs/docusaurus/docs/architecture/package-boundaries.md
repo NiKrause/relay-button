@@ -51,6 +51,24 @@ This package should not directly depend on:
 - browser wallets
 - CLI argument parsing
 
+## `@le-space/aleph-bootstrap`
+
+This package owns the shared Aleph bootstrap namespace and the reusable helpers
+around it.
+
+Current responsibilities:
+
+- relay bootstrap `POST` content shaping
+- public multiaddr filtering
+- Aleph `posts.json` bootstrap discovery queries
+- libp2p bootstrap plugin composition from Aleph-backed multiaddrs
+
+This package should not directly depend on:
+
+- wallet-provider UX
+- GitHub Actions environment parsing
+- RootFS build assets
+
 ## `@le-space/node`
 
 This package adapts the shared core for Node and GitHub Actions.
@@ -102,6 +120,23 @@ See also:
 - `browser-extraction-plan`
 - `examples-and-integrations`
 - `browser-guest-setup-refactor-plan`
+
+## `@le-space/ui`
+
+This package is the shared UI layer built on top of the browser-safe helpers.
+
+Current responsibilities:
+
+- reusable React components
+- reusable Svelte components
+- shared presentation helpers for deployment state and relay setup
+- Sponsor Relay browser deployment UI integration
+
+Keep local to apps for now:
+
+- app-specific branding and layout
+- product-specific copy and onboarding text
+- project-local state orchestration that is not reusable across consumers
 
 ## `@le-space/rootfs`
 

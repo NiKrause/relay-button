@@ -25,6 +25,9 @@ const publishTargets = [
     dir: 'shared-types'
   },
   {
+    dir: 'aleph-bootstrap'
+  },
+  {
     dir: 'core'
   },
   {

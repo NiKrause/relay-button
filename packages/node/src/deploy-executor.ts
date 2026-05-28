@@ -12,6 +12,7 @@ import {
   fetchCrns,
   fetchUcGoPeerMetadata,
   notifyCrnAllocationWithRetry,
+  publishRelayBootstrapRegistration,
   rankCandidateCrns,
   verifyUcGoPeerReachability,
   waitForDeploymentResult,
@@ -567,6 +568,51 @@ export async function executeDeployPlan(
             }
           }
           verification = latestVerification;
+        }
+
+        const metadata = configuration?.metadata ?? null;
+        if (
+          metadata?.peer_id &&
+          Array.isArray(metadata.probe_multiaddrs) &&
+          metadata.probe_multiaddrs.length > 0 &&
+          (plan.verifyReachability === false || verification?.ok !== false)
+        ) {
+          try {
+            log(`[deploy] publishing relay bootstrap registration to Aleph`);
+            const publication = await publishRelayBootstrapRegistration({
+              sender: identity.address,
+              signer: identity.signer,
+              hasher,
+              fetch: fetchImpl,
+              apiHost: plan.apiHost,
+              peerId: metadata.peer_id,
+              multiaddrs: metadata.probe_multiaddrs,
+              browserMultiaddrs: metadata.browser_bootstrap_multiaddrs,
+              profile: plan.profile,
+              version: plan.rootfsVersion || "custom-rootfs",
+              sync: true,
+            });
+            configuration = {
+              ...(configuration ?? {}),
+              metadata: {
+                ...(configuration?.metadata ?? {}),
+                bootstrap_registration: publication,
+              },
+            };
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            log(`[deploy] relay bootstrap registration failed: ${reason}`);
+            configuration = {
+              ...(configuration ?? {}),
+              metadata: {
+                ...(configuration?.metadata ?? {}),
+                bootstrap_registration: {
+                  status: "error",
+                  reason,
+                },
+              },
+            };
+          }
         }
       }
     }

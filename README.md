@@ -29,10 +29,15 @@ Packages use the `@le-space/*` scope.
   - GitHub Actions output and summary handling
 - `@le-space/rootfs`
   RootFS planning, manifests, reference assets, and build helpers.
+- `@le-space/aleph-bootstrap`
+  Aleph-backed relay bootstrap registration and libp2p bootstrap discovery.
 - `@le-space/browser`
   Browser-safe Aleph deployment helpers for PWAs and other browser clients.
   Current scope includes Aleph API polling, RootFS resolution, pricing,
   browser EVM helpers, and prepaid vault protocol helpers.
+- `@le-space/ui`
+  Shared React and Svelte UI components for relay deployment and status flows,
+  including the Sponsor Relay browser integration surface.
 
 ### GitHub Automation
 
@@ -62,6 +67,11 @@ more of these runner modes:
 This keeps Aleph-specific implementation reusable while letting each consumer
 repo control its own workflow structure and product-specific behavior.
 
+Browser-first consumers may also install:
+
+- `@le-space/browser`
+- `@le-space/ui`
+
 ## Typical Responsibilities
 
 Use this repo when you need reusable support for:
@@ -70,6 +80,7 @@ Use this repo when you need reusable support for:
 - creating an Aleph VM instance from a published RootFS
 - configuring and verifying an Aleph-hosted relay
 - publishing a site with deployment-specific relay bootstrap addresses
+- embedding shared relay deployment UI in React or Svelte apps
 - managing retention of older successful Aleph deployments
 
 ## Quick Start

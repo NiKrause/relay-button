@@ -13,7 +13,10 @@ const sidebars = {
       type: 'category',
       label: 'Reference',
       items: [
+        'reference/aleph-bootstrap',
+        'reference/aleph-bootstrap-operations',
         'reference/github-action',
+        'reference/ui',
         'reference/rootfs-contract',
         'reference/reusable-workflow'
       ]

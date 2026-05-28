@@ -56,10 +56,19 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
 
+  packages/aleph-bootstrap:
+    dependencies:
+      '@libp2p/bootstrap':
+        specifier: ^11.0.46
+        version: 11.0.47
+
   packages/browser: {}
 
   packages/core:
     dependencies:
+      '@le-space/aleph-bootstrap':
+        specifier: workspace:*
+        version: link:../aleph-bootstrap
       '@le-space/shared-types':
         specifier: workspace:*
         version: link:../shared-types
@@ -1763,6 +1772,9 @@ packages:
   '@leichtgewicht/ip-codec@2.0.5':
     resolution: {integrity: sha512-Vo+PSpZG2/fmgmiNzYK9qWRh8h/CHrwD0mo1h1DzL4yzHNSfWYujGTYsWGreD000gcgmZ7K4Ys6Tx9TxtsKdDw==}
 
+  '@libp2p/bootstrap@11.0.47':
+    resolution: {integrity: sha512-D3V8AHZvX9R0cFD0BKmDp7fKTo+GgPFFWa55z62VP14yA3f3kSAELyZ7NujrD0QXEtUdd/d7suqeJ4tKGsnZ5A==}
+
   '@libp2p/circuit-relay-v2@3.2.24':
     resolution: {integrity: sha512-JXSm0dOOpPC+Yax0ngLYWqELHLFmaYPNZOhZkrr0iEtbiXwhDXuDuwT71pwmozp7h/rYd2YFoIk178AhZ4711Q==}
 
@@ -1854,6 +1866,9 @@ packages:
 
   '@multiformats/dns@1.0.13':
     resolution: {integrity: sha512-yr4bxtA3MbvJ+2461kYIYMsiiZj/FIqKI64hE4SdvWJUdWF9EtZLar38juf20Sf5tguXKFUruluswAO6JsjS2w==}
+
+  '@multiformats/mafmt@12.1.6':
+    resolution: {integrity: sha512-tlJRfL21X+AKn9b5i5VnaTD6bNttpSpcqwKVmDmSHLwxoz97fAHaepqFOk/l1fIu94nImIXneNbhsJx/RQNIww==}
 
   '@multiformats/multiaddr-matcher@2.0.2':
     resolution: {integrity: sha512-si7EZCI93mfBJKKRkh+u2bB9W6W5APVN3XfdwuseEJ0OS7ysg0Jno9SuAi0bRzsl5OEFESoF71SjsRqgp8PXAA==}
@@ -5595,7 +5610,7 @@ packages:
     hasBin: true
 
   ox@https://pkg.pr.new/ox@386a3439fe1ce76d237930f8c6e6bb493746069a:
-    resolution: {tarball: https://pkg.pr.new/ox@386a3439fe1ce76d237930f8c6e6bb493746069a}
+    resolution: {integrity: sha512-OHHm9re1yVjiMN66GZ2JSGuqmvJPrk40zh3PIS/3I6prZLbt6U/zKlgW18eIIkO0Y/ZyySKr6D/4mUXjBmky1g==, tarball: https://pkg.pr.new/ox@386a3439fe1ce76d237930f8c6e6bb493746069a}
     version: 0.14.26-386a343.0
     peerDependencies:
       typescript: '>=5.4.0'
@@ -10098,6 +10113,15 @@ snapshots:
 
   '@leichtgewicht/ip-codec@2.0.5': {}
 
+  '@libp2p/bootstrap@11.0.47':
+    dependencies:
+      '@libp2p/interface': 2.11.0
+      '@libp2p/interface-internal': 2.3.19
+      '@libp2p/peer-id': 5.1.9
+      '@multiformats/mafmt': 12.1.6
+      '@multiformats/multiaddr': 12.5.1
+      main-event: 1.0.4
+
   '@libp2p/circuit-relay-v2@3.2.24':
     dependencies:
       '@libp2p/crypto': 5.1.18
@@ -10440,6 +10464,10 @@ snapshots:
       p-queue: 9.3.0
       progress-events: 1.1.0
       uint8arrays: 5.1.1
+
+  '@multiformats/mafmt@12.1.6':
+    dependencies:
+      '@multiformats/multiaddr': 12.5.1
 
   '@multiformats/multiaddr-matcher@2.0.2':
     dependencies:

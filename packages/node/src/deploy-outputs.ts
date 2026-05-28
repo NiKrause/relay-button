@@ -11,6 +11,14 @@ export interface DeployMetadataResult {
   peer_id?: string
   probe_multiaddrs?: string[]
   browser_bootstrap_multiaddrs?: string[]
+  bootstrap_registration?: {
+    status?: string
+    reason?: string
+    itemHash?: string
+    httpStatus?: number
+    publishedMultiaddrs?: string[]
+    publishedBrowserMultiaddrs?: string[]
+  } | null
   [key: string]: unknown
 }
 
