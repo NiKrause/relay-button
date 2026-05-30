@@ -151,6 +151,18 @@ pnpm aleph rootfs-build
 pnpm aleph rootfs-publish
 ```
 
+If the image build already succeeded but the later Aleph `STORE` publication
+failed, for example due to insufficient Aleph balance, you can retry the
+upload/publication step without rebuilding the qcow2:
+
+```bash
+export ALEPH_ROOTFS_DRIVER=docker
+export ALEPH_ROOTFS_HAS_DOCKER=true
+export ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING=true
+export ALEPH_ROOTFS_SKIP_BUILD=true
+pnpm aleph rootfs-publish
+```
+
 This CLI is a thin wrapper around the shared Node runners and uses the same
 deployment logic as the shared action/workflow layers.
 

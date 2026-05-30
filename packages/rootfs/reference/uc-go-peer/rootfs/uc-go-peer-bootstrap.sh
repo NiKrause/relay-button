@@ -31,7 +31,8 @@ run_phase_base() {
   echo "[uc-go-peer-bootstrap] running apt-get update"
   apt-get update
   echo "[uc-go-peer-bootstrap] installing base packages"
-  apt-get install -y ca-certificates curl caddy
+  apt-get install -y ca-certificates curl caddy python3-pip
+  python3 -m pip install --break-system-packages --no-cache-dir eth-account
   rm -rf /var/lib/apt/lists/*
 }
 

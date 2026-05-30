@@ -239,6 +239,12 @@ export async function configureUcGoPeer(args: {
   quicPort?: number | null;
   webrtcPort?: number | null;
   proxyUrl?: string | null;
+  bootstrapPublisherPrivateKey?: string | null;
+  bootstrapPublisherLibp2pIdentityBase64?: string | null;
+  bootstrapOwnerPrivateKey?: string | null;
+  bootstrapOwnerAuthorizationBase64?: string | null;
+  bootstrapRegistrationId?: string | null;
+  noStart?: boolean;
   fetch: FetchLike;
   timeoutMs?: number;
 }): Promise<unknown> {
@@ -257,6 +263,15 @@ export async function configureUcGoPeer(args: {
     udp_port: args.udpPort ?? undefined,
     quic_port: args.quicPort ?? undefined,
     webrtc_port: args.webrtcPort ?? undefined,
+    bootstrap_publisher_private_key:
+      args.bootstrapPublisherPrivateKey ?? undefined,
+    bootstrap_publisher_libp2p_identity_b64:
+      args.bootstrapPublisherLibp2pIdentityBase64 ?? undefined,
+    bootstrap_owner_private_key: args.bootstrapOwnerPrivateKey ?? undefined,
+    bootstrap_owner_authorization_b64:
+      args.bootstrapOwnerAuthorizationBase64 ?? undefined,
+    bootstrap_registration_id: args.bootstrapRegistrationId ?? undefined,
+    no_start: args.noStart === true ? true : undefined,
   };
 
   try {
@@ -296,6 +311,12 @@ export async function configureOrbitdbRelaySetup(args: {
   webrtcPort?: number | null;
   quicPort?: number | null;
   proxyUrl?: string | null;
+  bootstrapPublisherPrivateKey?: string | null;
+  bootstrapPublisherLibp2pIdentityHex?: string | null;
+  bootstrapOwnerPrivateKey?: string | null;
+  bootstrapOwnerAuthorizationBase64?: string | null;
+  bootstrapRegistrationId?: string | null;
+  noStart?: boolean;
   fetch: FetchLike;
   timeoutMs?: number;
 }): Promise<unknown> {
@@ -315,6 +336,15 @@ export async function configureOrbitdbRelaySetup(args: {
     metrics_https_port: args.metricsHttpsPort ?? undefined,
     webrtc_port: args.webrtcPort ?? undefined,
     quic_port: args.quicPort ?? undefined,
+    bootstrap_publisher_private_key:
+      args.bootstrapPublisherPrivateKey ?? undefined,
+    bootstrap_publisher_libp2p_identity_hex:
+      args.bootstrapPublisherLibp2pIdentityHex ?? undefined,
+    bootstrap_owner_private_key: args.bootstrapOwnerPrivateKey ?? undefined,
+    bootstrap_owner_authorization_b64:
+      args.bootstrapOwnerAuthorizationBase64 ?? undefined,
+    bootstrap_registration_id: args.bootstrapRegistrationId ?? undefined,
+    no_start: args.noStart === true ? true : undefined,
   };
 
   try {

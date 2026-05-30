@@ -118,6 +118,21 @@ Common optional environment:
 - `ALEPH_VM_CRN_HASH`
 - `ALEPH_VM_PREFERRED_COUNTRY_CODE`
 - `ALEPH_VM_REQUIRED_PORTS_JSON`
+- `ALEPH_VM_BOOTSTRAP_PUBLISHER_PRIVATE_KEY`
+- `ALEPH_VM_BOOTSTRAP_OWNER_PRIVATE_KEY`
+
+Dual-key bootstrap note:
+
+- `ALEPH_VM_PRIVATE_KEY` still owns the Aleph VM deployment itself
+- if `ALEPH_VM_BOOTSTRAP_PUBLISHER_PRIVATE_KEY` is provided, bootstrap
+  registration can be published by that separate publisher identity instead of
+  the deployer wallet
+- if `ALEPH_VM_BOOTSTRAP_OWNER_PRIVATE_KEY` is also provided, deploy-time
+  publication mints the owner authorization needed for dual-key verification
+- the current deploy flow writes that signed authorization record back into the
+  guest with a second `no_start` configure call, so the VM can later refresh
+  with publisher key `B` without keeping owner key `A` as the preferred
+  long-lived guest secret
 
 ## Build Or Publish A RootFS
 
@@ -160,6 +175,24 @@ Common optional environment:
 - `ALEPH_ROOTFS_ALEPH_API_HOST`
 - `ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR`
   Required when the contract/profile is `orbitdb-relay-pinner`.
+
+Retry tip:
+
+If the qcow2/rootfs image was already built successfully but Aleph rejected the
+later `STORE` publish step, for example due to insufficient Aleph balance, you
+can retry the upload/publication step without rebuilding the image:
+
+```bash
+export ALEPH_ROOTFS_DRIVER=docker
+export ALEPH_ROOTFS_HAS_DOCKER=true
+export ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING=true
+export ALEPH_ROOTFS_SKIP_BUILD=true
+pnpm aleph rootfs-publish
+```
+
+The extra Docker availability flags are currently needed because the shared
+rootfs runner reads toolchain availability from environment variables instead
+of probing Docker automatically at runtime.
 
 ## Relationship To GitHub Automation
 

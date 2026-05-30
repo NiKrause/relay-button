@@ -19,6 +19,7 @@ import {
   waitForSetupEndpoint,
   waitForVmRuntime,
 } from "../../core/src/index.ts";
+import { signRelayBootstrapAuthorization } from "../../aleph-bootstrap/src/index.ts";
 import type {
   CrnRecord,
   DeploymentInspectionResult,
@@ -33,6 +34,7 @@ import type {
 } from "./deploy-outputs.ts";
 import type { DeployPlan } from "./deploy-plan.ts";
 import { createPrivateKeyIdentity } from "./signer.ts";
+import { deriveLibp2pSecp256k1IdentityFromEvmKey } from "./relay-identity.ts";
 
 export interface DeployExecutorDependencies {
   fetch?: typeof fetch;
@@ -178,6 +180,20 @@ export async function executeDeployPlan(
     dependencies.sender && dependencies.signer
       ? { address: dependencies.sender, signer: dependencies.signer }
       : await createPrivateKeyIdentity(plan.privateKey);
+  const bootstrapPublisherIdentity = plan.bootstrapPublisherPrivateKey
+    ? await createPrivateKeyIdentity(plan.bootstrapPublisherPrivateKey)
+    : null;
+  const bootstrapOwnerIdentity = plan.bootstrapOwnerPrivateKey
+    ? await createPrivateKeyIdentity(plan.bootstrapOwnerPrivateKey)
+    : null;
+  const publisherDerivedRelayIdentity =
+    (plan.profile === "uc-go-peer" ||
+      plan.profile === "orbitdb-relay-pinner") &&
+    plan.bootstrapPublisherPrivateKey
+      ? deriveLibp2pSecp256k1IdentityFromEvmKey(
+          plan.bootstrapPublisherPrivateKey,
+        )
+      : null;
 
   const candidateCrns = await candidateCrnsForPlan(plan, fetchImpl);
   if (candidateCrns.length === 0) {
@@ -469,6 +485,25 @@ export async function executeDeployPlan(
         }
 
         log(`[deploy] calling guest /configure for ${deployment.itemHash}`);
+        const registrationId = `relay:${plan.profile}:${plan.name}`;
+        const publisherAddress =
+          bootstrapPublisherIdentity?.address ?? identity.address;
+        const precomputedOwnerAuthorization =
+          bootstrapOwnerIdentity != null &&
+          publisherDerivedRelayIdentity != null &&
+          (plan.profile === "uc-go-peer" ||
+            plan.profile === "orbitdb-relay-pinner")
+            ? await signRelayBootstrapAuthorization({
+                ownerAddress: bootstrapOwnerIdentity.address,
+                publisherAddress,
+                peerId: publisherDerivedRelayIdentity.peerId,
+                registrationId,
+                profile: plan.profile,
+                version: plan.rootfsVersion || "custom-rootfs",
+                issuedAt: Date.now(),
+                signer: bootstrapOwnerIdentity.signer,
+              })
+            : undefined;
         const configureResult =
           plan.profile === "orbitdb-relay-pinner"
             ? await configureOrbitdbRelaySetup({
@@ -483,6 +518,21 @@ export async function executeDeployPlan(
                 metricsHttpsPort: mappedPorts["443"]?.host ?? null,
                 webrtcPort: mappedPorts["9093"]?.host ?? null,
                 quicPort: mappedPorts["9094"]?.host ?? null,
+                bootstrapPublisherPrivateKey:
+                  plan.bootstrapPublisherPrivateKey || null,
+                bootstrapPublisherLibp2pIdentityHex:
+                  publisherDerivedRelayIdentity?.protobuf
+                    ? Buffer.from(
+                        publisherDerivedRelayIdentity.protobuf,
+                      ).toString("hex")
+                    : null,
+                bootstrapOwnerAuthorizationBase64: precomputedOwnerAuthorization
+                  ? Buffer.from(
+                      JSON.stringify(precomputedOwnerAuthorization),
+                      "utf8",
+                    ).toString("base64")
+                  : null,
+                bootstrapRegistrationId: `relay:${plan.profile}:${plan.name}`,
                 fetch: fetchImpl,
                 timeoutMs: plan.configureTimeoutMs,
               })
@@ -508,6 +558,17 @@ export async function executeDeployPlan(
                     ? (mappedPorts["9095"]?.host ?? null)
                     : null,
                 proxyUrl,
+                bootstrapPublisherPrivateKey:
+                  plan.bootstrapPublisherPrivateKey || null,
+                bootstrapPublisherLibp2pIdentityBase64:
+                  publisherDerivedRelayIdentity?.protobufBase64 ?? null,
+                bootstrapOwnerAuthorizationBase64: precomputedOwnerAuthorization
+                  ? Buffer.from(
+                      JSON.stringify(precomputedOwnerAuthorization),
+                      "utf8",
+                    ).toString("base64")
+                  : null,
+                bootstrapRegistrationId: registrationId,
                 fetch: fetchImpl,
                 timeoutMs: plan.configureTimeoutMs,
               });
@@ -572,6 +633,29 @@ export async function executeDeployPlan(
 
         const metadata = configuration?.metadata ?? null;
         if (
+          publisherDerivedRelayIdentity &&
+          metadata?.peer_id &&
+          metadata.peer_id !== publisherDerivedRelayIdentity.peerId
+        ) {
+          log(
+            `[deploy] guest peerId ${metadata.peer_id} did not match preseeded publisher-derived peerId ${publisherDerivedRelayIdentity.peerId}; cleaning up`,
+          );
+          await cleanupFailedDeployment({
+            sender: identity.address,
+            instanceItemHash: deployment.itemHash,
+            reason: "Relay peerId did not match the publisher-derived libp2p identity",
+            signer: identity.signer,
+            hasher,
+            fetch: fetchImpl,
+            channel: plan.channel,
+            apiHost: plan.apiHost,
+          });
+          lastError = new Error(
+            `Relay peerId ${metadata.peer_id} did not match the publisher-derived libp2p identity ${publisherDerivedRelayIdentity.peerId}.`,
+          );
+          continue;
+        }
+        if (
           metadata?.peer_id &&
           Array.isArray(metadata.probe_multiaddrs) &&
           metadata.probe_multiaddrs.length > 0 &&
@@ -579,19 +663,73 @@ export async function executeDeployPlan(
         ) {
           try {
             log(`[deploy] publishing relay bootstrap registration to Aleph`);
+            const ownerAuthorization =
+              precomputedOwnerAuthorization ??
+              (bootstrapOwnerIdentity != null
+                ? await signRelayBootstrapAuthorization({
+                    ownerAddress: bootstrapOwnerIdentity.address,
+                    publisherAddress,
+                    peerId: metadata.peer_id,
+                    registrationId,
+                    profile: plan.profile,
+                    version: plan.rootfsVersion || "custom-rootfs",
+                    issuedAt: Date.now(),
+                    signer: bootstrapOwnerIdentity.signer,
+                  })
+                : undefined);
             const publication = await publishRelayBootstrapRegistration({
-              sender: identity.address,
-              signer: identity.signer,
+              sender: publisherAddress,
+              signer: bootstrapPublisherIdentity?.signer ?? identity.signer,
               hasher,
               fetch: fetchImpl,
               apiHost: plan.apiHost,
               peerId: metadata.peer_id,
               multiaddrs: metadata.probe_multiaddrs,
               browserMultiaddrs: metadata.browser_bootstrap_multiaddrs,
+              ownerAddress: bootstrapOwnerIdentity?.address,
+              publisherAddress,
+              ownerAuthorization,
+              publisherSigner:
+                bootstrapPublisherIdentity?.signer ?? undefined,
+              registrationId,
+              forgetPrevious: true,
               profile: plan.profile,
               version: plan.rootfsVersion || "custom-rootfs",
               sync: true,
             });
+            if (
+              ownerAuthorization &&
+              runtime.hostIpv4 &&
+              plan.profile === "orbitdb-relay-pinner" &&
+              !publisherDerivedRelayIdentity
+            ) {
+              const ownerAuthorizationBase64 = Buffer.from(
+                JSON.stringify(ownerAuthorization),
+                "utf8",
+              ).toString("base64");
+
+              log(`[deploy] persisting relay bootstrap authorization in guest`);
+              await configureOrbitdbRelaySetup({
+                hostIpv4: runtime.hostIpv4,
+                publicIpv6: runtime.ipv6,
+                setupPort,
+                tcpPort: mappedPorts["9091"]?.host ?? 0,
+                wsPort:
+                  mappedPorts["9092"]?.host ?? mappedPorts["443"]?.host ?? 0,
+                proxyUrl,
+                metricsPort: mappedPorts["9090"]?.host ?? null,
+                metricsHttpsPort: mappedPorts["443"]?.host ?? null,
+                webrtcPort: mappedPorts["9093"]?.host ?? null,
+                quicPort: mappedPorts["9094"]?.host ?? null,
+                bootstrapPublisherPrivateKey:
+                  plan.bootstrapPublisherPrivateKey || null,
+                bootstrapOwnerAuthorizationBase64: ownerAuthorizationBase64,
+                bootstrapRegistrationId: registrationId,
+                noStart: true,
+                fetch: fetchImpl,
+                timeoutMs: plan.configureTimeoutMs,
+              });
+            }
             configuration = {
               ...(configuration ?? {}),
               metadata: {

@@ -12,6 +12,7 @@
     "@chainsafe/libp2p-quic": "^1.1.1",
     "@chainsafe/libp2p-yamux": "^7.0.1",
     "@le-space/core": "workspace:*",
+    "@libp2p/crypto": "^5.1.18",
     "@libp2p/circuit-relay-v2": "^3.2.9",
     "@libp2p/identify": "^3.0.28",
     "@libp2p/peer-id": "^5.1.7",

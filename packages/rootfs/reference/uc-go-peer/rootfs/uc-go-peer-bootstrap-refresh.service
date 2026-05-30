@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh Aleph bootstrap registration for uc-go-peer
+Wants=network-online.target
+After=network-online.target uc-go-peer.service
+ConditionPathExists=/etc/default/uc-go-peer.ready
+
+[Service]
+Type=oneshot
+Environment=ENV_FILE=/etc/default/uc-go-peer
+Environment=DESCRIBE_SCRIPT=/usr/local/sbin/uc-go-peer-describe.py
+ExecStart=/usr/bin/python3 /usr/local/sbin/uc-go-peer-bootstrap-refresh.py
+StandardOutput=journal
+StandardError=journal

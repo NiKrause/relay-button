@@ -19,6 +19,8 @@ import {
 export interface DeployPlan {
   profile: string;
   privateKey: string;
+  bootstrapPublisherPrivateKey: string;
+  bootstrapOwnerPrivateKey: string;
   apiHost: string;
   crnListUrl: string;
   name: string;
@@ -181,6 +183,16 @@ export function parseDeployPlan(
   return {
     profile: optionalEnv("ALEPH_VM_PROFILE", "uc-go-peer", env),
     privateKey: requiredEnv("ALEPH_VM_PRIVATE_KEY", env),
+    bootstrapPublisherPrivateKey: optionalEnv(
+      "ALEPH_VM_BOOTSTRAP_PUBLISHER_PRIVATE_KEY",
+      "",
+      env,
+    ),
+    bootstrapOwnerPrivateKey: optionalEnv(
+      "ALEPH_VM_BOOTSTRAP_OWNER_PRIVATE_KEY",
+      "",
+      env,
+    ),
     apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api2.aleph.im", env),
     crnListUrl: optionalEnv(
       "ALEPH_VM_CRN_LIST_URL",

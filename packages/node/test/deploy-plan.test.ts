@@ -17,6 +17,8 @@ test("parseDeployPlan reads required deploy env and defaults", () => {
   });
 
   assert.equal(plan.profile, "uc-go-peer");
+  assert.equal(plan.bootstrapPublisherPrivateKey, "");
+  assert.equal(plan.bootstrapOwnerPrivateKey, "");
   assert.equal(plan.apiHost, "https://api2.aleph.im");
   assert.equal(plan.crnListUrl, "https://crns-list.aleph.sh/crns.json");
   assert.equal(plan.rootfsSizeMiB, 20480);
@@ -45,6 +47,8 @@ test("parseDeployPlan reads required deploy env and defaults", () => {
 test("parseDeployPlan parses integer, boolean, and JSON overrides", () => {
   const plan = parseDeployPlan({
     ALEPH_VM_PRIVATE_KEY: "0xabc",
+    ALEPH_VM_BOOTSTRAP_PUBLISHER_PRIVATE_KEY: "0xdef",
+    ALEPH_VM_BOOTSTRAP_OWNER_PRIVATE_KEY: "0xghi",
     ALEPH_VM_NAME: "relay",
     ALEPH_VM_SSH_PUBLIC_KEY:
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest key@example",
@@ -76,6 +80,8 @@ test("parseDeployPlan parses integer, boolean, and JSON overrides", () => {
   });
 
   assert.equal(plan.rootfsSizeMiB, 1024);
+  assert.equal(plan.bootstrapPublisherPrivateKey, "0xdef");
+  assert.equal(plan.bootstrapOwnerPrivateKey, "0xghi");
   assert.equal(plan.preferredCountryCode, "US");
   assert.equal(plan.geoCrnLimit, 12);
   assert.equal(plan.maxCrnAttempts, 3);

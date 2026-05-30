@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import type { PortMapping } from "@le-space/shared-types";
 import {
   listGeocodedCrns,
+  publishRelayBootstrapRegistration,
   retainSuccessfulDeployments,
 } from "../../core/src/index.ts";
 
@@ -24,6 +25,10 @@ import { createPrivateKeyIdentity, type PrivateKeyIdentity } from "./signer.ts";
 function parseOptionalJson<T>(raw: string | undefined): T | null {
   if (!raw || !raw.trim()) return null;
   return JSON.parse(raw) as T;
+}
+
+function defaultHasher(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
 }
 
 export function buildScaffoldDeployResult(
@@ -102,6 +107,7 @@ export async function runActionMode(
     listGeocodedCrns?: typeof listGeocodedCrns;
     deployExecutor?: typeof executeDeployPlan;
     retainSuccessfulDeployments?: typeof retainSuccessfulDeployments;
+    publishRelayBootstrapRegistration?: typeof publishRelayBootstrapRegistration;
     createPrivateKeyIdentity?: (
       privateKey: string,
     ) => Promise<PrivateKeyIdentity>;
@@ -158,10 +164,7 @@ export async function runActionMode(
         env,
       ),
       signer: identity.signer,
-      hasher: async (content) => {
-        const { createHash } = await import("node:crypto");
-        return createHash("sha256").update(content).digest("hex");
-      },
+      hasher: async (content) => defaultHasher(content),
       fetch: globalThis.fetch.bind(globalThis),
       channel: optionalEnv("ALEPH_VM_CHANNEL", "TEST", env),
       apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api2.aleph.im", env),
@@ -200,6 +203,105 @@ export async function runActionMode(
       env,
     );
     stdout(`${JSON.stringify(payload)}\n`);
+    return;
+  }
+
+  if (mode === "refresh-bootstrap") {
+    if (typeof globalThis.fetch !== "function") {
+      throw new Error(
+        "A fetch implementation is required for refresh-bootstrap mode.",
+      );
+    }
+
+    const publisherIdentity = await (
+      hooks.createPrivateKeyIdentity ?? createPrivateKeyIdentity
+    )(
+      optionalEnv(
+        "ALEPH_VM_PUBLISHER_PRIVATE_KEY",
+        requiredEnv("ALEPH_VM_PRIVATE_KEY", env),
+        env,
+      ),
+    );
+    const ownerPrivateKey = env.ALEPH_VM_OWNER_PRIVATE_KEY?.trim();
+    const ownerIdentity = ownerPrivateKey
+      ? await (hooks.createPrivateKeyIdentity ?? createPrivateKeyIdentity)(
+          ownerPrivateKey,
+        )
+      : null;
+
+    const peerId = requiredEnv("ALEPH_VM_RELAY_PEER_ID", env);
+    const multiaddrs = jsonEnv<string[]>(
+      "ALEPH_VM_PROBE_MULTIADDRS_JSON",
+      "[]",
+      env,
+    );
+    const browserMultiaddrs = jsonEnv<string[]>(
+      "ALEPH_VM_BROWSER_BOOTSTRAP_MULTIADDRS_JSON",
+      "[]",
+      env,
+    );
+    const profile = optionalEnv("ALEPH_VM_PROFILE", "uc-go-peer", env);
+    const relayName = requiredEnv("ALEPH_VM_NAME", env);
+
+    const publication = await (
+      hooks.publishRelayBootstrapRegistration ?? publishRelayBootstrapRegistration
+    )({
+      sender: publisherIdentity.address,
+      signer: publisherIdentity.signer,
+      hasher: async (content) => defaultHasher(content),
+      fetch: globalThis.fetch.bind(globalThis),
+      apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api2.aleph.im", env),
+      peerId,
+      multiaddrs,
+      browserMultiaddrs,
+      ownerAddress: ownerIdentity?.address,
+      publisherAddress: publisherIdentity.address,
+      ownerSigner: ownerIdentity?.signer,
+      publisherSigner: publisherIdentity.signer,
+      registrationId: optionalEnv(
+        "ALEPH_VM_BOOTSTRAP_REGISTRATION_ID",
+        `relay:${profile}:${relayName}`,
+        env,
+      ),
+      forgetPrevious: optionalEnv(
+        "ALEPH_VM_BOOTSTRAP_FORGET_PREVIOUS",
+        "true",
+        env,
+      ).toLowerCase() !== "false",
+      profile,
+      version: optionalEnv("ALEPH_VM_ROOTFS_VERSION", "", env) || undefined,
+      sync: true,
+    });
+
+    await appendGithubOutput(
+      "bootstrap_registration_json",
+      JSON.stringify(publication),
+      env,
+    );
+    await appendGithubOutput(
+      "bootstrap_registration_item_hash",
+      publication.itemHash ?? "",
+      env,
+    );
+    await appendGithubOutput(
+      "bootstrap_registration_status",
+      publication.status,
+      env,
+    );
+    await appendGithubSummary(
+      [
+        "## Aleph bootstrap refresh",
+        "",
+        `- Profile: \`${profile}\``,
+        `- Relay name: \`${relayName}\``,
+        `- Peer ID: \`${peerId}\``,
+        `- Published status: \`${publication.status}\``,
+        `- Published item hash: \`${publication.itemHash ?? "unknown"}\``,
+        `- Forgotten previous hashes: \`${publication.forgottenHashes?.length ?? 0}\``,
+      ],
+      env,
+    );
+    stdout(`${JSON.stringify(publication)}\n`);
     return;
   }
 

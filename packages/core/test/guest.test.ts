@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  configureOrbitdbRelaySetup,
   configureUcGoPeer,
   fetchUcGoPeerMetadata,
   notifyCrnAllocation,
@@ -114,6 +115,12 @@ test("configureUcGoPeer posts the expected payload to the guest", async () => {
     quicPort: 32095,
     webrtcPort: 32095,
     proxyUrl: "https://relay.example.com",
+    bootstrapPublisherPrivateKey: "0xpublisher",
+    bootstrapPublisherLibp2pIdentityBase64: "ZmFrZS1saWJwMnAtaWRlbnRpdHk=",
+    bootstrapOwnerPrivateKey: "0xowner",
+    bootstrapOwnerAuthorizationBase64: "eyJhdXRoIjp0cnVlfQ==",
+    bootstrapRegistrationId: "relay:uc-go-peer:demo",
+    noStart: true,
     fetch: async (_url, init) => {
       body = String(init?.body ?? "");
       return jsonResponse({ status: "configured" });
@@ -123,6 +130,52 @@ test("configureUcGoPeer posts the expected payload to the guest", async () => {
   assert.deepEqual(result, { status: "configured" });
   assert.match(body, /"public_ipv4":"203\.0\.113\.5"/);
   assert.match(body, /"proxy_url":"https:\/\/relay\.example\.com"/);
+  assert.match(body, /"bootstrap_publisher_private_key":"0xpublisher"/);
+  assert.match(
+    body,
+    /"bootstrap_publisher_libp2p_identity_b64":"ZmFrZS1saWJwMnAtaWRlbnRpdHk="/,
+  );
+  assert.match(body, /"bootstrap_owner_private_key":"0xowner"/);
+  assert.match(body, /"bootstrap_owner_authorization_b64":"eyJhdXRoIjp0cnVlfQ=="/);
+  assert.match(body, /"bootstrap_registration_id":"relay:uc-go-peer:demo"/);
+  assert.match(body, /"no_start":true/);
+});
+
+test("configureOrbitdbRelaySetup posts bootstrap key material to the guest", async () => {
+  let body = "";
+  const result = await configureOrbitdbRelaySetup({
+    hostIpv4: "203.0.113.8",
+    publicIpv6: "2001:db8::8",
+    setupPort: 28080,
+    tcpPort: 32091,
+    wsPort: 32443,
+    proxyUrl: "https://relay.example.com",
+    metricsPort: 32090,
+    metricsHttpsPort: 32443,
+    webrtcPort: 32093,
+    quicPort: 32094,
+    bootstrapPublisherPrivateKey: "0xpublisher",
+    bootstrapPublisherLibp2pIdentityHex: "deadbeef",
+    bootstrapOwnerPrivateKey: "0xowner",
+    bootstrapOwnerAuthorizationBase64: "eyJhdXRoIjp0cnVlfQ==",
+    bootstrapRegistrationId: "relay:orbitdb-relay-pinner:demo",
+    noStart: true,
+    fetch: async (_url, init) => {
+      body = String(init?.body ?? "");
+      return jsonResponse({ status: "configured" });
+    },
+  });
+
+  assert.deepEqual(result, { status: "configured" });
+  assert.match(body, /"public_ipv4":"203\.0\.113\.8"/);
+  assert.match(body, /"tcp_port":32091/);
+  assert.match(body, /"ws_port":32443/);
+  assert.match(body, /"bootstrap_publisher_private_key":"0xpublisher"/);
+  assert.match(body, /"bootstrap_publisher_libp2p_identity_hex":"deadbeef"/);
+  assert.match(body, /"bootstrap_owner_private_key":"0xowner"/);
+  assert.match(body, /"bootstrap_owner_authorization_b64":"eyJhdXRoIjp0cnVlfQ=="/);
+  assert.match(body, /"bootstrap_registration_id":"relay:orbitdb-relay-pinner:demo"/);
+  assert.match(body, /"no_start":true/);
 });
 
 test("fetchUcGoPeerMetadata waits until the guest reports ready metadata", async () => {

@@ -9,6 +9,7 @@ AUTOTLS_HOSTS_FILE="${AUTOTLS_HOSTS_FILE:-/etc/default/uc-go-peer.autotls-hosts}
 AUTOTLS_CADDY_READY_FILE="${AUTOTLS_CADDY_READY_FILE:-/etc/default/uc-go-peer.caddy-ready}"
 SERVICE_NAME="${SERVICE_NAME:-uc-go-peer.service}"
 AUTOTLS_REFRESH_SERVICE="${AUTOTLS_REFRESH_SERVICE:-uc-go-peer-autotls-refresh.service}"
+BOOTSTRAP_REFRESH_TIMER="${BOOTSTRAP_REFRESH_TIMER:-uc-go-peer-bootstrap-refresh.timer}"
 CADDY_SERVICE="${CADDY_SERVICE:-caddy.service}"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 BOOTSTRAP_SERVICE="${BOOTSTRAP_SERVICE:-uc-go-peer-bootstrap.service}"
@@ -20,6 +21,11 @@ WS_PORT="9097"
 WS_BACKEND_PORT="9096"
 PROXY_HOSTNAME=""
 UDP_PORT=""
+BOOTSTRAP_PUBLISHER_PRIVATE_KEY=""
+BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_B64=""
+BOOTSTRAP_OWNER_PRIVATE_KEY=""
+BOOTSTRAP_OWNER_AUTHORIZATION_B64=""
+BOOTSTRAP_REGISTRATION_ID=""
 START_SERVICE=1
 
 usage() {
@@ -35,6 +41,11 @@ Usage:
     [--quic-port <host-port>] \
     [--webtransport-port <host-port>] \
     [--webrtc-port <host-port>] \
+    [--bootstrap-publisher-private-key <hex>] \
+    [--bootstrap-publisher-libp2p-identity-b64 <base64>] \
+    [--bootstrap-owner-private-key <hex>] \
+    [--bootstrap-owner-authorization-b64 <base64>] \
+    [--bootstrap-registration-id <id>] \
     [--no-start]
 EOF
 }
@@ -66,6 +77,16 @@ https://${proxy_hostname} {
     reverse_proxy http://127.0.0.1:${WS_BACKEND_PORT}
 }
 EOF
+}
+
+current_identity_path() {
+  local existing
+  existing="$(grep -E '^[#[:space:]]*GO_PEER_IDENTITY_PATH=' "${ENV_FILE}" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+  if [ -n "${existing}" ]; then
+    printf '%s\n' "${existing}"
+    return
+  fi
+  printf '/var/lib/uc-go-peer/identity.key\n'
 }
 
 while [ "$#" -gt 0 ]; do
@@ -104,6 +125,26 @@ while [ "$#" -gt 0 ]; do
       ;;
     --webrtc-port)
       UDP_PORT="${2:-}"
+      shift 2
+      ;;
+    --bootstrap-publisher-private-key)
+      BOOTSTRAP_PUBLISHER_PRIVATE_KEY="${2:-}"
+      shift 2
+      ;;
+    --bootstrap-publisher-libp2p-identity-b64)
+      BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_B64="${2:-}"
+      shift 2
+      ;;
+    --bootstrap-owner-private-key)
+      BOOTSTRAP_OWNER_PRIVATE_KEY="${2:-}"
+      shift 2
+      ;;
+    --bootstrap-owner-authorization-b64)
+      BOOTSTRAP_OWNER_AUTHORIZATION_B64="${2:-}"
+      shift 2
+      ;;
+    --bootstrap-registration-id)
+      BOOTSTRAP_REGISTRATION_ID="${2:-}"
       shift 2
       ;;
     --no-start)
@@ -183,6 +224,26 @@ if [ -n "${UDP_PORT}" ]; then
   write_env_var "EXTERNAL_RELAY_WEBTRANSPORT_PORT" "${UDP_PORT}"
   write_env_var "EXTERNAL_RELAY_WEBRTC_PORT" "${UDP_PORT}"
 fi
+if [ -n "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}" ]; then
+  write_env_var "ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY" "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}"
+fi
+if [ -n "${BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_B64}" ]; then
+  identity_path="$(current_identity_path)"
+  mkdir -p "$(dirname "${identity_path}")"
+  printf '%s' "${BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_B64}" | base64 -d > "${identity_path}"
+  chmod 0400 "${identity_path}"
+  chown uc-go-peer:uc-go-peer "${identity_path}" || true
+fi
+if [ -n "${BOOTSTRAP_OWNER_PRIVATE_KEY}" ]; then
+  write_env_var "ALEPH_BOOTSTRAP_OWNER_PRIVATE_KEY" "${BOOTSTRAP_OWNER_PRIVATE_KEY}"
+fi
+if [ -n "${BOOTSTRAP_OWNER_AUTHORIZATION_B64}" ]; then
+  write_env_var "ALEPH_BOOTSTRAP_OWNER_AUTHORIZATION_B64" "${BOOTSTRAP_OWNER_AUTHORIZATION_B64}"
+fi
+if [ -n "${BOOTSTRAP_REGISTRATION_ID}" ]; then
+  write_env_var "ALEPH_BOOTSTRAP_REGISTRATION_ID" "${BOOTSTRAP_REGISTRATION_ID}"
+fi
+write_env_var "ALEPH_BOOTSTRAP_PROFILE" "uc-go-peer"
 write_env_var "LIBP2P_ANNOUNCE_ADDRS" "${announce_value}"
 touch "${READY_FILE}"
 
@@ -191,6 +252,8 @@ if [ "${START_SERVICE}" -eq 1 ]; then
   systemctl enable "${SERVICE_NAME}"
   systemctl restart "${SERVICE_NAME}"
   systemctl enable "${AUTOTLS_REFRESH_SERVICE}"
+  systemctl enable "${BOOTSTRAP_REFRESH_TIMER}"
+  systemctl start "${BOOTSTRAP_REFRESH_TIMER}"
   if [ -n "${PROXY_HOSTNAME}" ]; then
     systemctl enable "${CADDY_SERVICE}"
     systemctl restart "${CADDY_SERVICE}"

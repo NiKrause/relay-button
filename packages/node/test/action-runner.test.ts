@@ -203,3 +203,109 @@ test('runActionMode emits retention outputs in retain-successful-deployments mod
   assert.match(summary, /Outstanding forget hashes: `1`/)
   assert.match(writes.join(''), /aggregateHash/)
 })
+
+test('runActionMode refreshes bootstrap registration from deployment metadata', async () => {
+  const { env, outputFile, summaryFile } = await createActionEnv('shared-aleph-action-bootstrap-refresh-')
+  const writes: string[] = []
+
+  await runActionMode(
+    {
+      ...env,
+      ALEPH_VM_MODE: 'refresh-bootstrap',
+      ALEPH_VM_PRIVATE_KEY: '0xabc',
+      ALEPH_VM_NAME: 'relay-demo',
+      ALEPH_VM_PROFILE: 'uc-go-peer',
+      ALEPH_VM_RELAY_PEER_ID: '12D3KooWRefresh',
+      ALEPH_VM_PROBE_MULTIADDRS_JSON: JSON.stringify([
+        '/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWRefresh'
+      ]),
+      ALEPH_VM_BROWSER_BOOTSTRAP_MULTIADDRS_JSON: JSON.stringify([
+        '/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWRefresh'
+      ]),
+      ALEPH_VM_ROOTFS_VERSION: '0.3.0'
+    },
+    {
+      stdout: (text) => writes.push(text),
+      createPrivateKeyIdentity: async () => ({
+        address: '0x1234',
+        signer: async () => '0xsigned'
+      }),
+      publishRelayBootstrapRegistration: async (options) => {
+        assert.equal(options.sender, '0x1234')
+        assert.equal(options.peerId, '12D3KooWRefresh')
+        assert.deepEqual(options.multiaddrs, [
+          '/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWRefresh'
+        ])
+        assert.equal(options.registrationId, 'relay:uc-go-peer:relay-demo')
+        assert.equal(options.forgetPrevious, true)
+        assert.equal(options.version, '0.3.0')
+        return {
+          status: 'published',
+          itemHash: 'bootstrapHash',
+          forgottenHashes: ['oldBootstrapHash']
+        }
+      }
+    }
+  )
+
+  const outputs = await readFile(outputFile, 'utf8')
+  const summary = await readFile(summaryFile, 'utf8')
+
+  assert.match(outputs, /bootstrap_registration_item_hash=bootstrapHash/)
+  assert.match(outputs, /bootstrap_registration_status=published/)
+  assert.match(summary, /Aleph bootstrap refresh/)
+  assert.match(summary, /Forgotten previous hashes: `1`/)
+  assert.match(writes.join(''), /bootstrapHash/)
+})
+
+test('runActionMode refresh-bootstrap can emit dual-key publication inputs', async () => {
+  const { env } = await createActionEnv('shared-aleph-action-bootstrap-refresh-dual-')
+  const seenKeys: string[] = []
+
+  await runActionMode(
+    {
+      ...env,
+      ALEPH_VM_MODE: 'refresh-bootstrap',
+      ALEPH_VM_PRIVATE_KEY: '0xfallback',
+      ALEPH_VM_PUBLISHER_PRIVATE_KEY: '0xpublisher',
+      ALEPH_VM_OWNER_PRIVATE_KEY: '0xowner',
+      ALEPH_VM_NAME: 'relay-demo',
+      ALEPH_VM_PROFILE: 'orbitdb-relay-pinner',
+      ALEPH_VM_RELAY_PEER_ID: '12D3KooWDual',
+      ALEPH_VM_PROBE_MULTIADDRS_JSON: JSON.stringify([
+        '/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWDual'
+      ]),
+      ALEPH_VM_BROWSER_BOOTSTRAP_MULTIADDRS_JSON: JSON.stringify([
+        '/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWDual'
+      ])
+    },
+    {
+      createPrivateKeyIdentity: async (privateKey) => {
+        seenKeys.push(privateKey)
+        if (privateKey === '0xpublisher') {
+          return {
+            address: '0xpublisherAddress',
+            signer: async () => '0xpublisherSigned'
+          }
+        }
+        return {
+          address: '0xownerAddress',
+          signer: async () => '0xownerSigned'
+        }
+      },
+      publishRelayBootstrapRegistration: async (options) => {
+        assert.deepEqual(seenKeys, ['0xpublisher', '0xowner'])
+        assert.equal(options.sender, '0xpublisherAddress')
+        assert.equal(options.publisherAddress, '0xpublisherAddress')
+        assert.equal(options.ownerAddress, '0xownerAddress')
+        assert.equal(typeof options.ownerSigner, 'function')
+        assert.equal(typeof options.publisherSigner, 'function')
+        return {
+          status: 'published',
+          itemHash: 'dualBootstrapHash',
+          forgottenHashes: []
+        }
+      }
+    }
+  )
+})

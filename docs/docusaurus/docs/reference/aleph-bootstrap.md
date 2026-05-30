@@ -35,12 +35,80 @@ The registration payload stores:
 - `peerId`
 - `multiaddrs`
 - `browserMultiaddrs`
+- `registrationId` when a producer can provide a stable relay identity
 - `profile`
 - `version`
 - `updatedAt`
 
 Only public multiaddrs are published. Loopback, RFC1918, link-local, and
 localhost-style addresses are filtered out before the Aleph `POST` is signed.
+
+### Current Signing Model
+
+Today the codebase supports two bootstrap signing shapes:
+
+- legacy wallet-signed records
+- dual-key records with owner authorization plus relay proof
+
+Current profile behavior:
+
+- `uc-go-peer`
+  - when `ALEPH_VM_BOOTSTRAP_PUBLISHER_PRIVATE_KEY` is supplied, the deploy
+    flow derives a libp2p secp256k1 identity from that same publisher key `B`
+  - that protobuf-encoded libp2p key is written into the guest before first
+    start, so the relay `peerId` comes from the same underlying key material
+    as the Aleph publisher identity
+  - if owner key `A` is also supplied, the owner authorization can be minted
+    up front and stored in the first guest configure call
+- `orbitdb-relay-pinner`
+  - now also accepts a preseeded libp2p secp256k1 identity derived from
+    publisher key `B`
+  - when publisher key `B` is supplied, the relay `peerId` comes from the
+    same underlying key material as the Aleph publisher identity
+  - when publisher key `B` is not supplied, it falls back to the older
+    self-generated Ed25519 relay identity
+  - in that fallback mode, owner authorization is still written back into the
+    guest with a second `no_start` configure call after runtime metadata is
+    known
+
+So the remaining trust gap is now narrower than before:
+
+- `uc-go-peer` can already bind publisher key `B` and relay `peerId` to the
+  same secp256k1 root
+- `orbitdb-relay-pinner` can now do the same when publisher key `B` is
+  supplied
+- legacy wallet-signed records are still accepted by default for backward
+  compatibility
+
+### Target Signing Model
+
+The intended next model is a **dual-key relay bootstrap record**.
+
+Roles:
+
+- owner key `A`: the deployment wallet that creates or sponsors the Aleph VM
+- relay key `B`: a separate key held by the running relay VM
+
+Target proof chain:
+
+1. owner key `A` signs an authorization statement for relay key `B`
+2. relay key `B` signs the current bootstrap record payload
+3. the bootstrap `POST` is published by relay key `B`
+4. readers verify both signatures before trusting the record
+
+This gives the relay enough autonomy to refresh its own bootstrap record while
+still preserving a cryptographic relationship to the original deployment
+wallet.
+
+Important design note:
+
+- this is intentionally a **dual-key** model
+- it replaces earlier ideas about reusing the deployer wallet directly or
+  relying on Aleph-specific publish-on-behalf delegation as the primary long
+  term design
+- if the relay peer identity is later made compatible with the same signing
+  key material, that can simplify verification further, but the baseline plan
+  is still dual-key authorization plus relay-side signing
 
 ### Current Transport Reality
 
@@ -81,8 +149,57 @@ By default, discovery:
 - queries `https://api2.aleph.im/api/v0/posts.json`
 - loads the shared `relay-bootstrap` posts
 - skips entries older than 7 days
+- keeps only the newest fresh record per relay identity
 - deduplicates the returned multiaddrs
 - prefers `browserMultiaddrs` when available
+- verifies dual-key records when they are present
+
+Important caveat:
+
+- the 7-day cutoff is our application-level freshness rule
+- we still do not have source-backed proof from Aleph's public docs about when
+  ordinary bootstrap `POST` messages are automatically pruned, if ever
+- relays should eventually republish and forget their own old bootstrap records
+  instead of assuming network-side cleanup
+
+Current implementation detail:
+
+- when a bootstrap record includes `registrationId`, discovery collapses to the
+  newest fresh record for that relay identity
+- otherwise discovery falls back to the newest fresh record per sender address
+- invalid dual-key records are ignored during discovery
+- legacy wallet-signed records are still accepted by default
+
+Discovery can be tightened further with:
+
+- `verifyDualKeyAttestation: true`
+  This is the default behavior for posts that already carry dual-key proof
+  objects.
+- `requireDualKeyAttestation: true`
+  This rejects legacy wallet-signed records and only accepts dual-key-attested
+  relay registrations.
+
+Example:
+
+```ts
+import { discoverAlephBootstrapMultiaddrs } from '@le-space/aleph-bootstrap'
+
+const list = await discoverAlephBootstrapMultiaddrs({
+  requireDualKeyAttestation: true,
+})
+```
+
+### Dual-Key Helpers
+
+The package now also exposes low-level helpers for dual-key record creation and
+verification:
+
+- `signRelayBootstrapAuthorization(...)`
+- `signRelayBootstrapProof(...)`
+- `verifyRelayBootstrapAuthorization(...)`
+- `verifyRelayBootstrapProof(...)`
+- `verifyRelayBootstrapDualKeyContent(...)`
+- `relayBootstrapTrustMode(...)`
 
 ## Validation
 
@@ -108,9 +225,89 @@ ALEPH_BOOTSTRAP_TEST_PRIVATE_KEY=0xyourkey pnpm test:aleph-bootstrap:live
 The live check:
 
 - publishes dummy public multiaddrs into Aleph as a `relay-bootstrap` `POST`
-- polls `posts.json` until the just-published post is visible
+- republishes the same relay identity with refreshed public multiaddrs
+- requests `FORGET` for the older bootstrap record
+- polls `posts.json` until the refreshed post is visible
 - re-runs discovery through `discoverAlephBootstrapMultiaddrs()`
 - verifies that private and localhost multiaddrs were filtered out
+- verifies that discovery selects the refreshed browser bootstrap addrs instead
+  of the older ones
+
+An optional variant also uses a fresh random ephemeral wallet key:
+
+```bash
+ALEPH_BOOTSTRAP_TEST_USE_EPHEMERAL_KEY=true pnpm test:aleph-bootstrap:live
+```
+
+In our live testing, that ephemeral-key mode was also accepted by Aleph for the
+same bootstrap `POST` and `FORGET` lifecycle. For this bootstrap flow, that is
+strong evidence that public write access is effectively open to arbitrary valid
+keys, which reinforces the need for consumer-side anti-spam handling.
+
+## Periodic Refresh
+
+Two refresh paths now exist:
+
+- external `@le-space/node` `refresh-bootstrap` mode
+- in-guest periodic refresh from the relay VM itself
+
+`@le-space/node` now supports:
+
+```bash
+ALEPH_VM_MODE=refresh-bootstrap
+```
+
+Expected environment inputs:
+
+- `ALEPH_VM_PRIVATE_KEY`
+- `ALEPH_VM_NAME`
+- `ALEPH_VM_PROFILE`
+- `ALEPH_VM_RELAY_PEER_ID`
+- `ALEPH_VM_PROBE_MULTIADDRS_JSON`
+- `ALEPH_VM_BROWSER_BOOTSTRAP_MULTIADDRS_JSON`
+- optional `ALEPH_VM_ROOTFS_VERSION`
+- optional `ALEPH_VM_BOOTSTRAP_REGISTRATION_ID`
+- optional `ALEPH_VM_BOOTSTRAP_FORGET_PREVIOUS`
+- optional `ALEPH_VM_PUBLISHER_PRIVATE_KEY`
+- optional `ALEPH_VM_OWNER_PRIVATE_KEY`
+
+That mode republishes the relay bootstrap registration and, by default,
+forgets older self-owned records for the same registration ID.
+
+Current dual-key behavior in external `refresh-bootstrap`:
+
+- if only `ALEPH_VM_PRIVATE_KEY` is set, refresh behaves like the legacy
+  wallet-signed model
+- if `ALEPH_VM_PUBLISHER_PRIVATE_KEY` is set, the relay bootstrap `POST` is
+  published by that publisher identity
+- if `ALEPH_VM_OWNER_PRIVATE_KEY` is also set, the refresh path embeds the
+  owner authorization plus relay proof objects automatically
+
+This external mode remains useful for one-off repair or manual refresh, but it
+is no longer the only heartbeat path.
+
+Current in-guest refresh behavior:
+
+- deploy/configure stores `ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY`,
+  `ALEPH_BOOTSTRAP_REGISTRATION_ID`, and a base64-encoded
+  `ALEPH_BOOTSTRAP_OWNER_AUTHORIZATION_B64` record in the relay VM env file
+- both relay profiles can additionally store a precomputed libp2p secp256k1
+  identity derived from publisher key `B`, so the runtime `peerId` is known
+  before the relay first starts
+- if `orbitdb-relay-pinner` is deployed without publisher key `B`, it still
+  generates owner authorization after the real relay `peerId` is known and
+  writes it back into the guest with a second `no_start` configure call
+- the guest runs a systemd timer:
+  - `uc-go-peer-bootstrap-refresh.timer`
+  - `orbitdb-relay-pinner-bootstrap-refresh.timer`
+- the timer invokes a local Python refresher that:
+  - calls the profile-specific `*-describe.py` helper
+  - signs the relay proof with publisher key `B`
+  - republishes the bootstrap `POST`
+  - forgets older self-owned records for the same registration ID
+
+This keeps the owner key `A` out of the long-lived guest state once the
+authorization record has been minted.
 
 ## P2P Direction
 
@@ -141,6 +338,28 @@ The main requirements and caveats left for end-to-end live validation are:
   `simple-todo` namespace during testing
 - browser consumers still need their own project-level checks because bootstrap
   discovery can be correct while unrelated app type errors still exist
+
+## Next Implementation Focus
+
+The main unfinished work for this feature is no longer basic publish/discover
+mechanics. It is completing the stronger same-root signing path across all
+relay profiles:
+
+- the wallet that deployed the relay VM
+- the key that refreshes the bootstrap record from the relay
+- the `peerId` that other relays and clients actually dial
+
+The planned implementation direction is:
+
+1. keep the current dual-key authorization payload from owner key `A` to relay
+   key `B`
+2. keep the relay-signed bootstrap payload that key `B` refreshes
+3. validate the new same-root `peerId <- B` model on real deployments for both
+   relay profiles
+4. teach consumers to require dual-key verification by default once the relay
+   producers all emit it
+5. keep actual liveness checks at dial time rather than trying to prove
+   liveness from Aleph alone
 
 ## Consumer Notes
 

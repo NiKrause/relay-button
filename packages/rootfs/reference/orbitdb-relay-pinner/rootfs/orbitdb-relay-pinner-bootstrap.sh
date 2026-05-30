@@ -15,7 +15,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl gnupg python3 build-essential caddy
+apt-get install -y ca-certificates curl gnupg python3 python3-pip build-essential caddy
 
 if ! command -v node >/dev/null 2>&1 || [ "$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0)" -lt "${NODE_MIN_MAJOR}" ]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
@@ -33,6 +33,8 @@ if ! command -v npm >/dev/null 2>&1; then
   echo "npm is unavailable after installing Node.js." >&2
   exit 1
 fi
+
+python3 -m pip install --break-system-packages --no-cache-dir eth-account
 
 mkdir -p "${DATA_DIR}" "$(dirname "${ENV_FILE}")"
 

@@ -3,10 +3,13 @@ import assert from 'node:assert/strict'
 
 import { executeDeployPlan } from '../src/deploy-executor.ts'
 import type { DeployPlan } from '../src/deploy-plan.ts'
+import { deriveLibp2pSecp256k1IdentityFromEvmKey } from '../src/relay-identity.ts'
 
 const DEPLOY_PLAN: DeployPlan = {
   profile: 'uc-go-peer',
   privateKey: '0xabc',
+  bootstrapPublisherPrivateKey: '',
+  bootstrapOwnerPrivateKey: '',
   apiHost: 'https://api2.aleph.im',
   crnListUrl: 'https://crns-list.aleph.sh/crns.json',
   name: 'uc-go-peer',
@@ -55,7 +58,19 @@ function jsonResponse(payload: unknown, status = 200) {
 
 test('executeDeployPlan deploys, publishes port forwards, and waits for processing', async () => {
   const calls: string[] = []
-  const result = await executeDeployPlan(DEPLOY_PLAN, {
+  const configureBodies: string[] = []
+  const bootstrapPublisherPrivateKey =
+    '0x59c6995e998f97a5a0044966f0945382d7d5d95f993dbf3b61e64d1d4438f3f0'
+  const bootstrapOwnerPrivateKey =
+    '0x8b3a350cf5c34c9194ca3a545d5487d74f7382a1d9dfc021f7b64fc6d98f6c1d'
+  const expectedRelayIdentity = deriveLibp2pSecp256k1IdentityFromEvmKey(
+    bootstrapPublisherPrivateKey
+  )
+  const result = await executeDeployPlan({
+    ...DEPLOY_PLAN,
+    bootstrapPublisherPrivateKey,
+    bootstrapOwnerPrivateKey
+  }, {
     sender: '0x1234',
     signer: async () => '0xsigned',
     hasher: (() => {
@@ -118,6 +133,7 @@ test('executeDeployPlan deploys, publishes port forwards, and waits for processi
       }
 
       if (String(url).includes('/configure')) {
+        configureBodies.push(String(init?.body ?? ''))
         return jsonResponse({ status: 'configured' })
       }
 
@@ -125,9 +141,9 @@ test('executeDeployPlan deploys, publishes port forwards, and waits for processi
         return jsonResponse({
           status: 'ready',
           metadata: {
-            peer_id: '12D3KooW...',
-            probe_multiaddrs: ['/ip4/203.0.113.7/tcp/32095/p2p/12D3KooW...'],
-            browser_bootstrap_multiaddrs: ['/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooW...']
+            peer_id: expectedRelayIdentity.peerId,
+            probe_multiaddrs: [`/ip4/203.0.113.7/tcp/32095/p2p/${expectedRelayIdentity.peerId}`],
+            browser_bootstrap_multiaddrs: [`/dns4/relay.example.com/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`]
           }
         })
       }
@@ -159,7 +175,14 @@ test('executeDeployPlan deploys, publishes port forwards, and waits for processi
   assert.equal(result.runtime?.hostIpv4, '203.0.113.7')
   assert.equal(result.runtime?.sshCommand, 'ssh root@203.0.113.7 -p 32022')
   assert.equal(result.runtime?.setupHealth?.ok, true)
-  assert.equal(result.configuration?.metadata?.peer_id, '12D3KooW...')
+  assert.equal(result.configuration?.metadata?.peer_id, expectedRelayIdentity.peerId)
+  assert.equal(configureBodies.length, 1)
+  const configurePayload = JSON.parse(configureBodies[0] ?? '{}')
+  assert.equal(
+    configurePayload.bootstrap_publisher_libp2p_identity_b64,
+    expectedRelayIdentity.protobufBase64
+  )
+  assert.ok(typeof configurePayload.bootstrap_owner_authorization_b64 === 'string')
   assert.ok(calls.some((entry) => entry.includes('/api/v0/aggregates/0x1234.json')))
   const notifyIndex = calls.findIndex((entry) => entry.includes('/control/allocation/notify'))
   const runtimeIndex = calls.findIndex((entry) => entry.includes('/v2/about/executions/list'))
@@ -471,6 +494,286 @@ test('executeDeployPlan configures orbitdb relay pinner after mapped ports appea
     metrics_port: 29090,
     metrics_https_port: 29443,
     webrtc_port: 29093,
-    quic_port: 29094
+    quic_port: 29094,
+    bootstrap_registration_id: 'relay:orbitdb-relay-pinner:orbitdb-relay-pinner'
   })
+})
+
+test('executeDeployPlan persists bootstrap owner authorization in a second no-start guest configure call', async () => {
+  const configureBodies: string[] = []
+
+  const result = await executeDeployPlan(
+    {
+      ...DEPLOY_PLAN,
+      profile: 'orbitdb-relay-pinner',
+      bootstrapPublisherPrivateKey: '',
+      bootstrapOwnerPrivateKey: '0x8b3a350cf5c34c9194ca3a9d8b5421f0b2b7215e7ff5b0e97c85af9a81d3d1ad',
+      rootfsItemHash: 'b'.repeat(64),
+      rootfsVersion: '2026.05.30',
+      requiredPorts: [
+        { port: 22, tcp: true, udp: false, purpose: 'SSH' },
+        { port: 80, tcp: true, udp: false, purpose: 'setup' },
+        { port: 443, tcp: true, udp: false, purpose: 'wss proxy' },
+        { port: 9090, tcp: true, udp: false, purpose: 'metrics' },
+        { port: 9091, tcp: true, udp: false, purpose: 'relay tcp' },
+        { port: 9093, tcp: false, udp: true, purpose: 'relay webrtc' },
+        { port: 9094, tcp: false, udp: true, purpose: 'relay quic' }
+      ]
+    },
+    {
+      sender: '0x1234',
+      signer: async () => '0xsigned',
+      hasher: (() => {
+        let count = 0
+        return () => `hash-d${++count}`
+      })(),
+      sleep: async () => undefined,
+      tcpProbe: async () => ({ ok: true }),
+      fetch: async (url, init) => {
+        if (String(url).includes('crns-list.aleph.sh')) {
+          return jsonResponse({
+            crns: [{ hash: 'crn-1', name: 'CRN One', address: 'https://crn.example.com', score: 10, country_code: 'DE' }]
+          })
+        }
+
+        if (String(url).includes('/api/v0/aggregates/0x1234.json')) {
+          return jsonResponse({})
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-d1') && !init?.method) {
+          return jsonResponse({ status: 'processed', details: { rootfs: 'b'.repeat(64) } })
+        }
+
+        if (String(url).includes('scheduler.api.aleph.cloud')) {
+          return jsonResponse({
+            node: {
+              node_id: 'crn-1',
+              url: 'https://crn.example.com'
+            }
+          })
+        }
+
+        if (String(url).includes('api.2n6.me')) {
+          return jsonResponse({
+            url: 'https://dragon-belt-friend-share.2n6.me',
+            active: true
+          })
+        }
+
+        if (String(url).includes('/v2/about/executions/list')) {
+          return jsonResponse({
+            'hash-d1': {
+              networking: {
+                host_ipv4: '203.0.113.9',
+                mapped_ports: {
+                  '80': { host: 28080, tcp: true, udp: false },
+                  '22': { host: 32022, tcp: true, udp: false },
+                  '9090': { host: 29090, tcp: true, udp: false },
+                  '9091': { host: 29091, tcp: true, udp: false },
+                  '443': { host: 29443, tcp: true, udp: false },
+                  '9093': { host: 29093, tcp: false, udp: true },
+                  '9094': { host: 29094, tcp: false, udp: true }
+                }
+              }
+            }
+          })
+        }
+
+        if (String(url).includes('/health')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/configure')) {
+          configureBodies.push(String(init?.body ?? ''))
+          return jsonResponse({ status: 'configured' })
+        }
+
+        if (String(url).includes('/metadata')) {
+          return jsonResponse({
+            status: 'ready',
+            metadata: {
+              peer_id: '12D3KooOrbitdbDual',
+              probe_multiaddrs: ['/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/12D3KooOrbitdbDual'],
+              browser_bootstrap_multiaddrs: ['/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/12D3KooOrbitdbDual']
+            }
+          })
+        }
+
+        if (String(url).includes('/control/allocation/notify')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/api/v0/messages/') && !init?.method) {
+          return jsonResponse({ status: 'processed', message: { type: 'STORE' } })
+        }
+
+        return jsonResponse(
+          {
+            publication_status: { status: 'success' },
+            message_status: 'pending'
+          },
+          202
+        )
+      }
+    }
+  )
+
+  assert.equal(result.itemHash, 'hash-d1')
+  assert.equal(configureBodies.length, 2)
+  const firstConfigure = JSON.parse(configureBodies[0] ?? '{}')
+  const secondConfigure = JSON.parse(configureBodies[1] ?? '{}')
+
+  assert.equal(firstConfigure.bootstrap_owner_private_key, undefined)
+  assert.equal(firstConfigure.bootstrap_owner_authorization_b64, undefined)
+  assert.equal(firstConfigure.bootstrap_publisher_private_key, undefined)
+
+  assert.equal(secondConfigure.no_start, true)
+  assert.equal(secondConfigure.bootstrap_owner_private_key, undefined)
+  assert.equal(secondConfigure.bootstrap_publisher_private_key, undefined)
+  assert.ok(typeof secondConfigure.bootstrap_owner_authorization_b64 === 'string')
+
+  const authorization = JSON.parse(
+    Buffer.from(secondConfigure.bootstrap_owner_authorization_b64, 'base64').toString('utf8')
+  ) as {
+    scheme?: string
+    payload?: { peerId?: string; publisherAddress?: string; ownerAddress?: string; registrationId?: string }
+    signature?: string
+  }
+
+  assert.equal(authorization.scheme, 'personal_sign')
+  assert.equal(authorization.payload?.peerId, '12D3KooOrbitdbDual')
+  assert.equal(
+    authorization.payload?.registrationId,
+    'relay:orbitdb-relay-pinner:uc-go-peer'
+  )
+  assert.match(String(authorization.payload?.publisherAddress ?? ''), /^0x/i)
+  assert.match(String(authorization.payload?.ownerAddress ?? ''), /^0x/i)
+  assert.match(String(authorization.signature ?? ''), /^0x/i)
+})
+
+test('executeDeployPlan pre-seeds orbitdb relay identity from bootstrap publisher key when supplied', async () => {
+  const configureBodies: string[] = []
+  const bootstrapPublisherPrivateKey =
+    '0x59c6995e998f97a5a0044966f0945382d7d5d95f993dbf3b61e64d1d4438f3f0'
+  const bootstrapOwnerPrivateKey =
+    '0x8b3a350cf5c34c9194ca3a545d5487d74f7382a1d9dfc021f7b64fc6d98f6c1d'
+  const expectedRelayIdentity = deriveLibp2pSecp256k1IdentityFromEvmKey(
+    bootstrapPublisherPrivateKey
+  )
+
+  const result = await executeDeployPlan(
+    {
+      ...DEPLOY_PLAN,
+      profile: 'orbitdb-relay-pinner',
+      bootstrapPublisherPrivateKey,
+      bootstrapOwnerPrivateKey
+    },
+    {
+      sender: '0x1234',
+      signer: async () => '0xsigned',
+      hasher: (() => {
+        let count = 0
+        return () => `hash-s${++count}`
+      })(),
+      sleep: async () => undefined,
+      tcpProbe: async () => ({ ok: true }),
+      fetch: async (url, init) => {
+        if (String(url).includes('crns-list.aleph.sh')) {
+          return jsonResponse({
+            crns: [{ hash: 'crn-1', name: 'CRN One', address: 'https://crn.example.com', score: 10, country_code: 'DE' }]
+          })
+        }
+
+        if (String(url).includes('/api/v0/aggregates/0x1234.json')) {
+          return jsonResponse({})
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-s1') && !init?.method) {
+          return jsonResponse({ status: 'processed', details: { rootfs: 'b'.repeat(64) } })
+        }
+
+        if (String(url).includes('scheduler.api.aleph.cloud')) {
+          return jsonResponse({
+            node: {
+              node_id: 'crn-1',
+              url: 'https://crn.example.com'
+            }
+          })
+        }
+
+        if (String(url).includes('api.2n6.me')) {
+          return jsonResponse({
+            url: 'https://dragon-belt-friend-share.2n6.me',
+            active: true
+          })
+        }
+
+        if (String(url).includes('/v2/about/executions/list')) {
+          return jsonResponse({
+            'hash-s1': {
+              networking: {
+                host_ipv4: '203.0.113.9',
+                mapped_ports: {
+                  '80': { host: 28080, tcp: true, udp: false },
+                  '22': { host: 32022, tcp: true, udp: false },
+                  '9090': { host: 29090, tcp: true, udp: false },
+                  '9091': { host: 29091, tcp: true, udp: false },
+                  '443': { host: 29443, tcp: true, udp: false },
+                  '9093': { host: 29093, tcp: false, udp: true },
+                  '9094': { host: 29094, tcp: false, udp: true }
+                }
+              }
+            }
+          })
+        }
+
+        if (String(url).includes('/health')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/configure')) {
+          configureBodies.push(String(init?.body ?? ''))
+          return jsonResponse({ status: 'configured' })
+        }
+
+        if (String(url).includes('/metadata')) {
+          return jsonResponse({
+            status: 'ready',
+            metadata: {
+              peer_id: expectedRelayIdentity.peerId,
+              probe_multiaddrs: [`/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`],
+              browser_bootstrap_multiaddrs: [`/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`]
+            }
+          })
+        }
+
+        if (String(url).includes('/control/allocation/notify')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/api/v0/messages/') && !init?.method) {
+          return jsonResponse({ status: 'processed', message: { type: 'STORE' } })
+        }
+
+        return jsonResponse(
+          {
+            publication_status: { status: 'success' },
+            message_status: 'pending'
+          },
+          202
+        )
+      }
+    }
+  )
+
+  assert.equal(result.itemHash, 'hash-s1')
+  assert.equal(configureBodies.length, 1)
+  const configurePayload = JSON.parse(configureBodies[0] ?? '{}')
+  assert.equal(configurePayload.bootstrap_publisher_private_key, bootstrapPublisherPrivateKey)
+  assert.equal(
+    configurePayload.bootstrap_publisher_libp2p_identity_hex,
+    Buffer.from(expectedRelayIdentity.protobuf).toString('hex')
+  )
+  assert.ok(typeof configurePayload.bootstrap_owner_authorization_b64 === 'string')
+  assert.equal(result.configuration?.metadata?.peer_id, expectedRelayIdentity.peerId)
 })

@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodic Aleph bootstrap refresh for uc-go-peer
+
+[Timer]
+OnBootSec=20m
+OnUnitActiveSec=6h
+RandomizedDelaySec=15m
+Persistent=true
+Unit=uc-go-peer-bootstrap-refresh.service
+
+[Install]
+WantedBy=timers.target

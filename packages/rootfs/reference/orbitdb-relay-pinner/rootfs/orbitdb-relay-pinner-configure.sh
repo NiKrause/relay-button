@@ -14,6 +14,7 @@ CADDY_UPSTREAM_WSS_PORT="${CADDY_UPSTREAM_WSS_PORT:-9092}"
 CADDY_UPSTREAM_HOST="${CADDY_UPSTREAM_HOST:-127.0.0.1}"
 CADDY_UPSTREAM_METRICS_PORT="${CADDY_UPSTREAM_METRICS_PORT:-9090}"
 AUTOTLS_REFRESH_SERVICE="${AUTOTLS_REFRESH_SERVICE:-orbitdb-relay-pinner-autotls-refresh.service}"
+BOOTSTRAP_REFRESH_TIMER="${BOOTSTRAP_REFRESH_TIMER:-orbitdb-relay-pinner-bootstrap-refresh.timer}"
 PUBLIC_IPV4=""
 PUBLIC_IPV6=""
 TCP_PORT=""
@@ -23,6 +24,11 @@ METRICS_PORT=""
 METRICS_HTTPS_PORT=""
 WEBRTC_PORT=""
 QUIC_PORT=""
+BOOTSTRAP_PUBLISHER_PRIVATE_KEY=""
+BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_HEX=""
+BOOTSTRAP_OWNER_PRIVATE_KEY=""
+BOOTSTRAP_OWNER_AUTHORIZATION_B64=""
+BOOTSTRAP_REGISTRATION_ID=""
 START_SERVICE=1
 
 usage() {
@@ -38,6 +44,11 @@ Usage:
     [--metrics-https-port <host-port>] \
     [--webrtc-port <host-port>] \
     [--quic-port <host-port>] \
+    [--bootstrap-publisher-private-key <hex>] \
+    [--bootstrap-publisher-libp2p-identity-hex <hex>] \
+    [--bootstrap-owner-private-key <hex>] \
+    [--bootstrap-owner-authorization-b64 <base64>] \
+    [--bootstrap-registration-id <id>] \
     [--no-start]
 
 Writes VITE_APPEND_ANNOUNCE for the externally assigned Aleph host ports,
@@ -134,6 +145,26 @@ while [ "$#" -gt 0 ]; do
       QUIC_PORT="${2:-}"
       shift 2
       ;;
+    --bootstrap-publisher-private-key)
+      BOOTSTRAP_PUBLISHER_PRIVATE_KEY="${2:-}"
+      shift 2
+      ;;
+    --bootstrap-publisher-libp2p-identity-hex)
+      BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_HEX="${2:-}"
+      shift 2
+      ;;
+    --bootstrap-owner-private-key)
+      BOOTSTRAP_OWNER_PRIVATE_KEY="${2:-}"
+      shift 2
+      ;;
+    --bootstrap-owner-authorization-b64)
+      BOOTSTRAP_OWNER_AUTHORIZATION_B64="${2:-}"
+      shift 2
+      ;;
+    --bootstrap-registration-id)
+      BOOTSTRAP_REGISTRATION_ID="${2:-}"
+      shift 2
+      ;;
     --no-start)
       START_SERVICE=0
       shift
@@ -217,6 +248,22 @@ fi
 if [ -n "${QUIC_PORT}" ]; then
   write_env_var "EXTERNAL_RELAY_QUIC_PORT" "${QUIC_PORT}"
 fi
+if [ -n "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}" ]; then
+  write_env_var "ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY" "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}"
+fi
+if [ -n "${BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_HEX}" ]; then
+  write_env_var "RELAY_PRIV_KEY" "${BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_HEX}"
+fi
+if [ -n "${BOOTSTRAP_OWNER_PRIVATE_KEY}" ]; then
+  write_env_var "ALEPH_BOOTSTRAP_OWNER_PRIVATE_KEY" "${BOOTSTRAP_OWNER_PRIVATE_KEY}"
+fi
+if [ -n "${BOOTSTRAP_OWNER_AUTHORIZATION_B64}" ]; then
+  write_env_var "ALEPH_BOOTSTRAP_OWNER_AUTHORIZATION_B64" "${BOOTSTRAP_OWNER_AUTHORIZATION_B64}"
+fi
+if [ -n "${BOOTSTRAP_REGISTRATION_ID}" ]; then
+  write_env_var "ALEPH_BOOTSTRAP_REGISTRATION_ID" "${BOOTSTRAP_REGISTRATION_ID}"
+fi
+write_env_var "ALEPH_BOOTSTRAP_PROFILE" "orbitdb-relay-pinner"
 touch "${READY_FILE}"
 
 if [ "${START_SERVICE}" -eq 1 ]; then
@@ -224,6 +271,8 @@ if [ "${START_SERVICE}" -eq 1 ]; then
   systemctl enable "${SERVICE_NAME}"
   systemctl restart "${SERVICE_NAME}"
   systemctl enable "${AUTOTLS_REFRESH_SERVICE}"
+  systemctl enable "${BOOTSTRAP_REFRESH_TIMER}"
+  systemctl start "${BOOTSTRAP_REFRESH_TIMER}"
   if [ -n "${PROXY_HOSTNAME}" ]; then
     write_caddyfile "${PROXY_HOSTNAME}"
     touch "${CADDY_READY_FILE}"

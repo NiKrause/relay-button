@@ -1,4 +1,5 @@
 import { bootstrap } from "@libp2p/bootstrap";
+import { recoverMessageAddress } from "viem";
 
 export const DEFAULT_ALEPH_API_HOST = "https://api2.aleph.im";
 export const DEFAULT_ALEPH_BOOTSTRAP_CHANNEL = "simple-todo";
@@ -6,13 +7,64 @@ export const DEFAULT_ALEPH_BOOTSTRAP_REF = "simple-todo-bootstrap";
 export const DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE = "relay-bootstrap";
 export const DEFAULT_BOOTSTRAP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const DEFAULT_BOOTSTRAP_PAGINATION = 50;
+export const DEFAULT_BOOTSTRAP_MAX_PAGES = 5;
+export const RELAY_BOOTSTRAP_SIGNATURE_SCHEME = "personal_sign";
+
+export interface RelayBootstrapAuthorizationPayload {
+  ownerAddress: string;
+  publisherAddress: string;
+  peerId: string;
+  registrationId?: string;
+  profile?: string;
+  version?: string;
+  instanceItemHash?: string;
+  issuedAt: number;
+  expiresAt?: number;
+}
+
+export interface RelayBootstrapAuthorizationRecord {
+  scheme: string;
+  payload: RelayBootstrapAuthorizationPayload;
+  signature: string;
+}
+
+export interface RelayBootstrapProofPayload {
+  peerId: string;
+  multiaddrs: string[];
+  browserMultiaddrs?: string[];
+  registrationId?: string;
+  profile?: string;
+  version?: string;
+  updatedAt: number;
+}
+
+export interface RelayBootstrapProofRecord {
+  scheme: string;
+  payload: RelayBootstrapProofPayload;
+  signature: string;
+}
+
+export interface RelayBootstrapVerificationResult {
+  ok: boolean;
+  errors: string[];
+}
+
+export type RelayBootstrapProofSigner = (
+  address: string,
+  payload: string,
+) => Promise<string>;
 
 export interface RelayBootstrapContent {
   peerId: string;
   multiaddrs: string[];
   browserMultiaddrs?: string[];
+  registrationId?: string;
   profile?: string;
   version?: string;
+  ownerAddress?: string;
+  publisherAddress?: string;
+  authorization?: RelayBootstrapAuthorizationRecord;
+  relayProof?: RelayBootstrapProofRecord;
   updatedAt: number;
 }
 
@@ -41,8 +93,11 @@ export interface DiscoverAlephBootstrapOptions {
   postType?: string;
   page?: number;
   pagination?: number;
+  maxPages?: number;
   maxAgeMs?: number;
   browserDialableOnly?: boolean;
+  requireDualKeyAttestation?: boolean;
+  verifyDualKeyAttestation?: boolean;
   fetch?: typeof fetch;
 }
 
@@ -56,13 +111,62 @@ export interface CreateRelayBootstrapPostOptions {
   peerId: string;
   multiaddrs: string[];
   browserMultiaddrs?: string[];
+  registrationId?: string;
   ref?: string;
   channel?: string;
   postType?: string;
   profile?: string;
   version?: string;
+  ownerAddress?: string;
+  publisherAddress?: string;
+  authorization?: RelayBootstrapAuthorizationRecord;
+  relayProof?: RelayBootstrapProofRecord;
   now?: number;
   hasher: (payload: string) => Promise<string> | string;
+}
+
+export type RelayBootstrapTrustMode =
+  | "legacy-wallet-signed"
+  | "dual-key-attested";
+
+function serializeOwnerAuthorizationPayload(
+  payload: RelayBootstrapAuthorizationPayload,
+): string {
+  return JSON.stringify({
+    ownerAddress: payload.ownerAddress,
+    publisherAddress: payload.publisherAddress,
+    peerId: payload.peerId,
+    registrationId: payload.registrationId,
+    profile: payload.profile,
+    version: payload.version,
+    instanceItemHash: payload.instanceItemHash,
+    issuedAt: payload.issuedAt,
+    expiresAt: payload.expiresAt,
+  });
+}
+
+function serializeRelayProofPayload(payload: RelayBootstrapProofPayload): string {
+  return JSON.stringify({
+    peerId: payload.peerId,
+    multiaddrs: dedupeMultiaddrs(payload.multiaddrs),
+    browserMultiaddrs: payload.browserMultiaddrs
+      ? dedupeMultiaddrs(payload.browserMultiaddrs)
+      : undefined,
+    registrationId: payload.registrationId,
+    profile: payload.profile,
+    version: payload.version,
+    updatedAt: payload.updatedAt,
+  });
+}
+
+async function recoverAddressForSignature(
+  payload: string,
+  signature: string,
+): Promise<string> {
+  return recoverMessageAddress({
+    message: payload,
+    signature: signature as `0x${string}`,
+  });
 }
 
 type AlephPostsResponse = {
@@ -84,6 +188,15 @@ function asNumber(value: unknown): number | null {
 
 function normalizeHost(host: string): string {
   return host.trim().toLowerCase();
+}
+
+function normalizeAddress(address: string): string {
+  return address.trim().toLowerCase();
+}
+
+function normalizeSignature(signature: string): string {
+  const trimmed = signature.trim();
+  return trimmed.startsWith("0x") ? trimmed : `0x${trimmed}`;
 }
 
 function splitMultiaddr(addr: string): string[] {
@@ -217,10 +330,95 @@ function normalizeRelayBootstrapContent(value: unknown): RelayBootstrapContent |
     browserMultiaddrs: browserMultiaddrs
       ? dedupeMultiaddrs(browserMultiaddrs)
       : undefined,
+    registrationId: asTrimmedString(content.registrationId) ?? undefined,
     profile: asTrimmedString(content.profile) ?? undefined,
     version: asTrimmedString(content.version) ?? undefined,
+    ownerAddress: asTrimmedString(content.ownerAddress) ?? undefined,
+    publisherAddress: asTrimmedString(content.publisherAddress) ?? undefined,
+    authorization:
+      normalizeRelayBootstrapAuthorizationRecord(content.authorization) ?? undefined,
+    relayProof: normalizeRelayBootstrapProofRecord(content.relayProof) ?? undefined,
     updatedAt,
   };
+}
+
+function normalizeRelayBootstrapAuthorizationPayload(
+  value: unknown,
+): RelayBootstrapAuthorizationPayload | null {
+  if (!value || typeof value !== "object") return null;
+  const payload = value as Record<string, unknown>;
+  const ownerAddress = asTrimmedString(payload.ownerAddress);
+  const publisherAddress = asTrimmedString(payload.publisherAddress);
+  const peerId = asTrimmedString(payload.peerId);
+  const issuedAt = asNumber(payload.issuedAt);
+  const expiresAt = asNumber(payload.expiresAt) ?? undefined;
+  if (!ownerAddress || !publisherAddress || !peerId || issuedAt == null) {
+    return null;
+  }
+
+  return {
+    ownerAddress,
+    publisherAddress,
+    peerId,
+    registrationId: asTrimmedString(payload.registrationId) ?? undefined,
+    profile: asTrimmedString(payload.profile) ?? undefined,
+    version: asTrimmedString(payload.version) ?? undefined,
+    instanceItemHash: asTrimmedString(payload.instanceItemHash) ?? undefined,
+    issuedAt,
+    expiresAt,
+  };
+}
+
+function normalizeRelayBootstrapAuthorizationRecord(
+  value: unknown,
+): RelayBootstrapAuthorizationRecord | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const scheme = asTrimmedString(record.scheme);
+  const signature = asTrimmedString(record.signature);
+  const payload = normalizeRelayBootstrapAuthorizationPayload(record.payload);
+  if (!scheme || !signature || !payload) return null;
+  return { scheme, signature, payload };
+}
+
+function normalizeRelayBootstrapProofPayload(
+  value: unknown,
+): RelayBootstrapProofPayload | null {
+  if (!value || typeof value !== "object") return null;
+  const payload = value as Record<string, unknown>;
+  const peerId = asTrimmedString(payload.peerId);
+  const updatedAt = asNumber(payload.updatedAt);
+  if (!peerId || updatedAt == null) return null;
+  const multiaddrs = Array.isArray(payload.multiaddrs)
+    ? payload.multiaddrs.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  const browserMultiaddrs = Array.isArray(payload.browserMultiaddrs)
+    ? payload.browserMultiaddrs.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
+
+  return {
+    peerId,
+    multiaddrs: dedupeMultiaddrs(multiaddrs),
+    browserMultiaddrs: browserMultiaddrs
+      ? dedupeMultiaddrs(browserMultiaddrs)
+      : undefined,
+    registrationId: asTrimmedString(payload.registrationId) ?? undefined,
+    profile: asTrimmedString(payload.profile) ?? undefined,
+    version: asTrimmedString(payload.version) ?? undefined,
+    updatedAt,
+  };
+}
+
+function normalizeRelayBootstrapProofRecord(
+  value: unknown,
+): RelayBootstrapProofRecord | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const scheme = asTrimmedString(record.scheme);
+  const signature = asTrimmedString(record.signature);
+  const payload = normalizeRelayBootstrapProofPayload(record.payload);
+  if (!scheme || !signature || !payload) return null;
+  return { scheme, signature, payload };
 }
 
 function normalizeRelayBootstrapPostRecord(value: unknown): RelayBootstrapPostRecord | null {
@@ -242,10 +440,15 @@ export function buildRelayBootstrapPostContent(args: {
   peerId: string;
   multiaddrs: string[];
   browserMultiaddrs?: string[];
+  registrationId?: string;
   ref?: string;
   postType?: string;
   profile?: string;
   version?: string;
+  ownerAddress?: string;
+  publisherAddress?: string;
+  authorization?: RelayBootstrapAuthorizationRecord;
+  relayProof?: RelayBootstrapProofRecord;
   now?: number;
 }): RelayBootstrapPostContent {
   const now = args.now ?? Date.now() / 1000;
@@ -263,8 +466,13 @@ export function buildRelayBootstrapPostContent(args: {
             browserDialableOnly: true,
           })
         : undefined,
+      registrationId: args.registrationId,
       profile: args.profile,
       version: args.version,
+      ownerAddress: args.ownerAddress,
+      publisherAddress: args.publisherAddress,
+      authorization: args.authorization,
+      relayProof: args.relayProof,
       updatedAt: Math.round(updatedAt),
     },
     time: now,
@@ -290,10 +498,15 @@ export async function createRelayBootstrapPost(
     peerId: args.peerId,
     multiaddrs: args.multiaddrs,
     browserMultiaddrs: args.browserMultiaddrs,
+    registrationId: args.registrationId,
     ref: args.ref ?? DEFAULT_ALEPH_BOOTSTRAP_REF,
     postType: args.postType ?? DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE,
     profile: args.profile,
     version: args.version,
+    ownerAddress: args.ownerAddress,
+    publisherAddress: args.publisherAddress,
+    authorization: args.authorization,
+    relayProof: args.relayProof,
     now: nowMillis,
   });
   itemContent.time = nowSeconds;
@@ -310,6 +523,252 @@ export async function createRelayBootstrapPost(
     item_content: serialized,
     item_hash: itemHash,
   };
+}
+
+export function relayBootstrapTrustMode(
+  content: RelayBootstrapContent | null | undefined,
+): RelayBootstrapTrustMode {
+  if (
+    content?.authorization &&
+    content?.relayProof &&
+    content.authorization.payload.publisherAddress &&
+    content.relayProof.payload.peerId
+  ) {
+    return "dual-key-attested";
+  }
+  return "legacy-wallet-signed";
+}
+
+export async function signRelayBootstrapAuthorization(args: {
+  ownerAddress: string;
+  publisherAddress: string;
+  peerId: string;
+  registrationId?: string;
+  profile?: string;
+  version?: string;
+  instanceItemHash?: string;
+  issuedAt?: number;
+  expiresAt?: number;
+  signer: RelayBootstrapProofSigner;
+}): Promise<RelayBootstrapAuthorizationRecord> {
+  const payload: RelayBootstrapAuthorizationPayload = {
+    ownerAddress: args.ownerAddress,
+    publisherAddress: args.publisherAddress,
+    peerId: args.peerId,
+    registrationId: args.registrationId,
+    profile: args.profile,
+    version: args.version,
+    instanceItemHash: args.instanceItemHash,
+    issuedAt: args.issuedAt ?? Date.now(),
+    expiresAt: args.expiresAt,
+  };
+  const serialized = serializeOwnerAuthorizationPayload(payload);
+  const signature = await args.signer(args.ownerAddress, serialized);
+
+  return {
+    scheme: RELAY_BOOTSTRAP_SIGNATURE_SCHEME,
+    payload,
+    signature: normalizeSignature(signature),
+  };
+}
+
+export async function signRelayBootstrapProof(args: {
+  publisherAddress: string;
+  peerId: string;
+  multiaddrs: string[];
+  browserMultiaddrs?: string[];
+  registrationId?: string;
+  profile?: string;
+  version?: string;
+  updatedAt?: number;
+  signer: RelayBootstrapProofSigner;
+}): Promise<RelayBootstrapProofRecord> {
+  const payload: RelayBootstrapProofPayload = {
+    peerId: args.peerId,
+    multiaddrs: filterPublicMultiaddrs(args.multiaddrs),
+    browserMultiaddrs: args.browserMultiaddrs
+      ? filterPublicMultiaddrs(args.browserMultiaddrs, {
+          browserDialableOnly: true,
+        })
+      : undefined,
+    registrationId: args.registrationId,
+    profile: args.profile,
+    version: args.version,
+    updatedAt: args.updatedAt ?? Date.now(),
+  };
+  const serialized = serializeRelayProofPayload(payload);
+  const signature = await args.signer(args.publisherAddress, serialized);
+
+  return {
+    scheme: RELAY_BOOTSTRAP_SIGNATURE_SCHEME,
+    payload,
+    signature: normalizeSignature(signature),
+  };
+}
+
+export async function verifyRelayBootstrapAuthorization(
+  authorization: RelayBootstrapAuthorizationRecord | null | undefined,
+  options: { now?: number } = {},
+): Promise<RelayBootstrapVerificationResult> {
+  const errors: string[] = [];
+  if (!authorization) {
+    errors.push("Missing owner authorization.");
+    return { ok: false, errors };
+  }
+
+  if (authorization.scheme !== RELAY_BOOTSTRAP_SIGNATURE_SCHEME) {
+    errors.push(`Unsupported owner authorization scheme: ${authorization.scheme}`);
+    return { ok: false, errors };
+  }
+
+  const payload = authorization.payload;
+  const serialized = serializeOwnerAuthorizationPayload(payload);
+  try {
+    const recovered = await recoverAddressForSignature(
+      serialized,
+      authorization.signature,
+    );
+    if (normalizeAddress(recovered) !== normalizeAddress(payload.ownerAddress)) {
+      errors.push("Owner authorization signature does not recover the owner address.");
+    }
+  } catch (error) {
+    errors.push(
+      `Owner authorization signature could not be recovered: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  const now = options.now ?? Date.now();
+  if (payload.expiresAt != null && now > payload.expiresAt) {
+    errors.push("Owner authorization has expired.");
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
+export async function verifyRelayBootstrapProof(
+  proof: RelayBootstrapProofRecord | null | undefined,
+  options: {
+    expectedPublisherAddress?: string;
+    expectedPeerId?: string;
+  } = {},
+): Promise<RelayBootstrapVerificationResult> {
+  const errors: string[] = [];
+  if (!proof) {
+    errors.push("Missing relay proof.");
+    return { ok: false, errors };
+  }
+
+  if (proof.scheme !== RELAY_BOOTSTRAP_SIGNATURE_SCHEME) {
+    errors.push(`Unsupported relay proof scheme: ${proof.scheme}`);
+    return { ok: false, errors };
+  }
+
+  const payload = proof.payload;
+  const serialized = serializeRelayProofPayload(payload);
+  try {
+    const recovered = await recoverAddressForSignature(serialized, proof.signature);
+
+    if (
+      options.expectedPublisherAddress &&
+      normalizeAddress(recovered) !== normalizeAddress(options.expectedPublisherAddress)
+    ) {
+      errors.push("Relay proof signature does not recover the expected publisher address.");
+    }
+  } catch (error) {
+    errors.push(
+      `Relay proof signature could not be recovered: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  if (options.expectedPeerId && payload.peerId !== options.expectedPeerId) {
+    errors.push("Relay proof peer ID does not match the expected peer ID.");
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
+export async function verifyRelayBootstrapDualKeyContent(
+  content: RelayBootstrapContent | null | undefined,
+  options: { now?: number } = {},
+): Promise<RelayBootstrapVerificationResult> {
+  const errors: string[] = [];
+  if (!content) {
+    errors.push("Missing relay bootstrap content.");
+    return { ok: false, errors };
+  }
+
+  const authorization = await verifyRelayBootstrapAuthorization(
+    content.authorization,
+    options,
+  );
+  errors.push(...authorization.errors);
+
+  const expectedPublisherAddress =
+    content.publisherAddress ??
+    content.authorization?.payload.publisherAddress ??
+    undefined;
+  const proof = await verifyRelayBootstrapProof(content.relayProof, {
+    expectedPublisherAddress,
+    expectedPeerId: content.peerId,
+  });
+  errors.push(...proof.errors);
+
+  if (content.ownerAddress && content.authorization) {
+    if (
+      normalizeAddress(content.ownerAddress) !==
+      normalizeAddress(content.authorization.payload.ownerAddress)
+    ) {
+      errors.push("Content ownerAddress does not match the owner authorization payload.");
+    }
+  }
+
+  if (expectedPublisherAddress && content.authorization) {
+    if (
+      normalizeAddress(expectedPublisherAddress) !==
+      normalizeAddress(content.authorization.payload.publisherAddress)
+    ) {
+      errors.push(
+        "Content publisherAddress does not match the owner authorization payload.",
+      );
+    }
+  }
+
+  if (content.authorization && content.authorization.payload.peerId !== content.peerId) {
+    errors.push("Owner authorization peer ID does not match the bootstrap content peer ID.");
+  }
+
+  const proofPayload = content.relayProof?.payload;
+  if (proofPayload) {
+    if (proofPayload.registrationId !== content.registrationId) {
+      errors.push("Relay proof registrationId does not match the bootstrap content.");
+    }
+    if (proofPayload.profile !== content.profile) {
+      errors.push("Relay proof profile does not match the bootstrap content.");
+    }
+    if (proofPayload.version !== content.version) {
+      errors.push("Relay proof version does not match the bootstrap content.");
+    }
+    if (proofPayload.updatedAt !== content.updatedAt) {
+      errors.push("Relay proof updatedAt does not match the bootstrap content.");
+    }
+    if (
+      JSON.stringify(dedupeMultiaddrs(proofPayload.multiaddrs)) !==
+      JSON.stringify(dedupeMultiaddrs(content.multiaddrs))
+    ) {
+      errors.push("Relay proof multiaddrs do not match the bootstrap content.");
+    }
+    if (
+      JSON.stringify(dedupeMultiaddrs(proofPayload.browserMultiaddrs ?? [])) !==
+      JSON.stringify(dedupeMultiaddrs(content.browserMultiaddrs ?? []))
+    ) {
+      errors.push("Relay proof browserMultiaddrs do not match the bootstrap content.");
+    }
+  }
+
+  return { ok: errors.length === 0, errors };
 }
 
 export async function fetchAlephBootstrapPosts(
@@ -355,19 +814,146 @@ export async function fetchAlephBootstrapPosts(
     .filter((entry): entry is RelayBootstrapPostRecord => entry != null);
 }
 
-export async function discoverAlephBootstrapMultiaddrs(
-  options: DiscoverAlephBootstrapOptions = {},
-): Promise<string[]> {
-  const posts = await fetchAlephBootstrapPosts(options);
-  const maxAgeMs = options.maxAgeMs ?? DEFAULT_BOOTSTRAP_MAX_AGE_MS;
-  const now = Date.now();
-  const browserDialableOnly = options.browserDialableOnly ?? true;
+function compareRelayBootstrapPostRecency(
+  left: RelayBootstrapPostRecord,
+  right: RelayBootstrapPostRecord,
+): number {
+  const leftUpdatedAt = left.content?.updatedAt ?? 0;
+  const rightUpdatedAt = right.content?.updatedAt ?? 0;
+  if (leftUpdatedAt !== rightUpdatedAt) return leftUpdatedAt - rightUpdatedAt;
 
-  const addrs: string[] = [];
+  const leftTime = left.time ?? 0;
+  const rightTime = right.time ?? 0;
+  return leftTime - rightTime;
+}
+
+function relayBootstrapRecordIdentity(post: RelayBootstrapPostRecord): string | null {
+  const content = post.content;
+  if (!content) return null;
+  if (content.registrationId) return `registration:${content.registrationId}`;
+  if (post.address) return `sender:${normalizeAddress(post.address)}`;
+  return content.peerId ? `peer:${content.peerId}` : null;
+}
+
+export function selectCurrentRelayBootstrapPosts(
+  posts: readonly RelayBootstrapPostRecord[],
+  options: Pick<DiscoverAlephBootstrapOptions, "maxAgeMs"> & {
+    now?: number;
+  } = {},
+): RelayBootstrapPostRecord[] {
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_BOOTSTRAP_MAX_AGE_MS;
+  const now = options.now ?? Date.now();
+  const selected = new Map<string, RelayBootstrapPostRecord>();
+
   for (const post of posts) {
     const content = post.content;
     if (!content) continue;
     if (now - content.updatedAt > maxAgeMs) continue;
+
+    const identity = relayBootstrapRecordIdentity(post);
+    if (!identity) continue;
+
+    const previous = selected.get(identity);
+    if (
+      !previous ||
+      compareRelayBootstrapPostRecency(post, previous) > 0
+    ) {
+      selected.set(identity, post);
+    }
+  }
+
+  return [...selected.values()].sort(
+    (left, right) => compareRelayBootstrapPostRecency(right, left),
+  );
+}
+
+async function filterTrustedRelayBootstrapPosts(
+  posts: readonly RelayBootstrapPostRecord[],
+  options: Pick<
+    DiscoverAlephBootstrapOptions,
+    "requireDualKeyAttestation" | "verifyDualKeyAttestation"
+  > = {},
+): Promise<RelayBootstrapPostRecord[]> {
+  const requireDualKeyAttestation = options.requireDualKeyAttestation ?? false;
+  const verifyDualKeyAttestation = options.verifyDualKeyAttestation ?? true;
+  const trusted: RelayBootstrapPostRecord[] = [];
+
+  for (const post of posts) {
+    const content = post.content;
+    if (!content) continue;
+
+    const trustMode = relayBootstrapTrustMode(content);
+    if (trustMode === "legacy-wallet-signed") {
+      if (!requireDualKeyAttestation) {
+        trusted.push(post);
+      }
+      continue;
+    }
+
+    if (!verifyDualKeyAttestation) {
+      trusted.push(post);
+      continue;
+    }
+
+    const verification = await verifyRelayBootstrapDualKeyContent(content);
+    if (verification.ok) {
+      trusted.push(post);
+    }
+  }
+
+  return trusted;
+}
+
+export async function discoverAlephBootstrapMultiaddrs(
+  options: DiscoverAlephBootstrapOptions = {},
+): Promise<string[]> {
+  const browserDialableOnly = options.browserDialableOnly ?? true;
+  const pagination = options.pagination ?? DEFAULT_BOOTSTRAP_PAGINATION;
+  const startPage = options.page ?? 1;
+  const maxPages = Math.max(1, options.maxPages ?? DEFAULT_BOOTSTRAP_MAX_PAGES);
+  const collectedPosts: RelayBootstrapPostRecord[] = [];
+
+  for (let offset = 0; offset < maxPages; offset += 1) {
+    const page = startPage + offset;
+    const pagePosts = await fetchAlephBootstrapPosts({
+      ...options,
+      page,
+      pagination,
+    });
+    collectedPosts.push(...pagePosts);
+
+    const selectedPosts = selectCurrentRelayBootstrapPosts(collectedPosts, {
+      maxAgeMs: options.maxAgeMs,
+    });
+    const trustedPosts = await filterTrustedRelayBootstrapPosts(selectedPosts, {
+      requireDualKeyAttestation: options.requireDualKeyAttestation,
+      verifyDualKeyAttestation: options.verifyDualKeyAttestation,
+    });
+    const addrs = relayBootstrapPostsToMultiaddrs(
+      trustedPosts,
+      browserDialableOnly,
+    );
+    if (addrs.length > 0) {
+      return addrs;
+    }
+
+    if (pagePosts.length < pagination) {
+      break;
+    }
+  }
+
+  return [];
+}
+
+function relayBootstrapPostsToMultiaddrs(
+  posts: readonly RelayBootstrapPostRecord[],
+  browserDialableOnly: boolean,
+): string[] {
+  const addrs: string[] = [];
+
+  for (const post of posts) {
+    const content = post.content;
+    if (!content) continue;
 
     const candidates =
       browserDialableOnly &&

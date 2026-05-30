@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { privateKeyToAccount } from "viem/accounts";
 
 import {
   buildRelayBootstrapPostContent,
@@ -7,6 +8,13 @@ import {
   dedupeMultiaddrs,
   discoverAlephBootstrapMultiaddrs,
   filterPublicMultiaddrs,
+  relayBootstrapTrustMode,
+  signRelayBootstrapAuthorization,
+  signRelayBootstrapProof,
+  selectCurrentRelayBootstrapPosts,
+  verifyRelayBootstrapAuthorization,
+  verifyRelayBootstrapDualKeyContent,
+  verifyRelayBootstrapProof,
 } from "../dist/index.js";
 
 test("filterPublicMultiaddrs drops local and private addresses", () => {
@@ -62,6 +70,50 @@ test("buildRelayBootstrapPostContent keeps public addrs and browser subset", () 
   assert.equal(content.content.updatedAt, 1234);
 });
 
+test("buildRelayBootstrapPostContent can carry dual-key authorization metadata", () => {
+  const content = buildRelayBootstrapPostContent({
+    sender: "0xpublisher",
+    ownerAddress: "0xowner",
+    publisherAddress: "0xpublisher",
+    peerId: "12D3KooWPublic",
+    multiaddrs: ["/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic"],
+    registrationId: "relay:demo",
+    profile: "orbitdb-relay-pinner",
+    version: "0.4.0",
+    authorization: {
+      scheme: "personal_sign",
+      signature: "0xauth",
+      payload: {
+        ownerAddress: "0xowner",
+        publisherAddress: "0xpublisher",
+        peerId: "12D3KooWPublic",
+        registrationId: "relay:demo",
+        profile: "orbitdb-relay-pinner",
+        version: "0.4.0",
+        issuedAt: 111,
+      },
+    },
+    relayProof: {
+      scheme: "personal_sign",
+      signature: "0xrelay",
+      payload: {
+        peerId: "12D3KooWPublic",
+        multiaddrs: ["/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic"],
+        registrationId: "relay:demo",
+        profile: "orbitdb-relay-pinner",
+        version: "0.4.0",
+        updatedAt: 1234,
+      },
+    },
+    now: 1234,
+  });
+
+  assert.equal(content.content.ownerAddress, "0xowner");
+  assert.equal(content.content.publisherAddress, "0xpublisher");
+  assert.equal(content.content.authorization?.signature, "0xauth");
+  assert.equal(content.content.relayProof?.signature, "0xrelay");
+});
+
 test("createRelayBootstrapPost builds an Aleph POST envelope", async () => {
   const post = await createRelayBootstrapPost({
     sender: "0xabc",
@@ -75,6 +127,120 @@ test("createRelayBootstrapPost builds an Aleph POST envelope", async () => {
   assert.equal(post.item_hash, "deadbeef");
   assert.match(post.item_content, /"type":"relay-bootstrap"/);
   assert.match(post.item_content, /"ref":"simple-todo-bootstrap"/);
+});
+
+test("discoverAlephBootstrapMultiaddrs accepts posts carrying dual-key proof metadata", async () => {
+  const owner = privateKeyToAccount(
+    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  );
+  const publisher = privateKeyToAccount(
+    "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  );
+  const signer = async (address, payload) => {
+    const account =
+      address.toLowerCase() === owner.address.toLowerCase() ? owner : publisher;
+    return account.signMessage({ message: payload });
+  };
+  const now = Date.now();
+  const authorization = await signRelayBootstrapAuthorization({
+    ownerAddress: owner.address,
+    publisherAddress: publisher.address,
+    peerId: "12D3KooWProof",
+    issuedAt: now - 1_000,
+    signer,
+  });
+  const relayProof = await signRelayBootstrapProof({
+    publisherAddress: publisher.address,
+    peerId: "12D3KooWProof",
+    multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    browserMultiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    updatedAt: now,
+    signer,
+  });
+  const fetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return {
+        posts: [
+          {
+            hash: "hash-proof",
+            item_hash: "item-proof",
+            address: publisher.address,
+            type: "relay-bootstrap",
+            ref: "simple-todo-bootstrap",
+            content: {
+              peerId: "12D3KooWProof",
+              ownerAddress: owner.address,
+              publisherAddress: publisher.address,
+              updatedAt: now,
+              multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+              browserMultiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+              authorization,
+              relayProof,
+            },
+          },
+        ],
+      };
+    },
+  });
+
+  const addrs = await discoverAlephBootstrapMultiaddrs({ fetch });
+  assert.deepEqual(addrs, [
+    "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+  ]);
+});
+
+test("discoverAlephBootstrapMultiaddrs ignores invalid dual-key proof records", async () => {
+  const now = Date.now();
+  const fetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return {
+        posts: [
+          {
+            hash: "hash-invalid-proof",
+            item_hash: "item-invalid-proof",
+            address: "0xpublisher",
+            type: "relay-bootstrap",
+            ref: "simple-todo-bootstrap",
+            content: {
+              peerId: "12D3KooWProof",
+              ownerAddress: "0xowner",
+              publisherAddress: "0xpublisher",
+              updatedAt: now,
+              multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+              browserMultiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+              authorization: {
+                scheme: "personal_sign",
+                signature: "0xdeadbeef",
+                payload: {
+                  ownerAddress: "0xowner",
+                  publisherAddress: "0xpublisher",
+                  peerId: "12D3KooWProof",
+                  issuedAt: now - 1_000,
+                },
+              },
+              relayProof: {
+                scheme: "personal_sign",
+                signature: "0xbeefdead",
+                payload: {
+                  peerId: "12D3KooWProof",
+                  multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+                  browserMultiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+                  updatedAt: now,
+                },
+              },
+            },
+          },
+        ],
+      };
+    },
+  });
+
+  const addrs = await discoverAlephBootstrapMultiaddrs({ fetch });
+  assert.deepEqual(addrs, []);
 });
 
 test("discoverAlephBootstrapMultiaddrs dedupes and skips stale entries", async () => {
@@ -131,5 +297,307 @@ test("discoverAlephBootstrapMultiaddrs dedupes and skips stale entries", async (
       "/dns4/relay-a.example.com/tcp/443/tls/ws/p2p/12D3KooWFresh",
     ]),
     ["/dns4/relay-a.example.com/tcp/443/tls/ws/p2p/12D3KooWFresh"],
+  );
+});
+
+test("discoverAlephBootstrapMultiaddrs scans later pages when page 1 has no usable addrs", async () => {
+  const now = Date.now();
+  const requestedPages = [];
+  const fetch = async (url) => {
+    const parsed = new URL(url);
+    requestedPages.push(parsed.searchParams.get("page"));
+
+    const page = Number(parsed.searchParams.get("page"));
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        if (page === 1) {
+          return {
+            posts: [
+              {
+                hash: "hash-local-only",
+                type: "relay-bootstrap",
+                ref: "simple-todo-bootstrap",
+                content: {
+                  peerId: "12D3KooWLocalOnly",
+                  updatedAt: now,
+                  multiaddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWLocalOnly"],
+                  browserMultiaddrs: ["/dns4/localhost/tcp/443/tls/ws/p2p/12D3KooWLocalOnly"],
+                },
+              },
+            ],
+          };
+        }
+
+        return {
+          posts: [
+            {
+              hash: "hash-page-2",
+              type: "relay-bootstrap",
+              ref: "simple-todo-bootstrap",
+              content: {
+                peerId: "12D3KooWPage2",
+                updatedAt: now,
+                multiaddrs: ["/dns4/relay-page-2.example.com/tcp/443/tls/ws/p2p/12D3KooWPage2"],
+                browserMultiaddrs: ["/dns4/relay-page-2.example.com/tcp/443/tls/ws/p2p/12D3KooWPage2"],
+              },
+            },
+          ],
+        };
+      },
+    };
+  };
+
+  const addrs = await discoverAlephBootstrapMultiaddrs({
+    fetch,
+    pagination: 1,
+    maxPages: 3,
+  });
+
+  assert.deepEqual(requestedPages, ["1", "2"]);
+  assert.deepEqual(addrs, [
+    "/dns4/relay-page-2.example.com/tcp/443/tls/ws/p2p/12D3KooWPage2",
+  ]);
+});
+
+test("selectCurrentRelayBootstrapPosts keeps only the newest record per sender identity", () => {
+  const now = Date.now();
+  const posts = selectCurrentRelayBootstrapPosts([
+    {
+      hash: "hash-old",
+      itemHash: "item-old",
+      address: "0xabc",
+      ref: "simple-todo-bootstrap",
+      type: "relay-bootstrap",
+      time: now / 1000,
+      content: {
+        peerId: "12D3KooWOld",
+        updatedAt: now - 1_000,
+        multiaddrs: ["/dns4/relay-old.example.com/tcp/443/tls/ws/p2p/12D3KooWOld"],
+      },
+    },
+    {
+      hash: "hash-new",
+      itemHash: "item-new",
+      address: "0xabc",
+      ref: "simple-todo-bootstrap",
+      type: "relay-bootstrap",
+      time: now / 1000,
+      content: {
+        peerId: "12D3KooWNew",
+        updatedAt: now,
+        multiaddrs: ["/dns4/relay-new.example.com/tcp/443/tls/ws/p2p/12D3KooWNew"],
+      },
+    },
+    {
+      hash: "hash-other",
+      itemHash: "item-other",
+      address: "0xdef",
+      ref: "simple-todo-bootstrap",
+      type: "relay-bootstrap",
+      time: now / 1000,
+      content: {
+        peerId: "12D3KooWOther",
+        updatedAt: now,
+        multiaddrs: ["/dns4/relay-other.example.com/tcp/443/tls/ws/p2p/12D3KooWOther"],
+      },
+    },
+  ]);
+
+  assert.deepEqual(
+    posts.map((post) => post.itemHash),
+    ["item-new", "item-other"],
+  );
+});
+
+test("relayBootstrapTrustMode distinguishes legacy and dual-key records", () => {
+  assert.equal(
+    relayBootstrapTrustMode({
+      peerId: "12D3KooWLegacy",
+      multiaddrs: ["/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy"],
+      updatedAt: 1,
+    }),
+    "legacy-wallet-signed",
+  );
+
+  assert.equal(
+    relayBootstrapTrustMode({
+      peerId: "12D3KooWProof",
+      multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+      ownerAddress: "0xowner",
+      publisherAddress: "0xpublisher",
+      authorization: {
+        scheme: "personal_sign",
+        signature: "0xauth",
+        payload: {
+          ownerAddress: "0xowner",
+          publisherAddress: "0xpublisher",
+          peerId: "12D3KooWProof",
+          issuedAt: 1,
+        },
+      },
+      relayProof: {
+        scheme: "personal_sign",
+        signature: "0xrelay",
+        payload: {
+          peerId: "12D3KooWProof",
+          multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+          updatedAt: 2,
+        },
+      },
+      updatedAt: 2,
+    }),
+    "dual-key-attested",
+  );
+});
+
+test("discoverAlephBootstrapMultiaddrs can require dual-key attestation", async () => {
+  const now = Date.now();
+  const fetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return {
+        posts: [
+          {
+            hash: "hash-legacy",
+            item_hash: "item-legacy",
+            address: "0xlegacy",
+            type: "relay-bootstrap",
+            ref: "simple-todo-bootstrap",
+            content: {
+              peerId: "12D3KooWLegacy",
+              updatedAt: now,
+              multiaddrs: ["/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy"],
+              browserMultiaddrs: ["/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy"],
+            },
+          },
+        ],
+      };
+    },
+  });
+
+  assert.deepEqual(
+    await discoverAlephBootstrapMultiaddrs({ fetch, requireDualKeyAttestation: true }),
+    [],
+  );
+});
+
+test("dual-key authorization and relay proof can be signed and verified", async () => {
+  const owner = privateKeyToAccount(
+    "0x1111111111111111111111111111111111111111111111111111111111111111",
+  );
+  const publisher = privateKeyToAccount(
+    "0x2222222222222222222222222222222222222222222222222222222222222222",
+  );
+  const signer = async (address, payload) => {
+    const account =
+      address.toLowerCase() === owner.address.toLowerCase() ? owner : publisher;
+    return account.signMessage({ message: payload });
+  };
+
+  const authorization = await signRelayBootstrapAuthorization({
+    ownerAddress: owner.address,
+    publisherAddress: publisher.address,
+    peerId: "12D3KooWProof",
+    registrationId: "relay:proof",
+    profile: "orbitdb-relay-pinner",
+    version: "0.4.0",
+    issuedAt: 100,
+    signer,
+  });
+
+  const proof = await signRelayBootstrapProof({
+    publisherAddress: publisher.address,
+    peerId: "12D3KooWProof",
+    multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    browserMultiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    registrationId: "relay:proof",
+    profile: "orbitdb-relay-pinner",
+    version: "0.4.0",
+    updatedAt: 200,
+    signer,
+  });
+
+  assert.equal((await verifyRelayBootstrapAuthorization(authorization)).ok, true);
+  assert.equal(
+    (
+      await verifyRelayBootstrapProof(proof, {
+        expectedPublisherAddress: publisher.address,
+        expectedPeerId: "12D3KooWProof",
+      })
+    ).ok,
+    true,
+  );
+
+  const verified = await verifyRelayBootstrapDualKeyContent({
+    peerId: "12D3KooWProof",
+    multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    browserMultiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    registrationId: "relay:proof",
+    profile: "orbitdb-relay-pinner",
+    version: "0.4.0",
+    ownerAddress: owner.address,
+    publisherAddress: publisher.address,
+    authorization,
+    relayProof: proof,
+    updatedAt: 200,
+  });
+
+  assert.equal(verified.ok, true);
+  assert.deepEqual(verified.errors, []);
+});
+
+test("dual-key verification fails when relay proof publisher does not match", async () => {
+  const owner = privateKeyToAccount(
+    "0x3333333333333333333333333333333333333333333333333333333333333333",
+  );
+  const publisher = privateKeyToAccount(
+    "0x4444444444444444444444444444444444444444444444444444444444444444",
+  );
+  const wrongPublisher = privateKeyToAccount(
+    "0x5555555555555555555555555555555555555555555555555555555555555555",
+  );
+  const signer = async (address, payload) => {
+    const account =
+      address.toLowerCase() === owner.address.toLowerCase()
+        ? owner
+        : address.toLowerCase() === publisher.address.toLowerCase()
+          ? publisher
+          : wrongPublisher;
+    return account.signMessage({ message: payload });
+  };
+
+  const authorization = await signRelayBootstrapAuthorization({
+    ownerAddress: owner.address,
+    publisherAddress: publisher.address,
+    peerId: "12D3KooWProof",
+    issuedAt: 100,
+    signer,
+  });
+
+  const wrongProof = await signRelayBootstrapProof({
+    publisherAddress: wrongPublisher.address,
+    peerId: "12D3KooWProof",
+    multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    updatedAt: 200,
+    signer,
+  });
+
+  const verified = await verifyRelayBootstrapDualKeyContent({
+    peerId: "12D3KooWProof",
+    multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    ownerAddress: owner.address,
+    publisherAddress: publisher.address,
+    authorization,
+    relayProof: wrongProof,
+    updatedAt: 200,
+  });
+
+  assert.equal(verified.ok, false);
+  assert.match(
+    verified.errors.join("\n"),
+    /expected publisher address|publisherAddress does not match/i,
   );
 });

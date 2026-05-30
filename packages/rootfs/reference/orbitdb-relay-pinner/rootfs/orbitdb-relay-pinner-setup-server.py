@@ -139,6 +139,14 @@ class Handler(BaseHTTPRequestHandler):
             metrics_https_port = payload.get("metrics_https_port")
             webrtc_port = payload.get("webrtc_port")
             quic_port = payload.get("quic_port")
+            bootstrap_publisher_private_key = payload.get("bootstrap_publisher_private_key")
+            bootstrap_publisher_libp2p_identity_hex = payload.get(
+                "bootstrap_publisher_libp2p_identity_hex"
+            )
+            bootstrap_owner_private_key = payload.get("bootstrap_owner_private_key")
+            bootstrap_owner_authorization_b64 = payload.get("bootstrap_owner_authorization_b64")
+            bootstrap_registration_id = payload.get("bootstrap_registration_id")
+            no_start = bool(payload.get("no_start"))
             args = [
                 CONFIGURE_SCRIPT,
                 "--public-ipv4",
@@ -165,6 +173,25 @@ class Handler(BaseHTTPRequestHandler):
                 args.extend(["--webrtc-port", _validate_port(webrtc_port, "webrtc_port")])
             if quic_port is not None:
                 args.extend(["--quic-port", _validate_port(quic_port, "quic_port")])
+            if bootstrap_publisher_private_key is not None:
+                args.extend(["--bootstrap-publisher-private-key", str(bootstrap_publisher_private_key)])
+            if bootstrap_publisher_libp2p_identity_hex is not None:
+                args.extend(
+                    [
+                        "--bootstrap-publisher-libp2p-identity-hex",
+                        str(bootstrap_publisher_libp2p_identity_hex),
+                    ]
+                )
+            if bootstrap_owner_private_key is not None:
+                args.extend(["--bootstrap-owner-private-key", str(bootstrap_owner_private_key)])
+            if bootstrap_owner_authorization_b64 is not None:
+                args.extend(
+                    ["--bootstrap-owner-authorization-b64", str(bootstrap_owner_authorization_b64)]
+                )
+            if bootstrap_registration_id is not None:
+                args.extend(["--bootstrap-registration-id", str(bootstrap_registration_id)])
+            if no_start:
+                args.append("--no-start")
         except ValueError as error:
             self._send_json(400, {"status": "bad-request", "error": str(error)})
             return
