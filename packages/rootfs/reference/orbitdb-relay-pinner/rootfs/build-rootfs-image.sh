@@ -11,6 +11,8 @@ PY_LIBP2P_DIR="${PY_LIBP2P_DIR:-${REPO_DIR}/py-libp2p}"
 ORBITDB_RELAY_PINNER_DIR="${ORBITDB_RELAY_PINNER_DIR:-}"
 UNIVERSAL_CONNECTIVITY_DIR="${UNIVERSAL_CONNECTIVITY_DIR:-}"
 OUT_DIR="${OUT_DIR:-${APP_DIR}/dist-rootfs}"
+HOST_UID="${HOST_UID:-}"
+HOST_GID="${HOST_GID:-}"
 BASE_URL="${BASE_URL:-https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2}"
 BASE_IMAGE="${OUT_DIR}/debian-12-genericcloud-amd64.qcow2"
 IMAGE_SIZE="${IMAGE_SIZE:-${ROOTFS_IMAGE_SIZE:-20G}}"
@@ -337,3 +339,7 @@ if [ "${ROOTFS_SPARSIFY}" = "1" ] && command -v virt-sparsify >/dev/null 2>&1; t
 fi
 
 echo "Rootfs image ready at ${IMAGE}"
+
+if [ -n "${HOST_UID}" ] && [ -n "${HOST_GID}" ]; then
+  chown -R "${HOST_UID}:${HOST_GID}" "${OUT_DIR}"
+fi
