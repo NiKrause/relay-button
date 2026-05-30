@@ -61,6 +61,9 @@ importers:
       '@libp2p/bootstrap':
         specifier: ^11.0.46
         version: 11.0.47
+      viem:
+        specifier: ^2.38.5
+        version: 2.51.0(typescript@5.9.3)
 
   packages/browser: {}
 
@@ -96,6 +99,9 @@ importers:
       '@libp2p/circuit-relay-v2':
         specifier: ^3.2.9
         version: 3.2.24
+      '@libp2p/crypto':
+        specifier: ^5.1.18
+        version: 5.1.18
       '@libp2p/identify':
         specifier: ^3.0.28
         version: 3.0.39
