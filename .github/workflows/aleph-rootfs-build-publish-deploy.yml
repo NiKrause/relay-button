@@ -134,6 +134,13 @@ jobs:
         working-directory: ${{ inputs.tooling_checkout_path }}
         run: pnpm install --frozen-lockfile
 
+      - name: Build caller project artifacts required by the rootfs profile
+        if: ${{ inputs.profile == 'orbitdb-relay-pinner' }}
+        working-directory: ${{ inputs.project_checkout_path }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+
       - name: Validate shared workflow inputs
         run: |
           if [[ "${{ inputs.deploy_vm }}" == "true" ]]; then
