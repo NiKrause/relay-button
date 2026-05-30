@@ -2,6 +2,7 @@ import { pathToFileURL } from "node:url";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { access } from "node:fs/promises";
 import { Agent } from "undici";
 
 import {
@@ -39,6 +40,59 @@ interface RootfsUploadRuntimeOptions {
   headersTimeoutMs: number;
   bodyTimeoutMs: number;
   connectTimeoutMs: number;
+}
+
+async function commandExists(command: string, pathValue: string): Promise<boolean> {
+  for (const segment of pathValue.split(path.delimiter)) {
+    const candidate = segment ? path.join(segment, command) : command
+    try {
+      await access(candidate)
+      return true
+    } catch {
+      continue
+    }
+  }
+  return false
+}
+
+async function commandRunsSuccessfully(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<boolean> {
+  return await new Promise<boolean>((resolve) => {
+    const child = spawn(command, args, {
+      env: { ...process.env, ...env },
+      stdio: 'ignore',
+    })
+    child.on('error', () => resolve(false))
+    child.on('exit', (code) => resolve(code === 0))
+  })
+}
+
+async function detectRootfsToolchainAvailability(env: NodeJS.ProcessEnv): Promise<RootfsToolchainAvailability> {
+  const pathValue = env.PATH ?? process.env.PATH ?? ''
+  const envHasDocker = env.ALEPH_ROOTFS_HAS_DOCKER
+  const envDockerDaemonRunning = env.ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING
+  const envHasVirtCustomize = env.ALEPH_ROOTFS_HAS_VIRT_CUSTOMIZE
+
+  const hasDocker =
+    envHasDocker == null
+      ? await commandExists('docker', pathValue)
+      : booleanEnv('ALEPH_ROOTFS_HAS_DOCKER', false, env)
+
+  const dockerDaemonRunning =
+    envDockerDaemonRunning == null
+      ? (hasDocker ? await commandRunsSuccessfully('docker', ['info'], env) : undefined)
+      : booleanEnv('ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING', false, env)
+
+  const hasVirtCustomize =
+    envHasVirtCustomize == null
+      ? await commandExists('virt-customize', pathValue)
+      : booleanEnv('ALEPH_ROOTFS_HAS_VIRT_CUSTOMIZE', false, env)
+
+  return {
+    githubActions: env.GITHUB_ACTIONS === 'true',
+    hasDocker,
+    dockerDaemonRunning,
+    hasVirtCustomize,
+  }
 }
 
 async function deriveOrbitdbRelayPinnerVersion(sourceDir: string): Promise<string | undefined> {
@@ -90,12 +144,7 @@ export async function parseRootfsRunnerInputs(env: NodeJS.ProcessEnv = process.e
 
   return {
     buildPlan,
-    availability: {
-      githubActions: env.GITHUB_ACTIONS === 'true',
-      hasDocker: booleanEnv('ALEPH_ROOTFS_HAS_DOCKER', false, env),
-      dockerDaemonRunning: env.ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING == null ? undefined : booleanEnv('ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING', false, env),
-      hasVirtCustomize: booleanEnv('ALEPH_ROOTFS_HAS_VIRT_CUSTOMIZE', false, env),
-    },
+    availability: await detectRootfsToolchainAvailability(env),
     referenceRootfsDir: optionalEnv('ALEPH_ROOTFS_REFERENCE_ROOTFS_DIR', undefined, env) || undefined,
     createdAt: optionalEnv('ALEPH_ROOTFS_CREATED_AT', undefined, env) || undefined,
   };

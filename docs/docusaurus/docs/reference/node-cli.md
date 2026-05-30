@@ -184,15 +184,15 @@ can retry the upload/publication step without rebuilding the image:
 
 ```bash
 export ALEPH_ROOTFS_DRIVER=docker
-export ALEPH_ROOTFS_HAS_DOCKER=true
-export ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING=true
 export ALEPH_ROOTFS_SKIP_BUILD=true
 pnpm aleph rootfs-publish
 ```
 
-The extra Docker availability flags are currently needed because the shared
-rootfs runner reads toolchain availability from environment variables instead
-of probing Docker automatically at runtime.
+The shared rootfs runner now auto-detects `docker` / `virt-customize` when
+those flags are omitted. `ALEPH_ROOTFS_HAS_DOCKER`,
+`ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING`, and
+`ALEPH_ROOTFS_HAS_VIRT_CUSTOMIZE` remain available as manual overrides when
+you need to force or debug toolchain selection.
 
 ## Relationship To GitHub Automation
 

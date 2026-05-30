@@ -157,11 +157,14 @@ upload/publication step without rebuilding the qcow2:
 
 ```bash
 export ALEPH_ROOTFS_DRIVER=docker
-export ALEPH_ROOTFS_HAS_DOCKER=true
-export ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING=true
 export ALEPH_ROOTFS_SKIP_BUILD=true
 pnpm aleph rootfs-publish
 ```
+
+The runner now auto-detects `docker` / `virt-customize` when those env flags
+are omitted. `ALEPH_ROOTFS_HAS_DOCKER`, `ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING`,
+and `ALEPH_ROOTFS_HAS_VIRT_CUSTOMIZE` are still accepted as manual overrides
+when you need to force or debug toolchain selection.
 
 This CLI is a thin wrapper around the shared Node runners and uses the same
 deployment logic as the shared action/workflow layers.

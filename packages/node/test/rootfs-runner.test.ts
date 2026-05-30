@@ -26,6 +26,12 @@ async function createActionEnv(prefix: string, projectDir = '/workspace/universa
   }
 }
 
+async function createFakeCommand(dir: string, name: string, body: string) {
+  const target = join(dir, name)
+  await writeFile(target, `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+  return target
+}
+
 test('parseRootfsRunnerInputs creates a shared rootfs build plan from env', async () => {
   const { env } = await createActionEnv('shared-rootfs-plan-')
   const parsed = await parseRootfsRunnerInputs({
@@ -40,6 +46,22 @@ test('parseRootfsRunnerInputs creates a shared rootfs build plan from env', asyn
   assert.equal(parsed.buildPlan.rootfsVersion, 'uc-go-peer-git-20260516-deadbee')
   assert.equal(parsed.availability.hasDocker, true)
   assert.equal(parsed.referenceRootfsDir, '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs')
+})
+
+test('parseRootfsRunnerInputs auto-detects docker and virt-customize when env flags are omitted', async () => {
+  const { env } = await createActionEnv('shared-rootfs-detect-')
+  const binDir = await mkdtemp(join(tmpdir(), 'shared-rootfs-bin-'))
+  await createFakeCommand(binDir, 'docker', 'if [ "$1" = "info" ]; then exit 0; fi\nexit 0')
+  await createFakeCommand(binDir, 'virt-customize', 'exit 0')
+
+  const parsed = await parseRootfsRunnerInputs({
+    ...env,
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+  })
+
+  assert.equal(parsed.availability.hasDocker, true)
+  assert.equal(parsed.availability.dockerDaemonRunning, true)
+  assert.equal(parsed.availability.hasVirtCustomize, true)
 })
 
 test('runRootfsMode emits the build plan in rootfs-build-plan mode', async () => {
