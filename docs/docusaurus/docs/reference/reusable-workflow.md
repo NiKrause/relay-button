@@ -82,6 +82,8 @@ The workflow currently exports:
 - `rootfs_cid`
 - `rootfs_item_hash`
 - `rootfs_source_size_bytes`
+- `rootfs_manifest_cid`
+- `rootfs_manifest_gateway_url`
 - `rootfs_manifest_artifact_url`
 - `rootfs_manifest_artifact_api_zip_url`
 
@@ -111,9 +113,12 @@ At a high level, the workflow:
 
 When the workflow uploads the generated RootFS manifest bundle, it now also:
 
+- publishes the manifest JSON itself to IPFS
+- exposes `rootfs_manifest_cid` as a reusable workflow output
+- exposes `rootfs_manifest_gateway_url` as a reusable workflow output
 - exposes `rootfs_manifest_artifact_url` as a reusable workflow output
 - exposes `rootfs_manifest_artifact_api_zip_url` as a reusable workflow output
-- prints both URLs in the workflow summary together with the manifest paths
+- prints the IPFS CID, the Aleph gateway URL, and the GitHub artifact links in the workflow summary together with the manifest paths
 
 This gives consumer repos a concrete workflow-run URL they can surface in later
 steps, summaries, or follow-up deployment automation.

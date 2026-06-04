@@ -146,18 +146,19 @@ its job summary and as reusable workflow outputs.
 
 Consumer repos now get:
 
+- a published IPFS CID for the manifest JSON itself
+- an Aleph IPFS gateway URL for that manifest JSON
 - a GitHub artifact page URL for the uploaded RootFS manifest bundle
 - a GitHub API ZIP URL for that artifact
 - the uploaded manifest paths echoed in the workflow summary
 
-This helps when the RootFS image has already been published to Aleph/IPFS but
-the manifest JSON still needs a concrete workflow-run URL.
+This helps when the RootFS image has already been published to Aleph/IPFS and
+the manifest JSON also needs a reusable fetch URL.
 
 Current limitation:
 
-- these URLs point to GitHub Actions artifact storage, so they follow GitHub
-  artifact access and retention rules instead of acting like permanent public
-  IPFS URLs
+- the artifact URLs still point to GitHub Actions artifact storage, so they
+  follow GitHub artifact access and retention rules
 
 ## Command Line
 

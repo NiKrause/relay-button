@@ -86,6 +86,12 @@ on:
       rootfs_source_size_bytes:
         description: Source image size reported by the IPFS add endpoint
         value: ${{ jobs.build-rootfs.outputs.rootfs_source_size_bytes }}
+      rootfs_manifest_cid:
+        description: Published IPFS CID for the uploaded rootfs manifest JSON
+        value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_cid }}
+      rootfs_manifest_gateway_url:
+        description: Aleph IPFS gateway URL for the uploaded rootfs manifest JSON
+        value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_gateway_url }}
       rootfs_manifest_artifact_url:
         description: GitHub artifact page URL for the uploaded rootfs manifest bundle
         value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_artifact_url }}
@@ -111,6 +117,8 @@ jobs:
       rootfs_cid: ${{ steps.run_rootfs.outputs.rootfs_cid }}
       rootfs_item_hash: ${{ steps.run_rootfs.outputs.rootfs_item_hash }}
       rootfs_source_size_bytes: ${{ steps.run_rootfs.outputs.rootfs_source_size_bytes }}
+      rootfs_manifest_cid: ${{ steps.publish_manifest.outputs.rootfs_manifest_cid }}
+      rootfs_manifest_gateway_url: ${{ steps.publish_manifest.outputs.rootfs_manifest_gateway_url }}
       rootfs_manifest_artifact_url: ${{ steps.resolve_artifact.outputs.rootfs_manifest_artifact_url }}
       rootfs_manifest_artifact_api_zip_url: ${{ steps.resolve_artifact.outputs.rootfs_manifest_artifact_api_zip_url }}
 
@@ -213,6 +221,57 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Publish rootfs manifest JSON to IPFS
+        id: publish_manifest
+        if: ${{ always() }}
+        env:
+          MANIFEST_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_path }}
+          IPFS_ADD_URL: https://ipfs.aleph.cloud/api/v0/add
+          IPFS_GATEWAY_BASE_URL: https://ipfs.aleph.cloud/ipfs
+          IPFS_GATEWAY_WAIT_ATTEMPTS: '30'
+          IPFS_GATEWAY_WAIT_DELAY_SECONDS: '10'
+        shell: bash
+        run: |
+          if [[ -z "${MANIFEST_PATH}" || ! -f "${MANIFEST_PATH}" ]]; then
+            echo "Missing generated rootfs manifest at ${MANIFEST_PATH}" >&2
+            exit 1
+          fi
+
+          response_text="$(curl -fsSL -X POST -F "file=@${MANIFEST_PATH}" "${IPFS_ADD_URL}")"
+          export IPFS_ADD_RESPONSE_TEXT="${response_text}"
+          manifest_cid="$(python3 - <<'PY'
+          import json
+          import os
+
+          lines = [line.strip() for line in os.environ["IPFS_ADD_RESPONSE_TEXT"].splitlines() if line.strip()]
+          if not lines:
+              raise SystemExit("No response received from the IPFS add endpoint")
+
+          payload = json.loads(lines[-1])
+          cid = str(payload.get("Hash", "")).strip()
+          if not cid:
+              raise SystemExit(f"IPFS add response did not include a Hash: {payload}")
+          print(cid)
+          PY
+          )"
+
+          manifest_gateway_url="${IPFS_GATEWAY_BASE_URL%/}/${manifest_cid}"
+          for ((attempt = 1; attempt <= IPFS_GATEWAY_WAIT_ATTEMPTS; attempt += 1)); do
+            if curl -fsS -H "Range: bytes=0-0" "${manifest_gateway_url}" -o /dev/null; then
+              break
+            fi
+
+            if [[ "${attempt}" -eq "${IPFS_GATEWAY_WAIT_ATTEMPTS}" ]]; then
+              echo "CID ${manifest_cid} did not become retrievable from ${IPFS_GATEWAY_BASE_URL} after ${IPFS_GATEWAY_WAIT_ATTEMPTS} attempts." >&2
+              exit 1
+            fi
+
+            sleep "${IPFS_GATEWAY_WAIT_DELAY_SECONDS}"
+          done
+
+          echo "rootfs_manifest_cid=${manifest_cid}" >> "$GITHUB_OUTPUT"
+          echo "rootfs_manifest_gateway_url=${manifest_gateway_url}" >> "$GITHUB_OUTPUT"
+
       - name: Upload rootfs workspace artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -234,6 +293,8 @@ jobs:
           MANIFEST_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_path }}
           MANIFEST_COPY_TARGET_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_copy_target_path }}
           MANIFEST_VERSIONED_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_versioned_path }}
+          ROOTFS_MANIFEST_CID: ${{ steps.publish_manifest.outputs.rootfs_manifest_cid }}
+          ROOTFS_MANIFEST_GATEWAY_URL: ${{ steps.publish_manifest.outputs.rootfs_manifest_gateway_url }}
           ROOTFS_CID: ${{ steps.run_rootfs.outputs.rootfs_cid }}
           ROOTFS_ITEM_HASH: ${{ steps.run_rootfs.outputs.rootfs_item_hash }}
           ROOTFS_VERSION: ${{ steps.run_rootfs.outputs.rootfs_version }}
@@ -276,6 +337,8 @@ jobs:
             echo "- Rootfs version: \`${ROOTFS_VERSION}\`"
             echo "- Rootfs CID: \`${ROOTFS_CID}\`"
             echo "- Rootfs Aleph item hash: \`${ROOTFS_ITEM_HASH}\`"
+            echo "- Manifest IPFS CID: \`${ROOTFS_MANIFEST_CID}\`"
+            echo "- Manifest Aleph IPFS gateway URL: ${ROOTFS_MANIFEST_GATEWAY_URL}"
             echo "- Manifest artifact page: ${artifact_page_url}"
             echo "- Manifest artifact ZIP API URL: \`${artifact_api_zip_url}\`"
             echo "- Manifest path inside runner workspace: \`${MANIFEST_PATH}\`"
