@@ -17,11 +17,14 @@ const basePanelStyle: React.CSSProperties = {
   zIndex: 9999,
   width: "min(28rem, calc(100vw - 2rem))",
   overflow: "auto",
-  border: "1px solid rgba(255,255,255,0.12)",
+  border:
+    "1px solid var(--le-space-sponsor-relay-panel-border, rgba(199, 210, 254, 0.22))",
   borderRadius: "1.4rem",
-  background: "rgba(12,20,31,0.92)",
+  background:
+    "var(--le-space-sponsor-relay-panel-bg, rgba(49, 46, 129, 0.94))",
   color: "#f8fafc",
-  boxShadow: "0 28px 80px rgba(3,8,20,0.45)",
+  boxShadow:
+    "var(--le-space-sponsor-relay-panel-shadow, 0 28px 80px rgba(49, 46, 129, 0.34))",
   padding: "1rem",
   fontFamily: '"DM Sans", "Inter", sans-serif',
 };
@@ -37,6 +40,17 @@ const fieldStyle: React.CSSProperties = {
   fontSize: "0.98rem",
   lineHeight: 1.45,
 };
+
+const themedLauncherBackground =
+  "linear-gradient(135deg, var(--le-space-sponsor-relay-launcher-start, #4f46e5) 0%, var(--le-space-sponsor-relay-launcher-end, #6366f1) 100%)";
+const themedLauncherBorder =
+  "var(--le-space-sponsor-relay-launcher-border, rgba(199, 210, 254, 0.42))";
+const themedLauncherBadgeBackground =
+  "var(--le-space-sponsor-relay-launcher-badge-bg, rgba(49, 46, 129, 0.92))";
+const themedLauncherBadgeBorder =
+  "var(--le-space-sponsor-relay-launcher-badge-border, rgba(191, 219, 254, 0.24))";
+const themedLauncherDot =
+  "var(--le-space-sponsor-relay-launcher-dot, #f59e0b)";
 
 function progressToneColor(
   status: "info" | "success" | "warning" | "error",
@@ -281,39 +295,13 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
       ? `0 0 0 5px rgba(55, 214, 122, 0.22), 0 14px 32px rgba(55, 214, 122, 0.22)`
       : launcherMode === "inline"
         ? hovered
-          ? "0 14px 30px rgba(79, 70, 229, 0.28)"
-          : "0 10px 24px rgba(99, 102, 241, 0.22)"
+          ? "var(--le-space-sponsor-relay-launcher-hover-shadow, 0 14px 30px rgba(79, 70, 229, 0.28))"
+          : "var(--le-space-sponsor-relay-launcher-shadow, 0 10px 24px rgba(99, 102, 241, 0.22))"
         : undefined;
-  const inlineButtonBackground =
-    indicator.tone === "error"
-      ? "linear-gradient(135deg, #b91c1c 0%, #dc2626 100%)"
-      : indicator.tone === "warning"
-        ? "linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%)"
-        : indicator.tone === "success"
-          ? "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)"
-          : "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)";
-  const inlineButtonBorder =
-    indicator.tone === "error"
-      ? "1px solid rgba(254, 202, 202, 0.45)"
-      : indicator.tone === "warning"
-        ? "1px solid rgba(196, 181, 253, 0.42)"
-        : "1px solid rgba(199, 210, 254, 0.42)";
-  const inlineBadgeBackground =
-    indicator.tone === "error"
-      ? "rgba(127, 29, 29, 0.88)"
-      : indicator.tone === "warning"
-        ? "rgba(88, 28, 135, 0.88)"
-        : indicator.tone === "success"
-          ? "rgba(49, 46, 129, 0.92)"
-          : "rgba(30, 41, 59, 0.92)";
-  const inlineBadgeBorder =
-    indicator.tone === "error"
-      ? "1px solid rgba(254, 202, 202, 0.34)"
-      : indicator.tone === "warning"
-        ? "1px solid rgba(233, 213, 255, 0.28)"
-        : indicator.tone === "success"
-          ? "1px solid rgba(191, 219, 254, 0.24)"
-          : "1px solid rgba(191, 219, 254, 0.2)";
+  const inlineButtonBackground = themedLauncherBackground;
+  const inlineButtonBorder = `1px solid ${themedLauncherBorder}`;
+  const inlineBadgeBackground = themedLauncherBadgeBackground;
+  const inlineBadgeBorder = `1px solid ${themedLauncherBadgeBorder}`;
   const panelStyle =
     launcherMode === "inline"
       ? (inlinePanelStyle ?? {
@@ -351,11 +339,11 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
           borderRadius: "999px",
           border:
             launcherMode === "floating"
-              ? "2px solid rgba(255,255,255,0.9)"
+              ? `2px solid ${themedLauncherBorder}`
               : inlineButtonBorder,
           background:
             launcherMode === "floating"
-              ? "linear-gradient(135deg, #e91315 0%, #ffc83f 100%)"
+              ? themedLauncherBackground
               : inlineButtonBackground,
           color: "white",
           minHeight: launcherMode === "floating" ? undefined : "2.25rem",
@@ -395,11 +383,11 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               background:
                 launcherMode === "floating"
                   ? "rgba(255,255,255,0.96)"
-                  : "#f59e0b",
+                  : themedLauncherDot,
               boxShadow:
                 launcherMode === "floating"
                   ? "0 0 0 3px rgba(255,255,255,0.22)"
-                  : "0 0 0 3px rgba(245, 158, 11, 0.18)",
+                  : "0 0 0 3px var(--le-space-sponsor-relay-launcher-dot-ring, rgba(245, 158, 11, 0.18))",
             }}
           />
           <span>{launcherLabel}</span>
@@ -457,7 +445,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               inset: 0,
               zIndex: 9998,
               background:
-                "radial-gradient(circle at 88% 82%, rgba(233,19,21,0.18), transparent 34%)",
+                "radial-gradient(circle at 88% 82%, var(--le-space-sponsor-relay-backdrop-accent, rgba(79, 70, 229, 0.2)), transparent 34%)",
             }}
           />
           <aside style={panelStyle}>
@@ -664,7 +652,11 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   controller.setTierId(event.currentTarget.value)
                 }
               >
-                {(state.pricingSummary.pricing?.tiers ?? []).map((tier) => {
+                {(
+                  state.pricingSummary.pricing?.tiers?.length
+                    ? state.pricingSummary.pricing.tiers
+                    : [{ id: state.tierId, compute_units: 1 }]
+                ).map((tier) => {
                   const unit = state.pricingSummary.pricing?.compute_unit;
                   const vcpus = unit ? unit.vcpus * tier.compute_units : null;
                   const memoryMiB = unit

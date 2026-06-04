@@ -5,13 +5,17 @@
     "DM Sans", "Inter", "Segoe UI", sans-serif;
   --relay-font-mono:
     "DM Mono", "SFMono-Regular", "Menlo", monospace;
-  --relay-panel-bg: rgba(12, 20, 31, 0.92);
-  --relay-panel-border: rgba(255, 255, 255, 0.12);
-  --relay-panel-shadow: 0 28px 80px rgba(3, 8, 20, 0.45);
+  --relay-panel-bg: rgba(49, 46, 129, 0.94);
+  --relay-panel-border: rgba(199, 210, 254, 0.22);
+  --relay-panel-shadow: 0 28px 80px rgba(49, 46, 129, 0.34);
   --relay-text: #f8fafc;
   --relay-muted: #9fb2ca;
-  --relay-blue: #0176ce;
-  --relay-red: #e91315;
+  --relay-blue: #4f46e5;
+  --relay-red: #6366f1;
   --relay-yellow: #ffc83f;
   --relay-green: #37d67a;
+  --relay-launcher-border: rgba(199, 210, 254, 0.42);
+  --relay-launcher-badge-bg: rgba(49, 46, 129, 0.92);
+  --relay-launcher-badge-border: rgba(191, 219, 254, 0.24);
+  --relay-backdrop-accent: rgba(79, 70, 229, 0.2);
 }

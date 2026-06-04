@@ -10,12 +10,12 @@
 
 <style>
   .launcher {
-    border: 2px solid rgba(255, 255, 255, 0.88);
+    border: 2px solid var(--relay-launcher-border);
     border-radius: 999px;
     padding: 0.9rem 1.2rem;
-    background: linear-gradient(135deg, var(--relay-red) 0%, var(--relay-yellow) 100%);
+    background: linear-gradient(135deg, var(--relay-blue) 0%, var(--relay-red) 100%);
     color: white;
-    box-shadow: 0 18px 40px rgba(233, 19, 21, 0.28);
+    box-shadow: 0 18px 40px rgba(79, 70, 229, 0.28);
     font: 700 0.84rem/1 var(--relay-font-heading);
     letter-spacing: 0.08em;
     text-transform: uppercase;

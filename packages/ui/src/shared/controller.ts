@@ -79,11 +79,7 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     sshPublicKey: props.sshPublicKey ?? "",
     instanceName: props.instanceName ?? DEFAULT_INSTANCE_NAME,
     tierId: DEFAULT_TIER_ID,
-    showAdvanced: Boolean(
-      (props.manifestUrl && props.manifestUrl !== DEFAULT_MANIFEST_URL) ||
-        props.manifestJson?.trim() ||
-        props.sshPublicKey?.trim(),
-    ),
+    showAdvanced: Boolean(props.manifestJson?.trim() || props.sshPublicKey?.trim()),
     showInstances: props.showInstances ?? true,
     showPasteManifest: Boolean(props.manifestJson?.trim()),
     busy: {
@@ -119,6 +115,15 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     relayPing: RELAY_PING_IDLE_STATE,
     lastDeploymentHash: null,
     deploymentProgress: IDLE_DEPLOYMENT_PROGRESS,
+  };
+}
+
+function manifestLoadErrorState(error: unknown): RootfsManifestState {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    manifest: null,
+    valid: false,
+    errors: [message],
   };
 }
 
@@ -1180,15 +1185,15 @@ export class SponsorRelayController {
     });
 
     try {
-      const manifestState = await resolveManifest({
-        manifestUrl: this.state.manifestUrl,
-        manifestJson: this.state.manifestJson,
-      });
-      const manifest = manifestState.manifest;
       const [pricingSummary, crns] = await Promise.all([
         fetchInstancePricing(this.client.apiHost),
         this.client.fetchCrns(),
       ]);
+      const manifestState = await resolveManifest({
+        manifestUrl: this.state.manifestUrl,
+        manifestJson: this.state.manifestJson,
+      }).catch((error) => manifestLoadErrorState(error));
+      const manifest = manifestState.manifest;
 
       let balance = this.state.balance;
       let instances: CompactInstanceRecord[] = [];

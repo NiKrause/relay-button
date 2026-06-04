@@ -111,7 +111,7 @@ export let apiHost = undefined
       <label class="field">
         <span>Tier</span>
         <select value={state.pricingSummary.tier?.id ?? state.tierId} on:change={(event) => controller.setTierId(event.currentTarget.value)}>
-          {#each state.pricingSummary.pricing?.tiers ?? [] as tier}
+          {#each (state.pricingSummary.pricing?.tiers?.length ? state.pricingSummary.pricing.tiers : [{ id: state.tierId, compute_units: 1 }]) as tier}
             <option value={tier.id}>
               {tier.id} {formatTierSpecLabel(
                 state.pricingSummary.pricing ? state.pricingSummary.pricing.compute_unit.vcpus * tier.compute_units : null,
@@ -275,7 +275,7 @@ export let apiHost = undefined
     position: fixed;
     inset: 0;
     z-index: 9998;
-    background: radial-gradient(circle at 88% 82%, rgba(233, 19, 21, 0.18), transparent 34%);
+    background: radial-gradient(circle at 88% 82%, var(--relay-backdrop-accent), transparent 34%);
     backdrop-filter: blur(2px);
   }
 
