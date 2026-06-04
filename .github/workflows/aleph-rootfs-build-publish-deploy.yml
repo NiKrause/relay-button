@@ -86,8 +86,15 @@ on:
       rootfs_source_size_bytes:
         description: Source image size reported by the IPFS add endpoint
         value: ${{ jobs.build-rootfs.outputs.rootfs_source_size_bytes }}
+      rootfs_manifest_artifact_url:
+        description: GitHub artifact page URL for the uploaded rootfs manifest bundle
+        value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_artifact_url }}
+      rootfs_manifest_artifact_api_zip_url:
+        description: GitHub API ZIP URL for the uploaded rootfs manifest bundle
+        value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_artifact_api_zip_url }}
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -104,6 +111,8 @@ jobs:
       rootfs_cid: ${{ steps.run_rootfs.outputs.rootfs_cid }}
       rootfs_item_hash: ${{ steps.run_rootfs.outputs.rootfs_item_hash }}
       rootfs_source_size_bytes: ${{ steps.run_rootfs.outputs.rootfs_source_size_bytes }}
+      rootfs_manifest_artifact_url: ${{ steps.resolve_artifact.outputs.rootfs_manifest_artifact_url }}
+      rootfs_manifest_artifact_api_zip_url: ${{ steps.resolve_artifact.outputs.rootfs_manifest_artifact_api_zip_url }}
 
     steps:
       - name: Checkout caller repository
@@ -206,7 +215,7 @@ jobs:
 
       - name: Upload rootfs workspace artifacts
         if: ${{ always() }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v4
         with:
           name: rootfs-${{ inputs.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: ignore
@@ -215,3 +224,67 @@ jobs:
             ${{ steps.run_rootfs.outputs.rootfs_manifest_copy_target_path }}
             ${{ steps.run_rootfs.outputs.rootfs_manifest_versioned_path }}
             ${{ steps.run_rootfs.outputs.rootfs_image_path }}
+
+      - name: Resolve rootfs artifact URLs
+        id: resolve_artifact
+        if: ${{ always() }}
+        env:
+          ARTIFACT_NAME: rootfs-${{ inputs.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
+          GITHUB_TOKEN: ${{ github.token }}
+          MANIFEST_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_path }}
+          MANIFEST_COPY_TARGET_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_copy_target_path }}
+          MANIFEST_VERSIONED_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_versioned_path }}
+          ROOTFS_CID: ${{ steps.run_rootfs.outputs.rootfs_cid }}
+          ROOTFS_ITEM_HASH: ${{ steps.run_rootfs.outputs.rootfs_item_hash }}
+          ROOTFS_VERSION: ${{ steps.run_rootfs.outputs.rootfs_version }}
+        shell: bash
+        run: |
+          api_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts"
+          artifact_json="$(curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${api_url}")"
+          export ARTIFACT_JSON="${artifact_json}"
+
+          artifact_id="$(python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["ARTIFACT_JSON"])
+          target = os.environ["ARTIFACT_NAME"]
+          for artifact in payload.get("artifacts", []):
+              if artifact.get("name") == target:
+                  print(artifact.get("id", ""))
+                  break
+          PY
+          )"
+
+          if [[ -z "${artifact_id}" ]]; then
+            echo "Unable to resolve artifact id for ${ARTIFACT_NAME}" >&2
+            exit 1
+          fi
+
+          artifact_page_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts/${artifact_id}"
+          artifact_api_zip_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip"
+
+          echo "rootfs_manifest_artifact_url=${artifact_page_url}" >> "$GITHUB_OUTPUT"
+          echo "rootfs_manifest_artifact_api_zip_url=${artifact_api_zip_url}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Rootfs Artifact URLs"
+            echo
+            echo "- Rootfs version: \`${ROOTFS_VERSION}\`"
+            echo "- Rootfs CID: \`${ROOTFS_CID}\`"
+            echo "- Rootfs Aleph item hash: \`${ROOTFS_ITEM_HASH}\`"
+            echo "- Manifest artifact page: ${artifact_page_url}"
+            echo "- Manifest artifact ZIP API URL: \`${artifact_api_zip_url}\`"
+            echo "- Manifest path inside runner workspace: \`${MANIFEST_PATH}\`"
+            if [[ -n "${MANIFEST_COPY_TARGET_PATH}" ]]; then
+              echo "- Latest copied manifest path: \`${MANIFEST_COPY_TARGET_PATH}\`"
+            fi
+            if [[ -n "${MANIFEST_VERSIONED_PATH}" ]]; then
+              echo "- Versioned copied manifest path: \`${MANIFEST_VERSIONED_PATH}\`"
+            fi
+            echo
+            echo "The manifest JSON is currently stored as a GitHub Actions artifact, not pinned to IPFS."
+          } >> "$GITHUB_STEP_SUMMARY"
