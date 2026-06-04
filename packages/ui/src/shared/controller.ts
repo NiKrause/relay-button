@@ -79,6 +79,11 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     sshPublicKey: props.sshPublicKey ?? "",
     instanceName: props.instanceName ?? DEFAULT_INSTANCE_NAME,
     tierId: DEFAULT_TIER_ID,
+    showAdvanced: Boolean(
+      (props.manifestUrl && props.manifestUrl !== DEFAULT_MANIFEST_URL) ||
+        props.manifestJson?.trim() ||
+        props.sshPublicKey?.trim(),
+    ),
     showInstances: props.showInstances ?? true,
     showPasteManifest: Boolean(props.manifestJson?.trim()),
     busy: {
@@ -1034,9 +1039,14 @@ export class SponsorRelayController {
   setManifestJson(manifestJson: string): void {
     this.patch({
       manifestJson,
+      showAdvanced: this.state.showAdvanced || Boolean(manifestJson.trim()),
       showPasteManifest: this.state.showPasteManifest || Boolean(manifestJson.trim()),
     });
     this.queueManifestRefresh();
+  }
+
+  setShowAdvanced(showAdvanced: boolean): void {
+    this.patch({ showAdvanced });
   }
 
   setShowPasteManifest(showPasteManifest: boolean): void {
@@ -1044,7 +1054,10 @@ export class SponsorRelayController {
   }
 
   setSshPublicKey(sshPublicKey: string): void {
-    this.patch({ sshPublicKey });
+    this.patch({
+      sshPublicKey,
+      showAdvanced: this.state.showAdvanced || Boolean(sshPublicKey.trim()),
+    });
   }
 
   setInstanceName(instanceName: string): void {

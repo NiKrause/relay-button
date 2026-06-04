@@ -1,7 +1,7 @@
 <script>
   import { onDestroy, onMount } from 'svelte'
 
-  import { createSponsorRelayController, formatDateTime, formatNumber, joinMappedPorts, joinRequiredPortForwards, shortHash } from '../shared/index'
+  import { createSponsorRelayController, formatDateTime, formatNumber, formatTierSpecLabel, joinMappedPorts, joinRequiredPortForwards, shortHash } from '../shared/index'
   import AccordionSection from './components/AccordionSection.svelte'
   import CopyButton from './components/CopyButton.svelte'
   import LauncherButton from './components/LauncherButton.svelte'
@@ -105,10 +105,6 @@ export let apiHost = undefined
 
     <div class="grid">
       <label class="field">
-        <span>Manifest URL</span>
-        <input value={state.manifestUrl} on:input={(event) => controller.setManifestUrl(event.currentTarget.value)} />
-      </label>
-      <label class="field">
         <span>Instance Name</span>
         <input value={state.instanceName} on:input={(event) => controller.setInstanceName(event.currentTarget.value)} />
       </label>
@@ -116,22 +112,39 @@ export let apiHost = undefined
         <span>Tier</span>
         <select value={state.pricingSummary.tier?.id ?? state.tierId} on:change={(event) => controller.setTierId(event.currentTarget.value)}>
           {#each state.pricingSummary.pricing?.tiers ?? [] as tier}
-            <option value={tier.id}>{tier.id}</option>
+            <option value={tier.id}>
+              {tier.id} {formatTierSpecLabel(
+                state.pricingSummary.pricing ? state.pricingSummary.pricing.compute_unit.vcpus * tier.compute_units : null,
+                state.pricingSummary.pricing ? state.pricingSummary.pricing.compute_unit.memory_mib * tier.compute_units : null,
+                state.pricingSummary.pricing ? state.pricingSummary.pricing.compute_unit.disk_mib * tier.compute_units : null
+              )}
+            </option>
           {/each}
         </select>
-      </label>
-      <label class="field wide">
-        <span>SSH Public Key</span>
-        <textarea rows="3" on:input={(event) => controller.setSshPublicKey(event.currentTarget.value)}>{state.sshPublicKey}</textarea>
+        <small>{formatTierSpecLabel(state.pricingSummary.vcpus, state.pricingSummary.memoryMiB, state.pricingSummary.diskMiB)}</small>
       </label>
     </div>
 
-    <AccordionSection title="Paste Manifest" open={state.showPasteManifest}>
-      <label class="field wide">
-        <span>Pasted rootfs manifest JSON</span>
-        <textarea rows="7" on:input={(event) => controller.setManifestJson(event.currentTarget.value)}>{state.manifestJson}</textarea>
-      </label>
-    </AccordionSection>
+    <details class="accordion" open={state.showAdvanced} on:toggle={(event) => controller.setShowAdvanced(event.currentTarget.open)}>
+      <summary>Advanced</summary>
+      <div class="accordion-body advanced-grid">
+        <label class="field wide">
+          <span>Manifest URL</span>
+          <input value={state.manifestUrl} on:input={(event) => controller.setManifestUrl(event.currentTarget.value)} />
+        </label>
+        <label class="field wide">
+          <span>SSH Public Key</span>
+          <textarea rows="3" on:input={(event) => controller.setSshPublicKey(event.currentTarget.value)}>{state.sshPublicKey}</textarea>
+        </label>
+
+        <AccordionSection title="Paste Manifest" open={state.showPasteManifest}>
+          <label class="field wide">
+            <span>Pasted rootfs manifest JSON</span>
+            <textarea rows="7" on:input={(event) => controller.setManifestJson(event.currentTarget.value)}>{state.manifestJson}</textarea>
+          </label>
+        </AccordionSection>
+      </div>
+    </details>
 
     <div class="metrics">
       <div class="metric-card">
@@ -404,8 +417,44 @@ export let apiHost = undefined
     gap: 0.4rem;
   }
 
+  .field small {
+    color: var(--relay-muted);
+    font-size: 0.72rem;
+    line-height: 1.35;
+  }
+
   .field.wide {
     grid-column: 1 / -1;
+  }
+
+  .accordion {
+    margin-top: 0.9rem;
+    border: 1px solid var(--relay-panel-border);
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .accordion summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 0.8rem 0.95rem;
+    color: var(--relay-text);
+    font: 700 0.8rem/1.1 var(--relay-font-heading);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .accordion summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .accordion-body {
+    padding: 0 0.95rem 0.95rem;
+  }
+
+  .advanced-grid {
+    display: grid;
+    gap: 0.75rem;
   }
 
   input,

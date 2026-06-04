@@ -3,6 +3,7 @@ import React from "react";
 import {
   formatDateTime,
   formatNumber,
+  formatTierSpecLabel,
   joinMappedPorts,
   joinRequiredPortForwards,
   shortHash,
@@ -650,14 +651,6 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
             >
               <input
                 style={fieldStyle}
-                value={state.manifestUrl}
-                onChange={(event) =>
-                  controller.setManifestUrl(event.currentTarget.value)
-                }
-                placeholder="Manifest URL"
-              />
-              <input
-                style={fieldStyle}
                 value={state.instanceName}
                 onChange={(event) =>
                   controller.setInstanceName(event.currentTarget.value)
@@ -671,31 +664,89 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   controller.setTierId(event.currentTarget.value)
                 }
               >
-                {(state.pricingSummary.pricing?.tiers ?? []).map((tier) => (
-                  <option key={tier.id} value={tier.id}>
-                    {tier.id}
-                  </option>
-                ))}
+                {(state.pricingSummary.pricing?.tiers ?? []).map((tier) => {
+                  const unit = state.pricingSummary.pricing?.compute_unit;
+                  const vcpus = unit ? unit.vcpus * tier.compute_units : null;
+                  const memoryMiB = unit
+                    ? unit.memory_mib * tier.compute_units
+                    : null;
+                  const diskMiB = unit
+                    ? unit.disk_mib * tier.compute_units
+                    : null;
+
+                  return (
+                    <option key={tier.id} value={tier.id}>
+                      {`${tier.id} ${formatTierSpecLabel(vcpus, memoryMiB, diskMiB)}`}
+                    </option>
+                  );
+                })}
               </select>
-              <textarea
-                style={fieldStyle}
-                rows={3}
-                value={state.sshPublicKey}
-                onChange={(event) =>
-                  controller.setSshPublicKey(event.currentTarget.value)
+              <div
+                style={{
+                  color: "#9fb2ca",
+                  fontSize: "0.74rem",
+                  lineHeight: 1.35,
+                  marginTop: "-0.15rem",
+                }}
+              >
+                {formatTierSpecLabel(
+                  state.pricingSummary.vcpus,
+                  state.pricingSummary.memoryMiB,
+                  state.pricingSummary.diskMiB,
+                )}
+              </div>
+              <details
+                open={state.showAdvanced}
+                onToggle={(event) =>
+                  controller.setShowAdvanced(
+                    (event.currentTarget as HTMLDetailsElement).open,
+                  )
                 }
-                placeholder="SSH public key"
-              />
-              <details open={state.showPasteManifest}>
-                <summary>Paste Manifest</summary>
-                <textarea
-                  style={{ ...fieldStyle, marginTop: "0.65rem" }}
-                  rows={7}
-                  value={state.manifestJson}
-                  onChange={(event) =>
-                    controller.setManifestJson(event.currentTarget.value)
-                  }
-                />
+              >
+                <summary>Advanced</summary>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "0.75rem",
+                    marginTop: "0.65rem",
+                  }}
+                >
+                  <input
+                    style={fieldStyle}
+                    value={state.manifestUrl}
+                    onChange={(event) =>
+                      controller.setManifestUrl(event.currentTarget.value)
+                    }
+                    placeholder="Manifest URL"
+                  />
+                  <textarea
+                    style={fieldStyle}
+                    rows={3}
+                    value={state.sshPublicKey}
+                    onChange={(event) =>
+                      controller.setSshPublicKey(event.currentTarget.value)
+                    }
+                    placeholder="SSH public key"
+                  />
+                  <details
+                    open={state.showPasteManifest}
+                    onToggle={(event) =>
+                      controller.setShowPasteManifest(
+                        (event.currentTarget as HTMLDetailsElement).open,
+                      )
+                    }
+                  >
+                    <summary>Paste Manifest</summary>
+                    <textarea
+                      style={{ ...fieldStyle, marginTop: "0.65rem" }}
+                      rows={7}
+                      value={state.manifestJson}
+                      onChange={(event) =>
+                        controller.setManifestJson(event.currentTarget.value)
+                      }
+                    />
+                  </details>
+                </div>
               </details>
             </div>
 

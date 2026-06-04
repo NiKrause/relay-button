@@ -91,6 +91,7 @@ export interface SponsorRelayState {
   sshPublicKey: string
   instanceName: string
   tierId: string
+  showAdvanced: boolean
   showInstances: boolean
   showPasteManifest: boolean
   busy: {

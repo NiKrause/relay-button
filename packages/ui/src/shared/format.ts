@@ -38,6 +38,25 @@ export function formatDateTime(
   return date.toLocaleString();
 }
 
+export function formatTierSpecLabel(
+  vcpus: number | null | undefined,
+  memoryMiB: number | null | undefined,
+  diskMiB: number | null | undefined,
+): string {
+  if (
+    vcpus == null ||
+    !Number.isFinite(vcpus) ||
+    memoryMiB == null ||
+    !Number.isFinite(memoryMiB) ||
+    diskMiB == null ||
+    !Number.isFinite(diskMiB)
+  ) {
+    return "-";
+  }
+
+  return `(${formatNumber(vcpus, 0)} vCPU · ${formatNumber(memoryMiB / 1024, 1)} GiB RAM · ${formatNumber(diskMiB / 1024, 0)} GiB disk)`;
+}
+
 export function buildSshCommand(
   hostIpv4: string | null,
   mappedPorts: CompactInstanceRecord["details"]["mappedPorts"],
