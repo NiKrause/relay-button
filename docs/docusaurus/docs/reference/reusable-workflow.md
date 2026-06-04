@@ -82,6 +82,8 @@ The workflow currently exports:
 - `rootfs_cid`
 - `rootfs_item_hash`
 - `rootfs_source_size_bytes`
+- `rootfs_manifest_artifact_url`
+- `rootfs_manifest_artifact_api_zip_url`
 
 These outputs let a caller workflow continue with repo-specific steps such as:
 
@@ -103,6 +105,23 @@ At a high level, the workflow:
 7. runs `packages/node/src/rootfs-runner.ts`
 8. exports the generated manifest JSON
 9. uploads the resulting workspace artifacts
+10. resolves the uploaded manifest artifact URLs and prints them in the job summary
+
+## Manifest Artifact URLs
+
+When the workflow uploads the generated RootFS manifest bundle, it now also:
+
+- exposes `rootfs_manifest_artifact_url` as a reusable workflow output
+- exposes `rootfs_manifest_artifact_api_zip_url` as a reusable workflow output
+- prints both URLs in the workflow summary together with the manifest paths
+
+This gives consumer repos a concrete workflow-run URL they can surface in later
+steps, summaries, or follow-up deployment automation.
+
+Important limitation:
+
+- these URLs point to GitHub Actions artifact storage, not a public IPFS object,
+  so they follow GitHub artifact retention and access rules
 
 ## Validation Rules
 

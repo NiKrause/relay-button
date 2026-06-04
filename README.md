@@ -120,6 +120,45 @@ Useful references:
 - [docs/docusaurus/docs/reference/github-action.md](./docs/docusaurus/docs/reference/github-action.md)
 - [docs/docusaurus/docs/reference/node-cli.md](./docs/docusaurus/docs/reference/node-cli.md)
 
+### Aleph Bootstrap Docs
+
+If you want the detailed story for `@le-space/aleph-bootstrap`, start here:
+
+- [packages/aleph-bootstrap/README.md](./packages/aleph-bootstrap/README.md)
+  Package purpose, exported API, default namespace, and discovery trust modes.
+- [docs/docusaurus/docs/reference/aleph-bootstrap.md](./docs/docusaurus/docs/reference/aleph-bootstrap.md)
+  Detailed registration and discovery flow, signing model, freshness rules, and validation.
+- [docs/docusaurus/docs/reference/aleph-bootstrap-operations.md](./docs/docusaurus/docs/reference/aleph-bootstrap-operations.md)
+  Cleanup behavior, `FORGET` usage, retention uncertainty, spam risk, and open weaknesses.
+
+Current operational summary:
+
+- discovery ignores records older than 7 days, but that is only an app-side freshness rule
+- actual cleanup is sender-driven through Aleph `FORGET` messages
+- deploy-time and refresh-time flows can forget older self-owned records when a stable `registrationId` is available
+- legacy wallet-signed records are still accepted by default unless consumers require dual-key attestation
+- the shared namespace should currently be treated as publicly writable, so consumer-side filtering still matters
+
+## RootFS Workflow Artifact URLs
+
+The shared reusable RootFS workflow now exposes manifest artifact links both in
+its job summary and as reusable workflow outputs.
+
+Consumer repos now get:
+
+- a GitHub artifact page URL for the uploaded RootFS manifest bundle
+- a GitHub API ZIP URL for that artifact
+- the uploaded manifest paths echoed in the workflow summary
+
+This helps when the RootFS image has already been published to Aleph/IPFS but
+the manifest JSON still needs a concrete workflow-run URL.
+
+Current limitation:
+
+- these URLs point to GitHub Actions artifact storage, so they follow GitHub
+  artifact access and retention rules instead of acting like permanent public
+  IPFS URLs
+
 ## Command Line
 
 You can run the shared Node-side deployment and RootFS flows locally through a
