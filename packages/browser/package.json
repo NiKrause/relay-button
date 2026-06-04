@@ -1,6 +1,6 @@
 {
   "name": "@le-space/browser",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Shared browser-safe Aleph deployment and polling helpers.",
   "license": "MIT",
   "type": "module",
