@@ -11,6 +11,7 @@ BASE_IMAGE="${OUT_DIR}/debian-12-genericcloud-amd64.qcow2"
 IMAGE="${OUT_DIR}/aleph-uc-go-peer.qcow2"
 APP_BINARY="${OUT_DIR}/universal-chat-go"
 ROOTFS_IMAGE_SIZE="${ROOTFS_IMAGE_SIZE:-20G}"
+ROOTFS_SPARSIFY="${ROOTFS_SPARSIFY:-1}"
 ROOTFS_BUILD_TMPDIR=""
 HOST_UID="${HOST_UID:-}"
 HOST_GID="${HOST_GID:-}"
@@ -107,6 +108,14 @@ virt-customize \
   --run-command "systemctl enable ${ROOTFS_CONTRACT_BOOTSTRAP_SERVICE}" \
   --run-command "systemctl enable ${ROOTFS_CONTRACT_AUTOTLS_SERVICE}" \
   --run-command "systemctl enable ${ROOTFS_CONTRACT_MAIN_SERVICE}"
+
+if [ "${ROOTFS_SPARSIFY}" = "1" ] && command -v virt-sparsify >/dev/null 2>&1; then
+  SPARSE_IMAGE="${IMAGE%.qcow2}.sparse.qcow2"
+  rm -f "${SPARSE_IMAGE}"
+  echo "Sparsifying and compressing ${IMAGE}..."
+  virt-sparsify --compress "${IMAGE}" "${SPARSE_IMAGE}"
+  mv "${SPARSE_IMAGE}" "${IMAGE}"
+fi
 
 echo "Rootfs image ready at ${IMAGE}"
 
