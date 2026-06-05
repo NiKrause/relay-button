@@ -1,8 +1,7 @@
 <script>
   import { onDestroy, onMount } from 'svelte'
 
-  import { UI_PACKAGE_VERSION } from '../shared/package-version'
-  import { createSponsorRelayController, formatDateTime, formatNumber, formatTierSpecLabel, joinMappedPorts, joinRequiredPortForwards, shortHash } from '../shared/index'
+  import { UI_PACKAGE_VERSION, createSponsorRelayController, formatDateTime, formatNumber, formatTierSpecLabel, joinMappedPorts, joinRequiredPortForwards, shortHash } from '../shared/index'
   import AccordionSection from './components/AccordionSection.svelte'
   import CopyButton from './components/CopyButton.svelte'
   import LauncherButton from './components/LauncherButton.svelte'
