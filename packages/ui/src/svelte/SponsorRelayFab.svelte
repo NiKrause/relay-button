@@ -1,6 +1,5 @@
 <script>
   import { onDestroy, onMount } from 'svelte'
-  import packageJson from '../../package.json'
 
   import { createSponsorRelayController, formatDateTime, formatNumber, formatTierSpecLabel, joinMappedPorts, joinRequiredPortForwards, shortHash } from '../shared/index'
   import AccordionSection from './components/AccordionSection.svelte'
@@ -17,6 +16,7 @@ export let instanceName = 'sponsor-relay'
 export let showInstances = true
 export let openByDefault = false
 export let launcherMode = 'floating'
+export let version = ''
 export let apiHost = undefined
   export let crnListUrl = undefined
   export let schedulerApiHost = undefined
@@ -38,7 +38,9 @@ export let apiHost = undefined
   })
 
   let state = controller.getState()
-  const versionLabel = `v${packageJson.version}`
+  const versionLabel = version.trim()
+    ? (version.trim().startsWith('v') ? version.trim() : `v${version.trim()}`)
+    : ''
 
   onMount(async () => {
     const unsubscribe = controller.subscribe((next) => {
@@ -64,7 +66,12 @@ export let apiHost = undefined
   <aside class="panel">
     <div class="panel-head">
       <div>
-        <p class="eyebrow">Aleph VM credit deployer <span class="eyebrow-version">{versionLabel}</span></p>
+        <p class="eyebrow">
+          Aleph VM credit deployer
+          {#if versionLabel}
+            <span class="eyebrow-version">{versionLabel}</span>
+          {/if}
+        </p>
         <h2>Sponsor Relay</h2>
       </div>
       <button class="refresh" type="button" on:click={() => controller.refresh()} disabled={state.busy.refreshing}>
