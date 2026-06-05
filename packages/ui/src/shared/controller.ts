@@ -1391,182 +1391,176 @@ export class SponsorRelayController {
         this.state.pricingSummary.pricing,
         this.state.pricingSummary.tier,
       );
-      this.emitProgress({
-        stage: "selecting-crn",
-        label: "Selecting CRN",
-        progress: 18,
-        status: "info",
-        detail:
-          this.state.selectedCrn?.name ??
-          this.state.selectedCrn?.hash ??
-          "Auto-selected compatible CRN",
-      });
-      const content = createInstanceContent({
-        address: this.state.wallet.address,
-        name: this.state.instanceName.trim(),
-        sshPublicKey: this.state.sshPublicKey.trim(),
-        rootfsItemHash: this.state.manifest.rootfsItemHash,
-        rootfsSizeMiB: Math.max(
-          this.state.manifest.rootfsSizeMiB,
-          spec.diskMiB,
-        ),
-        vcpus: spec.vcpus,
-        memoryMiB: spec.memoryMiB,
-        rootfsVersion: this.state.manifest.version,
-        crnHash: this.state.selectedCrn?.hash,
-      });
-
-      const result = await deploySharedInstance({
-        sender: this.state.wallet.address,
-        content,
-        hasher: sha256Hex,
-        signer: personalSign,
-        fetch: (url, init) => fetch(url, init),
-        apiHost: this.client.apiHost,
-        sync: false,
-        onProgress: (event) => {
-          this.emitProgress(event);
+      const compatibleCrns = compatibleCrnsForTier(this.state.crns, {
+        ...this.state,
+        pricingSummary: {
+          ...this.state.pricingSummary,
+          pricing: this.state.pricingSummary.pricing,
+          tier: this.state.pricingSummary.tier,
         },
-      });
+      } as SponsorRelayState);
+      const preferredCrnHash = this.state.selectedCrn?.hash ?? null;
+      const orderedCrns = [
+        ...compatibleCrns.filter((crn) => crn.hash === preferredCrnHash),
+        ...compatibleCrns.filter((crn) => crn.hash !== preferredCrnHash),
+      ].slice(0, 5);
 
-      this.patch({
-        statusText: `Deployment submitted: ${result.itemHash}`,
-        lastDeploymentHash: result.itemHash,
-      });
-      this.trace("deploy:broadcasted", result);
-      this.lastRuntimeReadyHash = null;
+      if (orderedCrns.length === 0) {
+        throw new Error("No compatible CRN is currently available for this tier.");
+      }
 
-      const inspection = await waitForDeploymentResult(result.itemHash, {
-        rootfsRef: this.state.manifest.rootfsItemHash,
-        apiHost: this.client.apiHost,
-        fetch: (url, init) => fetch(url, init),
-        attempts: UI_DEPLOY_WAIT_ATTEMPTS,
-        delayMs: UI_DEPLOY_WAIT_DELAY_MS,
-        onAttempt: (inspectionResult) => {
-          if (inspectionResult.status === "processed") {
-            this.emitProgress({
-              stage: "deployment-confirmed",
-              label: "Deployment accepted by Aleph",
-              progress: 82,
-              status: "success",
-              itemHash: result.itemHash,
-              detail: "Aleph processed the instance message.",
-            });
-            return;
+      const attemptErrors: string[] = [];
+      let lastError: Error | null = null;
+
+      for (const [candidateIndex, candidateCrn] of orderedCrns.entries()) {
+        let attemptItemHash: string | null = null;
+
+        this.emitProgress({
+          stage: "selecting-crn",
+          label: "Selecting CRN",
+          progress: 18,
+          status: "info",
+          detail: `Trying ${candidateCrn.name ?? candidateCrn.hash} (${candidateIndex + 1}/${orderedCrns.length})`,
+        });
+
+        try {
+          const content = createInstanceContent({
+            address: this.state.wallet.address,
+            name: this.state.instanceName.trim(),
+            sshPublicKey: this.state.sshPublicKey.trim(),
+            rootfsItemHash: this.state.manifest.rootfsItemHash,
+            rootfsSizeMiB: Math.max(
+              this.state.manifest.rootfsSizeMiB,
+              spec.diskMiB,
+            ),
+            vcpus: spec.vcpus,
+            memoryMiB: spec.memoryMiB,
+            rootfsVersion: this.state.manifest.version,
+            crnHash: candidateCrn.hash,
+          });
+
+          const result = await deploySharedInstance({
+            sender: this.state.wallet.address,
+            content,
+            hasher: sha256Hex,
+            signer: personalSign,
+            fetch: (url, init) => fetch(url, init),
+            apiHost: this.client.apiHost,
+            sync: false,
+            onProgress: (event) => {
+              this.emitProgress(event);
+            },
+          });
+
+          attemptItemHash = result.itemHash;
+          this.patch({
+            statusText: `Deployment submitted: ${result.itemHash}`,
+            lastDeploymentHash: result.itemHash,
+          });
+          this.trace("deploy:broadcasted", {
+            ...result,
+            crnHash: candidateCrn.hash,
+            crnName: candidateCrn.name,
+          });
+          this.lastRuntimeReadyHash = null;
+
+          const inspection = await waitForDeploymentResult(result.itemHash, {
+            rootfsRef: this.state.manifest.rootfsItemHash,
+            apiHost: this.client.apiHost,
+            fetch: (url, init) => fetch(url, init),
+            attempts: UI_DEPLOY_WAIT_ATTEMPTS,
+            delayMs: UI_DEPLOY_WAIT_DELAY_MS,
+            onAttempt: (inspectionResult) => {
+              if (inspectionResult.status === "processed") {
+                this.emitProgress({
+                  stage: "deployment-confirmed",
+                  label: "Deployment accepted by Aleph",
+                  progress: 82,
+                  status: "success",
+                  itemHash: result.itemHash,
+                  detail: "Aleph processed the instance message.",
+                });
+                return;
+              }
+
+              if (inspectionResult.status === "rejected") {
+                this.emitProgress({
+                  stage: "deployment-rejected",
+                  label: "Deployment rejected",
+                  progress: 100,
+                  status: "error",
+                  itemHash: result.itemHash,
+                  detail:
+                    inspectionResult.rejectionReason ??
+                    "Aleph rejected the deployment.",
+                  error:
+                    inspectionResult.rejectionReason ??
+                    "Aleph rejected the deployment.",
+                });
+                return;
+              }
+
+              this.emitProgress({
+                stage: "waiting-for-aleph",
+                label: "Waiting for Aleph",
+                progress: 76,
+                status: "info",
+                itemHash: result.itemHash,
+                detail:
+                  "Deployment submitted. Waiting for Aleph to process the instance message.",
+              });
+            },
+          });
+
+          if (inspection.status !== "processed") {
+            throw new Error(
+              inspection.rejectionReason ??
+                `Deployment ${result.itemHash} stayed ${inspection.status} on Aleph.`,
+            );
           }
+          this.trace("deploy:aleph-processed", inspection);
 
-          if (inspectionResult.status === "rejected") {
+          if ((this.state.manifest.requiredPortForwards?.length ?? 0) > 0) {
             this.emitProgress({
-              stage: "deployment-rejected",
-              label: "Deployment rejected",
-              progress: 100,
-              status: "error",
+              stage: "refreshing-instances",
+              label: "Publishing port forwards",
+              progress: 86,
+              status: "info",
               itemHash: result.itemHash,
               detail:
-                inspectionResult.rejectionReason ??
-                "Aleph rejected the deployment.",
-              error:
-                inspectionResult.rejectionReason ??
-                "Aleph rejected the deployment.",
+                "Publishing the required Aleph port-forward aggregate from the manifest.",
             });
-            return;
+            await ensureInstancePortForwards({
+              sender: this.state.wallet.address,
+              instanceItemHash: result.itemHash,
+              manifest: toSharedRootfsManifest(this.state.manifest),
+              signer: personalSign,
+              hasher: sha256Hex,
+              fetch: (url, init) => fetch(url, init),
+              apiHost: this.client.apiHost,
+              sync: true,
+            });
+            this.trace("deploy:port-forwards-published", {
+              itemHash: result.itemHash,
+              requiredPortForwards: this.state.manifest.requiredPortForwards,
+            });
           }
 
-          this.emitProgress({
-            stage: "waiting-for-aleph",
-            label: "Waiting for Aleph",
-            progress: 76,
-            status: "info",
-            itemHash: result.itemHash,
-            detail:
-              "Deployment submitted. Waiting for Aleph to process the instance message.",
-          });
-        },
-      });
-
-      if (inspection.status !== "processed") {
-        throw new Error(
-          inspection.rejectionReason ??
-            `Deployment ${result.itemHash} stayed ${inspection.status} on Aleph.`,
-        );
-      }
-      this.trace("deploy:aleph-processed", inspection);
-
-      if ((this.state.manifest.requiredPortForwards?.length ?? 0) > 0) {
-        this.emitProgress({
-          stage: "refreshing-instances",
-          label: "Publishing port forwards",
-          progress: 86,
-          status: "info",
-          itemHash: result.itemHash,
-          detail:
-            "Publishing the required Aleph port-forward aggregate from the manifest.",
-        });
-        await ensureInstancePortForwards({
-          sender: this.state.wallet.address,
-          instanceItemHash: result.itemHash,
-          manifest: toSharedRootfsManifest(this.state.manifest),
-          signer: personalSign,
-          hasher: sha256Hex,
-          fetch: (url, init) => fetch(url, init),
-          apiHost: this.client.apiHost,
-          sync: true,
-        });
-        this.trace("deploy:port-forwards-published", {
-          itemHash: result.itemHash,
-          requiredPortForwards: this.state.manifest.requiredPortForwards,
-        });
-      }
-
-      if (this.state.selectedCrn?.address) {
-        this.trace("deploy:notifying-crn", {
-          itemHash: result.itemHash,
-          crnName: this.state.selectedCrn.name,
-          crnHash: this.state.selectedCrn.hash,
-          crnUrl: this.state.selectedCrn.address,
-        });
-        await notifyCrnAllocationWithRetry({
-          crnUrl: this.state.selectedCrn.address,
-          itemHash: result.itemHash,
-          fetch: (url, init) => fetch(url, init),
-          onProgress: (event) => {
-            this.emitProgress(event);
-          },
-        });
-      }
-
-      this.emitProgress({
-        stage: "deployment-confirmed",
-        label: "Waiting for runtime",
-        progress: 90,
-        status: "warning",
-        itemHash: result.itemHash,
-        detail:
-          "Aleph accepted the deployment. Waiting for runtime networking and mapped ports.",
-      });
-
-      const runtime = await waitForVmRuntime({
-        itemHash: result.itemHash,
-        fetch: (url, init) => fetch(url, init),
-        crnHash: this.state.selectedCrn?.hash,
-        crns: this.state.crns,
-        crnListUrl: this.props.crnListUrl,
-        attempts: UI_RUNTIME_WAIT_ATTEMPTS,
-        delayMs: UI_RUNTIME_WAIT_DELAY_MS,
-        onAttempt: (runtime) => {
-          if (
-            runtime.hostIpv4 &&
-            Object.keys(runtime.mappedPorts ?? {}).length > 0
-          ) {
-            this.emitProgress({
-              stage: "completed",
-              label: "Runtime ready",
-              progress: 100,
-              status: "success",
+          if (candidateCrn.address) {
+            this.trace("deploy:notifying-crn", {
               itemHash: result.itemHash,
-              detail: "Runtime networking and mapped ports are now available.",
+              crnName: candidateCrn.name,
+              crnHash: candidateCrn.hash,
+              crnUrl: candidateCrn.address,
             });
-            return;
+            await notifyCrnAllocationWithRetry({
+              crnUrl: candidateCrn.address,
+              itemHash: result.itemHash,
+              fetch: (url, init) => fetch(url, init),
+              onProgress: (event) => {
+                this.emitProgress(event);
+              },
+            });
           }
 
           this.emitProgress({
@@ -1576,65 +1570,156 @@ export class SponsorRelayController {
             status: "warning",
             itemHash: result.itemHash,
             detail:
-              runtime.diagnostics?.reason ??
-              "Waiting for CRN runtime networking and mapped ports.",
+              "Aleph accepted the deployment. Waiting for runtime networking and mapped ports.",
           });
-        },
-      });
 
-      if (
-        !runtime.hostIpv4 ||
-        Object.keys(runtime.mappedPorts ?? {}).length === 0
-      ) {
-        throw new Error(
-          runtime.diagnostics?.reason ??
-            "Deployment was processed, but runtime networking never exposed mapped ports.",
-        );
+          const runtime = await waitForVmRuntime({
+            itemHash: result.itemHash,
+            fetch: (url, init) => fetch(url, init),
+            crnHash: candidateCrn.hash,
+            crns: this.state.crns,
+            crnListUrl: this.props.crnListUrl,
+            attempts: UI_RUNTIME_WAIT_ATTEMPTS,
+            delayMs: UI_RUNTIME_WAIT_DELAY_MS,
+            onAttempt: (runtime) => {
+              if (
+                runtime.hostIpv4 &&
+                Object.keys(runtime.mappedPorts ?? {}).length > 0
+              ) {
+                this.emitProgress({
+                  stage: "completed",
+                  label: "Runtime ready",
+                  progress: 100,
+                  status: "success",
+                  itemHash: result.itemHash,
+                  detail: "Runtime networking and mapped ports are now available.",
+                });
+                return;
+              }
+
+              this.emitProgress({
+                stage: "deployment-confirmed",
+                label: "Waiting for runtime",
+                progress: 90,
+                status: "warning",
+                itemHash: result.itemHash,
+                detail:
+                  runtime.diagnostics?.reason ??
+                  "Waiting for CRN runtime networking and mapped ports.",
+              });
+            },
+          });
+
+          if (
+            !runtime.hostIpv4 ||
+            Object.keys(runtime.mappedPorts ?? {}).length === 0
+          ) {
+            throw new Error(
+              runtime.diagnostics?.reason ??
+                "Deployment was processed, but runtime networking never exposed mapped ports.",
+            );
+          }
+          this.trace("deploy:runtime-ready", runtime);
+          this.lastRuntimeReadyHash = result.itemHash;
+          this.rememberRuntimeDetails(result.itemHash, {
+            messageStatus: "processed",
+            allocationSource: runtime.allocation?.source ?? null,
+            crnUrl:
+              runtime.allocation?.crnUrl ??
+              runtime.execution?.crnUrl ??
+              null,
+            hostIpv4: runtime.hostIpv4 ?? null,
+            ipv6: runtime.ipv6 ?? null,
+            vmIpv4: runtime.execution?.networking?.ipv4_ip ?? null,
+            webUrl:
+              runtime.webAccessUrl ??
+              runtime.proxyUrl ??
+              runtime.execution?.networking?.proxy_url ??
+              null,
+            sshCommand: runtime.sshCommand ?? null,
+            mappedPorts:
+              runtime.execution != null
+                ? mappedPorts(runtime.execution)
+                : runtimeMappedPorts(runtime.mappedPorts),
+            execution: runtime.execution ?? null,
+            error: null,
+          });
+
+          await this.configureRelayBootstrapRegistration({
+            itemHash: result.itemHash,
+            runtime,
+          });
+
+          this.patch({
+            busy: { deploying: false },
+          });
+
+          this.emitProgress({
+            stage: "refreshing-instances",
+            label: "Refreshing instances",
+            progress: 96,
+            status: "info",
+            itemHash: result.itemHash,
+            detail: "Reloading deployments and runtime state.",
+          });
+          await this.refresh();
+          return;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          const attemptLabel = candidateCrn.name ?? candidateCrn.hash;
+          attemptErrors.push(`${attemptLabel}: ${lastError.message}`);
+          this.trace("deploy:crn-attempt-error", {
+            crnHash: candidateCrn.hash,
+            crnName: candidateCrn.name,
+            itemHash: attemptItemHash,
+            error: lastError.message,
+          });
+
+          if (attemptItemHash) {
+            await forgetAlephMessages({
+              sender: this.state.wallet.address,
+              hashes: [attemptItemHash],
+              reason: `Discard failed Sponsor Relay deployment attempt on ${attemptLabel}`,
+              signer: personalSign,
+              hasher: sha256Hex,
+              fetch: (url, init) =>
+                fetch(url, init).then(async (response) => ({
+                  ok: response.ok,
+                  status: response.status,
+                  json: async () => await response.json(),
+                })),
+              apiHost: this.client.apiHost,
+            }).catch((cleanupError) => {
+              this.trace("deploy:cleanup-error", {
+                itemHash: attemptItemHash,
+                error:
+                  cleanupError instanceof Error
+                    ? cleanupError.message
+                    : String(cleanupError),
+              });
+            });
+          }
+
+          if (candidateIndex < orderedCrns.length - 1) {
+            this.emitProgress({
+              stage: "selecting-crn",
+              label: "Retrying another CRN",
+              progress: 20,
+              status: "warning",
+              itemHash: attemptItemHash,
+              detail: `${attemptLabel} failed: ${lastError.message}`,
+              error: lastError.message,
+            });
+            continue;
+          }
+        }
       }
-      this.trace("deploy:runtime-ready", runtime);
-      this.lastRuntimeReadyHash = result.itemHash;
-      this.rememberRuntimeDetails(result.itemHash, {
-        messageStatus: "processed",
-        allocationSource: runtime.allocation?.source ?? null,
-        crnUrl:
-          runtime.allocation?.crnUrl ??
-          runtime.execution?.crnUrl ??
-          null,
-        hostIpv4: runtime.hostIpv4 ?? null,
-        ipv6: runtime.ipv6 ?? null,
-        vmIpv4: runtime.execution?.networking?.ipv4_ip ?? null,
-        webUrl:
-          runtime.webAccessUrl ??
-          runtime.proxyUrl ??
-          runtime.execution?.networking?.proxy_url ??
-          null,
-        sshCommand: runtime.sshCommand ?? null,
-        mappedPorts:
-          runtime.execution != null
-            ? mappedPorts(runtime.execution)
-            : runtimeMappedPorts(runtime.mappedPorts),
-        execution: runtime.execution ?? null,
-        error: null,
-      });
 
-      await this.configureRelayBootstrapRegistration({
-        itemHash: result.itemHash,
-        runtime,
-      });
-
-      this.patch({
-        busy: { deploying: false },
-      });
-
-      this.emitProgress({
-        stage: "refreshing-instances",
-        label: "Refreshing instances",
-        progress: 96,
-        status: "info",
-        itemHash: result.itemHash,
-        detail: "Reloading deployments and runtime state.",
-      });
-      await this.refresh();
+      throw new Error(
+        attemptErrors.length > 0
+          ? `All compatible CRNs failed. ${attemptErrors.join(" | ")}`
+          : (lastError?.message ?? "All compatible CRNs failed."),
+      );
     } catch (error) {
       this.trace("deploy:error", error);
       this.patch({
