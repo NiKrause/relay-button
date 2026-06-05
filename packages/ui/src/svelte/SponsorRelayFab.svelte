@@ -1,5 +1,6 @@
 <script>
   import { onDestroy, onMount } from 'svelte'
+  import packageJson from '../../package.json'
 
   import { createSponsorRelayController, formatDateTime, formatNumber, formatTierSpecLabel, joinMappedPorts, joinRequiredPortForwards, shortHash } from '../shared/index'
   import AccordionSection from './components/AccordionSection.svelte'
@@ -37,6 +38,7 @@ export let apiHost = undefined
   })
 
   let state = controller.getState()
+  const versionLabel = `v${packageJson.version}`
 
   onMount(async () => {
     const unsubscribe = controller.subscribe((next) => {
@@ -62,7 +64,7 @@ export let apiHost = undefined
   <aside class="panel">
     <div class="panel-head">
       <div>
-        <p class="eyebrow">Aleph VM credit deployer</p>
+        <p class="eyebrow">Aleph VM credit deployer <span class="eyebrow-version">{versionLabel}</span></p>
         <h2>Sponsor Relay</h2>
       </div>
       <button class="refresh" type="button" on:click={() => controller.refresh()} disabled={state.busy.refreshing}>
@@ -320,6 +322,13 @@ export let apiHost = undefined
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
+  }
+
+  .eyebrow-version {
+    font-size: 0.62rem;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    color: rgba(191, 219, 254, 0.82);
   }
 
   h2,

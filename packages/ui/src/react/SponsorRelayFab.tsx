@@ -1,4 +1,5 @@
 import React from "react";
+import packageJson from "../../package.json";
 
 import {
   formatDateTime,
@@ -184,6 +185,7 @@ function launcherIndicator(state: SponsorRelayState): {
 
 export function SponsorRelayFab(props: SponsorRelayProps) {
   const { controller, state } = useSponsorRelayController(props);
+  const versionLabel = `v${packageJson.version}`;
   const launcherMode = props.launcherMode ?? "floating";
   const indicator = launcherIndicator(state);
   const [successFlash, setSuccessFlash] = React.useState(false);
@@ -460,13 +462,26 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               <div>
                 <div
                   style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.45rem",
                     color: "#9fb2ca",
                     fontSize: "0.72rem",
                     textTransform: "uppercase",
                     letterSpacing: "0.08em",
                   }}
                 >
-                  Aleph VM credit deployer
+                  <span>Aleph VM credit deployer</span>
+                  <span
+                    style={{
+                      fontSize: "0.62rem",
+                      letterSpacing: "0.04em",
+                      textTransform: "none",
+                      color: "rgba(191, 219, 254, 0.82)",
+                    }}
+                  >
+                    {versionLabel}
+                  </span>
                 </div>
                 <h2
                   style={{
