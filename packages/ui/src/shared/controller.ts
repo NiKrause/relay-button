@@ -64,6 +64,15 @@ import type { RootfsManifest as SharedRootfsManifest } from "../../../shared-typ
 
 type RelayProfile = "uc-go-peer" | "orbitdb-relay-pinner";
 
+function isConfirmedRelaySetupResult(value: unknown): value is { status: "configured" } {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "status" in value &&
+      (value as { status?: unknown }).status === "configured",
+  );
+}
+
 function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
   return {
     ready: false,
@@ -686,7 +695,7 @@ export class SponsorRelayController {
         throw new Error("OrbitDB relay runtime is missing required mapped TCP/WS ports.");
       }
 
-      await configureOrbitdbRelaySetup({
+      const configureResult = await configureOrbitdbRelaySetup({
         hostIpv4: args.runtime.hostIpv4,
         publicIpv6: args.runtime.ipv6,
         setupPort,
@@ -700,8 +709,13 @@ export class SponsorRelayController {
         fetch: (url, init) => fetch(url, init),
         timeoutMs: 180000,
       });
+      if (!isConfirmedRelaySetupResult(configureResult)) {
+        throw new Error(
+          `Relay guest configuration could not be confirmed at http://${args.runtime.hostIpv4}:${setupPort}/configure.`,
+        );
+      }
     } else {
-      await configureUcGoPeer({
+      const configureResult = await configureUcGoPeer({
         hostIpv4: args.runtime.hostIpv4,
         publicIpv6: args.runtime.ipv6,
         setupPort,
@@ -723,6 +737,11 @@ export class SponsorRelayController {
         fetch: (url, init) => fetch(url, init),
         timeoutMs: 180000,
       });
+      if (!isConfirmedRelaySetupResult(configureResult)) {
+        throw new Error(
+          `Relay guest configuration could not be confirmed at http://${args.runtime.hostIpv4}:${setupPort}/configure.`,
+        );
+      }
     }
 
     this.emitProgress({
