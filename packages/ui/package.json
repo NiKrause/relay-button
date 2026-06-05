@@ -1,6 +1,6 @@
 {
   "name": "@le-space/ui",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "description": "Floating Aleph sponsor relay UI components for Svelte and React.",
   "license": "MIT",
   "type": "module",
@@ -22,7 +22,7 @@
   },
   "scripts": {
     "build": "echo \"ui build placeholder\"",
-    "build:publish": "tsup src/shared/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json --out-dir dist/shared && tsup src/react/index.ts --format esm --dts --tsconfig tsconfig.publish.json --out-dir dist/react",
+    "build:publish": "node ./scripts/write-package-version.mjs && tsup src/shared/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json --out-dir dist/shared && tsup src/react/index.ts --format esm --dts --tsconfig tsconfig.publish.json --out-dir dist/react",
     "test": "pnpm run build:publish && node --test ./test/**/*.test.mjs",
     "lint": "echo \"ui lint placeholder\""
   }

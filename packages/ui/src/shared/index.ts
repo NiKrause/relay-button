@@ -1,5 +1,6 @@
 export * from './types'
 export * from './constants'
+export * from './package-version'
 export * from './format'
 export * from './manifest-source'
 export * from './wallet-controller'

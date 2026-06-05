@@ -23,6 +23,7 @@ export interface SponsorRelayProps {
   showInstances?: boolean
   openByDefault?: boolean
   launcherMode?: 'floating' | 'inline'
+  version?: string
   apiHost?: string
   crnListUrl?: string
   schedulerApiHost?: string

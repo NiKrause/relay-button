@@ -1,7 +1,7 @@
 import React from "react";
-import packageJson from "../../package.json";
 
 import {
+  UI_PACKAGE_VERSION,
   formatDateTime,
   formatNumber,
   formatTierSpecLabel,
@@ -185,7 +185,9 @@ function launcherIndicator(state: SponsorRelayState): {
 
 export function SponsorRelayFab(props: SponsorRelayProps) {
   const { controller, state } = useSponsorRelayController(props);
-  const versionLabel = `v${packageJson.version}`;
+  const explicitVersion = typeof props.version === "string" ? props.version.trim() : "";
+  const resolvedVersion = explicitVersion || UI_PACKAGE_VERSION;
+  const versionLabel = resolvedVersion.startsWith("v") ? resolvedVersion : `v${resolvedVersion}`;
   const launcherMode = props.launcherMode ?? "floating";
   const indicator = launcherIndicator(state);
   const [successFlash, setSuccessFlash] = React.useState(false);

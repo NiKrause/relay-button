@@ -1,6 +1,7 @@
 <script>
   import { onDestroy, onMount } from 'svelte'
 
+  import { UI_PACKAGE_VERSION } from '../shared/package-version'
   import { createSponsorRelayController, formatDateTime, formatNumber, formatTierSpecLabel, joinMappedPorts, joinRequiredPortForwards, shortHash } from '../shared/index'
   import AccordionSection from './components/AccordionSection.svelte'
   import CopyButton from './components/CopyButton.svelte'
@@ -38,8 +39,9 @@ export let apiHost = undefined
   })
 
   let state = controller.getState()
-  const versionLabel = version.trim()
-    ? (version.trim().startsWith('v') ? version.trim() : `v${version.trim()}`)
+  const resolvedVersion = version.trim() || UI_PACKAGE_VERSION
+  const versionLabel = resolvedVersion.trim()
+    ? (resolvedVersion.trim().startsWith('v') ? resolvedVersion.trim() : `v${resolvedVersion.trim()}`)
     : ''
 
   onMount(async () => {
