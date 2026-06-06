@@ -74,7 +74,14 @@ https://${proxy_hostname} {
             disable_http_challenge
         }
     }
-    reverse_proxy http://127.0.0.1:${WS_BACKEND_PORT}
+
+    handle_path /bootstrap/* {
+        reverse_proxy http://127.0.0.1:80
+    }
+
+    handle {
+        reverse_proxy http://127.0.0.1:${WS_BACKEND_PORT}
+    }
 }
 EOF
 }

@@ -670,7 +670,7 @@ test('executeDeployPlan persists bootstrap owner authorization in a second no-st
   assert.equal(authorization.payload?.peerId, '12D3KooOrbitdbDual')
   assert.equal(
     authorization.payload?.registrationId,
-    'relay:orbitdb-relay-pinner:uc-go-peer'
+    'relay:orbitdb-relay-pinner:uc-go-peer:hash-d1'
   )
   assert.match(String(authorization.payload?.publisherAddress ?? ''), /^0x/i)
   assert.match(String(authorization.payload?.ownerAddress ?? ''), /^0x/i)

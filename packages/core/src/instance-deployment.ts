@@ -48,6 +48,33 @@ export function isValidSshPublicKey(value: string): boolean {
   return SSH_PUBLIC_KEY_PATTERN.test(normalizeSshPublicKey(value))
 }
 
+export function createDeploymentToken(): string {
+  const randomUuid = globalThis.crypto?.randomUUID?.()
+  if (typeof randomUuid === 'string' && randomUuid.trim()) {
+    return randomUuid
+  }
+
+  return `deploy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
+}
+
+export function appendDeploymentTokenToSshPublicKey(
+  sshPublicKey: string,
+  ownerAddress: string,
+  deploymentToken: string
+): string {
+  const normalized = normalizeSshPublicKey(sshPublicKey)
+  if (!normalized) return normalized
+
+  const [algorithm = '', key = ''] = normalized.split(/\s+/, 3)
+  const owner = ownerAddress.trim().toLowerCase()
+  const token = deploymentToken.trim()
+  if (!algorithm || !key || !owner || !token) {
+    return normalized
+  }
+
+  return `${algorithm} ${key} aleph-bootstrap-config:${owner}:${token}`
+}
+
 export function createReleaseMetadata(name: string, rootfsVersion: string, deployer = 'shared-aleph-tooling') {
   return {
     name,

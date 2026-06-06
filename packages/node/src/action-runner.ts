@@ -3,8 +3,10 @@ import { pathToFileURL } from "node:url";
 
 import type { PortMapping } from "@le-space/shared-types";
 import {
+  createRelayBootstrapRegistrationId,
   listGeocodedCrns,
   publishRelayBootstrapRegistration,
+  reconcileOwnerRelayBootstrapRegistrations,
   retainSuccessfulDeployments,
 } from "../../core/src/index.ts";
 
@@ -243,6 +245,20 @@ export async function runActionMode(
     );
     const profile = optionalEnv("ALEPH_VM_PROFILE", "uc-go-peer", env);
     const relayName = requiredEnv("ALEPH_VM_NAME", env);
+    const instanceItemHash = optionalEnv("ALEPH_VM_INSTANCE_ITEM_HASH", "", env);
+    const instanceOwnerAddress = optionalEnv(
+      "ALEPH_VM_INSTANCE_OWNER_ADDRESS",
+      optionalEnv("ALEPH_VM_DEPLOYER_ADDRESS", "", env),
+      env,
+    );
+    const shouldReconcileOwner =
+      optionalEnv("ALEPH_VM_BOOTSTRAP_RECONCILE_OWNER", "", env)
+        .toLowerCase() !== "false" && !!instanceOwnerAddress;
+    const registrationId = optionalEnv(
+      "ALEPH_VM_BOOTSTRAP_REGISTRATION_ID",
+      createRelayBootstrapRegistrationId(profile, relayName, instanceItemHash),
+      env,
+    );
 
     const publication = await (
       hooks.publishRelayBootstrapRegistration ?? publishRelayBootstrapRegistration
@@ -259,11 +275,7 @@ export async function runActionMode(
       publisherAddress: publisherIdentity.address,
       ownerSigner: ownerIdentity?.signer,
       publisherSigner: publisherIdentity.signer,
-      registrationId: optionalEnv(
-        "ALEPH_VM_BOOTSTRAP_REGISTRATION_ID",
-        `relay:${profile}:${relayName}`,
-        env,
-      ),
+      registrationId,
       forgetPrevious: optionalEnv(
         "ALEPH_VM_BOOTSTRAP_FORGET_PREVIOUS",
         "true",
@@ -273,6 +285,35 @@ export async function runActionMode(
       version: optionalEnv("ALEPH_VM_ROOTFS_VERSION", "", env) || undefined,
       sync: true,
     });
+    const reconcileResult = shouldReconcileOwner
+      ? await reconcileOwnerRelayBootstrapRegistrations({
+          instanceOwnerAddress,
+          sender: publisherIdentity.address,
+          signer: publisherIdentity.signer,
+          hasher: async (content) => defaultHasher(content),
+          fetch: globalThis.fetch.bind(globalThis),
+          apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api2.aleph.im", env),
+          profile,
+          ownerAddress: ownerIdentity?.address,
+          ownerSigner: ownerIdentity?.signer,
+          publisherAddress: publisherIdentity.address,
+          publisherSigner: publisherIdentity.signer,
+          current: instanceItemHash
+            ? {
+                itemHash: instanceItemHash,
+                registrationId,
+                peerId,
+                probeMultiaddrs: multiaddrs,
+                browserBootstrapMultiaddrs: browserMultiaddrs,
+              }
+            : null,
+        })
+      : {
+          refreshedRegistrations: [],
+          forgottenHashes: [],
+          skippedInstanceHashes: [],
+          errors: [],
+        };
 
     await appendGithubOutput(
       "bootstrap_registration_json",
@@ -289,6 +330,11 @@ export async function runActionMode(
       publication.status,
       env,
     );
+    await appendGithubOutput(
+      "bootstrap_reconcile_result_json",
+      JSON.stringify(reconcileResult),
+      env,
+    );
     await appendGithubSummary(
       [
         "## Aleph bootstrap refresh",
@@ -299,10 +345,12 @@ export async function runActionMode(
         `- Published status: \`${publication.status}\``,
         `- Published item hash: \`${publication.itemHash ?? "unknown"}\``,
         `- Forgotten previous hashes: \`${publication.forgottenHashes?.length ?? 0}\``,
+        `- Reconciled registrations: \`${reconcileResult.refreshedRegistrations.length}\``,
+        `- Reconcile warnings: \`${reconcileResult.errors.length}\``,
       ],
       env,
     );
-    stdout(`${JSON.stringify(publication)}\n`);
+    stdout(`${JSON.stringify({ publication, reconcile: reconcileResult })}\n`);
     return;
   }
 

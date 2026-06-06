@@ -12,17 +12,22 @@ import {
   type RootfsManifestState,
 } from "../../../browser/src/index.ts";
 import {
+  appendDeploymentTokenToSshPublicKey,
   buildPaymentQuote,
+  createRelayBootstrapRegistrationId,
   configureOrbitdbRelaySetup,
-  configureUcGoPeer,
+  createDeploymentToken,
   createInstanceContent,
+  deleteVmBootstrapConfig,
   deployInstance as deploySharedInstance,
   ensureInstancePortForwards,
+  fetchRelayMetadataForRuntime,
   filterDeployableCrns,
-  fetchUcGoPeerMetadata,
   forgetAlephMessages,
   notifyCrnAllocationWithRetry,
+  publishVmBootstrapConfig,
   publishRelayBootstrapRegistration,
+  reconcileOwnerRelayBootstrapRegistrations,
   tierSpec,
   waitForDeploymentResult,
   waitForSetupEndpoint,
@@ -61,6 +66,7 @@ import type {
   DeploymentProgressListener,
 } from "../../../shared-types/src/deployment.ts";
 import type { RootfsManifest as SharedRootfsManifest } from "../../../shared-types/src/manifest.ts";
+import type { VmBootstrapConfigRecord } from "../../../shared-types/src/bootstrap-config.ts";
 
 type RelayProfile = "uc-go-peer" | "orbitdb-relay-pinner";
 
@@ -639,6 +645,7 @@ export class SponsorRelayController {
   private async configureRelayBootstrapRegistration(args: {
     itemHash: string;
     runtime: Awaited<ReturnType<typeof waitForVmRuntime>>;
+    deploymentToken?: string | null;
   }): Promise<void> {
     const profile = relayProfileForManifest(this.state.manifest);
     if (!profile) return;
@@ -656,39 +663,39 @@ export class SponsorRelayController {
       throw new Error("Relay runtime did not expose the temporary setup endpoint.");
     }
 
-    this.emitProgress({
-      stage: "deployment-confirmed",
-      label: "Configuring relay",
-      progress: 93,
-      status: "info",
-      itemHash: args.itemHash,
-      detail: "Waiting for the guest setup endpoint before collecting relay metadata.",
-    });
-
-    const setupHealth = await waitForSetupEndpoint({
-      hostIpv4: args.runtime.hostIpv4,
-      setupPort,
-      fetch: (url, init) => fetch(url, init),
-      attempts: 15,
-      delayMs: 4000,
-      httpTimeoutMs: 10000,
-    });
-    if (!setupHealth.ok) {
-      throw new Error(
-        `Relay setup endpoint did not become reachable at http://${args.runtime.hostIpv4}:${setupPort}/health.`,
-      );
-    }
-
-    this.emitProgress({
-      stage: "deployment-confirmed",
-      label: "Applying relay networking",
-      progress: 94,
-      status: "info",
-      itemHash: args.itemHash,
-      detail: "Publishing the host port mapping into the guest relay configuration.",
-    });
-
     if (profile === "orbitdb-relay-pinner") {
+      this.emitProgress({
+        stage: "deployment-confirmed",
+        label: "Configuring relay",
+        progress: 93,
+        status: "info",
+        itemHash: args.itemHash,
+        detail: "Waiting for the guest setup endpoint before collecting relay metadata.",
+      });
+
+      const setupHealth = await waitForSetupEndpoint({
+        hostIpv4: args.runtime.hostIpv4,
+        setupPort,
+        fetch: (url, init) => fetch(url, init),
+        attempts: 15,
+        delayMs: 4000,
+        httpTimeoutMs: 10000,
+      });
+      if (!setupHealth.ok) {
+        throw new Error(
+          `Relay setup endpoint did not become reachable at http://${args.runtime.hostIpv4}:${setupPort}/health.`,
+        );
+      }
+
+      this.emitProgress({
+        stage: "deployment-confirmed",
+        label: "Applying relay networking",
+        progress: 94,
+        status: "info",
+        itemHash: args.itemHash,
+        detail: "Publishing the host port mapping into the guest relay configuration.",
+      });
+
       const tcpPort = mappedPorts["9091"]?.host ?? 0;
       const wsPort = mappedPorts["9092"]?.host ?? mappedPorts["443"]?.host ?? 0;
       if (!tcpPort || !wsPort) {
@@ -715,33 +722,56 @@ export class SponsorRelayController {
         );
       }
     } else {
-      const configureResult = await configureUcGoPeer({
-        hostIpv4: args.runtime.hostIpv4,
-        publicIpv6: args.runtime.ipv6,
-        setupPort,
-        tcpPort: mappedPorts["9095"]?.host ?? null,
-        wsPort: mappedPorts["9097"]?.host ?? mappedPorts["9095"]?.host ?? null,
-        udpPort:
-          mappedPorts["9095"]?.udp === true
-            ? (mappedPorts["9095"]?.host ?? null)
-            : null,
-        quicPort:
-          mappedPorts["9095"]?.udp === true
-            ? (mappedPorts["9095"]?.host ?? null)
-            : null,
-        webrtcPort:
-          mappedPorts["9095"]?.udp === true
-            ? (mappedPorts["9095"]?.host ?? null)
-            : null,
-        proxyUrl: args.runtime.proxyUrl ?? undefined,
-        fetch: (url, init) => fetch(url, init),
-        timeoutMs: 180000,
-      });
-      if (!isConfirmedRelaySetupResult(configureResult)) {
-        throw new Error(
-          `Relay guest configuration could not be confirmed at http://${args.runtime.hostIpv4}:${setupPort}/configure.`,
-        );
+      if (!args.deploymentToken) {
+        throw new Error("Missing deployment token for Aleph bootstrap config handoff.");
       }
+
+      this.emitProgress({
+        stage: "deployment-confirmed",
+        label: "Publishing relay config",
+        progress: 94,
+        status: "info",
+        itemHash: args.itemHash,
+        detail: "Publishing runtime networking into the Aleph guest bootstrap config aggregate.",
+      });
+
+      const record: VmBootstrapConfigRecord = {
+        deploymentToken: args.deploymentToken,
+        profile,
+        ownerAddress: this.state.wallet.address,
+        instanceItemHash: args.itemHash,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+        status: "pending",
+        runtime: {
+          publicIpv4: args.runtime.hostIpv4,
+          publicIpv6: args.runtime.ipv6 ?? null,
+          proxyUrl: args.runtime.proxyUrl ?? null,
+          mappedPorts: mappedPorts,
+        },
+        bootstrap: {
+          registrationId: createRelayBootstrapRegistrationId(
+            profile,
+            this.state.instanceName.trim(),
+            args.itemHash,
+          ),
+        },
+      };
+
+      await publishVmBootstrapConfig({
+        sender: this.state.wallet.address,
+        record,
+        signer: personalSign,
+        hasher: sha256Hex,
+        fetch: (url, init) =>
+          fetch(url, init).then(async (response) => ({
+            ok: response.ok,
+            status: response.status,
+            json: async () => await response.json(),
+          })),
+        apiHost: this.client.apiHost,
+        sync: true,
+      });
     }
 
     this.emitProgress({
@@ -753,40 +783,24 @@ export class SponsorRelayController {
       detail: "Waiting for the relay to report its final public multiaddrs.",
     });
 
-    const metadataResult = await fetchUcGoPeerMetadata({
-      hostIpv4: args.runtime.hostIpv4,
-      setupPort,
+    const relayMetadata = await fetchRelayMetadataForRuntime({
+      runtime: args.runtime,
       fetch: (url, init) => fetch(url, init),
+      preferSecureMetadata: profile === "uc-go-peer",
       attempts: 80,
       delayMs: 3000,
       timeoutMs: 240000,
     });
-    const metadata =
-      metadataResult &&
-      typeof metadataResult === "object" &&
-      (metadataResult as { metadata?: unknown }).metadata &&
-      typeof (metadataResult as { metadata?: unknown }).metadata === "object"
-        ? ((metadataResult as { metadata: Record<string, unknown> }).metadata)
-        : null;
-
-    const peerId =
-      typeof metadata?.peer_id === "string" ? metadata.peer_id : null;
-    const probeMultiaddrs = Array.isArray(metadata?.probe_multiaddrs)
-      ? metadata.probe_multiaddrs.filter(
-          (entry): entry is string => typeof entry === "string",
-        )
-      : [];
-    const browserBootstrapMultiaddrs = Array.isArray(
-      metadata?.browser_bootstrap_multiaddrs,
-    )
-      ? metadata.browser_bootstrap_multiaddrs.filter(
-          (entry): entry is string => typeof entry === "string",
-        )
-      : [];
-
-    if (!peerId || probeMultiaddrs.length === 0) {
+    if (!relayMetadata) {
       throw new Error("Relay metadata did not include a peer ID and public multiaddrs.");
     }
+
+    const { peerId, probeMultiaddrs, browserBootstrapMultiaddrs } = relayMetadata;
+    const registrationId = createRelayBootstrapRegistrationId(
+      profile,
+      this.state.instanceName.trim(),
+      args.itemHash,
+    );
 
     this.emitProgress({
       stage: "publishing-bootstrap",
@@ -811,17 +825,73 @@ export class SponsorRelayController {
       peerId,
       multiaddrs: probeMultiaddrs,
       browserMultiaddrs: browserBootstrapMultiaddrs,
+      registrationId,
       profile,
       version: this.state.manifest?.version,
+      forgetPrevious: true,
       sync: true,
     });
 
     this.trace("deploy:bootstrap-registration", {
       itemHash: args.itemHash,
       peerId,
-      metadata,
+      metadata: relayMetadata,
       publication,
     });
+
+    const reconcileResult = await reconcileOwnerRelayBootstrapRegistrations({
+      instanceOwnerAddress: this.state.wallet.address,
+      sender: this.state.wallet.address,
+      signer: personalSign,
+      hasher: sha256Hex,
+      fetch: (url, init) =>
+        fetch(url, init).then(async (response) => ({
+          ok: response.ok,
+          status: response.status,
+          json: async () => await response.json(),
+        })),
+      profile,
+      apiHost: this.client.apiHost,
+      crns: this.state.crns,
+      crnListUrl: this.props.crnListUrl,
+      preferSecureMetadata: profile === "uc-go-peer",
+      current: {
+        itemHash: args.itemHash,
+        registrationId,
+        peerId,
+        probeMultiaddrs,
+        browserBootstrapMultiaddrs,
+      },
+    });
+    if (reconcileResult.errors.length > 0) {
+      this.trace("deploy:owner-bootstrap-reconcile-errors", {
+        itemHash: args.itemHash,
+        errors: reconcileResult.errors,
+      });
+    }
+
+    if (profile === "uc-go-peer" && args.deploymentToken) {
+      await deleteVmBootstrapConfig({
+        sender: this.state.wallet.address,
+        deploymentToken: args.deploymentToken,
+        signer: personalSign,
+        hasher: sha256Hex,
+        fetch: (url, init) =>
+          fetch(url, init).then(async (response) => ({
+            ok: response.ok,
+            status: response.status,
+            json: async () => await response.json(),
+          })),
+        apiHost: this.client.apiHost,
+        sync: true,
+      }).catch((error) => {
+        this.trace("deploy:bootstrap-config-cleanup-error", {
+          itemHash: args.itemHash,
+          deploymentToken: args.deploymentToken,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
   }
 
   private syncLatestDeploymentProgress(
@@ -1414,6 +1484,7 @@ export class SponsorRelayController {
 
       for (const [candidateIndex, candidateCrn] of orderedCrns.entries()) {
         let attemptItemHash: string | null = null;
+        let attemptDeploymentToken: string | null = null;
 
         this.emitProgress({
           stage: "selecting-crn",
@@ -1424,10 +1495,20 @@ export class SponsorRelayController {
         });
 
         try {
+          const profile = relayProfileForManifest(this.state.manifest);
+          const sshPublicKey =
+            profile === "uc-go-peer"
+              ? appendDeploymentTokenToSshPublicKey(
+                  this.state.sshPublicKey.trim(),
+                  this.state.wallet.address,
+                  (attemptDeploymentToken = createDeploymentToken()),
+                )
+              : this.state.sshPublicKey.trim();
+
           const content = createInstanceContent({
             address: this.state.wallet.address,
             name: this.state.instanceName.trim(),
-            sshPublicKey: this.state.sshPublicKey.trim(),
+            sshPublicKey,
             rootfsItemHash: this.state.manifest.rootfsItemHash,
             rootfsSizeMiB: Math.max(
               this.state.manifest.rootfsSizeMiB,
@@ -1648,6 +1729,7 @@ export class SponsorRelayController {
           await this.configureRelayBootstrapRegistration({
             itemHash: result.itemHash,
             runtime,
+            deploymentToken: attemptDeploymentToken,
           });
 
           this.patch({
@@ -1676,6 +1758,22 @@ export class SponsorRelayController {
           });
 
           if (attemptItemHash) {
+            if (attemptDeploymentToken) {
+              await deleteVmBootstrapConfig({
+                sender: this.state.wallet.address,
+                deploymentToken: attemptDeploymentToken,
+                signer: personalSign,
+                hasher: sha256Hex,
+                fetch: (url, init) =>
+                  fetch(url, init).then(async (response) => ({
+                    ok: response.ok,
+                    status: response.status,
+                    json: async () => await response.json(),
+                  })),
+                apiHost: this.client.apiHost,
+                sync: true,
+              }).catch(() => undefined);
+            }
             await forgetAlephMessages({
               sender: this.state.wallet.address,
               hashes: [attemptItemHash],
@@ -1776,6 +1874,35 @@ export class SponsorRelayController {
           this.emitProgress(event);
         },
       });
+
+      const profile = relayProfileForManifest(this.state.manifest);
+      if (profile) {
+        await reconcileOwnerRelayBootstrapRegistrations({
+          instanceOwnerAddress: this.state.wallet.address,
+          sender: this.state.wallet.address,
+          signer: personalSign,
+          hasher: sha256Hex,
+          fetch: (url, init) =>
+            fetch(url, init).then(async (response) => ({
+              ok: response.ok,
+              status: response.status,
+              json: async () => await response.json(),
+            })),
+          profile,
+          apiHost: this.client.apiHost,
+          crns: this.state.crns,
+          crnListUrl: this.props.crnListUrl,
+          preferSecureMetadata: profile === "uc-go-peer",
+        }).catch(
+          (error) => {
+            this.trace("delete:owner-bootstrap-reconcile-error", {
+              instanceHash,
+              profile,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
+        );
+      }
 
       this.patch({
         busy: { deletingInstanceHash: null },

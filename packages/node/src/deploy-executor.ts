@@ -6,6 +6,7 @@ import {
   cleanupFailedDeployment,
   configureOrbitdbRelaySetup,
   configureUcGoPeer,
+  createRelayBootstrapRegistrationId,
   createInstanceContent,
   deployInstance,
   ensureInstancePortForwards,
@@ -13,6 +14,7 @@ import {
   fetchUcGoPeerMetadata,
   notifyCrnAllocationWithRetry,
   publishRelayBootstrapRegistration,
+  reconcileOwnerRelayBootstrapRegistrations,
   rankCandidateCrns,
   verifyUcGoPeerReachability,
   waitForDeploymentResult,
@@ -546,7 +548,11 @@ export async function executeDeployPlan(
         }
 
         log(`[deploy] calling guest /configure for ${deployment.itemHash}`);
-        const registrationId = `relay:${plan.profile}:${plan.name}`;
+        const registrationId = createRelayBootstrapRegistrationId(
+          plan.profile,
+          plan.name,
+          deployment.itemHash,
+        );
         const publisherAddress =
           bootstrapPublisherIdentity?.address ?? identity.address;
         const precomputedOwnerAuthorization =
@@ -758,6 +764,39 @@ export async function executeDeployPlan(
               version: plan.rootfsVersion || "custom-rootfs",
               sync: true,
             });
+            const reconcileResult =
+              await reconcileOwnerRelayBootstrapRegistrations({
+                instanceOwnerAddress: identity.address,
+                sender: publisherAddress,
+                signer: bootstrapPublisherIdentity?.signer ?? identity.signer,
+                hasher,
+                fetch: fetchImpl,
+                apiHost: plan.apiHost,
+                channel: plan.channel,
+                profile: plan.profile,
+                ownerAddress: bootstrapOwnerIdentity?.address,
+                ownerSigner: bootstrapOwnerIdentity?.signer,
+                publisherAddress,
+                publisherSigner:
+                  bootstrapPublisherIdentity?.signer ?? undefined,
+                crns: candidateCrns,
+                crnListUrl: plan.crnListUrl,
+                current: {
+                  itemHash: deployment.itemHash,
+                  registrationId,
+                  peerId: metadata.peer_id,
+                  probeMultiaddrs: metadata.probe_multiaddrs,
+                  browserBootstrapMultiaddrs:
+                    metadata.browser_bootstrap_multiaddrs,
+                },
+              });
+            if (reconcileResult.errors.length > 0) {
+              log(
+                `[deploy] owner relay bootstrap reconcile completed with ${reconcileResult.errors.length} warning(s): ${JSON.stringify(
+                  reconcileResult.errors,
+                )}`,
+              );
+            }
             if (
               ownerAuthorization &&
               runtime.hostIpv4 &&

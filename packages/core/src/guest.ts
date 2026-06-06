@@ -376,6 +376,7 @@ export async function configureOrbitdbRelaySetup(args: {
 export async function fetchUcGoPeerMetadata(args: {
   hostIpv4: string;
   setupPort: number;
+  metadataUrl?: string | null;
   fetch: FetchLike;
   attempts?: number;
   delayMs?: number;
@@ -402,8 +403,12 @@ export async function fetchUcGoPeerMetadata(args: {
       Number(args.timeoutMs ?? 180000),
     );
     try {
+      const requestUrl =
+        args.metadataUrl && args.metadataUrl.trim()
+          ? args.metadataUrl
+          : `http://${args.hostIpv4}:${args.setupPort}/metadata`;
       const response = await args.fetch(
-        `http://${args.hostIpv4}:${args.setupPort}/metadata`,
+        requestUrl,
         {
           signal: controller.signal,
         },
