@@ -649,6 +649,21 @@ export async function executeDeployPlan(
           delayMs: plan.metadataDelayMs,
           timeoutMs: plan.metadataTimeoutMs,
           sleep: sleepImpl,
+          isReady: ({ payload, ok }) => {
+            if (!ok || !payload || typeof payload !== "object") return false;
+            const metadata =
+              (payload as { metadata?: unknown }).metadata &&
+              typeof (payload as { metadata?: unknown }).metadata === "object"
+                ? ((payload as { metadata: Record<string, unknown> }).metadata)
+                : null;
+            return Boolean(
+              typeof metadata?.peer_id === "string" &&
+                Array.isArray(metadata?.probe_multiaddrs) &&
+                metadata.probe_multiaddrs.some(
+                  (entry) => typeof entry === "string" && entry.length > 0,
+                ),
+            );
+          },
           onAttempt: ({ ready, attempt, attempts, status, requestUrl, error }) => {
             log(
               `[deploy] guest metadata ${attempt}/${attempts}: ready=${ready} status=${status ?? "-"} url=${requestUrl}${error ? ` error=${error}` : ""}`,

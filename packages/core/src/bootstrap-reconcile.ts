@@ -163,6 +163,7 @@ export async function fetchRelayMetadataForRuntime(args: {
     attempts: args.attempts,
     delayMs: args.delayMs,
     timeoutMs: args.timeoutMs,
+    isReady: (result) => extractRelayMetadata(result.payload) != null,
     onAttempt: (result) => {
       args.onAttempt?.({
         ...result,

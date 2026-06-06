@@ -382,6 +382,12 @@ export async function fetchUcGoPeerMetadata(args: {
   delayMs?: number;
   timeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  isReady?: (result: {
+    payload: unknown;
+    ok: boolean;
+    status: number | null;
+    requestUrl: string;
+  }) => boolean;
   onAttempt?: (result: {
     payload: unknown;
     ready: boolean;
@@ -399,6 +405,7 @@ export async function fetchUcGoPeerMetadata(args: {
     args.sleep ??
     ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   let lastPayload: unknown = null;
+  let lastError: string | null = null;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const controller = new AbortController();
@@ -419,13 +426,20 @@ export async function fetchUcGoPeerMetadata(args: {
       );
       const payload = await response.json().catch(() => null);
       lastPayload = payload;
-      const ready =
-        Boolean(
-          response.ok &&
-            payload &&
-            typeof payload === "object" &&
-            (payload as { status?: unknown }).status === "ready",
-        );
+      lastError = null;
+      const ready = Boolean(
+        args.isReady
+          ? args.isReady({
+              payload,
+              ok: response.ok,
+              status: response.status,
+              requestUrl,
+            })
+          : response.ok &&
+              payload &&
+              typeof payload === "object" &&
+              (payload as { status?: unknown }).status === "ready",
+      );
 
       args.onAttempt?.({
         payload,
@@ -441,12 +455,11 @@ export async function fetchUcGoPeerMetadata(args: {
       if (ready) {
         return payload;
       }
-      if (response.status >= 500) {
-        throw new Error(
-          `Relay metadata request failed: ${response.status} ${typeof payload === "string" ? payload : JSON.stringify(payload ?? {})}`,
-        );
-      }
     } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      lastPayload = {
+        error: lastError,
+      };
       args.onAttempt?.({
         payload: null,
         ready: false,
@@ -455,9 +468,8 @@ export async function fetchUcGoPeerMetadata(args: {
         requestUrl,
         ok: false,
         status: null,
-        error: error instanceof Error ? error.message : String(error),
+        error: lastError,
       });
-      throw error;
     } finally {
       clearTimeout(timeout);
     }
@@ -469,9 +481,11 @@ export async function fetchUcGoPeerMetadata(args: {
 
   throw new Error(
     `Relay metadata did not become ready after ${attempts} attempts: ${
-      typeof lastPayload === "string"
-        ? lastPayload
-        : JSON.stringify(lastPayload ?? {})
+      lastError
+        ? lastError
+        : typeof lastPayload === "string"
+          ? lastPayload
+          : JSON.stringify(lastPayload ?? {})
     }`,
   );
 }

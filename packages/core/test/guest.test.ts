@@ -205,6 +205,82 @@ test("fetchUcGoPeerMetadata waits until the guest reports ready metadata", async
   });
 });
 
+test("fetchUcGoPeerMetadata can keep polling until metadata is complete", async () => {
+  let attempts = 0;
+  const result = await fetchUcGoPeerMetadata({
+    hostIpv4: "203.0.113.5",
+    setupPort: 30080,
+    attempts: 3,
+    delayMs: 1,
+    sleep: async () => undefined,
+    isReady: ({ payload, ok }) => {
+      if (!ok || !payload || typeof payload !== "object") return false;
+      const metadata =
+        (payload as { metadata?: unknown }).metadata &&
+        typeof (payload as { metadata?: unknown }).metadata === "object"
+          ? ((payload as { metadata: Record<string, unknown> }).metadata)
+          : null;
+      return Boolean(
+        typeof metadata?.peer_id === "string" &&
+          Array.isArray(metadata?.probe_multiaddrs) &&
+          metadata.probe_multiaddrs.length > 0,
+      );
+    },
+    fetch: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return jsonResponse({
+          status: "ready",
+          metadata: { peer_id: "12D3KooW", probe_multiaddrs: [] },
+        });
+      }
+      return jsonResponse({
+        status: "ready",
+        metadata: {
+          peer_id: "12D3KooW",
+          probe_multiaddrs: ["/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooW"],
+        },
+      });
+    },
+  });
+
+  assert.deepEqual(result, {
+    status: "ready",
+    metadata: {
+      peer_id: "12D3KooW",
+      probe_multiaddrs: ["/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooW"],
+    },
+  });
+  assert.equal(attempts, 2);
+});
+
+test("fetchUcGoPeerMetadata retries transient request errors before succeeding", async () => {
+  let attempts = 0;
+  const result = await fetchUcGoPeerMetadata({
+    hostIpv4: "203.0.113.5",
+    setupPort: 30080,
+    attempts: 3,
+    delayMs: 1,
+    sleep: async () => undefined,
+    fetch: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error("temporary network error");
+      }
+      return jsonResponse({
+        status: "ready",
+        metadata: { peer_id: "12D3KooW", probe_multiaddrs: [] },
+      });
+    },
+  });
+
+  assert.deepEqual(result, {
+    status: "ready",
+    metadata: { peer_id: "12D3KooW", probe_multiaddrs: [] },
+  });
+  assert.equal(attempts, 2);
+});
+
 test("verifyUcGoPeerReachability checks mapped TCP ports, proxy HTTP, proxy TCP, and UDP notes", async () => {
   const result = await verifyUcGoPeerReachability({
     hostIpv4: "203.0.113.5",
