@@ -10,6 +10,7 @@ AUTOTLS_CADDY_READY_FILE="${AUTOTLS_CADDY_READY_FILE:-/etc/default/uc-go-peer.ca
 SERVICE_NAME="${SERVICE_NAME:-uc-go-peer.service}"
 AUTOTLS_REFRESH_SERVICE="${AUTOTLS_REFRESH_SERVICE:-uc-go-peer-autotls-refresh.service}"
 BOOTSTRAP_REFRESH_TIMER="${BOOTSTRAP_REFRESH_TIMER:-uc-go-peer-bootstrap-refresh.timer}"
+BOOTSTRAP_REFRESH_SERVICE="${BOOTSTRAP_REFRESH_SERVICE:-uc-go-peer-bootstrap-refresh.service}"
 CADDY_SERVICE="${CADDY_SERVICE:-caddy.service}"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 BOOTSTRAP_SERVICE="${BOOTSTRAP_SERVICE:-uc-go-peer-bootstrap.service}"
@@ -261,6 +262,7 @@ if [ "${START_SERVICE}" -eq 1 ]; then
   systemctl enable "${AUTOTLS_REFRESH_SERVICE}"
   systemctl enable "${BOOTSTRAP_REFRESH_TIMER}"
   systemctl start "${BOOTSTRAP_REFRESH_TIMER}"
+  systemctl restart --no-block "${BOOTSTRAP_REFRESH_SERVICE}" || true
   if [ -n "${PROXY_HOSTNAME}" ]; then
     systemctl enable "${CADDY_SERVICE}"
     systemctl restart "${CADDY_SERVICE}"

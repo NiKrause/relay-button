@@ -17,6 +17,7 @@ import {
   reconcileOwnerRelayBootstrapRegistrations,
   rankCandidateCrns,
   verifyUcGoPeerReachability,
+  waitForRelayBootstrapRegistration,
   waitForDeploymentResult,
   waitForSetupEndpoint,
   waitForVmRuntime,
@@ -779,6 +780,21 @@ export async function executeDeployPlan(
               version: plan.rootfsVersion || "custom-rootfs",
               sync: true,
             });
+            const visibleRegistration = await waitForRelayBootstrapRegistration({
+              sender: publisherAddress,
+              registrationId,
+              peerId: metadata.peer_id,
+              fetch: fetchImpl,
+              apiHost: plan.apiHost,
+              channel: plan.channel,
+              attempts: 12,
+              delayMs: 2500,
+            });
+            if (!visibleRegistration) {
+              throw new Error(
+                "Relay bootstrap registration did not become visible on Aleph.",
+              );
+            }
             const reconcileResult =
               await reconcileOwnerRelayBootstrapRegistrations({
                 instanceOwnerAddress: identity.address,

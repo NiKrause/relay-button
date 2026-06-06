@@ -29,6 +29,7 @@ import {
   publishRelayBootstrapRegistration,
   reconcileOwnerRelayBootstrapRegistrations,
   tierSpec,
+  waitForRelayBootstrapRegistration,
   waitForDeploymentResult,
   waitForSetupEndpoint,
   waitForVmRuntime,
@@ -885,6 +886,38 @@ export class SponsorRelayController {
       metadata: relayMetadata,
       publication,
     });
+
+    this.emitProgress({
+      stage: "publishing-bootstrap",
+      label: "Verifying bootstrap registration",
+      progress: 97,
+      status: "info",
+      itemHash: args.itemHash,
+      detail: "Waiting for the relay bootstrap registration to appear on Aleph.",
+    });
+
+    const visibleRegistration = await waitForRelayBootstrapRegistration({
+      sender: this.state.wallet.address,
+      registrationId,
+      peerId,
+      fetch: asJsonFetch,
+      apiHost: this.client.apiHost,
+      attempts: 12,
+      delayMs: 2500,
+    });
+
+    this.trace("deploy:bootstrap-registration-visible", {
+      itemHash: args.itemHash,
+      registrationId,
+      peerId,
+      visibleRegistration,
+    });
+
+    if (!visibleRegistration) {
+      throw new Error(
+        "Relay bootstrap registration did not become visible on Aleph.",
+      );
+    }
 
     const reconcileResult = await reconcileOwnerRelayBootstrapRegistrations({
       instanceOwnerAddress: this.state.wallet.address,

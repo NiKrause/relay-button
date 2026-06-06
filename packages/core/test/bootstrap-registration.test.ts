@@ -1,7 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { publishRelayBootstrapRegistration } from '../src/bootstrap-registration.ts'
+import {
+  publishRelayBootstrapRegistration,
+  waitForRelayBootstrapRegistration,
+} from '../src/bootstrap-registration.ts'
 
 test('publishRelayBootstrapRegistration signs and broadcasts filtered public bootstrap addrs', async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = []
@@ -231,4 +234,54 @@ test('publishRelayBootstrapRegistration can emit dual-key authorization and rela
   assert.equal(itemContent.content?.authorization?.payload?.publisherAddress, '0xpublisher')
   assert.equal(itemContent.content?.relayProof?.signature, '0xpublisher-proof-signed')
   assert.equal(itemContent.content?.relayProof?.payload?.peerId, '12D3KooWPublic')
+})
+
+test('waitForRelayBootstrapRegistration observes the current registration once it appears', async () => {
+  let pageFetches = 0
+
+  const visible = await waitForRelayBootstrapRegistration({
+    sender: '0xabc',
+    registrationId: 'relay:uc-go-peer:demo',
+    peerId: '12D3KooWVisible',
+    attempts: 3,
+    delayMs: 0,
+    fetch: async () => {
+      pageFetches += 1
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            posts:
+              pageFetches < 2
+                ? []
+                : [
+                    {
+                      item_hash: 'visible-hash',
+                      address: '0xAbC',
+                      ref: 'simple-todo-bootstrap',
+                      type: 'relay-bootstrap',
+                      content: {
+                        peerId: '12D3KooWVisible',
+                        registrationId: 'relay:uc-go-peer:demo',
+                        multiaddrs: ['/ip4/203.0.113.10/tcp/9095/p2p/12D3KooWVisible'],
+                        browserMultiaddrs: ['/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWVisible'],
+                        updatedAt: Date.now(),
+                      },
+                    },
+                  ],
+          }
+        },
+      }
+    },
+  })
+
+  assert.deepEqual(visible, {
+    itemHash: 'visible-hash',
+    hash: null,
+    registrationId: 'relay:uc-go-peer:demo',
+    peerId: '12D3KooWVisible',
+    multiaddrs: ['/ip4/203.0.113.10/tcp/9095/p2p/12D3KooWVisible'],
+    browserMultiaddrs: ['/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWVisible'],
+  })
 })

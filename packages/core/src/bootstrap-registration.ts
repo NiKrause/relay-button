@@ -4,6 +4,7 @@ import {
   DEFAULT_ALEPH_API_HOST,
   signRelayBootstrapAuthorization,
   signRelayBootstrapProof,
+  selectCurrentRelayBootstrapPosts,
   type RelayBootstrapAuthorizationRecord,
   type RelayBootstrapProofRecord,
   type RelayBootstrapProofSigner,
@@ -33,6 +34,79 @@ export interface RelayBootstrapPublicationResult {
   publishedBrowserMultiaddrs?: string[];
   forgottenHashes?: string[];
   forgetResult?: Awaited<ReturnType<typeof forgetAlephMessages>>;
+}
+
+export interface RelayBootstrapVisibilityResult {
+  itemHash: string | null;
+  hash: string | null;
+  registrationId?: string;
+  peerId?: string;
+  multiaddrs: string[];
+  browserMultiaddrs: string[];
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function waitForRelayBootstrapRegistration(args: {
+  sender: string;
+  fetch: JsonFetchLike;
+  registrationId?: string;
+  peerId?: string;
+  apiHost?: string;
+  channel?: string;
+  ref?: string;
+  postType?: string;
+  attempts?: number;
+  delayMs?: number;
+}): Promise<RelayBootstrapVisibilityResult | null> {
+  const attempts = Math.max(1, Number(args.attempts ?? 10));
+  const delayMs = Math.max(0, Number(args.delayMs ?? 2000));
+  const expectedSender = args.sender.trim().toLowerCase();
+  const expectedRegistrationId = args.registrationId?.trim() || null;
+  const expectedPeerId = args.peerId?.trim() || null;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const posts = await fetchAlephBootstrapPosts({
+      apiHost: args.apiHost ?? DEFAULT_ALEPH_API_HOST,
+      channel: args.channel,
+      ref: args.ref,
+      postType: args.postType,
+      fetch: args.fetch as typeof fetch,
+    });
+    const currentPosts = selectCurrentRelayBootstrapPosts(posts);
+    const match = currentPosts.find((post) => {
+      const senderMatches = post.address?.toLowerCase() === expectedSender;
+      if (!senderMatches) return false;
+      if (expectedRegistrationId && post.content?.registrationId === expectedRegistrationId) {
+        return true;
+      }
+      if (expectedPeerId && post.content?.peerId === expectedPeerId) {
+        return true;
+      }
+      return false;
+    });
+
+    if (match?.content) {
+      return {
+        itemHash: match.itemHash ?? null,
+        hash: match.hash ?? null,
+        registrationId: match.content.registrationId,
+        peerId: match.content.peerId,
+        multiaddrs: Array.isArray(match.content.multiaddrs) ? match.content.multiaddrs : [],
+        browserMultiaddrs: Array.isArray(match.content.browserMultiaddrs)
+          ? match.content.browserMultiaddrs
+          : [],
+      };
+    }
+
+    if (attempt < attempts - 1) {
+      await sleep(delayMs);
+    }
+  }
+
+  return null;
 }
 
 export async function publishRelayBootstrapRegistration(args: {
