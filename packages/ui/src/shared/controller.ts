@@ -70,6 +70,17 @@ import type { VmBootstrapConfigRecord } from "../../../shared-types/src/bootstra
 
 type RelayProfile = "uc-go-peer" | "orbitdb-relay-pinner";
 
+function asJsonFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> {
+  return fetch(input, init).then(async (response) => ({
+    ok: response.ok,
+    status: response.status,
+    json: async () => await response.json(),
+  }))
+}
+
 function isConfirmedRelaySetupResult(value: unknown): value is { status: "configured" } {
   return Boolean(
     value &&
@@ -763,12 +774,7 @@ export class SponsorRelayController {
         record,
         signer: personalSign,
         hasher: sha256Hex,
-        fetch: (url, init) =>
-          fetch(url, init).then(async (response) => ({
-            ok: response.ok,
-            status: response.status,
-            json: async () => await response.json(),
-          })),
+        fetch: asJsonFetch,
         apiHost: this.client.apiHost,
         sync: true,
       });
@@ -785,7 +791,7 @@ export class SponsorRelayController {
 
     const relayMetadata = await fetchRelayMetadataForRuntime({
       runtime: args.runtime,
-      fetch: (url, init) => fetch(url, init),
+      fetch: fetch,
       preferSecureMetadata: profile === "uc-go-peer",
       attempts: 80,
       delayMs: 3000,
@@ -815,12 +821,7 @@ export class SponsorRelayController {
       sender: this.state.wallet.address,
       signer: personalSign,
       hasher: sha256Hex,
-      fetch: (url, init) =>
-        fetch(url, init).then(async (response) => ({
-          ok: response.ok,
-          status: response.status,
-          json: async () => await response.json(),
-        })),
+      fetch: asJsonFetch,
       apiHost: this.client.apiHost,
       peerId,
       multiaddrs: probeMultiaddrs,
@@ -844,12 +845,7 @@ export class SponsorRelayController {
       sender: this.state.wallet.address,
       signer: personalSign,
       hasher: sha256Hex,
-      fetch: (url, init) =>
-        fetch(url, init).then(async (response) => ({
-          ok: response.ok,
-          status: response.status,
-          json: async () => await response.json(),
-        })),
+      fetch: asJsonFetch,
       profile,
       apiHost: this.client.apiHost,
       crns: this.state.crns,
@@ -876,12 +872,7 @@ export class SponsorRelayController {
         deploymentToken: args.deploymentToken,
         signer: personalSign,
         hasher: sha256Hex,
-        fetch: (url, init) =>
-          fetch(url, init).then(async (response) => ({
-            ok: response.ok,
-            status: response.status,
-            json: async () => await response.json(),
-          })),
+        fetch: asJsonFetch,
         apiHost: this.client.apiHost,
         sync: true,
       }).catch((error) => {
@@ -1764,12 +1755,7 @@ export class SponsorRelayController {
                 deploymentToken: attemptDeploymentToken,
                 signer: personalSign,
                 hasher: sha256Hex,
-                fetch: (url, init) =>
-                  fetch(url, init).then(async (response) => ({
-                    ok: response.ok,
-                    status: response.status,
-                    json: async () => await response.json(),
-                  })),
+                fetch: asJsonFetch,
                 apiHost: this.client.apiHost,
                 sync: true,
               }).catch(() => undefined);
@@ -1863,12 +1849,7 @@ export class SponsorRelayController {
         reason: "Deleted from Sponsor Relay panel",
         signer: personalSign,
         hasher: sha256Hex,
-        fetch: (url, init) =>
-          fetch(url, init).then(async (response) => ({
-            ok: response.ok,
-            status: response.status,
-            json: async () => await response.json(),
-          })),
+        fetch: asJsonFetch,
         apiHost: this.client.apiHost,
         onProgress: (event) => {
           this.emitProgress(event);
@@ -1882,12 +1863,7 @@ export class SponsorRelayController {
           sender: this.state.wallet.address,
           signer: personalSign,
           hasher: sha256Hex,
-          fetch: (url, init) =>
-            fetch(url, init).then(async (response) => ({
-              ok: response.ok,
-              status: response.status,
-              json: async () => await response.json(),
-            })),
+          fetch: asJsonFetch,
           profile,
           apiHost: this.client.apiHost,
           crns: this.state.crns,

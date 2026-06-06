@@ -3,6 +3,7 @@ import {
   selectCurrentRelayBootstrapPosts,
 } from "../../aleph-bootstrap/src/index.ts";
 import type {
+  CrnRecord,
   MessageHasher,
   MessageSigner,
 } from "@le-space/shared-types";
@@ -11,7 +12,8 @@ import { publishRelayBootstrapRegistration } from "./bootstrap-registration.ts";
 import { forgetAlephMessages } from "./forget.ts";
 import { fetchUcGoPeerMetadata } from "./guest.ts";
 import { DEFAULT_ALEPH_API_HOST } from "./manifests.ts";
-import { type FetchLike, fetchVmRuntime, type CrnRecord } from "./runtime.ts";
+import type { FetchLike } from "./manifests.ts";
+import { fetchVmRuntime } from "./runtime.ts";
 
 type JsonFetchLike = FetchLike;
 
