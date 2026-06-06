@@ -625,6 +625,25 @@ test('executeDeployPlan persists bootstrap owner authorization in a second no-st
           })
         }
 
+        if (String(url).includes('/api/v0/posts.json')) {
+          return jsonResponse({
+            posts: [
+              {
+                item_hash: 'bootstrap-visible-hash',
+                address: '0x1234',
+                ref: 'simple-todo-bootstrap',
+                type: 'relay-bootstrap',
+                content: {
+                  peerId: '12D3KooOrbitdbDual',
+                  multiaddrs: ['/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/12D3KooOrbitdbDual'],
+                  browserMultiaddrs: ['/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/12D3KooOrbitdbDual'],
+                  updatedAt: Date.now(),
+                },
+              },
+            ],
+          })
+        }
+
         if (String(url).includes('/control/allocation/notify')) {
           return jsonResponse({ ok: true })
         }
