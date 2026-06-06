@@ -800,7 +800,7 @@ export class SponsorRelayController {
 
     const relayMetadata = await fetchRelayMetadataForRuntime({
       runtime: args.runtime,
-      fetch: fetch,
+      fetch: (url, init) => fetch(url, init),
       preferSecureMetadata: profile === "uc-go-peer",
       attempts: 80,
       delayMs: 3000,
