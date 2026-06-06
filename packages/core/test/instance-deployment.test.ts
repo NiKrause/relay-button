@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  appendDeploymentTokenToSshPublicKey,
   buildPaymentQuote,
   createDeploymentIntent,
   createInstanceContent,
@@ -26,6 +27,19 @@ test('isValidSshPublicKey recognizes valid ssh public keys', () => {
     true
   )
   assert.equal(isValidSshPublicKey('not-a-key'), false)
+})
+
+test('appendDeploymentTokenToSshPublicKey preserves owner address casing', () => {
+  const result = appendDeploymentTokenToSshPublicKey(
+    'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG9A7L1fCP0f3dYxFJ0P0XrJ1hV6X4kRrS0vQd2c8mS0 user@example',
+    '0x822A6cc04c19eC6FA1167896658A87a449F4dd15',
+    'token-123'
+  )
+
+  assert.equal(
+    result,
+    'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG9A7L1fCP0f3dYxFJ0P0XrJ1hV6X4kRrS0vQd2c8mS0 aleph-bootstrap-config:0x822A6cc04c19eC6FA1167896658A87a449F4dd15:token-123'
+  )
 })
 
 test('createReleaseMetadata returns the shared metadata shape', () => {

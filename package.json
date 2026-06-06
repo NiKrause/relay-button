@@ -1,7 +1,7 @@
 {
   "name": "shared-aleph-tooling",
   "private": true,
-  "version": "0.3.15",
+  "version": "0.3.16",
   "description": "Shared Aleph VM deployment, rootfs, and automation tooling monorepo.",
   "license": "MIT",
   "bin": {

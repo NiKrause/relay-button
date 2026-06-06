@@ -64,7 +64,7 @@ def _extract_guest_bootstrap_locator() -> tuple[str | None, str | None]:
                 for part in line.split():
                     if part.startswith("aleph-bootstrap-config:"):
                         _, owner_address, deployment_token = part.split(":", 2)
-                        owner_address = owner_address.strip().lower()
+                        owner_address = owner_address.strip()
                         deployment_token = deployment_token.strip()
                         if owner_address and deployment_token:
                             return owner_address, deployment_token

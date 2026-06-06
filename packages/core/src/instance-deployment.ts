@@ -66,7 +66,7 @@ export function appendDeploymentTokenToSshPublicKey(
   if (!normalized) return normalized
 
   const [algorithm = '', key = ''] = normalized.split(/\s+/, 3)
-  const owner = ownerAddress.trim().toLowerCase()
+  const owner = ownerAddress.trim()
   const token = deploymentToken.trim()
   if (!algorithm || !key || !owner || !token) {
     return normalized
