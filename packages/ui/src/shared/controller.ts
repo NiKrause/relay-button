@@ -769,7 +769,7 @@ export class SponsorRelayController {
         },
       };
 
-      await publishVmBootstrapConfig({
+      const bootstrapConfigPublication = await publishVmBootstrapConfig({
         sender: this.state.wallet.address,
         record,
         signer: personalSign,
@@ -777,6 +777,15 @@ export class SponsorRelayController {
         fetch: asJsonFetch,
         apiHost: this.client.apiHost,
         sync: true,
+      });
+      this.trace("deploy:bootstrap-config-published", {
+        itemHash: args.itemHash,
+        deploymentToken: args.deploymentToken,
+        registrationId: record.bootstrap?.registrationId ?? null,
+        proxyUrl: record.runtime.proxyUrl ?? null,
+        mappedPorts: record.runtime.mappedPorts,
+        aggregateItemHash: bootstrapConfigPublication.aggregateItemHash,
+        aggregateStatus: bootstrapConfigPublication.aggregateStatus,
       });
     }
 
@@ -796,6 +805,43 @@ export class SponsorRelayController {
       attempts: 80,
       delayMs: 3000,
       timeoutMs: 240000,
+      onAttempt: (result) => {
+        const payload =
+          result.payload && typeof result.payload === "object"
+            ? (result.payload as Record<string, unknown>)
+            : null;
+        const metadata =
+          payload?.metadata && typeof payload.metadata === "object"
+            ? (payload.metadata as Record<string, unknown>)
+            : null;
+        this.trace("deploy:relay-metadata-attempt", {
+          itemHash: args.itemHash,
+          attempt: result.attempt,
+          attempts: result.attempts,
+          requestUrl: result.requestUrl,
+          metadataUrl: result.metadataUrl,
+          hostIpv4: result.hostIpv4,
+          setupPort: result.setupPort,
+          ok: result.ok,
+          status: result.status,
+          ready: result.ready,
+          error: result.error ?? null,
+          payloadStatus:
+            payload && typeof payload.status === "string" ? payload.status : null,
+          peerId:
+            metadata && typeof metadata.peer_id === "string"
+              ? metadata.peer_id
+              : null,
+          probeMultiaddrCount: Array.isArray(metadata?.probe_multiaddrs)
+            ? metadata.probe_multiaddrs.length
+            : 0,
+          browserBootstrapMultiaddrCount: Array.isArray(
+            metadata?.browser_bootstrap_multiaddrs,
+          )
+            ? metadata.browser_bootstrap_multiaddrs.length
+            : 0,
+        });
+      },
     });
     if (!relayMetadata) {
       throw new Error("Relay metadata did not include a peer ID and public multiaddrs.");
@@ -1750,6 +1796,10 @@ export class SponsorRelayController {
 
           if (attemptItemHash) {
             if (attemptDeploymentToken) {
+              this.trace("deploy:bootstrap-config-cleanup-start", {
+                itemHash: attemptItemHash,
+                deploymentToken: attemptDeploymentToken,
+              });
               await deleteVmBootstrapConfig({
                 sender: this.state.wallet.address,
                 deploymentToken: attemptDeploymentToken,
@@ -1758,8 +1808,31 @@ export class SponsorRelayController {
                 fetch: asJsonFetch,
                 apiHost: this.client.apiHost,
                 sync: true,
-              }).catch(() => undefined);
+              })
+                .then((cleanupResult) => {
+                  this.trace("deploy:bootstrap-config-cleanup-complete", {
+                    itemHash: attemptItemHash,
+                    deploymentToken: attemptDeploymentToken,
+                    aggregateItemHash: cleanupResult.aggregateItemHash,
+                    aggregateStatus: cleanupResult.aggregateStatus,
+                  });
+                })
+                .catch((cleanupError) => {
+                  this.trace("deploy:bootstrap-config-cleanup-error", {
+                    itemHash: attemptItemHash,
+                    deploymentToken: attemptDeploymentToken,
+                    error:
+                      cleanupError instanceof Error
+                        ? cleanupError.message
+                        : String(cleanupError),
+                  });
+                });
             }
+            this.trace("deploy:forget-failed-attempt-start", {
+              itemHash: attemptItemHash,
+              crnHash: candidateCrn.hash,
+              crnName: candidateCrn.name,
+            });
             await forgetAlephMessages({
               sender: this.state.wallet.address,
               hashes: [attemptItemHash],
@@ -1781,6 +1854,11 @@ export class SponsorRelayController {
                     ? cleanupError.message
                     : String(cleanupError),
               });
+            });
+            this.trace("deploy:forget-failed-attempt-complete", {
+              itemHash: attemptItemHash,
+              crnHash: candidateCrn.hash,
+              crnName: candidateCrn.name,
             });
           }
 

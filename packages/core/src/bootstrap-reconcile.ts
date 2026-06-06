@@ -132,6 +132,19 @@ export async function fetchRelayMetadataForRuntime(args: {
   attempts?: number
   delayMs?: number
   timeoutMs?: number
+  onAttempt?: (result: {
+    payload: unknown
+    ready: boolean
+    attempt: number
+    attempts: number
+    requestUrl: string
+    ok: boolean
+    status: number | null
+    error?: string | null
+    metadataUrl: string | null
+    hostIpv4: string | null
+    setupPort: number
+  }) => void
 }): Promise<RelayMetadataShape | null> {
   const setupPort = args.runtime.mappedPorts?.["80"]?.host ?? 80
   const metadataUrl = args.preferSecureMetadata
@@ -150,6 +163,14 @@ export async function fetchRelayMetadataForRuntime(args: {
     attempts: args.attempts,
     delayMs: args.delayMs,
     timeoutMs: args.timeoutMs,
+    onAttempt: (result) => {
+      args.onAttempt?.({
+        ...result,
+        metadataUrl,
+        hostIpv4: args.runtime.hostIpv4 ?? null,
+        setupPort,
+      })
+    },
   }).catch(() => null)
 
   return extractRelayMetadata(payload)
