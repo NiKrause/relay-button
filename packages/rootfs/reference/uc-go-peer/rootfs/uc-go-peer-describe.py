@@ -58,17 +58,20 @@ def parse_logs() -> tuple[str | None, list[str]]:
     output = result.stdout or ""
 
     peer_id = None
-    for pattern in PEER_ID_PATTERNS:
-        match = pattern.search(output)
-        if match:
-            peer_id = match.group(1)
-            break
+    for line in output.splitlines():
+        for pattern in PEER_ID_PATTERNS:
+            match = pattern.search(line)
+            if match:
+                peer_id = match.group(1)
+
+    logged_addrs = LISTENING_PATTERN.findall(output)
+    if peer_id is None and logged_addrs:
+        peer_id = logged_addrs[-1][1]
 
     listening_addrs = []
-    for addr, logged_peer_id in LISTENING_PATTERN.findall(output):
-        if peer_id is None:
-            peer_id = logged_peer_id
-        listening_addrs.append(addr)
+    for addr, logged_peer_id in logged_addrs:
+        if peer_id is None or logged_peer_id == peer_id:
+            listening_addrs.append(addr)
 
     return peer_id, dedupe(listening_addrs)
 

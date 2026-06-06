@@ -6,6 +6,7 @@ import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import urlopen
@@ -22,6 +23,8 @@ AUTHORIZED_KEYS_FILE = os.environ.get("AUTHORIZED_KEYS_FILE", "/root/.ssh/author
 ALEPH_API_HOST = os.environ.get("ALEPH_API_HOST", "https://api2.aleph.im")
 BOOTSTRAP_CONFIG_KEY = os.environ.get("BOOTSTRAP_CONFIG_KEY", "vm-bootstrap-config")
 BOOTSTRAP_CONFIG_POLL_SECONDS = float(os.environ.get("BOOTSTRAP_CONFIG_POLL_SECONDS", "5"))
+DESCRIBE_TIMEOUT_SECONDS = int(os.environ.get("DESCRIBE_TIMEOUT_SECONDS", "15"))
+DESCRIBE_INTERVAL_SECONDS = float(os.environ.get("DESCRIBE_INTERVAL_SECONDS", "1"))
 
 CONFIGURE_LOCK = threading.Lock()
 
@@ -85,6 +88,16 @@ def _clear_metadata_state() -> None:
 def _start_metadata_generation() -> None:
     _clear_metadata_state()
     threading.Thread(target=_generate_metadata_files, daemon=True).start()
+
+
+def _service_active(service_name: str) -> bool:
+    result = subprocess.run(
+        ["systemctl", "is-active", service_name],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0 and result.stdout.strip() == "active"
 
 
 def _build_configure_args(record: dict) -> list[str]:
@@ -222,34 +235,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(404, {"status": "not-found"})
             return
 
-        self._send_json(
-            200,
-            {
-                "status": "waiting-for-port-mapping",
-                "ready": os.path.exists(READY_FILE),
-                "env_file": ENV_FILE,
-                "metadata_ready": os.path.exists(METADATA_FILE),
-            },
-        )
+        self._send_json(200, _health_payload())
 
     def _handle_metadata(self) -> None:
-        if os.path.exists(METADATA_FILE):
-            with open(METADATA_FILE, encoding="utf-8") as handle:
-                metadata = json.load(handle)
-            self._send_json(200, {"status": "ready", "metadata": metadata})
-            threading.Thread(target=self.server.shutdown, daemon=True).start()  # type: ignore[arg-type]
-            threading.Thread(target=_stop_bootstrap_service, daemon=True).start()
-            return
-
-        if os.path.exists(METADATA_ERROR_FILE):
-            with open(METADATA_ERROR_FILE, encoding="utf-8") as handle:
-                error_message = handle.read().strip() or "metadata generation failed"
-            self._send_json(500, {"status": "error", "error": error_message})
-            threading.Thread(target=self.server.shutdown, daemon=True).start()  # type: ignore[arg-type]
-            threading.Thread(target=_stop_bootstrap_service, daemon=True).start()
-            return
-
-        self._send_json(202, {"status": "pending"})
+        status, payload = _metadata_status_payload()
+        self._send_json(status, payload)
 
     def do_POST(self) -> None:  # noqa: N802
         if self._request_path() != "/configure":
@@ -349,26 +339,111 @@ class Handler(BaseHTTPRequestHandler):
         )
 
 
-def _stop_bootstrap_service() -> None:
-    # Give the HTTP response a brief head start, then stop the temporary setup service.
-    time.sleep(1)
-    subprocess.run(["systemctl", "stop", BOOTSTRAP_SERVICE], check=False)
-
-
-def _generate_metadata_files() -> None:
+def _describe_metadata() -> dict:
     try:
         describe = subprocess.run(
             [DESCRIBE_SCRIPT],
             check=True,
             capture_output=True,
             text=True,
+            env={
+                **os.environ,
+                "DESCRIBE_WAIT_TIMEOUT_SECONDS": str(DESCRIBE_TIMEOUT_SECONDS),
+                "DESCRIBE_WAIT_INTERVAL_SECONDS": str(DESCRIBE_INTERVAL_SECONDS),
+            },
         )
-        payload = json.loads(describe.stdout.strip() or "{}")
-        with open(METADATA_FILE, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle)
+        return json.loads(describe.stdout.strip() or "{}")
     except (subprocess.CalledProcessError, json.JSONDecodeError) as error:
-        with open(METADATA_ERROR_FILE, "w", encoding="utf-8") as handle:
-            handle.write(str(error))
+        raise RuntimeError(str(error)) from error
+
+
+def _write_metadata_files(payload: dict) -> None:
+    Path(METADATA_FILE).write_text(json.dumps(payload), encoding="utf-8")
+    try:
+        os.remove(METADATA_ERROR_FILE)
+    except FileNotFoundError:
+        pass
+
+
+def _write_metadata_error(error_message: str) -> None:
+    try:
+        os.remove(METADATA_FILE)
+    except FileNotFoundError:
+        pass
+    Path(METADATA_ERROR_FILE).write_text(error_message, encoding="utf-8")
+
+
+def _generate_metadata_files() -> None:
+    try:
+        payload = _describe_metadata()
+        _write_metadata_files(payload)
+    except RuntimeError as error:
+        _write_metadata_error(str(error))
+
+
+def _fresh_metadata_payload() -> tuple[dict | None, str | None]:
+    try:
+        payload = _describe_metadata()
+        _write_metadata_files(payload)
+        return payload, None
+    except RuntimeError as error:
+        return None, str(error)
+
+
+def _read_cached_metadata() -> dict | None:
+    try:
+        with open(METADATA_FILE, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _read_cached_metadata_error() -> str | None:
+    try:
+        message = Path(METADATA_ERROR_FILE).read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    return message or "metadata generation failed"
+
+
+def _metadata_status_payload() -> tuple[int, dict]:
+    if not os.path.exists(READY_FILE):
+        return 202, {"status": "pending"}
+
+    payload, error_message = _fresh_metadata_payload()
+    if payload is not None:
+        return 200, {"status": "ready", "metadata": payload}
+
+    cached_payload = _read_cached_metadata()
+    if cached_payload is not None:
+        return 200, {"status": "ready", "metadata": cached_payload, "stale": True}
+
+    cached_error = error_message or _read_cached_metadata_error()
+    if _service_active("uc-go-peer.service"):
+        return 202, {
+            "status": "pending",
+            "ready": True,
+            "relay_active": True,
+            "error": cached_error,
+        }
+
+    return 500, {"status": "error", "error": cached_error or "metadata generation failed"}
+
+
+def _health_payload() -> dict:
+    relay_ready = os.path.exists(READY_FILE)
+    metadata_status, metadata_payload = _metadata_status_payload()
+    return {
+        "status": "ready" if relay_ready and metadata_status == 200 else "waiting-for-port-mapping",
+        "ready": relay_ready,
+        "env_file": ENV_FILE,
+        "metadata_ready": metadata_status == 200,
+        "relay_active": _service_active("uc-go-peer.service"),
+        "caddy_active": _service_active("caddy.service"),
+        "bootstrap_active": _service_active(BOOTSTRAP_SERVICE),
+        "metadata_status": metadata_payload.get("status"),
+    }
 
 
 def main() -> None:
