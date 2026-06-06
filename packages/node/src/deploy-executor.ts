@@ -649,9 +649,9 @@ export async function executeDeployPlan(
           delayMs: plan.metadataDelayMs,
           timeoutMs: plan.metadataTimeoutMs,
           sleep: sleepImpl,
-          onAttempt: (_payload, ready, attempt, attempts) => {
+          onAttempt: ({ ready, attempt, attempts, status, requestUrl, error }) => {
             log(
-              `[deploy] guest metadata ${attempt}/${attempts}: ready=${ready}`,
+              `[deploy] guest metadata ${attempt}/${attempts}: ready=${ready} status=${status ?? "-"} url=${requestUrl}${error ? ` error=${error}` : ""}`,
             );
           },
         });
