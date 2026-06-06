@@ -1522,13 +1522,15 @@ export class SponsorRelayController {
       for (const [candidateIndex, candidateCrn] of orderedCrns.entries()) {
         let attemptItemHash: string | null = null;
         let attemptDeploymentToken: string | null = null;
+        const crnAttemptLabel = `CRN ${candidateIndex + 1}/${orderedCrns.length}`;
+        const crnDisplayName = candidateCrn.name ?? candidateCrn.hash;
 
         this.emitProgress({
           stage: "selecting-crn",
-          label: "Selecting CRN",
+          label: `Selecting ${crnAttemptLabel}`,
           progress: 18,
           status: "info",
-          detail: `Trying ${candidateCrn.name ?? candidateCrn.hash} (${candidateIndex + 1}/${orderedCrns.length})`,
+          detail: `Trying ${crnDisplayName}`,
         });
 
         try {
@@ -1785,7 +1787,7 @@ export class SponsorRelayController {
           return;
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
-          const attemptLabel = candidateCrn.name ?? candidateCrn.hash;
+          const attemptLabel = crnDisplayName;
           attemptErrors.push(`${attemptLabel}: ${lastError.message}`);
           this.trace("deploy:crn-attempt-error", {
             crnHash: candidateCrn.hash,
@@ -1865,7 +1867,7 @@ export class SponsorRelayController {
           if (candidateIndex < orderedCrns.length - 1) {
             this.emitProgress({
               stage: "selecting-crn",
-              label: "Retrying another CRN",
+              label: `Retrying after ${crnAttemptLabel}`,
               progress: 20,
               status: "warning",
               itemHash: attemptItemHash,
