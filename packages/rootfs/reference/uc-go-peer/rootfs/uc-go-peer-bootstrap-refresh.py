@@ -117,7 +117,8 @@ def json_dumps(payload: object) -> str:
 def sign_personal_message(private_key: str, payload: str) -> str:
     message = encode_defunct(text=payload)
     signed = Account.sign_message(message, private_key=private_key)
-    return signed.signature.hex()
+    signature = signed.signature.hex()
+    return signature if signature.startswith("0x") else f"0x{signature}"
 
 
 def address_from_private_key(private_key: str) -> str:
@@ -302,6 +303,30 @@ def sign_aleph_message(unsigned_message: dict[str, object], private_key: str) ->
     return signed
 
 
+def is_invalid_message_format(http_status: int, payload: dict) -> bool:
+    if http_status != 422:
+        return False
+    details = payload.get("details")
+    if isinstance(details, str) and "InvalidMessageFormat" in details:
+        return True
+    if isinstance(details, dict):
+        message = details.get("message")
+        if isinstance(message, str) and "InvalidMessageFormat" in message:
+            return True
+    return False
+
+
+def is_retryable_broadcast_failure(http_status: int, payload: dict) -> bool:
+    if http_status >= 500:
+        return True
+    publication_status = payload.get("publication_status")
+    if isinstance(publication_status, dict):
+        status = publication_status.get("status")
+        if isinstance(status, str) and status.strip().lower() == "error":
+            return True
+    return False
+
+
 def broadcast_aleph_message(api_host: str, message: dict[str, object]) -> tuple[int, dict]:
     url = urllib.parse.urljoin(api_host.rstrip("/") + "/", "api/v0/messages")
     attempts = [
@@ -309,14 +334,17 @@ def broadcast_aleph_message(api_host: str, message: dict[str, object]) -> tuple[
         {**message, "sync": True},
         dict(message),
     ]
-    last: tuple[int, dict] | None = None
-    for attempt in attempts:
-        last = post_json(url, attempt)
-        if 200 <= last[0] < 300:
-            return last
-    if last is None:
-        raise RuntimeError("Aleph broadcast failed before any attempt was made")
-    raise RuntimeError(f"Aleph broadcast failed: {last[0]} {json_dumps(last[1])}")
+    for index, attempt in enumerate(attempts):
+        http_status, payload = post_json(url, attempt)
+        if 200 <= http_status < 300:
+            return http_status, payload
+        can_retry = index < len(attempts) - 1 and (
+            is_invalid_message_format(http_status, payload)
+            or is_retryable_broadcast_failure(http_status, payload)
+        )
+        if not can_retry:
+            raise RuntimeError(f"Aleph broadcast failed: {http_status} {json_dumps(payload)}")
+    raise RuntimeError("Aleph broadcast failed: no compatible request format was accepted")
 
 
 def parse_post_record(entry: object) -> dict[str, object] | None:
