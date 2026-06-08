@@ -466,9 +466,6 @@ def main() -> None:
         version,
         now_ms,
     )
-    if owner_authorization is None:
-        print(json_dumps({"status": "skipped", "reason": "missing owner authorization"}))
-        return
 
     proof_payload = relay_proof_payload(
         peer_id,
@@ -529,6 +526,7 @@ def main() -> None:
                 "publishedMultiaddrs": multiaddrs,
                 "publishedBrowserMultiaddrs": browser_multiaddrs,
                 "forgottenHashes": previous_hashes,
+                "ownerAuthorizationPresent": owner_authorization is not None,
                 "forgetResponse": forget_response[1] if forget_response else None,
                 "response": response,
             }

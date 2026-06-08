@@ -39,6 +39,7 @@ export interface RelayBootstrapPublicationResult {
 export interface RelayBootstrapVisibilityResult {
   itemHash: string | null;
   hash: string | null;
+  sender?: string | null;
   registrationId?: string;
   peerId?: string;
   multiaddrs: string[];
@@ -50,7 +51,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 export async function waitForRelayBootstrapRegistration(args: {
-  sender: string;
+  sender?: string;
   fetch: JsonFetchLike;
   registrationId?: string;
   peerId?: string;
@@ -63,7 +64,7 @@ export async function waitForRelayBootstrapRegistration(args: {
 }): Promise<RelayBootstrapVisibilityResult | null> {
   const attempts = Math.max(1, Number(args.attempts ?? 10));
   const delayMs = Math.max(0, Number(args.delayMs ?? 2000));
-  const expectedSender = args.sender.trim().toLowerCase();
+  const expectedSender = args.sender?.trim().toLowerCase() || null;
   const expectedRegistrationId = args.registrationId?.trim() || null;
   const expectedPeerId = args.peerId?.trim() || null;
 
@@ -77,8 +78,9 @@ export async function waitForRelayBootstrapRegistration(args: {
     });
     const currentPosts = selectCurrentRelayBootstrapPosts(posts);
     const match = currentPosts.find((post) => {
-      const senderMatches = post.address?.toLowerCase() === expectedSender;
-      if (!senderMatches) return false;
+      if (expectedSender && post.address?.toLowerCase() !== expectedSender) {
+        return false;
+      }
       if (expectedRegistrationId && post.content?.registrationId === expectedRegistrationId) {
         return true;
       }
@@ -92,6 +94,7 @@ export async function waitForRelayBootstrapRegistration(args: {
       return {
         itemHash: match.itemHash ?? null,
         hash: match.hash ?? null,
+        sender: typeof match.address === "string" ? match.address : null,
         registrationId: match.content.registrationId,
         peerId: match.content.peerId,
         multiaddrs: Array.isArray(match.content.multiaddrs) ? match.content.multiaddrs : [],

@@ -2,12 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { executeDeployPlan } from '../src/deploy-executor.ts'
+import { deriveBootstrapPublisherPrivateKey } from '../src/bootstrap-publisher.ts'
 import type { DeployPlan } from '../src/deploy-plan.ts'
 import { deriveLibp2pSecp256k1IdentityFromEvmKey } from '../src/relay-identity.ts'
+import { createPrivateKeyIdentity } from '../src/signer.ts'
 
 const DEPLOY_PLAN: DeployPlan = {
   profile: 'uc-go-peer',
-  privateKey: '0xabc',
+  privateKey: '0x0123456789012345678901234567890123456789012345678901234567890123',
   bootstrapPublisherPrivateKey: '',
   bootstrapOwnerPrivateKey: '',
   apiHost: 'https://api2.aleph.im',
@@ -394,6 +396,13 @@ test('executeDeployPlan retries on the next CRN when a processed deployment neve
 
 test('executeDeployPlan configures orbitdb relay pinner after mapped ports appear', async () => {
   const configureBodies: string[] = []
+  const derivedBootstrapPublisherPrivateKey = deriveBootstrapPublisherPrivateKey({
+    sourcePrivateKey: DEPLOY_PLAN.privateKey,
+    profile: 'orbitdb-relay-pinner',
+  })
+  const expectedRelayIdentity = deriveLibp2pSecp256k1IdentityFromEvmKey(
+    derivedBootstrapPublisherPrivateKey,
+  )
   const result = await executeDeployPlan(
     {
       ...DEPLOY_PLAN,
@@ -481,9 +490,13 @@ test('executeDeployPlan configures orbitdb relay pinner after mapped ports appea
           return jsonResponse({
             status: 'ready',
             metadata: {
-              peer_id: '12D3KooOrbitdb',
-              probe_multiaddrs: ['/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/12D3KooOrbitdb'],
-              browser_bootstrap_multiaddrs: ['/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/12D3KooOrbitdb']
+              peer_id: expectedRelayIdentity.peerId,
+              probe_multiaddrs: [
+                `/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`,
+              ],
+              browser_bootstrap_multiaddrs: [
+                `/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`,
+              ],
             }
           })
         }
@@ -508,7 +521,7 @@ test('executeDeployPlan configures orbitdb relay pinner after mapped ports appea
   )
 
   assert.equal(result.itemHash, 'hash-o1')
-  assert.equal(result.configuration?.metadata?.peer_id, '12D3KooOrbitdb')
+  assert.equal(result.configuration?.metadata?.peer_id, expectedRelayIdentity.peerId)
   assert.equal(result.runtime?.hostIpv4, '203.0.113.8')
   assert.equal(result.verification?.ok, true)
   assert.equal(configureBodies.length, 1)
@@ -521,12 +534,24 @@ test('executeDeployPlan configures orbitdb relay pinner after mapped ports appea
     metrics_https_port: 29443,
     webrtc_port: 29093,
     quic_port: 29094,
-    bootstrap_registration_id: 'relay:orbitdb-relay-pinner:orbitdb-relay-pinner'
+    bootstrap_publisher_private_key: derivedBootstrapPublisherPrivateKey,
+    bootstrap_publisher_libp2p_identity_hex: Buffer.from(expectedRelayIdentity.protobuf).toString('hex'),
+    bootstrap_registration_id: 'relay:orbitdb-relay-pinner:orbitdb-relay-pinner',
   })
 })
 
-test('executeDeployPlan persists bootstrap owner authorization in a second no-start guest configure call', async () => {
+test('executeDeployPlan includes bootstrap owner authorization during the initial orbitdb guest configure call', async () => {
   const configureBodies: string[] = []
+  const derivedBootstrapPublisherPrivateKey = deriveBootstrapPublisherPrivateKey({
+    sourcePrivateKey: DEPLOY_PLAN.privateKey,
+    profile: 'orbitdb-relay-pinner',
+  })
+  const expectedRelayIdentity = deriveLibp2pSecp256k1IdentityFromEvmKey(
+    derivedBootstrapPublisherPrivateKey,
+  )
+  const expectedPublisherIdentity = await createPrivateKeyIdentity(
+    derivedBootstrapPublisherPrivateKey,
+  )
 
   const result = await executeDeployPlan(
     {
@@ -618,9 +643,13 @@ test('executeDeployPlan persists bootstrap owner authorization in a second no-st
           return jsonResponse({
             status: 'ready',
             metadata: {
-              peer_id: '12D3KooOrbitdbDual',
-              probe_multiaddrs: ['/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/12D3KooOrbitdbDual'],
-              browser_bootstrap_multiaddrs: ['/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/12D3KooOrbitdbDual']
+              peer_id: expectedRelayIdentity.peerId,
+              probe_multiaddrs: [
+                `/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`,
+              ],
+              browser_bootstrap_multiaddrs: [
+                `/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`,
+              ],
             }
           })
         }
@@ -630,13 +659,17 @@ test('executeDeployPlan persists bootstrap owner authorization in a second no-st
             posts: [
               {
                 item_hash: 'bootstrap-visible-hash',
-                address: '0x1234',
+                address: expectedPublisherIdentity.address,
                 ref: 'simple-todo-bootstrap',
                 type: 'relay-bootstrap',
                 content: {
-                  peerId: '12D3KooOrbitdbDual',
-                  multiaddrs: ['/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/12D3KooOrbitdbDual'],
-                  browserMultiaddrs: ['/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/12D3KooOrbitdbDual'],
+                  peerId: expectedRelayIdentity.peerId,
+                  multiaddrs: [
+                    `/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`,
+                  ],
+                  browserMultiaddrs: [
+                    `/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`,
+                  ],
                   updatedAt: Date.now(),
                 },
               },
@@ -664,21 +697,15 @@ test('executeDeployPlan persists bootstrap owner authorization in a second no-st
   )
 
   assert.equal(result.itemHash, 'hash-d1')
-  assert.equal(configureBodies.length, 2)
+  assert.equal(configureBodies.length, 1)
   const firstConfigure = JSON.parse(configureBodies[0] ?? '{}')
-  const secondConfigure = JSON.parse(configureBodies[1] ?? '{}')
 
   assert.equal(firstConfigure.bootstrap_owner_private_key, undefined)
-  assert.equal(firstConfigure.bootstrap_owner_authorization_b64, undefined)
-  assert.equal(firstConfigure.bootstrap_publisher_private_key, undefined)
-
-  assert.equal(secondConfigure.no_start, true)
-  assert.equal(secondConfigure.bootstrap_owner_private_key, undefined)
-  assert.equal(secondConfigure.bootstrap_publisher_private_key, undefined)
-  assert.ok(typeof secondConfigure.bootstrap_owner_authorization_b64 === 'string')
+  assert.equal(firstConfigure.bootstrap_publisher_private_key, derivedBootstrapPublisherPrivateKey)
+  assert.ok(typeof firstConfigure.bootstrap_owner_authorization_b64 === 'string')
 
   const authorization = JSON.parse(
-    Buffer.from(secondConfigure.bootstrap_owner_authorization_b64, 'base64').toString('utf8')
+    Buffer.from(firstConfigure.bootstrap_owner_authorization_b64, 'base64').toString('utf8')
   ) as {
     scheme?: string
     payload?: { peerId?: string; publisherAddress?: string; ownerAddress?: string; registrationId?: string }
@@ -686,7 +713,7 @@ test('executeDeployPlan persists bootstrap owner authorization in a second no-st
   }
 
   assert.equal(authorization.scheme, 'personal_sign')
-  assert.equal(authorization.payload?.peerId, '12D3KooOrbitdbDual')
+  assert.equal(authorization.payload?.peerId, expectedRelayIdentity.peerId)
   assert.equal(
     authorization.payload?.registrationId,
     'relay:orbitdb-relay-pinner:uc-go-peer:hash-d1'

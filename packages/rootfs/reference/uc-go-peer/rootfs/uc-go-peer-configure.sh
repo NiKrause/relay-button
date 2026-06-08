@@ -11,6 +11,7 @@ SERVICE_NAME="${SERVICE_NAME:-uc-go-peer.service}"
 AUTOTLS_REFRESH_SERVICE="${AUTOTLS_REFRESH_SERVICE:-uc-go-peer-autotls-refresh.service}"
 BOOTSTRAP_REFRESH_TIMER="${BOOTSTRAP_REFRESH_TIMER:-uc-go-peer-bootstrap-refresh.timer}"
 BOOTSTRAP_REFRESH_SERVICE="${BOOTSTRAP_REFRESH_SERVICE:-uc-go-peer-bootstrap-refresh.service}"
+BOOTSTRAP_DEREGISTER_SERVICE="${BOOTSTRAP_DEREGISTER_SERVICE:-uc-go-peer-bootstrap-deregister.service}"
 CADDY_SERVICE="${CADDY_SERVICE:-caddy.service}"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 BOOTSTRAP_SERVICE="${BOOTSTRAP_SERVICE:-uc-go-peer-bootstrap.service}"
@@ -97,6 +98,27 @@ current_identity_path() {
   printf '/var/lib/uc-go-peer/identity.key\n'
 }
 
+current_bootstrap_publisher_private_key() {
+  local existing
+  existing="$(grep -E '^[#[:space:]]*ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY=' "${ENV_FILE}" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+  if [ -n "${existing}" ]; then
+    printf '%s\n' "${existing}"
+    return
+  fi
+  printf '\n'
+}
+
+generate_bootstrap_publisher_private_key() {
+  while true; do
+    local candidate
+    candidate="$(openssl rand -hex 32)"
+    if [ -n "${candidate}" ] && [ "${candidate}" != "0000000000000000000000000000000000000000000000000000000000000000" ]; then
+      printf '0x%s\n' "${candidate}"
+      return
+    fi
+  done
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --public-ipv4)
@@ -179,6 +201,13 @@ fi
 touch "${ENV_FILE}"
 rm -f "${AUTOTLS_READY_FILE}" "${AUTOTLS_ZONE_FILE}" "${AUTOTLS_HOSTS_FILE}" "${AUTOTLS_CADDY_READY_FILE}"
 
+if [ -z "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}" ]; then
+  BOOTSTRAP_PUBLISHER_PRIVATE_KEY="$(current_bootstrap_publisher_private_key)"
+fi
+if [ -z "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}" ]; then
+  BOOTSTRAP_PUBLISHER_PRIVATE_KEY="$(generate_bootstrap_publisher_private_key)"
+fi
+
 announce=(
   "/ip4/${PUBLIC_IPV4}/tcp/${TCP_PORT}"
 )
@@ -234,6 +263,7 @@ if [ -n "${UDP_PORT}" ]; then
 fi
 if [ -n "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}" ]; then
   write_env_var "ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY" "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}"
+  write_env_var "GO_PEER_IDENTITY_EVM_PRIVATE_KEY" "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}"
 fi
 if [ -n "${BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_B64}" ]; then
   identity_path="$(current_identity_path)"
@@ -261,6 +291,8 @@ if [ "${START_SERVICE}" -eq 1 ]; then
   systemctl restart "${SERVICE_NAME}"
   systemctl enable "${AUTOTLS_REFRESH_SERVICE}"
   systemctl enable "${BOOTSTRAP_REFRESH_TIMER}"
+  systemctl enable "${BOOTSTRAP_DEREGISTER_SERVICE}"
+  systemctl restart "${BOOTSTRAP_DEREGISTER_SERVICE}"
   systemctl start "${BOOTSTRAP_REFRESH_TIMER}"
   systemctl restart --no-block "${BOOTSTRAP_REFRESH_SERVICE}" || true
   if [ -n "${PROXY_HOSTNAME}" ]; then

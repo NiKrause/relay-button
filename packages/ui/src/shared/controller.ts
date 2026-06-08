@@ -26,8 +26,6 @@ import {
   forgetAlephMessages,
   notifyCrnAllocationWithRetry,
   publishVmBootstrapConfig,
-  publishRelayBootstrapRegistration,
-  reconcileOwnerRelayBootstrapRegistrations,
   tierSpec,
   waitForRelayBootstrapRegistration,
   waitForDeploymentResult,
@@ -848,7 +846,7 @@ export class SponsorRelayController {
       throw new Error("Relay metadata did not include a peer ID and public multiaddrs.");
     }
 
-    const { peerId, probeMultiaddrs, browserBootstrapMultiaddrs } = relayMetadata;
+    const { peerId } = relayMetadata;
     const registrationId = createRelayBootstrapRegistrationId(
       profile,
       this.state.instanceName.trim(),
@@ -857,52 +855,19 @@ export class SponsorRelayController {
 
     this.emitProgress({
       stage: "publishing-bootstrap",
-      label: "Publishing bootstrap registration",
+      label: "Waiting for guest bootstrap registration",
       progress: 96,
       status: "info",
       itemHash: args.itemHash,
-      detail: "Writing the relay bootstrap registration to Aleph.",
-    });
-
-    const publication = await publishRelayBootstrapRegistration({
-      sender: this.state.wallet.address,
-      signer: personalSign,
-      hasher: sha256Hex,
-      fetch: asJsonFetch,
-      apiHost: this.client.apiHost,
-      peerId,
-      multiaddrs: probeMultiaddrs,
-      browserMultiaddrs: browserBootstrapMultiaddrs,
-      registrationId,
-      profile,
-      version: this.state.manifest?.version,
-      forgetPrevious: true,
-      sync: true,
-    });
-
-    this.trace("deploy:bootstrap-registration", {
-      itemHash: args.itemHash,
-      peerId,
-      metadata: relayMetadata,
-      publication,
-    });
-
-    this.emitProgress({
-      stage: "publishing-bootstrap",
-      label: "Verifying bootstrap registration",
-      progress: 97,
-      status: "info",
-      itemHash: args.itemHash,
-      detail: "Waiting for the relay bootstrap registration to appear on Aleph.",
+      detail: "Waiting for the relay VM to publish its own bootstrap registration to Aleph.",
     });
 
     const visibleRegistration = await waitForRelayBootstrapRegistration({
-      sender: this.state.wallet.address,
       registrationId,
       peerId,
       fetch: asJsonFetch,
       apiHost: this.client.apiHost,
-      attempts: 12,
+      attempts: 24,
       delayMs: 2500,
     });
 
@@ -917,32 +882,6 @@ export class SponsorRelayController {
       throw new Error(
         "Relay bootstrap registration did not become visible on Aleph.",
       );
-    }
-
-    const reconcileResult = await reconcileOwnerRelayBootstrapRegistrations({
-      instanceOwnerAddress: this.state.wallet.address,
-      sender: this.state.wallet.address,
-      signer: personalSign,
-      hasher: sha256Hex,
-      fetch: asJsonFetch,
-      profile,
-      apiHost: this.client.apiHost,
-      crns: this.state.crns,
-      crnListUrl: this.props.crnListUrl,
-      preferSecureMetadata: profile === "uc-go-peer",
-      current: {
-        itemHash: args.itemHash,
-        registrationId,
-        peerId,
-        probeMultiaddrs,
-        browserBootstrapMultiaddrs,
-      },
-    });
-    if (reconcileResult.errors.length > 0) {
-      this.trace("deploy:owner-bootstrap-reconcile-errors", {
-        itemHash: args.itemHash,
-        errors: reconcileResult.errors,
-      });
     }
 
     if (profile === "uc-go-peer" && args.deploymentToken) {
@@ -1968,30 +1907,6 @@ export class SponsorRelayController {
           this.emitProgress(event);
         },
       });
-
-      const profile = relayProfileForManifest(this.state.manifest);
-      if (profile) {
-        await reconcileOwnerRelayBootstrapRegistrations({
-          instanceOwnerAddress: this.state.wallet.address,
-          sender: this.state.wallet.address,
-          signer: personalSign,
-          hasher: sha256Hex,
-          fetch: asJsonFetch,
-          profile,
-          apiHost: this.client.apiHost,
-          crns: this.state.crns,
-          crnListUrl: this.props.crnListUrl,
-          preferSecureMetadata: profile === "uc-go-peer",
-        }).catch(
-          (error) => {
-            this.trace("delete:owner-bootstrap-reconcile-error", {
-              instanceHash,
-              profile,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          },
-        );
-      }
 
       this.patch({
         busy: { deletingInstanceHash: null },

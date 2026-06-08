@@ -36,6 +36,7 @@ import type {
   DeployOutputResult,
 } from "./deploy-outputs.ts";
 import type { DeployPlan } from "./deploy-plan.ts";
+import { deriveBootstrapPublisherPrivateKey } from "./bootstrap-publisher.ts";
 import { createPrivateKeyIdentity } from "./signer.ts";
 import { deriveLibp2pSecp256k1IdentityFromEvmKey } from "./relay-identity.ts";
 
@@ -226,22 +227,28 @@ export async function executeDeployPlan(
   const sleepImpl =
     dependencies.sleep ?? ((ms) => sleep(ms).then(() => undefined));
   const log = dependencies.log ?? ((message: string) => console.log(message));
+  const resolvedBootstrapPublisherPrivateKey =
+    plan.bootstrapPublisherPrivateKey ||
+    deriveBootstrapPublisherPrivateKey({
+      sourcePrivateKey: plan.privateKey,
+      profile: plan.profile,
+    });
   const identity =
     dependencies.sender && dependencies.signer
       ? { address: dependencies.sender, signer: dependencies.signer }
       : await createPrivateKeyIdentity(plan.privateKey);
-  const bootstrapPublisherIdentity = plan.bootstrapPublisherPrivateKey
-    ? await createPrivateKeyIdentity(plan.bootstrapPublisherPrivateKey)
-    : null;
+  const bootstrapPublisherIdentity = await createPrivateKeyIdentity(
+    resolvedBootstrapPublisherPrivateKey,
+  );
   const bootstrapOwnerIdentity = plan.bootstrapOwnerPrivateKey
     ? await createPrivateKeyIdentity(plan.bootstrapOwnerPrivateKey)
     : null;
   const publisherDerivedRelayIdentity =
     (plan.profile === "uc-go-peer" ||
       plan.profile === "orbitdb-relay-pinner") &&
-    plan.bootstrapPublisherPrivateKey
+    resolvedBootstrapPublisherPrivateKey
       ? deriveLibp2pSecp256k1IdentityFromEvmKey(
-          plan.bootstrapPublisherPrivateKey,
+          resolvedBootstrapPublisherPrivateKey,
         )
       : null;
 
@@ -587,7 +594,7 @@ export async function executeDeployPlan(
                 webrtcPort: mappedPorts["9093"]?.host ?? null,
                 quicPort: mappedPorts["9094"]?.host ?? null,
                 bootstrapPublisherPrivateKey:
-                  plan.bootstrapPublisherPrivateKey || null,
+                  resolvedBootstrapPublisherPrivateKey || null,
                 bootstrapPublisherLibp2pIdentityHex:
                   publisherDerivedRelayIdentity?.protobuf
                     ? Buffer.from(
@@ -627,7 +634,7 @@ export async function executeDeployPlan(
                     : null,
                 proxyUrl,
                 bootstrapPublisherPrivateKey:
-                  plan.bootstrapPublisherPrivateKey || null,
+                  resolvedBootstrapPublisherPrivateKey || null,
                 bootstrapPublisherLibp2pIdentityBase64:
                   publisherDerivedRelayIdentity?.protobufBase64 ?? null,
                 bootstrapOwnerAuthorizationBase64: precomputedOwnerAuthorization
@@ -853,7 +860,7 @@ export async function executeDeployPlan(
                 webrtcPort: mappedPorts["9093"]?.host ?? null,
                 quicPort: mappedPorts["9094"]?.host ?? null,
                 bootstrapPublisherPrivateKey:
-                  plan.bootstrapPublisherPrivateKey || null,
+                  resolvedBootstrapPublisherPrivateKey || null,
                 bootstrapOwnerAuthorizationBase64: ownerAuthorizationBase64,
                 bootstrapRegistrationId: registrationId,
                 noStart: true,

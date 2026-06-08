@@ -1,0 +1,19 @@
+[Unit]
+Description=Best-effort Aleph bootstrap deregistration on shutdown for uc-go-peer
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/default/uc-go-peer.ready
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=ENV_FILE=/etc/default/uc-go-peer
+Environment=DESCRIBE_SCRIPT=/usr/local/sbin/uc-go-peer-describe.py
+ExecStart=/bin/true
+ExecStop=/usr/bin/python3 /usr/local/sbin/uc-go-peer-bootstrap-deregister.py
+StandardOutput=journal
+StandardError=journal
+TimeoutStopSec=25
+
+[Install]
+WantedBy=multi-user.target

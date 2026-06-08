@@ -86,11 +86,13 @@ virt-customize \
   --copy-in "${APP_BINARY}:${GUEST_APP_DIR}" \
   --copy-in "${SCRIPT_DIR}/uc-go-peer-bootstrap.sh:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/uc-go-peer-configure.sh:/usr/local/sbin" \
+  --copy-in "${SCRIPT_DIR}/uc-go-peer-bootstrap-deregister.py:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/uc-go-peer-bootstrap-refresh.py:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/uc-go-peer-autotls-refresh.py:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/uc-go-peer-describe.py:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/uc-go-peer-setup-server.py:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/uc-go-peer-bootstrap.service:/etc/systemd/system" \
+  --copy-in "${SCRIPT_DIR}/uc-go-peer-bootstrap-deregister.service:/etc/systemd/system" \
   --copy-in "${SCRIPT_DIR}/uc-go-peer-bootstrap-refresh.service:/etc/systemd/system" \
   --copy-in "${SCRIPT_DIR}/uc-go-peer-bootstrap-refresh.timer:/etc/systemd/system" \
   --copy-in "${SCRIPT_DIR}/uc-go-peer-autotls-refresh.service:/etc/systemd/system" \
@@ -98,6 +100,7 @@ virt-customize \
   --run-command "chmod 0755 ${ROOTFS_CONTRACT_BINARY_PATH}" \
   --run-command "chmod 0755 /usr/local/sbin/uc-go-peer-bootstrap.sh" \
   --run-command "chmod 0755 /usr/local/sbin/uc-go-peer-configure.sh" \
+  --run-command "chmod 0755 /usr/local/sbin/uc-go-peer-bootstrap-deregister.py" \
   --run-command "chmod 0755 /usr/local/sbin/uc-go-peer-bootstrap-refresh.py" \
   --run-command "chmod 0755 /usr/local/sbin/uc-go-peer-autotls-refresh.py" \
   --run-command "chmod 0755 /usr/local/sbin/uc-go-peer-describe.py" \

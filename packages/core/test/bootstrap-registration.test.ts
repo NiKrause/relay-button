@@ -279,6 +279,7 @@ test('waitForRelayBootstrapRegistration observes the current registration once i
   assert.deepEqual(visible, {
     itemHash: 'visible-hash',
     hash: null,
+    sender: '0xAbC',
     registrationId: 'relay:uc-go-peer:demo',
     peerId: '12D3KooWVisible',
     multiaddrs: ['/ip4/203.0.113.10/tcp/9095/p2p/12D3KooWVisible'],
