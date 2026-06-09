@@ -25,6 +25,7 @@ import {
   filterDeployableCrns,
   forgetAlephMessages,
   notifyCrnAllocationWithRetry,
+  publishRelayBootstrapRegistration,
   publishVmBootstrapConfig,
   tierSpec,
   waitForRelayBootstrapRegistration,
@@ -879,9 +880,66 @@ export class SponsorRelayController {
     });
 
     if (!visibleRegistration) {
-      throw new Error(
-        "Relay bootstrap registration did not become visible on Aleph.",
-      );
+      this.trace("deploy:bootstrap-registration-fallback-start", {
+        itemHash: args.itemHash,
+        registrationId,
+        peerId,
+        probeMultiaddrCount: relayMetadata.probeMultiaddrs.length,
+        browserBootstrapMultiaddrCount:
+          relayMetadata.browserBootstrapMultiaddrs.length,
+      });
+      this.emitProgress({
+        stage: "publishing-bootstrap",
+        label: "Publishing bootstrap fallback",
+        progress: 98,
+        status: "warning",
+        itemHash: args.itemHash,
+        detail:
+          "Guest bootstrap registration was delayed. Publishing the relay bootstrap record from the browser.",
+      });
+
+      const fallbackPublication = await publishRelayBootstrapRegistration({
+        sender: this.state.wallet.address,
+        signer: personalSign,
+        hasher: sha256Hex,
+        fetch: asJsonFetch,
+        apiHost: this.client.apiHost,
+        peerId,
+        multiaddrs: relayMetadata.probeMultiaddrs,
+        browserMultiaddrs: relayMetadata.browserBootstrapMultiaddrs,
+        registrationId,
+        profile,
+        sync: true,
+        forgetPrevious: true,
+      });
+      this.trace("deploy:bootstrap-registration-fallback-published", {
+        itemHash: args.itemHash,
+        registrationId,
+        peerId,
+        fallbackPublication,
+      });
+
+      const fallbackVisibleRegistration = await waitForRelayBootstrapRegistration({
+        sender: this.state.wallet.address,
+        registrationId,
+        peerId,
+        fetch: asJsonFetch,
+        apiHost: this.client.apiHost,
+        attempts: 24,
+        delayMs: 2500,
+      });
+      this.trace("deploy:bootstrap-registration-fallback-visible", {
+        itemHash: args.itemHash,
+        registrationId,
+        peerId,
+        fallbackVisibleRegistration,
+      });
+
+      if (!fallbackVisibleRegistration) {
+        throw new Error(
+          "Relay bootstrap registration did not become visible on Aleph.",
+        );
+      }
     }
 
     if (profile === "uc-go-peer" && args.deploymentToken) {
