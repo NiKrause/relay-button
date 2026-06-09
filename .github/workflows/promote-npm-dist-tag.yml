@@ -1,0 +1,62 @@
+name: Promote npm dist-tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version to promote (defaults to root package.json version)
+        required: false
+        default: ''
+        type: string
+      dist_tag:
+        description: npm dist-tag to set on the published packages
+        required: false
+        default: latest
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        package_name:
+          - '@le-space/aleph-bootstrap'
+          - '@le-space/browser'
+          - '@le-space/node'
+          - '@le-space/rootfs'
+          - '@le-space/ui'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve version to promote
+        id: version
+        run: |
+          if [[ -n "${{ inputs.version }}" ]]; then
+            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            node -p "const pkg=require('./package.json'); console.log('value=' + pkg.version)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Promote dist-tag
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ -z "${NODE_AUTH_TOKEN}" ]]; then
+            echo "NPM_TOKEN secret is required for dist-tag promotion." >&2
+            exit 1
+          fi
+
+          pkg="${{ matrix.package_name }}"
+          version="${{ steps.version.outputs.value }}"
+          tag="${{ inputs.dist_tag }}"
+          npm dist-tag add "${pkg}@${version}" "${tag}"
