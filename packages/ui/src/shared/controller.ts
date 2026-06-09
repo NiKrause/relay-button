@@ -554,7 +554,7 @@ export class SponsorRelayController {
   private runtimeCooldownByHash = new Map<string, number>();
   private runtimeDetailsByHash = new Map<string, CompactInstanceDetails>();
   private debugEnabled: boolean;
-  private lastRuntimeReadyHash: string | null = null;
+  private lastCompletedDeploymentHash: string | null = null;
 
   constructor(props: SponsorRelayProps = {}) {
     this.props = props;
@@ -700,7 +700,7 @@ export class SponsorRelayController {
       this.emitProgress({
         stage: "deployment-confirmed",
         label: "Applying relay networking",
-        progress: 94,
+        progress: 93,
         status: "info",
         itemHash: args.itemHash,
         detail: "Publishing the host port mapping into the guest relay configuration.",
@@ -739,7 +739,7 @@ export class SponsorRelayController {
       this.emitProgress({
         stage: "deployment-confirmed",
         label: "Publishing relay config",
-        progress: 94,
+        progress: 93,
         status: "info",
         itemHash: args.itemHash,
         detail: "Publishing runtime networking into the Aleph guest bootstrap config aggregate.",
@@ -856,7 +856,7 @@ export class SponsorRelayController {
     this.emitProgress({
       stage: "publishing-bootstrap",
       label: "Waiting for guest bootstrap registration",
-      progress: 96,
+      progress: 97,
       status: "info",
       itemHash: args.itemHash,
       detail: "Waiting for the relay VM to publish its own bootstrap registration to Aleph.",
@@ -926,7 +926,7 @@ export class SponsorRelayController {
         currentProgress.stage !== "error");
 
     const keepTerminalSuccess =
-      this.lastRuntimeReadyHash === itemHash ||
+      this.lastCompletedDeploymentHash === itemHash ||
       (currentProgressIsForLatestHash &&
         currentProgress.stage === "completed" &&
         currentProgress.status === "success");
@@ -998,12 +998,13 @@ export class SponsorRelayController {
     }
 
     this.emitProgress({
-      stage: "completed",
+      stage: "deployment-confirmed",
       label: "Runtime ready",
-      progress: 100,
-      status: "success",
+      progress: 92,
+      status: "info",
       itemHash,
-      detail: "Deployment processed and runtime networking is available.",
+      detail:
+        "Deployment processed and runtime networking is available. Finishing relay setup and bootstrap verification.",
     });
   }
 
@@ -1554,7 +1555,7 @@ export class SponsorRelayController {
             crnHash: candidateCrn.hash,
             crnName: candidateCrn.name,
           });
-          this.lastRuntimeReadyHash = null;
+          this.lastCompletedDeploymentHash = null;
 
           const inspection = await waitForDeploymentResult(result.itemHash, {
             rootfsRef: this.state.manifest.rootfsItemHash,
@@ -1679,12 +1680,13 @@ export class SponsorRelayController {
                 Object.keys(runtime.mappedPorts ?? {}).length > 0
               ) {
                 this.emitProgress({
-                  stage: "completed",
+                  stage: "deployment-confirmed",
                   label: "Runtime ready",
-                  progress: 100,
-                  status: "success",
+                  progress: 92,
+                  status: "info",
                   itemHash: result.itemHash,
-                  detail: "Runtime networking and mapped ports are now available.",
+                  detail:
+                    "Runtime networking and mapped ports are now available. Finishing relay setup and bootstrap verification.",
                 });
                 return;
               }
@@ -1712,7 +1714,6 @@ export class SponsorRelayController {
             );
           }
           this.trace("deploy:runtime-ready", runtime);
-          this.lastRuntimeReadyHash = result.itemHash;
           this.rememberRuntimeDetails(result.itemHash, {
             messageStatus: "processed",
             allocationSource: runtime.allocation?.source ?? null,
@@ -1750,12 +1751,22 @@ export class SponsorRelayController {
           this.emitProgress({
             stage: "refreshing-instances",
             label: "Refreshing instances",
-            progress: 96,
+            progress: 99,
             status: "info",
             itemHash: result.itemHash,
             detail: "Reloading deployments and runtime state.",
           });
           await this.refresh();
+          this.lastCompletedDeploymentHash = result.itemHash;
+          this.emitProgress({
+            stage: "completed",
+            label: "Relay ready",
+            progress: 100,
+            status: "success",
+            itemHash: result.itemHash,
+            detail:
+              "Relay runtime, setup, metadata, and bootstrap registration are confirmed.",
+          });
           return;
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
