@@ -42,6 +42,15 @@ export let apiHost = undefined
   const versionLabel = resolvedVersion.trim()
     ? (resolvedVersion.trim().startsWith('v') ? resolvedVersion.trim() : `v${resolvedVersion.trim()}`)
     : ''
+  const pollingStages = new Set(['waiting-for-aleph', 'deployment-confirmed', 'publishing-bootstrap', 'refreshing-instances'])
+
+  $: pollingActive = state.busy.refreshing || pollingStages.has(state.deploymentProgress.stage)
+  $: pollingLabel = state.busy.refreshing
+    ? 'Checking relay state'
+    : (state.deploymentProgress.label || 'Polling relay state')
+  $: pollingDetail = state.busy.refreshing
+    ? (state.statusText || 'Refreshing relay sponsor data from Aleph and the selected CRN.')
+    : (state.deploymentProgress.detail || state.statusText || 'Waiting for the next confirmed relay state from Aleph.')
 
   onMount(async () => {
     const unsubscribe = controller.subscribe((next) => {
@@ -112,6 +121,16 @@ export let apiHost = undefined
       <p class="alert error">{state.errorText}</p>
     {/if}
     <p class="status-text">{state.statusText}</p>
+
+    {#if pollingActive}
+      <div class="polling-row" aria-live="polite">
+        <div class="polling-head">
+          <StatusLed tone="idle" pulse={true} />
+          <strong>{pollingLabel}</strong>
+        </div>
+        <small>{pollingDetail}</small>
+      </div>
+    {/if}
 
     <div class="grid">
       <label class="field">
@@ -317,6 +336,31 @@ export let apiHost = undefined
     gap: 0.8rem;
     align-items: center;
     justify-content: space-between;
+  }
+
+  .polling-row {
+    display: grid;
+    gap: 0.28rem;
+    margin: 0.25rem 0 0.8rem;
+    padding: 0.7rem 0.85rem;
+    border-radius: 1rem;
+    background: linear-gradient(180deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.05));
+    border: 1px solid rgba(125, 211, 252, 0.18);
+  }
+
+  .polling-head {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .polling-row strong {
+    font-size: 0.88rem;
+  }
+
+  .polling-row small {
+    color: var(--relay-text-dim);
+    line-height: 1.35;
   }
 
   .eyebrow,

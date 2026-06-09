@@ -85,6 +85,12 @@ function progressBadgeLabel(stage: string): string {
 }
 
 const COMPLETED_PROGRESS_VISIBLE_MS = 12_000;
+const POLLING_STAGES = new Set([
+  "waiting-for-aleph",
+  "deployment-confirmed",
+  "publishing-bootstrap",
+  "refreshing-instances",
+]);
 
 function isDeploymentProgressVisible(state: SponsorRelayState): boolean {
   const stage = state.deploymentProgress.stage;
@@ -104,6 +110,32 @@ function isDeploymentProgressVisible(state: SponsorRelayState): boolean {
   }
 
   return true;
+}
+
+function pollingIndicator(state: SponsorRelayState): {
+  label: string;
+  detail: string;
+} | null {
+  if (state.busy.refreshing) {
+    return {
+      label: "Checking relay state",
+      detail:
+        state.statusText ||
+        "Refreshing relay sponsor data from Aleph and the selected CRN.",
+    };
+  }
+
+  if (!POLLING_STAGES.has(state.deploymentProgress.stage)) {
+    return null;
+  }
+
+  return {
+    label: state.deploymentProgress.label || "Polling relay state",
+    detail:
+      state.deploymentProgress.detail ||
+      state.statusText ||
+      "Waiting for the next confirmed relay state from Aleph.",
+  };
 }
 
 function launcherIndicator(state: SponsorRelayState): {
@@ -292,6 +324,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
     state.deploymentProgress.stage !== "completed" &&
     state.deploymentProgress.stage !== "error";
   const deploymentProgressVisible = isDeploymentProgressVisible(state);
+  const pollingState = pollingIndicator(state);
   const pulseScale = progressActive ? 1.03 : hovered ? 1.015 : 1;
   const pulseShadow = progressActive
     ? `0 0 0 4px ${progressToneColor(indicator.tone)}22, 0 12px 28px rgba(15, 23, 42, 0.22)`
@@ -326,6 +359,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
 
   return (
     <>
+      <style>{`@keyframes leSpaceRelayPulse { 0%, 100% { transform: scale(1); opacity: 0.74; } 50% { transform: scale(1.22); opacity: 1; } }`}</style>
       <button
         ref={launcherRef}
         type="button"
@@ -434,6 +468,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               boxShadow: `0 0 0 ${progressActive ? "4px" : "3px"} ${progressToneColor(indicator.tone)}22`,
               transform: `scale(${progressActive ? 1.12 : successFlash ? 1.18 : 1})`,
               transition: "transform 180ms ease, box-shadow 220ms ease",
+              animation: pollingState ? "leSpaceRelayPulse 1.6s ease-in-out infinite" : undefined,
             }}
           />
           <span>{indicator.label}</span>
@@ -502,6 +537,47 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
             <p style={{ color: "#9fb2ca" }}>{state.statusText}</p>
             {state.errorText ? (
               <p style={{ color: "#ffd9d9" }}>{state.errorText}</p>
+            ) : null}
+
+            {pollingState ? (
+              <div
+                aria-live="polite"
+                style={{
+                  marginTop: "0.25rem",
+                  marginBottom: "0.8rem",
+                  padding: "0.7rem 0.8rem",
+                  borderRadius: "1rem",
+                  border: "1px solid rgba(125, 211, 252, 0.18)",
+                  background:
+                    "linear-gradient(180deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.05))",
+                  display: "grid",
+                  gap: "0.28rem",
+                }}
+              >
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.45rem",
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: "0.62rem",
+                      height: "0.62rem",
+                      borderRadius: "999px",
+                      background: progressToneColor("info"),
+                      boxShadow: `0 0 0 3px ${progressToneColor("info")}22`,
+                      animation: "leSpaceRelayPulse 1.6s ease-in-out infinite",
+                    }}
+                  />
+                  <strong style={{ fontSize: "0.88rem" }}>{pollingState.label}</strong>
+                </div>
+                <small style={{ color: "#9fb2ca", lineHeight: 1.35 }}>
+                  {pollingState.detail}
+                </small>
+              </div>
             ) : null}
 
             {deploymentProgressVisible ? (
