@@ -111,31 +111,49 @@ def sign_aleph_message(unsigned_message: dict[str, object], private_key: str) ->
     return signed
 
 
-def is_invalid_message_format(http_status: int, payload: dict) -> bool:
+def iter_validation_errors(payload: object) -> list[dict]:
+    if isinstance(payload, list):
+        return [entry for entry in payload if isinstance(entry, dict)]
+    return []
+
+
+def is_invalid_message_format(http_status: int, payload: object) -> bool:
     if http_status != 422:
         return False
-    details = payload.get("details")
-    if isinstance(details, str) and "InvalidMessageFormat" in details:
-        return True
-    if isinstance(details, dict):
-        message = details.get("message")
+
+    if isinstance(payload, dict):
+        details = payload.get("details")
+        if isinstance(details, str) and "InvalidMessageFormat" in details:
+            return True
+        if isinstance(details, dict):
+            message = details.get("message")
+            if isinstance(message, str) and "InvalidMessageFormat" in message:
+                return True
+
+    for entry in iter_validation_errors(payload):
+        message = entry.get("msg")
+        location = entry.get("loc")
         if isinstance(message, str) and "InvalidMessageFormat" in message:
             return True
+        if message == "Field required" and location == ["message"]:
+            return True
+
     return False
 
 
-def is_retryable_broadcast_failure(http_status: int, payload: dict) -> bool:
+def is_retryable_broadcast_failure(http_status: int, payload: object) -> bool:
     if http_status >= 500:
         return True
-    publication_status = payload.get("publication_status")
-    if isinstance(publication_status, dict):
-        status = publication_status.get("status")
-        if isinstance(status, str) and status.strip().lower() == "error":
-            return True
+    if isinstance(payload, dict):
+        publication_status = payload.get("publication_status")
+        if isinstance(publication_status, dict):
+            status = publication_status.get("status")
+            if isinstance(status, str) and status.strip().lower() == "error":
+                return True
     return False
 
 
-def broadcast_aleph_message(api_host: str, message: dict[str, object]) -> tuple[int, dict]:
+def broadcast_aleph_message(api_host: str, message: dict[str, object]) -> tuple[int, object]:
     url = urllib.parse.urljoin(api_host.rstrip("/") + "/", "api/v0/messages")
     attempts = [
         {"sync": True, "message": message},
