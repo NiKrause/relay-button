@@ -14,6 +14,7 @@ const sidebars = {
       label: 'Reference',
       items: [
         'reference/aleph-bootstrap',
+        'reference/aleph-bootstrap-sequences',
         'reference/aleph-bootstrap-operations',
         'reference/github-action',
         'reference/ui',
