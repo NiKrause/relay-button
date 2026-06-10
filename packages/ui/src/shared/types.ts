@@ -14,7 +14,6 @@ import type { DeploymentProgressEvent } from '../../../shared-types/src/deployme
 export type SponsorRelayHealthTone = 'ok' | 'caution' | 'error' | 'idle'
 
 export interface SponsorRelayProps {
-  libp2p?: unknown
   debug?: boolean
   manifestUrl?: string
   manifestJson?: string
@@ -51,17 +50,6 @@ export interface SponsorRelayRootfsHealth {
   tone: SponsorRelayHealthTone
   label: string
   detail: string | null
-}
-
-export interface RelayPingState {
-  tone: SponsorRelayHealthTone
-  sent: boolean
-  received: boolean
-  lastPeerId: string | null
-  lastLatencyMs: number | null
-  lastSentAt: number | null
-  lastReceivedAt: number | null
-  error: string | null
 }
 
 export interface CompactInstanceDetails {
@@ -113,7 +101,6 @@ export interface SponsorRelayState {
   crns: Crn[]
   selectedCrn: Crn | null
   instances: CompactInstanceRecord[]
-  relayPing: RelayPingState
   lastDeploymentHash: string | null
   deploymentProgress: DeploymentProgressEvent
 }

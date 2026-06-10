@@ -22,10 +22,9 @@ export function useSponsorRelayController(props: SponsorRelayProps) {
 
   useEffect(() => {
     controller.updateProps({
-      libp2p: props.libp2p,
       debug: props.debug
     })
-  }, [controller, props.debug, props.libp2p])
+  }, [controller, props.debug])
 
   useEffect(() => {
     void controller.init()

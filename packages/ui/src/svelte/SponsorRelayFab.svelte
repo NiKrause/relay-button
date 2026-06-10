@@ -8,7 +8,6 @@
   import StatusLed from './components/StatusLed.svelte'
   import './styles/theme.css'
 
-  export let libp2p = null
   export let manifestUrl = './rootfs-manifest.json'
   export let manifestJson = ''
   export let sshPublicKey = ''
@@ -23,7 +22,6 @@ export let apiHost = undefined
   export let twoN6ApiHost = undefined
 
   const controller = createSponsorRelayController({
-    libp2p,
     manifestUrl,
     manifestJson,
     sshPublicKey,
@@ -103,17 +101,6 @@ export let apiHost = undefined
           <strong>{state.rootfsHealth.label}</strong>
           <small>{state.rootfsHealth.detail ?? 'No rootfs details yet'}</small>
         </div>
-      </div>
-    </div>
-
-    <div class="ping-strip">
-      <div>
-        <span class="mini-label">relay ping sent</span>
-        <div class="mini-row"><StatusLed tone={state.relayPing.sent ? 'caution' : state.relayPing.tone} pulse={state.relayPing.sent} /><strong>{state.relayPing.sent ? 'sent' : 'idle'}</strong></div>
-      </div>
-      <div>
-        <span class="mini-label">relay pong received</span>
-        <div class="mini-row"><StatusLed tone={state.relayPing.received ? 'ok' : state.relayPing.tone} pulse={state.relayPing.received} /><strong>{state.relayPing.received ? `${formatNumber(state.relayPing.lastLatencyMs, 0)} ms` : 'waiting'}</strong></div>
       </div>
     </div>
 
@@ -327,7 +314,6 @@ export let apiHost = undefined
 
   .panel-head,
   .status-strip,
-  .ping-strip,
   .actions,
   .section-head,
   .instance-topline,
@@ -364,7 +350,6 @@ export let apiHost = undefined
   }
 
   .eyebrow,
-  .mini-label,
   .field span,
   .metric-card span,
   .mono-block span,
@@ -438,19 +423,6 @@ export let apiHost = undefined
     grid-template-columns: auto 1fr;
     align-items: center;
     gap: 0.7rem;
-  }
-
-  .ping-strip {
-    margin-top: 0.9rem;
-    padding: 0.85rem;
-    border-radius: 1rem;
-    background: rgba(1, 118, 206, 0.08);
-  }
-
-  .mini-row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
   }
 
   .alert {

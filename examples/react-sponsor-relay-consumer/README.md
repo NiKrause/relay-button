@@ -5,10 +5,9 @@ Minimal React usage:
 ```tsx
 import SponsorRelayFab from '@le-space/ui/react'
 
-export function App({ libp2p }) {
+export function App() {
   return (
     <SponsorRelayFab
-      libp2p={libp2p}
       manifestUrl="https://example.com/rootfs-manifest.json"
       showInstances
     />

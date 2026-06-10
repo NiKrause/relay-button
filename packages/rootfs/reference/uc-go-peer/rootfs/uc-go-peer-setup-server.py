@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import base64
+import hashlib
 import ipaddress
 import json
 import os
@@ -7,6 +9,8 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import urlopen
@@ -23,10 +27,34 @@ AUTHORIZED_KEYS_FILE = os.environ.get("AUTHORIZED_KEYS_FILE", "/root/.ssh/author
 ALEPH_API_HOST = os.environ.get("ALEPH_API_HOST", "https://api2.aleph.im")
 BOOTSTRAP_CONFIG_KEY = os.environ.get("BOOTSTRAP_CONFIG_KEY", "vm-bootstrap-config")
 BOOTSTRAP_CONFIG_POLL_SECONDS = float(os.environ.get("BOOTSTRAP_CONFIG_POLL_SECONDS", "5"))
+BOOTSTRAP_CONFIG_SIGNAL_REF = os.environ.get("BOOTSTRAP_CONFIG_SIGNAL_REF", "vm-bootstrap-config")
+BOOTSTRAP_CONFIG_SIGNAL_POST_TYPE = os.environ.get(
+    "BOOTSTRAP_CONFIG_SIGNAL_POST_TYPE", "vm-bootstrap-config-status"
+)
+BOOTSTRAP_CHANNEL = os.environ.get("ALEPH_BOOTSTRAP_CHANNEL", "simple-todo")
 DESCRIBE_TIMEOUT_SECONDS = int(os.environ.get("DESCRIBE_TIMEOUT_SECONDS", "15"))
 DESCRIBE_INTERVAL_SECONDS = float(os.environ.get("DESCRIBE_INTERVAL_SECONDS", "1"))
 
 CONFIGURE_LOCK = threading.Lock()
+
+
+def _json_dumps(payload: object) -> str:
+    return json.dumps(payload, separators=(",", ":"))
+
+
+def _parse_env_file(path: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not os.path.exists(path):
+        return values
+
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, value = stripped.split("=", 1)
+            values[key.strip()] = value.strip()
+    return values
 
 
 def _cors_headers(handler: BaseHTTPRequestHandler) -> None:
@@ -143,7 +171,7 @@ def _build_configure_args(record: dict) -> list[str]:
     return args
 
 
-def _run_configure_process(args: list[str]) -> tuple[bool, str]:
+def _run_configure_process(args: list[str], bootstrap_record: dict | None = None) -> tuple[bool, str]:
     with CONFIGURE_LOCK:
         if os.path.exists(READY_FILE):
             return True, "ready"
@@ -152,8 +180,200 @@ def _run_configure_process(args: list[str]) -> tuple[bool, str]:
         except subprocess.CalledProcessError as error:
             return False, error.stderr.strip() or error.stdout.strip() or str(error)
 
+        if isinstance(bootstrap_record, dict):
+            try:
+                _publish_vm_bootstrap_config_signal(bootstrap_record)
+            except Exception as error:  # pragma: no cover - runtime error path
+                return False, f"configured relay but failed to publish bootstrap config signal: {error}"
+
         _start_metadata_generation()
         return True, result.stdout.strip()
+
+
+def _address_from_private_key(private_key: str) -> str:
+    try:
+        from eth_account import Account
+    except ImportError as error:  # pragma: no cover - runtime dependency
+        raise RuntimeError(
+            "eth-account is required for guest-side bootstrap status publishing"
+        ) from error
+
+    return Account.from_key(private_key).address
+
+
+def _sign_personal_message(private_key: str, payload: str) -> str:
+    try:
+        from eth_account import Account
+        from eth_account.messages import encode_defunct
+    except ImportError as error:  # pragma: no cover - runtime dependency
+        raise RuntimeError(
+            "eth-account is required for guest-side bootstrap status publishing"
+        ) from error
+
+    message = encode_defunct(text=payload)
+    signed = Account.sign_message(message, private_key=private_key)
+    signature = signed.signature.hex()
+    return signature if signature.startswith("0x") else f"0x{signature}"
+
+
+def _signature_payload(chain: str, sender: str, message_type: str, item_hash: str) -> str:
+    return "\n".join([chain, sender, message_type, item_hash])
+
+
+def _iter_validation_errors(payload: object) -> list[dict]:
+    if isinstance(payload, list):
+        return [entry for entry in payload if isinstance(entry, dict)]
+    return []
+
+
+def _is_invalid_message_format(http_status: int, payload: object) -> bool:
+    if http_status != 422:
+        return False
+
+    if isinstance(payload, dict):
+        details = payload.get("details")
+        if isinstance(details, str) and "InvalidMessageFormat" in details:
+            return True
+        if isinstance(details, dict):
+            message = details.get("message")
+            if isinstance(message, str) and "InvalidMessageFormat" in message:
+                return True
+
+    for entry in _iter_validation_errors(payload):
+        message = entry.get("msg")
+        location = entry.get("loc")
+        if isinstance(message, str) and "InvalidMessageFormat" in message:
+            return True
+        if message == "Field required" and location == ["message"]:
+            return True
+
+    return False
+
+
+def _is_retryable_broadcast_failure(http_status: int, payload: object) -> bool:
+    if http_status >= 500:
+        return True
+    if isinstance(payload, dict):
+        publication_status = payload.get("publication_status")
+        if isinstance(publication_status, dict):
+            status = publication_status.get("status")
+            if isinstance(status, str) and status.strip().lower() == "error":
+                return True
+    return False
+
+
+def _post_json(url: str, body: dict[str, object]) -> tuple[int, object]:
+    data = _json_dumps(body).encode("utf-8")
+    request = urllib_request.Request(
+        url,
+        data=data,
+        headers={"content-type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=30) as response:
+            payload = response.read().decode("utf-8")
+            return response.status, json.loads(payload or "{}")
+    except urllib_error.HTTPError as error:
+        payload = error.read().decode("utf-8")
+        try:
+            return error.code, json.loads(payload or "{}")
+        except json.JSONDecodeError:
+            return error.code, {"details": payload}
+
+
+def _broadcast_aleph_message(api_host: str, message: dict[str, object]) -> tuple[int, object]:
+    url = f"{api_host.rstrip('/')}/api/v0/messages"
+    attempts = [
+        {"sync": True, "message": message},
+        {**message, "sync": True},
+        dict(message),
+    ]
+    for index, attempt in enumerate(attempts):
+        http_status, payload = _post_json(url, attempt)
+        if 200 <= http_status < 300:
+            return http_status, payload
+        can_retry = index < len(attempts) - 1 and (
+            _is_invalid_message_format(http_status, payload)
+            or _is_retryable_broadcast_failure(http_status, payload)
+        )
+        if not can_retry:
+            raise RuntimeError(
+                f"Aleph bootstrap status broadcast failed: {http_status} {_json_dumps(payload)}"
+            )
+    raise RuntimeError("Aleph bootstrap status broadcast failed: no compatible request format was accepted")
+
+
+def _publish_vm_bootstrap_config_signal(record: dict) -> None:
+    env_values = _parse_env_file(ENV_FILE)
+    publisher_private_key = env_values.get("ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY", "").strip()
+    if not publisher_private_key:
+        raise RuntimeError("missing ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY")
+
+    owner_authorization_b64 = env_values.get("ALEPH_BOOTSTRAP_OWNER_AUTHORIZATION_B64", "").strip()
+    owner_authorization = None
+    if owner_authorization_b64:
+        decoded = base64.b64decode(owner_authorization_b64).decode("utf-8")
+        parsed = json.loads(decoded)
+        if isinstance(parsed, dict):
+            owner_authorization = parsed
+
+    owner_address = ""
+    if isinstance(owner_authorization, dict):
+        payload = owner_authorization.get("payload")
+        if isinstance(payload, dict):
+            owner_address = str(payload.get("ownerAddress") or "").strip()
+    if not owner_address:
+        owner_address = str(record.get("ownerAddress") or "").strip()
+    if not owner_address:
+        raise RuntimeError("missing ownerAddress for bootstrap config signal")
+
+    deployment_token = str(record.get("deploymentToken") or "").strip()
+    profile = str(record.get("profile") or "").strip()
+    instance_item_hash = str(record.get("instanceItemHash") or "").strip()
+    if not deployment_token or not profile or not instance_item_hash:
+        raise RuntimeError("bootstrap config signal is missing deployment metadata")
+
+    publisher_address = _address_from_private_key(publisher_private_key)
+    now_ms = int(time.time() * 1000)
+    content = {
+        "type": BOOTSTRAP_CONFIG_SIGNAL_POST_TYPE,
+        "address": publisher_address,
+        "ref": BOOTSTRAP_CONFIG_SIGNAL_REF,
+        "content": {
+            "deploymentToken": deployment_token,
+            "status": "applied",
+            "profile": profile,
+            "ownerAddress": owner_address,
+            "instanceItemHash": instance_item_hash,
+            "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ms / 1000)),
+            "publisherAddress": publisher_address,
+            "authorization": owner_authorization,
+        },
+        "time": now_ms,
+    }
+    item_content = _json_dumps(content)
+    unsigned_message = {
+        "channel": BOOTSTRAP_CHANNEL,
+        "sender": publisher_address,
+        "chain": "ETH",
+        "type": "POST",
+        "time": now_ms / 1000,
+        "item_type": "inline",
+        "item_content": item_content,
+        "item_hash": hashlib.sha256(item_content.encode("utf-8")).hexdigest(),
+    }
+    signed_message = dict(unsigned_message)
+    signed_message["signature"] = _sign_personal_message(
+        publisher_private_key,
+        _signature_payload(
+            str(unsigned_message["chain"]),
+            str(unsigned_message["sender"]),
+            str(unsigned_message["type"]),
+            str(unsigned_message["item_hash"]),
+        ),
+    )
+    _broadcast_aleph_message(ALEPH_API_HOST, signed_message)
 
 
 def _load_vm_bootstrap_record() -> tuple[str | None, str | None, dict | None]:
@@ -197,7 +417,7 @@ def _poll_bootstrap_config_loop() -> None:
             except ValueError:
                 time.sleep(BOOTSTRAP_CONFIG_POLL_SECONDS)
                 continue
-            ok, _ = _run_configure_process(args)
+            ok, _ = _run_configure_process(args, record)
             if ok:
                 return
         time.sleep(BOOTSTRAP_CONFIG_POLL_SECONDS)

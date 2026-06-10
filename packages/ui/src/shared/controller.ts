@@ -31,6 +31,7 @@ import {
   waitForRelayBootstrapRegistration,
   waitForDeploymentResult,
   waitForSetupEndpoint,
+  waitForVmBootstrapConfigSignal,
   waitForVmRuntime,
 } from "../../../core/src/index.ts";
 
@@ -43,8 +44,6 @@ import {
   MANIFEST_SOURCE_REFRESH_DEBOUNCE_MS,
   RECENT_INSTANCE_RUNTIME_GRACE_MS,
   REFRESH_INTERVAL_MS,
-  RELAY_PING_IDLE_STATE,
-  RELAY_PING_INTERVAL_MS,
   ROOTFS_MISSING_STATE,
   STALE_INSTANCE_ALLOCATION_COOLDOWN_MS,
 } from "./constants";
@@ -55,7 +54,6 @@ import { connectWallet, personalSign, watchWallet } from "./wallet-controller";
 import type {
   CompactInstanceDetails,
   CompactInstanceRecord,
-  RelayPingState,
   SponsorRelayProps,
   SponsorRelayRootfsHealth,
   SponsorRelayState,
@@ -138,7 +136,6 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     crns: [],
     selectedCrn: null,
     instances: [],
-    relayPing: RELAY_PING_IDLE_STATE,
     lastDeploymentHash: null,
     deploymentProgress: IDLE_DEPLOYMENT_PROGRESS,
   };
@@ -429,68 +426,6 @@ function compatibleCrnsForTier(crns: Crn[], state: SponsorRelayState): Crn[] {
   return filterDeployableCrns(crns, { spec });
 }
 
-async function pingPeer(libp2p: unknown): Promise<RelayPingState> {
-  if (!libp2p || typeof libp2p !== "object") {
-    return RELAY_PING_IDLE_STATE;
-  }
-
-  const candidate = libp2p as {
-    getPeers?: () => unknown[];
-    ping?: (peer: unknown) => Promise<number>;
-    services?: { ping?: { ping: (peer: unknown) => Promise<number> } };
-  };
-
-  const peers = candidate.getPeers?.() ?? [];
-  const firstPeer = peers[0];
-  if (!firstPeer) {
-    return {
-      ...RELAY_PING_IDLE_STATE,
-      tone: "caution",
-      error: "No connected relay peers available.",
-    };
-  }
-
-  const sentAt = Date.now();
-  try {
-    const pingFn =
-      candidate.services?.ping?.ping?.bind(candidate.services.ping) ??
-      candidate.ping?.bind(candidate);
-    if (!pingFn) {
-      return {
-        ...RELAY_PING_IDLE_STATE,
-        tone: "caution",
-        sent: true,
-        lastPeerId: String(firstPeer),
-        lastSentAt: sentAt,
-        error: "libp2p ping service not available.",
-      };
-    }
-
-    const latency = await pingFn(firstPeer);
-    return {
-      tone: "ok",
-      sent: true,
-      received: true,
-      lastPeerId: String(firstPeer),
-      lastLatencyMs: Number(latency),
-      lastSentAt: sentAt,
-      lastReceivedAt: Date.now(),
-      error: null,
-    };
-  } catch (error) {
-    return {
-      tone: "error",
-      sent: true,
-      received: false,
-      lastPeerId: String(firstPeer),
-      lastLatencyMs: null,
-      lastSentAt: sentAt,
-      lastReceivedAt: null,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
 const UI_DEPLOY_WAIT_ATTEMPTS = 60;
 const UI_DEPLOY_WAIT_DELAY_MS = 5_000;
 const UI_RUNTIME_WAIT_ATTEMPTS = 40;
@@ -498,12 +433,11 @@ const UI_RUNTIME_WAIT_DELAY_MS = 5_000;
 
 type SponsorRelayStatePatch = Omit<
   Partial<SponsorRelayState>,
-  "busy" | "wallet" | "pricingSummary" | "relayPing"
+  "busy" | "wallet" | "pricingSummary"
 > & {
   busy?: Partial<SponsorRelayState["busy"]>;
   wallet?: Partial<SponsorRelayState["wallet"]>;
   pricingSummary?: Partial<SponsorRelayState["pricingSummary"]>;
-  relayPing?: Partial<SponsorRelayState["relayPing"]>;
 };
 
 function hasUsableRuntime(details: CompactInstanceDetails): boolean {
@@ -547,7 +481,6 @@ export class SponsorRelayController {
   private subscribers = new Set<SponsorRelaySubscriber>();
   private client: ReturnType<typeof createAlephBrowserClient>;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
-  private pingTimer: ReturnType<typeof setInterval> | null = null;
   private manifestRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private stopWalletWatch: (() => void) | null = null;
   private props: SponsorRelayProps;
@@ -622,9 +555,6 @@ export class SponsorRelayController {
       pricingSummary: patch.pricingSummary
         ? { ...this.state.pricingSummary, ...patch.pricingSummary }
         : this.state.pricingSummary,
-      relayPing: patch.relayPing
-        ? { ...this.state.relayPing, ...patch.relayPing }
-        : this.state.relayPing,
     };
     this.emit();
   }
@@ -787,6 +717,37 @@ export class SponsorRelayController {
         aggregateItemHash: bootstrapConfigPublication.aggregateItemHash,
         aggregateStatus: bootstrapConfigPublication.aggregateStatus,
       });
+
+      this.emitProgress({
+        stage: "deployment-confirmed",
+        label: "Waiting for guest config",
+        progress: 94,
+        status: "info",
+        itemHash: args.itemHash,
+        detail: "Waiting for the relay VM to acknowledge that it consumed the Aleph bootstrap config.",
+      });
+
+      const bootstrapConfigSignal = await waitForVmBootstrapConfigSignal({
+        deploymentToken: args.deploymentToken,
+        ownerAddress: this.state.wallet.address,
+        instanceItemHash: args.itemHash,
+        fetch: asJsonFetch,
+        apiHost: this.client.apiHost,
+        attempts: 40,
+        delayMs: 3000,
+      });
+
+      this.trace("deploy:bootstrap-config-signal-visible", {
+        itemHash: args.itemHash,
+        deploymentToken: args.deploymentToken,
+        bootstrapConfigSignal,
+      });
+
+      if (!bootstrapConfigSignal) {
+        throw new Error(
+          "The relay VM did not confirm that it applied the Aleph bootstrap config in time.",
+        );
+      }
     }
 
     this.emitProgress({
@@ -1170,17 +1131,12 @@ export class SponsorRelayController {
     this.refreshTimer = setInterval(() => {
       void this.refresh();
     }, REFRESH_INTERVAL_MS);
-    this.pingTimer = setInterval(() => {
-      void this.refreshRelayPing();
-    }, RELAY_PING_INTERVAL_MS);
-    await this.refreshRelayPing();
     this.patch({ ready: true });
     this.trace("init:ready");
   }
 
   destroy(): void {
     if (this.refreshTimer) clearInterval(this.refreshTimer);
-    if (this.pingTimer) clearInterval(this.pingTimer);
     if (this.manifestRefreshTimer) clearTimeout(this.manifestRefreshTimer);
     this.stopWalletWatch?.();
   }
@@ -1477,12 +1433,6 @@ export class SponsorRelayController {
         statusText: "Refresh failed",
       });
     }
-  }
-
-  async refreshRelayPing(): Promise<void> {
-    const relayPing = await pingPeer(this.props.libp2p);
-    this.patch({ relayPing });
-    this.trace("libp2p:relay-ping", relayPing);
   }
 
   async deploy(): Promise<void> {
