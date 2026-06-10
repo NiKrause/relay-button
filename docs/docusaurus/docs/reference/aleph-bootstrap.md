@@ -10,16 +10,28 @@ It covers two sides of the flow:
 2. browser or Node libp2p apps query those posts before creating their
    bootstrap peer discovery service
 
-## Default Namespace
+## Shared Defaults
 
-The current shared namespace is:
+`@le-space/aleph-bootstrap` is a shared package, not a `simple-todo`-specific
+integration.
+
+Today it is used by:
+
+- `simple-todo`
+- `universal-connectivity/js-peer`
+- shared relay deployment flows such as `uc-go-peer` and
+  `orbitdb-relay-pinner`
+
+The package still ships with a backward-compatible default namespace rooted in
+the earliest `simple-todo` integration:
 
 - channel: `simple-todo`
 - ref: `simple-todo-bootstrap`
 - post type: `relay-bootstrap`
 
-These defaults are exported, but every value can be overridden when a consumer
-needs an app-specific namespace.
+These defaults are exported for compatibility, but every value can be
+overridden when a consumer needs an app-specific namespace or stronger
+isolation between environments.
 
 ## Relay Registration
 
