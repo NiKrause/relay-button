@@ -702,6 +702,18 @@ export class SponsorRelayController {
             crns: this.state.crns,
             crnListUrl: this.props.crnListUrl,
           }).catch(() => latestRuntime);
+          this.emitProgress({
+            stage: "deployment-confirmed",
+            label: "Waiting for HTTPS route",
+            progress: 93,
+            status:
+              latestRuntime.webAccess?.active === true ? "info" : "warning",
+            itemHash: args.itemHash,
+            detail:
+              `2n6 activation ${attempt + 1}/${UI_RUNTIME_WAIT_ATTEMPTS}: ` +
+              `${latestRuntime.webAccess?.active === true ? "active" : "still pending"} ` +
+              `for ${latestRuntime.proxyUrl ?? runtime.proxyUrl ?? "reserved proxy URL"}.`,
+          });
           this.trace("deploy:bootstrap-proxy-activation", {
             itemHash: args.itemHash,
             attempt: attempt + 1,
@@ -1081,6 +1093,11 @@ export class SponsorRelayController {
       (currentProgressIsForLatestHash &&
         currentProgress.stage === "completed" &&
         currentProgress.status === "success");
+    const keepSpecificInFlightProgress =
+      currentProgressIsForLatestHash &&
+      currentProgress.stage !== "completed" &&
+      currentProgress.stage !== "error" &&
+      currentProgress.progress >= 93;
 
     const status = latest.details.messageStatus;
 
@@ -1135,6 +1152,16 @@ export class SponsorRelayController {
         });
         return;
       }
+      if (keepSpecificInFlightProgress) {
+        this.trace("progress:retain-inflight", {
+          reason: "latest refresh would overwrite a more specific in-flight deployment phase",
+          itemHash,
+          currentStage: currentProgress.stage,
+          currentLabel: currentProgress.label,
+          currentProgress: currentProgress.progress,
+        });
+        return;
+      }
 
       this.emitProgress({
         stage: "deployment-confirmed",
@@ -1144,6 +1171,17 @@ export class SponsorRelayController {
         itemHash,
         detail:
           "Aleph processed the deployment. Waiting for scheduler/runtime allocation details.",
+      });
+      return;
+    }
+
+    if (keepSpecificInFlightProgress) {
+      this.trace("progress:retain-inflight", {
+        reason: "latest refresh would overwrite a more specific in-flight deployment phase",
+        itemHash,
+        currentStage: currentProgress.stage,
+        currentLabel: currentProgress.label,
+        currentProgress: currentProgress.progress,
       });
       return;
     }
@@ -1921,6 +1959,16 @@ export class SponsorRelayController {
 
           if (attemptItemHash) {
             if (attemptDeploymentToken) {
+              this.emitProgress({
+                stage: "refreshing-instances",
+                label: "Cleaning up failed attempt",
+                progress: 16,
+                status: "warning",
+                itemHash: attemptItemHash,
+                detail:
+                  `Removing bootstrap handoff state for failed deployment on ${attemptLabel}.`,
+                error: lastError.message,
+              });
               this.trace("deploy:bootstrap-config-cleanup-start", {
                 itemHash: attemptItemHash,
                 deploymentToken: attemptDeploymentToken,
@@ -1951,8 +1999,31 @@ export class SponsorRelayController {
                         ? cleanupError.message
                         : String(cleanupError),
                   });
+                  this.emitProgress({
+                    stage: "refreshing-instances",
+                    label: "Cleanup warning",
+                    progress: 16,
+                    status: "warning",
+                    itemHash: attemptItemHash,
+                    detail:
+                      `Bootstrap cleanup reported an issue for ${attemptLabel}, but retry cleanup will continue.`,
+                    error:
+                      cleanupError instanceof Error
+                        ? cleanupError.message
+                        : String(cleanupError),
+                  });
                 });
             }
+            this.emitProgress({
+              stage: "refreshing-instances",
+              label: "Discarding failed deployment",
+              progress: 17,
+              status: "warning",
+              itemHash: attemptItemHash,
+              detail:
+                `Forgetting failed deployment ${attemptItemHash.slice(0, 12)} on ${attemptLabel} before retrying.`,
+              error: lastError.message,
+            });
             this.trace("deploy:forget-failed-attempt-start", {
               itemHash: attemptItemHash,
               crnHash: candidateCrn.hash,
@@ -1979,11 +2050,34 @@ export class SponsorRelayController {
                     ? cleanupError.message
                     : String(cleanupError),
               });
+              this.emitProgress({
+                stage: "refreshing-instances",
+                label: "Cleanup warning",
+                progress: 17,
+                status: "warning",
+                itemHash: attemptItemHash,
+                detail:
+                  `Failed deployment cleanup reported an issue for ${attemptLabel}.`,
+                error:
+                  cleanupError instanceof Error
+                    ? cleanupError.message
+                    : String(cleanupError),
+              });
             });
             this.trace("deploy:forget-failed-attempt-complete", {
               itemHash: attemptItemHash,
               crnHash: candidateCrn.hash,
               crnName: candidateCrn.name,
+            });
+            this.emitProgress({
+              stage: "refreshing-instances",
+              label: "Cleanup complete",
+              progress: 18,
+              status: "info",
+              itemHash: attemptItemHash,
+              detail:
+                `Finished cleaning up failed deployment on ${attemptLabel}.`,
+              error: null,
             });
           }
 
