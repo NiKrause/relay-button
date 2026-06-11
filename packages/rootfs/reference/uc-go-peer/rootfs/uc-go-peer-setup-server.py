@@ -284,24 +284,18 @@ def _post_json(url: str, body: dict[str, object]) -> tuple[int, object]:
 
 def _broadcast_aleph_message(api_host: str, message: dict[str, object]) -> tuple[int, object]:
     url = f"{api_host.rstrip('/')}/api/v0/messages"
-    attempts = [
-        {"sync": True, "message": message},
-        {**message, "sync": True},
-        dict(message),
-    ]
-    for index, attempt in enumerate(attempts):
-        http_status, payload = _post_json(url, attempt)
+    request_body = {"sync": True, "message": message}
+    max_attempts = 3
+    for index in range(max_attempts):
+        http_status, payload = _post_json(url, request_body)
         if 200 <= http_status < 300:
             return http_status, payload
-        can_retry = index < len(attempts) - 1 and (
-            _is_invalid_message_format(http_status, payload)
-            or _is_retryable_broadcast_failure(http_status, payload)
-        )
+        can_retry = index < max_attempts - 1 and _is_retryable_broadcast_failure(http_status, payload)
         if not can_retry:
             raise RuntimeError(
                 f"Aleph bootstrap status broadcast failed: {http_status} {_json_dumps(payload)}"
             )
-    raise RuntimeError("Aleph bootstrap status broadcast failed: no compatible request format was accepted")
+    raise RuntimeError("Aleph bootstrap status broadcast failed: retry budget exhausted")
 
 
 def _publish_vm_bootstrap_config_signal(record: dict) -> None:

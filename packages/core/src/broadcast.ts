@@ -94,14 +94,11 @@ export async function broadcastAlephMessage(
     fetch: JsonFetchLike
   }
 ): Promise<{ response: AlephBroadcastResponse; httpStatus: number }> {
-  const attempts: Array<Record<string, unknown>> = [
-    { sync: options.sync ?? false, message },
-    { ...message, sync: options.sync ?? false },
-    { ...message }
-  ]
+  const requestBody = { sync: options.sync ?? false, message }
+  const maxAttempts = 3
 
-  for (let index = 0; index < attempts.length; index += 1) {
-    const result = await postBroadcastPayload(attempts[index], {
+  for (let index = 0; index < maxAttempts; index += 1) {
+    const result = await postBroadcastPayload(requestBody, {
       apiHost: options.apiHost,
       fetch: options.fetch
     })
@@ -111,13 +108,12 @@ export async function broadcastAlephMessage(
     }
 
     const canRetry =
-      index < attempts.length - 1 &&
-      (isInvalidMessageFormatResponse({ status: result.httpStatus }, result.response) ||
-        isRetryableBroadcastFailure({ status: result.httpStatus }, result.response))
+      index < maxAttempts - 1 &&
+      isRetryableBroadcastFailure({ status: result.httpStatus }, result.response)
     if (!canRetry) {
       throw new Error(`Broadcast failed: ${result.httpStatus} ${JSON.stringify(result.response ?? {})}`)
     }
   }
 
-  throw new Error('Broadcast failed: no compatible request format was accepted')
+  throw new Error('Broadcast failed: retry budget exhausted')
 }

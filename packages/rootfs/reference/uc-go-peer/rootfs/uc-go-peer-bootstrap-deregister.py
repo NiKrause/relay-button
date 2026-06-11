@@ -155,22 +155,16 @@ def is_retryable_broadcast_failure(http_status: int, payload: object) -> bool:
 
 def broadcast_aleph_message(api_host: str, message: dict[str, object]) -> tuple[int, object]:
     url = urllib.parse.urljoin(api_host.rstrip("/") + "/", "api/v0/messages")
-    attempts = [
-        {"sync": True, "message": message},
-        {**message, "sync": True},
-        dict(message),
-    ]
-    for index, attempt in enumerate(attempts):
-        http_status, payload = post_json(url, attempt)
+    request_body = {"sync": True, "message": message}
+    max_attempts = 3
+    for index in range(max_attempts):
+        http_status, payload = post_json(url, request_body)
         if 200 <= http_status < 300:
             return http_status, payload
-        can_retry = index < len(attempts) - 1 and (
-            is_invalid_message_format(http_status, payload)
-            or is_retryable_broadcast_failure(http_status, payload)
-        )
+        can_retry = index < max_attempts - 1 and is_retryable_broadcast_failure(http_status, payload)
         if not can_retry:
             raise RuntimeError(f"Aleph broadcast failed: {http_status} {json_dumps(payload)}")
-    raise RuntimeError("Aleph broadcast failed: no compatible request format was accepted")
+    raise RuntimeError("Aleph broadcast failed: retry budget exhausted")
 
 
 def parse_post_record(entry: object) -> dict[str, object] | None:

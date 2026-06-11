@@ -80,22 +80,22 @@ test('postBroadcastPayload posts json to Aleph messages endpoint', async () => {
   assert.equal(result.response.message_status, 'processed')
 })
 
-test('broadcastAlephMessage retries request-shape compatibility fallbacks', async () => {
-  let attempt = 0
+test('broadcastAlephMessage retries retryable failures with the same envelope', async () => {
+  const seenBodies: string[] = []
   const result = await broadcastAlephMessage(
     {
       ...unsignedMessage,
       signature: '0x1234'
     },
     {
-      fetch: async () => {
-        attempt += 1
-        if (attempt === 1) {
+      fetch: async (_url, init) => {
+        seenBodies.push(String(init?.body ?? ''))
+        if (seenBodies.length === 1) {
           return {
             ok: false,
-            status: 422,
+            status: 500,
             async json() {
-              return { details: { message: 'InvalidMessageFormat: nested body not accepted' } }
+              return { publication_status: { status: 'error' } }
             }
           }
         }
@@ -111,7 +111,8 @@ test('broadcastAlephMessage retries request-shape compatibility fallbacks', asyn
     }
   )
 
-  assert.equal(attempt, 2)
+  assert.equal(seenBodies.length, 2)
+  assert.equal(seenBodies[0], seenBodies[1])
   assert.equal(result.httpStatus, 200)
   assert.equal(result.response.message_status, 'processed')
 })
