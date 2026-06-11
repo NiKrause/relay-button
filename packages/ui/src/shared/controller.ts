@@ -33,6 +33,10 @@ import {
   waitForSetupEndpoint,
   waitForVmRuntime,
 } from "../../../core/src/index.ts";
+import {
+  fetchAlephBootstrapPosts,
+  selectCurrentRelayBootstrapPosts,
+} from "../../../aleph-bootstrap/src/index.ts";
 
 import {
   DEFAULT_INSTANCE_NAME,
@@ -53,6 +57,7 @@ import { buildSshCommand } from "./format";
 import { resolveManifestSource } from "./manifest-source";
 import { connectWallet, personalSign, watchWallet } from "./wallet-controller";
 import type {
+  CompactBootstrapRegistrationRecord,
   CompactInstanceDetails,
   CompactInstanceRecord,
   RelayPingState,
@@ -113,6 +118,7 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
       refreshing: false,
       deploying: false,
       deletingInstanceHash: null,
+      deletingRegistrationHash: null,
     },
     statusText: "Ready",
     errorText: null,
@@ -138,6 +144,8 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     crns: [],
     selectedCrn: null,
     instances: [],
+    bootstrapRegistrations: [],
+    orphanBootstrapRegistrations: [],
     relayPing: RELAY_PING_IDLE_STATE,
     lastDeploymentHash: null,
     deploymentProgress: IDLE_DEPLOYMENT_PROGRESS,
@@ -280,6 +288,39 @@ function relayProfileForManifest(
     return "orbitdb-relay-pinner";
   }
   return null;
+}
+
+function registrationIdInstanceItemHash(
+  registrationId: string | null | undefined,
+): string | null {
+  const normalized = String(registrationId ?? "").trim();
+  if (!normalized) return null;
+  const parts = normalized
+    .split(":")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const candidate = parts.at(-1) ?? "";
+  return /^[0-9a-f]{64}$/i.test(candidate) ? candidate : null;
+}
+
+function relayBootstrapInstanceItemHash(
+  entry: {
+    content?: {
+      registrationId?: string;
+      authorization?: {
+        payload?: { instanceItemHash?: string };
+      };
+    } | null;
+  } | null | undefined,
+): string | null {
+  const authorizedInstanceItemHash =
+    typeof entry?.content?.authorization?.payload?.instanceItemHash === "string"
+      ? entry.content.authorization.payload.instanceItemHash.trim()
+      : "";
+  if (authorizedInstanceItemHash) {
+    return authorizedInstanceItemHash;
+  }
+  return registrationIdInstanceItemHash(entry?.content?.registrationId);
 }
 
 async function inspectInstanceRuntime(args: {
@@ -1354,16 +1395,22 @@ export class SponsorRelayController {
 
       let balance = this.state.balance;
       let instances: CompactInstanceRecord[] = [];
+      let bootstrapRegistrations: CompactBootstrapRegistrationRecord[] = [];
+      let orphanBootstrapRegistrations: CompactBootstrapRegistrationRecord[] = [];
       if (this.state.wallet.address) {
-        const [nextBalance, rawInstances] = await Promise.all([
+        const [nextBalance, rawInstances, rawBootstrapPosts] = await Promise.all([
           this.client.fetchBalance(this.state.wallet.address),
           this.state.showInstances
             ? this.client.fetchInstances(this.state.wallet.address)
             : Promise.resolve([]),
+          fetchAlephBootstrapPosts({
+            apiHost: this.client.apiHost,
+            fetch,
+          }).catch(() => []),
         ]);
         balance = nextBalance;
         instances = await Promise.all(
-          rawInstances.map(async (instance) => {
+          rawInstances.map(async (instance: InstanceMessage) => {
             const inspected = this.canSkipRuntimeRefresh(instance)
               ? {
                   details: {
@@ -1427,6 +1474,46 @@ export class SponsorRelayController {
             };
           }),
         );
+        const normalizedWalletAddress = this.state.wallet.address.toLowerCase();
+        const activeInstanceHashes = new Set(
+          instances.map((entry) => entry.instance.item_hash),
+        );
+        bootstrapRegistrations = selectCurrentRelayBootstrapPosts(rawBootstrapPosts)
+          .filter(
+            (entry): boolean =>
+              entry.address?.toLowerCase() === normalizedWalletAddress,
+          )
+          .map((entry): CompactBootstrapRegistrationRecord => {
+            const instanceItemHash = relayBootstrapInstanceItemHash(entry);
+            const messageHash = entry.itemHash ?? entry.hash ?? null;
+            return {
+              messageHash,
+              hash: entry.hash ?? null,
+              itemHash: entry.itemHash ?? null,
+              address: entry.address ?? null,
+              time: entry.time ?? null,
+              instanceItemHash,
+              confirmed: Boolean(
+                instanceItemHash && activeInstanceHashes.has(instanceItemHash),
+              ),
+              content: entry.content
+                ? {
+                    peerId: entry.content.peerId,
+                    registrationId: entry.content.registrationId,
+                    multiaddrs: Array.isArray(entry.content.multiaddrs)
+                      ? entry.content.multiaddrs
+                      : [],
+                    browserMultiaddrs: Array.isArray(entry.content.browserMultiaddrs)
+                      ? entry.content.browserMultiaddrs
+                      : [],
+                    updatedAt: entry.content.updatedAt,
+                  }
+                : null,
+            };
+          });
+        orphanBootstrapRegistrations = bootstrapRegistrations.filter(
+          (entry) => !entry.confirmed,
+        );
       }
 
       let rootfsVerified = false;
@@ -1459,6 +1546,8 @@ export class SponsorRelayController {
         balance,
         crns,
         instances,
+        bootstrapRegistrations,
+        orphanBootstrapRegistrations,
         busy: { refreshing: false },
         statusText: "Relay sponsor data ready",
       });
@@ -2006,6 +2095,78 @@ export class SponsorRelayController {
         busy: { deletingInstanceHash: null },
         errorText: error instanceof Error ? error.message : String(error),
         statusText: "Delete failed",
+      });
+    }
+  }
+
+  async deleteBootstrapRegistration(registrationHash: string): Promise<void> {
+    this.trace("registration-delete:start", { registrationHash });
+    if (!this.state.wallet.address) {
+      this.patch({
+        errorText: "Connect MetaMask before forgetting registrations.",
+      });
+      return;
+    }
+
+    this.patch({
+      busy: { deletingRegistrationHash: registrationHash },
+      errorText: null,
+      statusText: `Forgetting registration ${registrationHash}`,
+    });
+
+    try {
+      this.emitProgress({
+        stage: "validating",
+        label: "Validating registration cleanup",
+        progress: 6,
+        status: "warning",
+        itemHash: registrationHash,
+        detail:
+          "Preparing Aleph FORGET message for the orphan bootstrap registration.",
+      });
+      await forgetAlephMessages({
+        sender: this.state.wallet.address,
+        hashes: [registrationHash],
+        reason:
+          "Deleted orphan relay bootstrap registration from Sponsor Relay panel",
+        signer: personalSign,
+        hasher: sha256Hex,
+        fetch: asJsonFetch,
+        apiHost: this.client.apiHost,
+        onProgress: (event) => {
+          this.emitProgress(event);
+        },
+      });
+
+      this.patch({
+        busy: { deletingRegistrationHash: null },
+        statusText: `Deletion submitted for ${registrationHash}`,
+      });
+      this.emitProgress({
+        stage: "refreshing-instances",
+        label: "Refreshing registrations after delete",
+        progress: 92,
+        status: "info",
+        itemHash: registrationHash,
+        detail: "Reloading deployments and relay bootstrap registrations.",
+      });
+      await this.refresh();
+      this.trace("registration-delete:submitted", { registrationHash });
+      this.emitProgress({
+        stage: "completed",
+        label: "Registration cleanup completed",
+        progress: 100,
+        status: "success",
+        itemHash: registrationHash,
+        detail: "Orphan relay bootstrap registration forgotten and state refreshed.",
+        error: null,
+      });
+    } catch (error) {
+      this.trace("registration-delete:error", error);
+      this.patch({
+        busy: { deletingRegistrationHash: null },
+        errorText: error instanceof Error ? error.message : String(error),
+        statusText: "Registration cleanup failed",
       });
     }
   }

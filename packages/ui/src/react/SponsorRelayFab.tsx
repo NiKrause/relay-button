@@ -222,6 +222,12 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
   const versionLabel = resolvedVersion.startsWith("v") ? resolvedVersion : `v${resolvedVersion}`;
   const launcherMode = props.launcherMode ?? "floating";
   const indicator = launcherIndicator(state);
+  const confirmedRegistrationByInstanceHash = new Map(
+    (state.bootstrapRegistrations ?? [])
+      .filter((entry) => entry.confirmed && entry.instanceItemHash)
+      .map((entry) => [entry.instanceItemHash as string, entry]),
+  );
+  const orphanRegistrations = state.orphanBootstrapRegistrations ?? [];
   const [successFlash, setSuccessFlash] = React.useState(false);
   const [hovered, setHovered] = React.useState(false);
   const launcherRef = React.useRef<HTMLButtonElement | null>(null);
@@ -880,50 +886,188 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               <div
                 style={{ marginTop: "1rem", display: "grid", gap: "0.7rem" }}
               >
-                {state.instances.map((entry) => (
-                  <details key={entry.instance.item_hash} open>
-                    <summary>
-                      {(entry.instance.content?.metadata?.name ?? "relay") +
-                        " · " +
-                        shortHash(entry.instance.item_hash)}
-                    </summary>
-                    <div
-                      style={{
-                        display: "grid",
-                        gap: "0.35rem",
-                        marginTop: "0.55rem",
-                      }}
-                    >
-                      <div>Status: {entry.details.messageStatus}</div>
-                      <div>Host IPv4: {entry.details.hostIpv4 ?? "-"}</div>
-                      <div>IPv6: {entry.details.ipv6 ?? "-"}</div>
-                      <div>VM IPv4: {entry.details.vmIpv4 ?? "-"}</div>
-                      <div>SSH: {entry.details.sshCommand ?? "-"}</div>
-                      <div>
-                        Ports: {joinMappedPorts(entry.details.mappedPorts)}
-                      </div>
-                      <div>
-                        Submitted:{" "}
-                        {formatDateTime(
-                          entry.instance.reception_time ?? entry.instance.time,
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void controller.deleteInstance(
-                            entry.instance.item_hash,
-                          )
-                        }
+                {state.instances.map((entry) => {
+                  const confirmedRegistration =
+                    confirmedRegistrationByInstanceHash.get(
+                      entry.instance.item_hash,
+                    ) ?? null;
+                  return (
+                    <details key={entry.instance.item_hash} open>
+                      <summary>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.55rem",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {(entry.instance.content?.metadata?.name ?? "relay") +
+                            " · " +
+                            shortHash(entry.instance.item_hash)}
+                          {confirmedRegistration ? (
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "0.32rem",
+                                padding: "0.16rem 0.45rem",
+                                borderRadius: "999px",
+                                background: "rgba(34, 197, 94, 0.16)",
+                                color: "#86efac",
+                                fontSize: "0.7rem",
+                                fontWeight: 700,
+                              }}
+                            >
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  width: "0.45rem",
+                                  height: "0.45rem",
+                                  borderRadius: "999px",
+                                  background: "#22c55e",
+                                  boxShadow:
+                                    "0 0 0 3px rgba(34, 197, 94, 0.18)",
+                                }}
+                              />
+                              Registration confirmed
+                            </span>
+                          ) : null}
+                        </span>
+                      </summary>
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: "0.35rem",
+                          marginTop: "0.55rem",
+                        }}
                       >
-                        {state.busy.deletingInstanceHash ===
-                        entry.instance.item_hash
-                          ? "Deleting…"
-                          : "Delete"}
-                      </button>
+                        <div>Status: {entry.details.messageStatus}</div>
+                        {confirmedRegistration ? (
+                          <div>
+                            Bootstrap registration:{" "}
+                            {shortHash(
+                              confirmedRegistration.messageHash ??
+                                confirmedRegistration.content?.registrationId ??
+                                "confirmed",
+                              14,
+                              8,
+                            )}
+                          </div>
+                        ) : null}
+                        <div>Host IPv4: {entry.details.hostIpv4 ?? "-"}</div>
+                        <div>IPv6: {entry.details.ipv6 ?? "-"}</div>
+                        <div>VM IPv4: {entry.details.vmIpv4 ?? "-"}</div>
+                        <div>SSH: {entry.details.sshCommand ?? "-"}</div>
+                        <div>
+                          Ports: {joinMappedPorts(entry.details.mappedPorts)}
+                        </div>
+                        <div>
+                          Submitted:{" "}
+                          {formatDateTime(
+                            entry.instance.reception_time ?? entry.instance.time,
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void controller.deleteInstance(
+                              entry.instance.item_hash,
+                            )
+                          }
+                        >
+                          {state.busy.deletingInstanceHash ===
+                          entry.instance.item_hash
+                            ? "Deleting…"
+                            : "Delete"}
+                        </button>
+                      </div>
+                    </details>
+                  );
+                })}
+                {orphanRegistrations.length > 0 ? (
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "0.7rem",
+                      padding: "0.85rem",
+                      borderRadius: "1rem",
+                      border: "1px solid rgba(248, 113, 113, 0.22)",
+                      background:
+                        "linear-gradient(180deg, rgba(127, 29, 29, 0.18), rgba(69, 10, 10, 0.12))",
+                    }}
+                  >
+                    <div style={{ display: "grid", gap: "0.2rem" }}>
+                      <strong>Orphan bootstrap registrations</strong>
+                      <small style={{ color: "#fecaca", lineHeight: 1.35 }}>
+                        Current-wallet registrations without a matching instance.
+                        Forget them directly from here.
+                      </small>
                     </div>
-                  </details>
-                ))}
+                    {orphanRegistrations.map((entry) => {
+                      const registrationHash =
+                        entry.messageHash ?? entry.hash ?? null;
+                      return (
+                        <div
+                          key={
+                            registrationHash ??
+                            entry.content?.registrationId ??
+                            `orphan-${entry.content?.peerId ?? "unknown"}`
+                          }
+                          style={{
+                            display: "grid",
+                            gap: "0.35rem",
+                            padding: "0.75rem",
+                            borderRadius: "0.9rem",
+                            background: "rgba(15, 23, 42, 0.22)",
+                            border: "1px solid rgba(255,255,255,0.08)",
+                          }}
+                        >
+                          <div style={{ fontWeight: 700 }}>
+                            {(entry.content?.registrationId ?? "registration") +
+                              " · " +
+                              shortHash(registrationHash ?? "unknown")}
+                          </div>
+                          <div>Peer: {entry.content?.peerId ?? "-"}</div>
+                          <div>
+                            Linked instance:{" "}
+                            {entry.instanceItemHash
+                              ? shortHash(entry.instanceItemHash)
+                              : "missing"}
+                          </div>
+                          <div>
+                            Browser multiaddrs:{" "}
+                            {String(entry.content?.browserMultiaddrs?.length ?? 0)}
+                          </div>
+                          <div>
+                            Updated:{" "}
+                            {formatDateTime(entry.content?.updatedAt ?? entry.time)}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={
+                              !registrationHash ||
+                              state.busy.deletingRegistrationHash ===
+                                registrationHash
+                            }
+                            onClick={() =>
+                              registrationHash
+                                ? void controller.deleteBootstrapRegistration(
+                                    registrationHash,
+                                  )
+                                : undefined
+                            }
+                          >
+                            {state.busy.deletingRegistrationHash ===
+                            registrationHash
+                              ? "Forgetting…"
+                              : "Forget registration"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </aside>

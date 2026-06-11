@@ -8,7 +8,6 @@
   import StatusLed from './components/StatusLed.svelte'
   import './styles/theme.css'
 
-  export let libp2p = null
   export let manifestUrl = './rootfs-manifest.json'
   export let manifestJson = ''
   export let sshPublicKey = ''
@@ -23,7 +22,6 @@ export let apiHost = undefined
   export let twoN6ApiHost = undefined
 
   const controller = createSponsorRelayController({
-    libp2p,
     manifestUrl,
     manifestJson,
     sshPublicKey,
@@ -51,6 +49,12 @@ export let apiHost = undefined
   $: pollingDetail = state.busy.refreshing
     ? (state.statusText || 'Refreshing relay sponsor data from Aleph and the selected CRN.')
     : (state.deploymentProgress.detail || state.statusText || 'Waiting for the next confirmed relay state from Aleph.')
+  $: confirmedRegistrationByInstanceHash = new Map(
+    (state.bootstrapRegistrations ?? [])
+      .filter((entry) => entry.confirmed && entry.instanceItemHash)
+      .map((entry) => [entry.instanceItemHash, entry]),
+  )
+  $: orphanRegistrations = state.orphanBootstrapRegistrations ?? []
 
   onMount(async () => {
     const unsubscribe = controller.subscribe((next) => {
@@ -103,17 +107,6 @@ export let apiHost = undefined
           <strong>{state.rootfsHealth.label}</strong>
           <small>{state.rootfsHealth.detail ?? 'No rootfs details yet'}</small>
         </div>
-      </div>
-    </div>
-
-    <div class="ping-strip">
-      <div>
-        <span class="mini-label">relay ping sent</span>
-        <div class="mini-row"><StatusLed tone={state.relayPing.sent ? 'caution' : state.relayPing.tone} pulse={state.relayPing.sent} /><strong>{state.relayPing.sent ? 'sent' : 'idle'}</strong></div>
-      </div>
-      <div>
-        <span class="mini-label">relay pong received</span>
-        <div class="mini-row"><StatusLed tone={state.relayPing.received ? 'ok' : state.relayPing.tone} pulse={state.relayPing.received} /><strong>{state.relayPing.received ? `${formatNumber(state.relayPing.lastLatencyMs, 0)} ms` : 'waiting'}</strong></div>
       </div>
     </div>
 
@@ -233,11 +226,18 @@ export let apiHost = undefined
 
         {#each state.instances as entry}
           <AccordionSection title={`${entry.instance.content?.metadata?.name ?? 'relay'} · ${shortHash(entry.instance.item_hash)}`} open={true}>
+            {@const confirmedRegistration = confirmedRegistrationByInstanceHash.get(entry.instance.item_hash)}
             <div class="instance-topline">
               <div class="chip-row">
                 <span class="chip">{entry.details.messageStatus}</span>
                 {#if entry.details.crnUrl}
                   <span class="chip">{entry.details.crnUrl.replace(/^https?:\/\//, '')}</span>
+                {/if}
+                {#if confirmedRegistration}
+                  <span class="chip chip-confirmed">
+                    <span class="chip-dot-confirmed"></span>
+                    Registration confirmed
+                  </span>
                 {/if}
               </div>
               <button
@@ -280,6 +280,13 @@ export let apiHost = undefined
               <strong>{joinMappedPorts(entry.details.mappedPorts)}</strong>
             </div>
 
+            {#if confirmedRegistration}
+              <div class="mono-block">
+                <span>Bootstrap Registration</span>
+                <strong>{shortHash(confirmedRegistration.messageHash ?? confirmedRegistration.content?.registrationId ?? 'confirmed', 14, 8)}</strong>
+              </div>
+            {/if}
+
             <div class="link-row">
               <CopyButton text={entry.instance.item_hash} label="Copy hash" />
               {#if entry.details.webUrl}
@@ -294,6 +301,34 @@ export let apiHost = undefined
             {/if}
           </AccordionSection>
         {/each}
+
+        {#if orphanRegistrations.length > 0}
+          <div class="orphan-box">
+            <div class="orphan-head">
+              <strong>Orphan bootstrap registrations</strong>
+              <small>Current-wallet registrations without a matching instance. Forget them directly from here.</small>
+            </div>
+
+            {#each orphanRegistrations as entry}
+              {@const registrationHash = entry.messageHash ?? entry.hash}
+              <div class="orphan-card">
+                <div class="orphan-title">{entry.content?.registrationId ?? 'registration'} · {shortHash(registrationHash ?? 'unknown')}</div>
+                <div>Peer: {entry.content?.peerId ?? '-'}</div>
+                <div>Linked instance: {entry.instanceItemHash ? shortHash(entry.instanceItemHash) : 'missing'}</div>
+                <div>Browser multiaddrs: {String(entry.content?.browserMultiaddrs?.length ?? 0)}</div>
+                <div>Updated: {formatDateTime(entry.content?.updatedAt ?? entry.time)}</div>
+                <button
+                  class="delete"
+                  type="button"
+                  disabled={!registrationHash || state.busy.deletingRegistrationHash === registrationHash}
+                  on:click={() => registrationHash && controller.deleteBootstrapRegistration(registrationHash)}
+                >
+                  {state.busy.deletingRegistrationHash === registrationHash ? 'Forgetting…' : 'Forget registration'}
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </section>
     {/if}
   </aside>
@@ -327,7 +362,6 @@ export let apiHost = undefined
 
   .panel-head,
   .status-strip,
-  .ping-strip,
   .actions,
   .section-head,
   .instance-topline,
@@ -364,7 +398,6 @@ export let apiHost = undefined
   }
 
   .eyebrow,
-  .mini-label,
   .field span,
   .metric-card span,
   .mono-block span,
@@ -416,6 +449,22 @@ export let apiHost = undefined
     color: #ffd4d4;
   }
 
+  .chip-confirmed {
+    background: rgba(34, 197, 94, 0.16);
+    color: #86efac;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+  }
+
+  .chip-dot-confirmed {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 999px;
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+  }
+
   .status-strip,
   .metrics {
     display: grid;
@@ -440,17 +489,36 @@ export let apiHost = undefined
     gap: 0.7rem;
   }
 
-  .ping-strip {
-    margin-top: 0.9rem;
+  .orphan-box {
+    display: grid;
+    gap: 0.7rem;
     padding: 0.85rem;
     border-radius: 1rem;
-    background: rgba(1, 118, 206, 0.08);
+    border: 1px solid rgba(248, 113, 113, 0.22);
+    background: linear-gradient(180deg, rgba(127, 29, 29, 0.18), rgba(69, 10, 10, 0.12));
   }
 
-  .mini-row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
+  .orphan-head {
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  .orphan-head small {
+    color: #fecaca;
+    line-height: 1.35;
+  }
+
+  .orphan-card {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.75rem;
+    border-radius: 0.9rem;
+    background: rgba(15, 23, 42, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .orphan-title {
+    font-weight: 700;
   }
 
   .alert {

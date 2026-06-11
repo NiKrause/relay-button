@@ -83,6 +83,23 @@ export interface CompactInstanceRecord {
   details: CompactInstanceDetails
 }
 
+export interface CompactBootstrapRegistrationRecord {
+  messageHash: string | null
+  hash: string | null
+  itemHash: string | null
+  address: string | null
+  time: number | null
+  instanceItemHash: string | null
+  confirmed: boolean
+  content: {
+    peerId: string
+    registrationId?: string
+    multiaddrs: string[]
+    browserMultiaddrs?: string[]
+    updatedAt: number
+  } | null
+}
+
 export interface SponsorRelayState {
   ready: boolean
   open: boolean
@@ -100,6 +117,7 @@ export interface SponsorRelayState {
     refreshing: boolean
     deploying: boolean
     deletingInstanceHash: string | null
+    deletingRegistrationHash: string | null
   }
   statusText: string
   errorText: string | null
@@ -113,6 +131,8 @@ export interface SponsorRelayState {
   crns: Crn[]
   selectedCrn: Crn | null
   instances: CompactInstanceRecord[]
+  bootstrapRegistrations: CompactBootstrapRegistrationRecord[]
+  orphanBootstrapRegistrations: CompactBootstrapRegistrationRecord[]
   relayPing: RelayPingState
   lastDeploymentHash: string | null
   deploymentProgress: DeploymentProgressEvent
