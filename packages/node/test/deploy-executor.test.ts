@@ -849,3 +849,121 @@ test('executeDeployPlan pre-seeds orbitdb relay identity from bootstrap publishe
   assert.ok(typeof configurePayload.bootstrap_owner_authorization_b64 === 'string')
   assert.equal(result.configuration?.metadata?.peer_id, expectedRelayIdentity.peerId)
 })
+
+test('executeDeployPlan waits for 2n6 proxy activation before configuring guest Caddy', async () => {
+  const configureBodies: string[] = []
+  let twoN6Lookups = 0
+  const bootstrapPublisherPrivateKey =
+    '0x59c6995e998f97a5a0044966f0945382d7d5d95f993dbf3b61e64d1d4438f3f0'
+  const expectedRelayIdentity = deriveLibp2pSecp256k1IdentityFromEvmKey(
+    bootstrapPublisherPrivateKey
+  )
+
+  await executeDeployPlan(
+    {
+      ...DEPLOY_PLAN,
+      bootstrapPublisherPrivateKey,
+    },
+    {
+      sender: '0x1234',
+      signer: async () => '0xsigned',
+      hasher: (() => {
+        let count = 0
+        return () => `hash-${++count}`
+      })(),
+      sleep: async () => undefined,
+      tcpProbe: async () => ({ ok: true }),
+      fetch: async (url, init) => {
+        if (String(url).includes('crns-list.aleph.sh')) {
+          return jsonResponse({
+            crns: [{ hash: 'crn-1', name: 'CRN One', address: 'https://crn.example.com', score: 10, country_code: 'DE' }]
+          })
+        }
+
+        if (String(url).includes('/api/v0/aggregates/0x1234.json')) {
+          return jsonResponse({})
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-1') && !init?.method) {
+          return jsonResponse({ status: 'processed', details: { rootfs: DEPLOY_PLAN.rootfsItemHash } })
+        }
+
+        if (String(url).includes('scheduler.api.aleph.cloud')) {
+          return jsonResponse({
+            node: {
+              node_id: 'crn-1',
+              url: 'https://crn.example.com'
+            }
+          })
+        }
+
+        if (String(url).includes('api.2n6.me')) {
+          twoN6Lookups += 1
+          return jsonResponse({
+            url: 'https://relay.example.com',
+            active: twoN6Lookups >= 2
+          })
+        }
+
+        if (String(url).includes('/v2/about/executions/list')) {
+          return jsonResponse({
+            'hash-1': {
+              networking: {
+                host_ipv4: '203.0.113.7',
+                mapped_ports: {
+                  '80': { host: 30080, tcp: true, udp: false },
+                  '22': { host: 32022, tcp: true, udp: false },
+                  '9095': { host: 32095, tcp: true, udp: true },
+                  '9097': { host: 32097, tcp: true, udp: false }
+                }
+              }
+            }
+          })
+        }
+
+        if (String(url).includes('/health')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/configure')) {
+          configureBodies.push(String(init?.body ?? ''))
+          return jsonResponse({ status: 'configured' })
+        }
+
+        if (String(url).includes('/metadata')) {
+          return jsonResponse({
+            status: 'ready',
+            metadata: {
+              peer_id: expectedRelayIdentity.peerId,
+              probe_multiaddrs: [`/ip4/203.0.113.7/tcp/32095/p2p/${expectedRelayIdentity.peerId}`],
+              browser_bootstrap_multiaddrs: [`/dns4/relay.example.com/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`]
+            }
+          })
+        }
+
+        if (String(url).includes('/control/allocation/notify')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/api/v0/messages/') && !init?.method) {
+          return jsonResponse({ status: 'processed', message: { type: 'STORE' } })
+        }
+
+        return jsonResponse(
+          {
+            publication_status: { status: 'success' },
+            message_status: 'pending'
+          },
+          202
+        )
+      }
+    }
+  )
+
+  assert.ok(twoN6Lookups >= 2)
+  assert.equal(configureBodies.length, 1)
+  assert.equal(
+    JSON.parse(configureBodies[0]).proxy_url,
+    'https://relay.example.com'
+  )
+})
