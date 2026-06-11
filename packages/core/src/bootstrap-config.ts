@@ -256,6 +256,20 @@ function normalizeVmBootstrapConfigSignalRecord(
         ? candidate.publisherAddress.trim()
         : null,
     authorization: candidate.authorization,
+    peerId:
+      typeof candidate.peerId === 'string' && candidate.peerId.trim()
+        ? candidate.peerId.trim()
+        : null,
+    probeMultiaddrs: Array.isArray(candidate.probeMultiaddrs)
+      ? candidate.probeMultiaddrs.filter(
+          (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+        )
+      : [],
+    browserBootstrapMultiaddrs: Array.isArray(candidate.browserBootstrapMultiaddrs)
+      ? candidate.browserBootstrapMultiaddrs.filter(
+          (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+        )
+      : [],
   }
 }
 

@@ -39,4 +39,7 @@ export interface VmBootstrapConfigSignalRecord {
   updatedAt: string
   publisherAddress?: string | null
   authorization?: unknown
+  peerId?: string | null
+  probeMultiaddrs?: string[]
+  browserBootstrapMultiaddrs?: string[]
 }

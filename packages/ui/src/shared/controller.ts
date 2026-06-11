@@ -609,6 +609,12 @@ export class SponsorRelayController {
       throw new Error("Relay runtime did not expose the temporary setup endpoint.");
     }
 
+    let bootstrapSignalRelayMetadata: {
+      peerId: string;
+      probeMultiaddrs: string[];
+      browserBootstrapMultiaddrs: string[];
+    } | null = null;
+
     if (profile === "orbitdb-relay-pinner") {
       this.emitProgress({
         stage: "deployment-confirmed",
@@ -725,12 +731,6 @@ export class SponsorRelayController {
 
         runtime = latestRuntime;
         mappedPorts = runtime.mappedPorts ?? mappedPorts;
-
-        if (runtime.proxyUrl && runtime.webAccess?.active !== true) {
-          throw new Error(
-            "Aleph reserved a 2n6 proxy URL, but it never became active in time. Aborting guest HTTPS configuration to avoid a broken Caddy setup.",
-          );
-        }
       }
 
       if (!runtime.hostIpv4) {
@@ -822,62 +822,114 @@ export class SponsorRelayController {
           "The relay VM did not confirm that it applied the Aleph bootstrap config in time.",
         );
       }
+
+      bootstrapSignalRelayMetadata =
+        typeof bootstrapConfigSignal.peerId === "string" &&
+        bootstrapConfigSignal.peerId.length > 0 &&
+        Array.isArray(bootstrapConfigSignal.probeMultiaddrs) &&
+        bootstrapConfigSignal.probeMultiaddrs.length > 0
+          ? {
+              peerId: bootstrapConfigSignal.peerId,
+              probeMultiaddrs: bootstrapConfigSignal.probeMultiaddrs,
+              browserBootstrapMultiaddrs:
+                bootstrapConfigSignal.browserBootstrapMultiaddrs ?? [],
+            }
+          : null;
+
+      if (runtime.proxyUrl && runtime.webAccess?.active !== true) {
+        this.trace("deploy:bootstrap-proxy-fallback", {
+          itemHash: args.itemHash,
+          deploymentToken: args.deploymentToken,
+          proxyUrl: runtime.proxyUrl,
+          bootstrapSignalRelayMetadata,
+        });
+        this.emitProgress({
+          stage: "deployment-confirmed",
+          label: "Continuing without HTTPS route",
+          progress: 94,
+          status: "warning",
+          itemHash: args.itemHash,
+          detail:
+            "The 2n6 HTTPS route stayed inactive, so guest setup continued without Caddy. Secure browser routing can be enabled later when the proxy becomes available.",
+        });
+        runtime = {
+          ...runtime,
+          proxyUrl: null,
+          webAccess: runtime.webAccess
+            ? {
+                ...runtime.webAccess,
+                active: false,
+              }
+            : runtime.webAccess,
+        };
+      }
     }
 
-    this.emitProgress({
-      stage: "publishing-bootstrap",
-      label: "Reading relay multiaddrs",
-      progress: 95,
-      status: "info",
-      itemHash: args.itemHash,
-      detail: "Waiting for the relay to report its final public multiaddrs.",
-    });
+    let relayMetadata = bootstrapSignalRelayMetadata;
+    if (relayMetadata) {
+      this.trace("deploy:relay-metadata-from-bootstrap-signal", {
+        itemHash: args.itemHash,
+        peerId: relayMetadata.peerId,
+        probeMultiaddrCount: relayMetadata.probeMultiaddrs.length,
+        browserBootstrapMultiaddrCount:
+          relayMetadata.browserBootstrapMultiaddrs.length,
+      });
+    } else {
+      this.emitProgress({
+        stage: "publishing-bootstrap",
+        label: "Reading relay multiaddrs",
+        progress: 95,
+        status: "info",
+        itemHash: args.itemHash,
+        detail: "Waiting for the relay to report its final public multiaddrs.",
+      });
 
-    const relayMetadata = await fetchRelayMetadataForRuntime({
-      runtime,
-      fetch: (url, init) => fetch(url, init),
-      preferSecureMetadata: profile === "uc-go-peer",
-      attempts: 80,
-      delayMs: 3000,
-      timeoutMs: 240000,
-      onAttempt: (result) => {
-        const payload =
-          result.payload && typeof result.payload === "object"
-            ? (result.payload as Record<string, unknown>)
-            : null;
-        const metadata =
-          payload?.metadata && typeof payload.metadata === "object"
-            ? (payload.metadata as Record<string, unknown>)
-            : null;
-        this.trace("deploy:relay-metadata-attempt", {
-          itemHash: args.itemHash,
-          attempt: result.attempt,
-          attempts: result.attempts,
-          requestUrl: result.requestUrl,
-          metadataUrl: result.metadataUrl,
-          hostIpv4: result.hostIpv4,
-          setupPort: result.setupPort,
-          ok: result.ok,
-          status: result.status,
-          ready: result.ready,
-          error: result.error ?? null,
-          payloadStatus:
-            payload && typeof payload.status === "string" ? payload.status : null,
-          peerId:
-            metadata && typeof metadata.peer_id === "string"
-              ? metadata.peer_id
-              : null,
-          probeMultiaddrCount: Array.isArray(metadata?.probe_multiaddrs)
-            ? metadata.probe_multiaddrs.length
-            : 0,
-          browserBootstrapMultiaddrCount: Array.isArray(
-            metadata?.browser_bootstrap_multiaddrs,
-          )
-            ? metadata.browser_bootstrap_multiaddrs.length
-            : 0,
-        });
-      },
-    });
+      relayMetadata = await fetchRelayMetadataForRuntime({
+        runtime,
+        fetch: (url, init) => fetch(url, init),
+        preferSecureMetadata: profile === "uc-go-peer" && Boolean(runtime.proxyUrl),
+        attempts: 80,
+        delayMs: 3000,
+        timeoutMs: 240000,
+        onAttempt: (result) => {
+          const payload =
+            result.payload && typeof result.payload === "object"
+              ? (result.payload as Record<string, unknown>)
+              : null;
+          const metadata =
+            payload?.metadata && typeof payload.metadata === "object"
+              ? (payload.metadata as Record<string, unknown>)
+              : null;
+          this.trace("deploy:relay-metadata-attempt", {
+            itemHash: args.itemHash,
+            attempt: result.attempt,
+            attempts: result.attempts,
+            requestUrl: result.requestUrl,
+            metadataUrl: result.metadataUrl,
+            hostIpv4: result.hostIpv4,
+            setupPort: result.setupPort,
+            ok: result.ok,
+            status: result.status,
+            ready: result.ready,
+            error: result.error ?? null,
+            payloadStatus:
+              payload && typeof payload.status === "string" ? payload.status : null,
+            peerId:
+              metadata && typeof metadata.peer_id === "string"
+                ? metadata.peer_id
+                : null,
+            probeMultiaddrCount: Array.isArray(metadata?.probe_multiaddrs)
+              ? metadata.probe_multiaddrs.length
+              : 0,
+            browserBootstrapMultiaddrCount: Array.isArray(
+              metadata?.browser_bootstrap_multiaddrs,
+            )
+              ? metadata.browser_bootstrap_multiaddrs.length
+              : 0,
+          });
+        },
+      });
+    }
     if (!relayMetadata) {
       throw new Error("Relay metadata did not include a peer ID and public multiaddrs.");
     }

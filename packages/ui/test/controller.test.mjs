@@ -241,3 +241,223 @@ test('controller waits for active 2n6 web access before publishing guest proxyUr
     globalThis.setTimeout = originalSetTimeout
   }
 })
+
+test('controller falls back to bootstrap signal metadata when 2n6 never becomes active', async () => {
+  const originalFetch = globalThis.fetch
+  const originalWindow = globalThis.window
+  const originalSetTimeout = globalThis.setTimeout
+
+  let twoN6Lookups = 0
+  const aggregateProxyUrls = []
+  const itemHash = 'b'.repeat(64)
+  const deploymentToken = 'deploy-token-2'
+  const walletAddress = '0x1234000000000000000000000000000000000000'
+
+  globalThis.window = {
+    ethereum: {
+      isMetaMask: true,
+      async request(args) {
+        if (args.method === 'personal_sign') {
+          return '0xsigned'
+        }
+        throw new Error(`Unexpected provider request: ${args.method}`)
+      }
+    }
+  }
+
+  globalThis.setTimeout = ((callback, _delay, ...args) =>
+    originalSetTimeout(callback, 0, ...args))
+
+  globalThis.fetch = async (input, init) => {
+    const url = String(input)
+
+    if (url.includes('scheduler.api.aleph.cloud')) {
+      return jsonResponse({}, 404)
+    }
+
+    if (url.includes('api.2n6.me')) {
+      twoN6Lookups += 1
+      return jsonResponse({
+        url: 'https://relay.example.com',
+        active: false
+      })
+    }
+
+    if (url.includes('/v2/about/executions/list')) {
+      return jsonResponse({
+        [itemHash]: {
+          networking: {
+            host_ipv4: '203.0.113.8',
+            mapped_ports: {
+              '80': { host: 30080, tcp: true, udp: false },
+              '22': { host: 32022, tcp: true, udp: false },
+              '9095': { host: 32095, tcp: true, udp: true },
+              '9097': { host: 32097, tcp: true, udp: false },
+            }
+          }
+        }
+      })
+    }
+
+    if (url.includes('/bootstrap/metadata')) {
+      throw new Error('Unexpected secure metadata fetch while 2n6 route is inactive')
+    }
+
+    if (url.includes('/api/v0/aggregates/') && !init?.method) {
+      return jsonResponse({ data: { 'vm-bootstrap-config': {} } })
+    }
+
+    if (url.includes('/api/v0/messages') && init?.method === 'POST') {
+      const body = JSON.parse(String(init.body ?? '{}'))
+      const content = JSON.parse(body.message.item_content)
+      if (body.message.type === 'AGGREGATE') {
+        aggregateProxyUrls.push(
+          content?.content?.[deploymentToken]?.runtime?.proxyUrl ?? null
+        )
+      }
+      return jsonResponse({
+        publication_status: { status: 'success' },
+        message_status: 'processed'
+      })
+    }
+
+    if (url.includes('/api/v0/posts.json') && url.includes('vm-bootstrap-config-status')) {
+      return jsonResponse({
+        posts: [
+          {
+            content: {
+              deploymentToken,
+              status: 'applied',
+              profile: 'uc-go-peer',
+              ownerAddress: walletAddress,
+              instanceItemHash: itemHash,
+              updatedAt: new Date().toISOString(),
+              peerId: '12D3KooWFallbackPeer',
+              probeMultiaddrs: ['/ip4/203.0.113.8/tcp/32095/p2p/12D3KooWFallbackPeer'],
+              browserBootstrapMultiaddrs: [],
+            }
+          }
+        ]
+      })
+    }
+
+    if (url.includes('/api/v0/posts.json') && url.includes('relay-bootstrap')) {
+      return jsonResponse({
+        posts: [
+          {
+            item_hash: 'bootstrap-item-hash-2',
+            address: walletAddress,
+            ref: 'simple-todo-bootstrap',
+            type: 'relay-bootstrap',
+            content: {
+              peerId: '12D3KooWFallbackPeer',
+              multiaddrs: ['/ip4/203.0.113.8/tcp/32095/p2p/12D3KooWFallbackPeer'],
+              browserMultiaddrs: [],
+              registrationId: 'relay:uc-go-peer:Fallback Relay:' + itemHash,
+              updatedAt: Date.now(),
+            }
+          }
+        ]
+      })
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+
+  try {
+    const controller = createSponsorRelayController({
+      apiHost: 'https://api2.aleph.im',
+      crnListUrl: 'https://crns-list.aleph.sh/crns.json',
+      twoN6ApiHost: 'https://api.2n6.me/api/hash',
+    })
+
+    controller.patch({
+      wallet: {
+        connected: true,
+        address: walletAddress,
+        chainId: '0x1',
+        isMetaMask: true,
+      },
+      manifest: {
+        profile: 'uc-go-peer',
+        version: 'test-v1',
+        rootfsItemHash: 'f'.repeat(64),
+        rootfsSizeMiB: 1024,
+        createdAt: '2026-06-11T00:00:00.000Z',
+      },
+      instanceName: 'Fallback Relay',
+      crns: [
+        {
+          hash: 'crn-1',
+          name: 'CRN One',
+          address: 'https://crn.example.com',
+        }
+      ]
+    })
+
+    await controller.configureRelayBootstrapRegistration({
+      itemHash,
+      deploymentToken,
+      runtime: {
+        allocation: {
+          source: 'manual',
+          crnHash: 'crn-1',
+          crnUrl: 'https://crn.example.com',
+          node: { url: 'https://crn.example.com' },
+          vmIpv6: null,
+          period: null,
+        },
+        execution: {
+          crnUrl: 'https://crn.example.com',
+          networking: {
+            host_ipv4: '203.0.113.8',
+            mapped_ports: {
+              '80': { host: 30080, tcp: true, udp: false },
+              '22': { host: 32022, tcp: true, udp: false },
+              '9095': { host: 32095, tcp: true, udp: true },
+              '9097': { host: 32097, tcp: true, udp: false },
+            }
+          }
+        },
+        webAccess: {
+          url: 'https://relay.example.com',
+          active: false,
+          subdomain: 'relay.example.com',
+        },
+        webAccessUrl: 'https://relay.example.com',
+        hostIpv4: '203.0.113.8',
+        ipv6: null,
+        proxyUrl: 'https://relay.example.com',
+        mappedPorts: {
+          '80': { host: 30080, tcp: true, udp: false },
+          '22': { host: 32022, tcp: true, udp: false },
+          '9095': { host: 32095, tcp: true, udp: true },
+          '9097': { host: 32097, tcp: true, udp: false },
+        },
+        diagnostics: {
+          state: 'ready',
+          reason: null,
+          schedulerSource: 'manual',
+          executionSeen: true,
+          webAccessActive: false,
+          mappedPortCount: 4,
+          proxyUrl: 'https://relay.example.com',
+        },
+        sshCommand: 'ssh root@203.0.113.8 -p 32022',
+        selectedCrn: {
+          hash: 'crn-1',
+          name: 'CRN One',
+          address: 'https://crn.example.com',
+        },
+        executionLookupBlocked: false,
+      }
+    })
+
+    assert.ok(twoN6Lookups >= 1)
+    assert.deepEqual(aggregateProxyUrls, [null, null])
+  } finally {
+    globalThis.fetch = originalFetch
+    globalThis.window = originalWindow
+    globalThis.setTimeout = originalSetTimeout
+  }
+})

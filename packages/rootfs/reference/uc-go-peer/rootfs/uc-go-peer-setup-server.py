@@ -180,13 +180,12 @@ def _run_configure_process(args: list[str], bootstrap_record: dict | None = None
         except subprocess.CalledProcessError as error:
             return False, error.stderr.strip() or error.stdout.strip() or str(error)
 
+        _start_metadata_generation()
         if isinstance(bootstrap_record, dict):
             try:
                 _publish_vm_bootstrap_config_signal(bootstrap_record)
             except Exception as error:  # pragma: no cover - runtime error path
                 return False, f"configured relay but failed to publish bootstrap config signal: {error}"
-
-        _start_metadata_generation()
         return True, result.stdout.strip()
 
 
@@ -328,6 +327,24 @@ def _publish_vm_bootstrap_config_signal(record: dict) -> None:
     if not deployment_token or not profile or not instance_item_hash:
         raise RuntimeError("bootstrap config signal is missing deployment metadata")
 
+    metadata, metadata_error = _fresh_metadata_payload()
+    if not metadata:
+        raise RuntimeError(
+            f"bootstrap config signal metadata is not ready: {metadata_error or 'metadata unavailable'}"
+        )
+
+    peer_id = metadata.get("peer_id")
+    probe_multiaddrs = metadata.get("probe_multiaddrs")
+    browser_bootstrap_multiaddrs = metadata.get("browser_bootstrap_multiaddrs")
+    if not isinstance(peer_id, str) or not peer_id.strip():
+        raise RuntimeError("bootstrap config signal is missing peer_id")
+    if not isinstance(probe_multiaddrs, list) or not any(
+        isinstance(entry, str) and entry.strip() for entry in probe_multiaddrs
+    ):
+        raise RuntimeError("bootstrap config signal is missing probe_multiaddrs")
+    if not isinstance(browser_bootstrap_multiaddrs, list):
+        browser_bootstrap_multiaddrs = []
+
     publisher_address = _address_from_private_key(publisher_private_key)
     now_ms = int(time.time() * 1000)
     content = {
@@ -343,6 +360,17 @@ def _publish_vm_bootstrap_config_signal(record: dict) -> None:
             "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ms / 1000)),
             "publisherAddress": publisher_address,
             "authorization": owner_authorization,
+            "peerId": peer_id.strip(),
+            "probeMultiaddrs": [
+                entry.strip()
+                for entry in probe_multiaddrs
+                if isinstance(entry, str) and entry.strip()
+            ],
+            "browserBootstrapMultiaddrs": [
+                entry.strip()
+                for entry in browser_bootstrap_multiaddrs
+                if isinstance(entry, str) and entry.strip()
+            ],
         },
         "time": now_ms,
     }
