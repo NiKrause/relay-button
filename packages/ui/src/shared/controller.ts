@@ -29,6 +29,7 @@ import {
   publishVmBootstrapConfig,
   tierSpec,
   fetchVmRuntime,
+  verifyUcGoPeerReachability,
   waitForRelayBootstrapRegistration,
   waitForDeploymentResult,
   waitForSetupEndpoint,
@@ -431,6 +432,8 @@ const UI_DEPLOY_WAIT_ATTEMPTS = 60;
 const UI_DEPLOY_WAIT_DELAY_MS = 5_000;
 const UI_RUNTIME_WAIT_ATTEMPTS = 40;
 const UI_RUNTIME_WAIT_DELAY_MS = 5_000;
+const UI_REACHABILITY_VERIFY_ATTEMPTS = 25;
+const UI_REACHABILITY_VERIFY_DELAY_MS = 3_000;
 
 type SponsorRelayStatePatch = Omit<
   Partial<SponsorRelayState>,
@@ -865,6 +868,76 @@ export class SponsorRelayController {
     });
     if (!relayMetadata) {
       throw new Error("Relay metadata did not include a peer ID and public multiaddrs.");
+    }
+
+    if (profile === "uc-go-peer" && runtime.proxyUrl) {
+      this.emitProgress({
+        stage: "publishing-bootstrap",
+        label: "Verifying reachability",
+        progress: 96,
+        status: "info",
+        itemHash: args.itemHash,
+        detail:
+          "Checking that the secure relay endpoint is reachable before trusting the deployment as ready.",
+      });
+
+      const verificationUrl = (() => {
+        try {
+          return new URL("/bootstrap/metadata", runtime.proxyUrl).toString();
+        } catch {
+          return runtime.proxyUrl ?? "";
+        }
+      })();
+
+      let verificationResult: Awaited<
+        ReturnType<typeof verifyUcGoPeerReachability>
+      > | null = null;
+      for (
+        let attempt = 0;
+        attempt < UI_REACHABILITY_VERIFY_ATTEMPTS;
+        attempt += 1
+      ) {
+        verificationResult = await verifyUcGoPeerReachability({
+          proxyUrl: verificationUrl,
+          verifyProxyHttp: true,
+          fetch: (url, init) => fetch(url, init),
+          tcpProbe: async () => ({ ok: null }),
+        });
+        this.trace("deploy:reachability-verification-attempt", {
+          itemHash: args.itemHash,
+          attempt: attempt + 1,
+          attempts: UI_REACHABILITY_VERIFY_ATTEMPTS,
+          verificationUrl,
+          ok: verificationResult.ok,
+          checks: verificationResult.checks,
+        });
+
+        const proxyHttpCheck =
+          verificationResult.checks["https:proxy"] as
+            | { ok?: boolean | null }
+            | undefined;
+        if (verificationResult.ok && proxyHttpCheck?.ok === true) {
+          break;
+        }
+
+        if (attempt < UI_REACHABILITY_VERIFY_ATTEMPTS - 1) {
+          await new Promise((resolve) =>
+            globalThis.setTimeout(resolve, UI_REACHABILITY_VERIFY_DELAY_MS),
+          );
+        }
+      }
+
+      const proxyHttpCheck =
+        verificationResult?.checks["https:proxy"] as
+          | { ok?: boolean | null; error?: string }
+          | undefined;
+      if (!verificationResult?.ok || proxyHttpCheck?.ok !== true) {
+        throw new Error(
+          proxyHttpCheck?.error
+            ? `Secure relay endpoint did not become reachable in time: ${proxyHttpCheck.error}`
+            : "Secure relay endpoint did not become reachable in time.",
+        );
+      }
     }
 
     const { peerId } = relayMetadata;
