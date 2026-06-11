@@ -49,6 +49,12 @@ export let apiHost = undefined
   $: pollingDetail = state.busy.refreshing
     ? (state.statusText || 'Refreshing relay sponsor data from Aleph and the selected CRN.')
     : (state.deploymentProgress.detail || state.statusText || 'Waiting for the next confirmed relay state from Aleph.')
+  $: confirmedRegistrationByInstanceHash = new Map(
+    (state.bootstrapRegistrations ?? [])
+      .filter((entry) => entry.confirmed && entry.instanceItemHash)
+      .map((entry) => [entry.instanceItemHash, entry]),
+  )
+  $: orphanRegistrations = state.orphanBootstrapRegistrations ?? []
 
   onMount(async () => {
     const unsubscribe = controller.subscribe((next) => {
@@ -220,11 +226,18 @@ export let apiHost = undefined
 
         {#each state.instances as entry}
           <AccordionSection title={`${entry.instance.content?.metadata?.name ?? 'relay'} · ${shortHash(entry.instance.item_hash)}`} open={true}>
+            {@const confirmedRegistration = confirmedRegistrationByInstanceHash.get(entry.instance.item_hash)}
             <div class="instance-topline">
               <div class="chip-row">
                 <span class="chip">{entry.details.messageStatus}</span>
                 {#if entry.details.crnUrl}
                   <span class="chip">{entry.details.crnUrl.replace(/^https?:\/\//, '')}</span>
+                {/if}
+                {#if confirmedRegistration}
+                  <span class="chip chip-confirmed">
+                    <span class="chip-dot-confirmed"></span>
+                    Registration confirmed
+                  </span>
                 {/if}
               </div>
               <button
@@ -267,6 +280,13 @@ export let apiHost = undefined
               <strong>{joinMappedPorts(entry.details.mappedPorts)}</strong>
             </div>
 
+            {#if confirmedRegistration}
+              <div class="mono-block">
+                <span>Bootstrap Registration</span>
+                <strong>{shortHash(confirmedRegistration.messageHash ?? confirmedRegistration.content?.registrationId ?? 'confirmed', 14, 8)}</strong>
+              </div>
+            {/if}
+
             <div class="link-row">
               <CopyButton text={entry.instance.item_hash} label="Copy hash" />
               {#if entry.details.webUrl}
@@ -281,6 +301,34 @@ export let apiHost = undefined
             {/if}
           </AccordionSection>
         {/each}
+
+        {#if orphanRegistrations.length > 0}
+          <div class="orphan-box">
+            <div class="orphan-head">
+              <strong>Orphan bootstrap registrations</strong>
+              <small>Current-wallet registrations without a matching instance. Forget them directly from here.</small>
+            </div>
+
+            {#each orphanRegistrations as entry}
+              {@const registrationHash = entry.messageHash ?? entry.hash}
+              <div class="orphan-card">
+                <div class="orphan-title">{entry.content?.registrationId ?? 'registration'} · {shortHash(registrationHash ?? 'unknown')}</div>
+                <div>Peer: {entry.content?.peerId ?? '-'}</div>
+                <div>Linked instance: {entry.instanceItemHash ? shortHash(entry.instanceItemHash) : 'missing'}</div>
+                <div>Browser multiaddrs: {String(entry.content?.browserMultiaddrs?.length ?? 0)}</div>
+                <div>Updated: {formatDateTime(entry.content?.updatedAt ?? entry.time)}</div>
+                <button
+                  class="delete"
+                  type="button"
+                  disabled={!registrationHash || state.busy.deletingRegistrationHash === registrationHash}
+                  on:click={() => registrationHash && controller.deleteBootstrapRegistration(registrationHash)}
+                >
+                  {state.busy.deletingRegistrationHash === registrationHash ? 'Forgetting…' : 'Forget registration'}
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </section>
     {/if}
   </aside>
@@ -401,6 +449,22 @@ export let apiHost = undefined
     color: #ffd4d4;
   }
 
+  .chip-confirmed {
+    background: rgba(34, 197, 94, 0.16);
+    color: #86efac;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+  }
+
+  .chip-dot-confirmed {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 999px;
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+  }
+
   .status-strip,
   .metrics {
     display: grid;
@@ -423,6 +487,38 @@ export let apiHost = undefined
     grid-template-columns: auto 1fr;
     align-items: center;
     gap: 0.7rem;
+  }
+
+  .orphan-box {
+    display: grid;
+    gap: 0.7rem;
+    padding: 0.85rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(248, 113, 113, 0.22);
+    background: linear-gradient(180deg, rgba(127, 29, 29, 0.18), rgba(69, 10, 10, 0.12));
+  }
+
+  .orphan-head {
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  .orphan-head small {
+    color: #fecaca;
+    line-height: 1.35;
+  }
+
+  .orphan-card {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.75rem;
+    border-radius: 0.9rem;
+    background: rgba(15, 23, 42, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .orphan-title {
+    font-weight: 700;
   }
 
   .alert {
