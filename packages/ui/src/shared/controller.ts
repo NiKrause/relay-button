@@ -28,6 +28,7 @@ import {
   publishRelayBootstrapRegistration,
   publishVmBootstrapConfig,
   tierSpec,
+  fetchVmRuntime,
   waitForRelayBootstrapRegistration,
   waitForDeploymentResult,
   waitForSetupEndpoint,
@@ -588,17 +589,18 @@ export class SponsorRelayController {
     runtime: Awaited<ReturnType<typeof waitForVmRuntime>>;
     deploymentToken?: string | null;
   }): Promise<void> {
+    let runtime = args.runtime;
     const profile = relayProfileForManifest(this.state.manifest);
     if (!profile) return;
 
     if (!this.state.wallet.address) {
       throw new Error("A connected wallet is required to register relay bootstrap addresses.");
     }
-    if (!args.runtime.hostIpv4) {
+    if (!runtime.hostIpv4) {
       throw new Error("Relay runtime did not expose a host IPv4 address.");
     }
 
-    const mappedPorts = args.runtime.mappedPorts ?? {};
+    let mappedPorts = runtime.mappedPorts ?? {};
     const setupPort = mappedPorts["80"]?.host ?? null;
     if (!setupPort) {
       throw new Error("Relay runtime did not expose the temporary setup endpoint.");
@@ -615,7 +617,7 @@ export class SponsorRelayController {
       });
 
       const setupHealth = await waitForSetupEndpoint({
-        hostIpv4: args.runtime.hostIpv4,
+        hostIpv4: runtime.hostIpv4,
         setupPort,
         fetch: (url, init) => fetch(url, init),
         attempts: 15,
@@ -644,12 +646,12 @@ export class SponsorRelayController {
       }
 
       const configureResult = await configureOrbitdbRelaySetup({
-        hostIpv4: args.runtime.hostIpv4,
-        publicIpv6: args.runtime.ipv6,
+        hostIpv4: runtime.hostIpv4,
+        publicIpv6: runtime.ipv6,
         setupPort,
         tcpPort,
         wsPort,
-        proxyUrl: args.runtime.proxyUrl ?? undefined,
+        proxyUrl: runtime.proxyUrl ?? undefined,
         metricsPort: mappedPorts["9090"]?.host ?? null,
         metricsHttpsPort: mappedPorts["443"]?.host ?? null,
         webrtcPort: mappedPorts["9093"]?.host ?? null,
@@ -666,6 +668,63 @@ export class SponsorRelayController {
       if (!args.deploymentToken) {
         throw new Error("Missing deployment token for Aleph bootstrap config handoff.");
       }
+
+      if (runtime.proxyUrl && runtime.webAccess?.active !== true) {
+        this.emitProgress({
+          stage: "deployment-confirmed",
+          label: "Waiting for HTTPS route",
+          progress: 93,
+          status: "warning",
+          itemHash: args.itemHash,
+          detail:
+            "The relay received a 2n6 hostname, but it is not active yet. Waiting before handing HTTPS config to the guest.",
+        });
+
+        let latestRuntime = runtime;
+        for (let attempt = 0; attempt < UI_RUNTIME_WAIT_ATTEMPTS; attempt += 1) {
+          if (latestRuntime.webAccess?.active === true) {
+            break;
+          }
+
+          await new Promise((resolve) =>
+            globalThis.setTimeout(resolve, UI_RUNTIME_WAIT_DELAY_MS),
+          );
+          latestRuntime = await fetchVmRuntime({
+            itemHash: args.itemHash,
+            fetch: (url, init) => fetch(url, init),
+            crnHash:
+              runtime.selectedCrn?.hash ??
+              runtime.allocation?.crnHash ??
+              undefined,
+            crns: this.state.crns,
+            crnListUrl: this.props.crnListUrl,
+          }).catch(() => latestRuntime);
+          this.trace("deploy:bootstrap-proxy-activation", {
+            itemHash: args.itemHash,
+            attempt: attempt + 1,
+            attempts: UI_RUNTIME_WAIT_ATTEMPTS,
+            active: latestRuntime.webAccess?.active === true,
+            proxyUrl: latestRuntime.proxyUrl ?? null,
+          });
+        }
+
+        runtime = latestRuntime;
+        mappedPorts = runtime.mappedPorts ?? mappedPorts;
+
+        if (runtime.proxyUrl && runtime.webAccess?.active !== true) {
+          throw new Error(
+            "Aleph reserved a 2n6 proxy URL, but it never became active in time. Aborting guest HTTPS configuration to avoid a broken Caddy setup.",
+          );
+        }
+      }
+
+      if (!runtime.hostIpv4) {
+        throw new Error("Relay runtime lost its host IPv4 address while waiting for HTTPS activation.");
+      }
+
+      const runtimeHostIpv4 = runtime.hostIpv4;
+      const activeProxyUrl =
+        runtime.webAccess?.active === true ? (runtime.proxyUrl ?? null) : null;
 
       this.emitProgress({
         stage: "deployment-confirmed",
@@ -685,9 +744,9 @@ export class SponsorRelayController {
         expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
         status: "pending",
         runtime: {
-          publicIpv4: args.runtime.hostIpv4,
-          publicIpv6: args.runtime.ipv6 ?? null,
-          proxyUrl: args.runtime.proxyUrl ?? null,
+          publicIpv4: runtimeHostIpv4,
+          publicIpv6: runtime.ipv6 ?? null,
+          proxyUrl: activeProxyUrl,
           mappedPorts: mappedPorts,
         },
         bootstrap: {
@@ -760,7 +819,7 @@ export class SponsorRelayController {
     });
 
     const relayMetadata = await fetchRelayMetadataForRuntime({
-      runtime: args.runtime,
+      runtime,
       fetch: (url, init) => fetch(url, init),
       preferSecureMetadata: profile === "uc-go-peer",
       attempts: 80,

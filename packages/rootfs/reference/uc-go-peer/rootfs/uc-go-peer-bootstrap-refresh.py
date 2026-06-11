@@ -246,13 +246,13 @@ def build_post_content(
     owner_authorization: dict[str, object] | None,
     relay_proof: dict[str, object],
     now_ms: int,
+    now_seconds: float,
     ref: str,
     post_type: str,
 ) -> dict[str, object]:
     content = {
         "peerId": peer_id,
         "multiaddrs": multiaddrs,
-        "browserMultiaddrs": browser_multiaddrs if browser_multiaddrs else None,
         "registrationId": registration_id,
         "profile": profile,
         "version": version,
@@ -266,12 +266,14 @@ def build_post_content(
         "relayProof": relay_proof,
         "updatedAt": now_ms,
     }
+    if browser_multiaddrs:
+        content["browserMultiaddrs"] = browser_multiaddrs
     return {
         "type": post_type,
         "address": sender,
         "ref": ref,
         "content": content,
-        "time": now_ms,
+        "time": now_seconds,
     }
 
 
@@ -532,6 +534,7 @@ def main() -> None:
         owner_authorization,
         relay_proof,
         now_ms,
+        now_seconds,
         ref,
         post_type,
     )
