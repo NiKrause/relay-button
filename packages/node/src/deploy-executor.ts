@@ -405,6 +405,7 @@ export async function executeDeployPlan(
       crnHash: candidateCrn.hash,
       crns: candidateCrns,
       crnListUrl: plan.crnListUrl,
+      requirePublicGuestIpv6ForProxy: plan.enableCaddyProxy === true,
       attempts: plan.runtimeAttempts,
       delayMs: plan.runtimeDelayMs,
       sleep: sleepImpl,
@@ -449,10 +450,7 @@ export async function executeDeployPlan(
           },
         };
 
-    if (
-      !runtime?.hostIpv4 ||
-      Object.keys(runtime?.mappedPorts ?? {}).length === 0
-    ) {
+    if (runtime?.diagnostics?.state !== "ready") {
       log(
         `[deploy] processed deployment ${deployment.itemHash} never exposed usable runtime networking on ${
           candidateCrn.name ?? candidateCrn.hash

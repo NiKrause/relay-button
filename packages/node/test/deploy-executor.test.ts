@@ -116,13 +116,14 @@ test('executeDeployPlan deploys, publishes port forwards, and waits for processi
 
       if (String(url).includes('/v2/about/executions/list')) {
         return jsonResponse({
-          'hash-1': {
-            networking: {
-              host_ipv4: '203.0.113.7',
-              mapped_ports: {
-                '80': { host: 30080, tcp: true, udp: false },
-                '22': { host: 32022, tcp: true, udp: false },
-                '9095': { host: 32095, tcp: true, udp: true },
+            'hash-1': {
+              networking: {
+                host_ipv4: '203.0.113.7',
+                ipv6_ip: '2001:db8::7',
+                mapped_ports: {
+                  '80': { host: 30080, tcp: true, udp: false },
+                  '22': { host: 32022, tcp: true, udp: false },
+                  '9095': { host: 32095, tcp: true, udp: true },
                 '9097': { host: 32097, tcp: true, udp: false }
               }
             }
@@ -276,6 +277,7 @@ test('executeDeployPlan retries on a rejected first CRN and succeeds on the next
             'hash-r2': {
               networking: {
                 host_ipv4: '203.0.113.21',
+                ipv6_ip: '2001:db8::21',
                 mapped_ports: {
                   '22': { host: 32222, tcp: true, udp: false }
                 }
@@ -369,6 +371,7 @@ test('executeDeployPlan retries on the next CRN when a processed deployment neve
             'hash-p3': {
               networking: {
                 host_ipv4: '203.0.113.21',
+                ipv6_ip: '2001:db8::121',
                 mapped_ports: {
                   '22': { host: 32222, tcp: true, udp: false }
                 }
@@ -392,6 +395,100 @@ test('executeDeployPlan retries on the next CRN when a processed deployment neve
 
   const instanceBodies = postedBodies.filter((body) => body.includes('"type":"INSTANCE"'))
   assert.equal(instanceBodies.length, 2)
+})
+
+test('executeDeployPlan retries on the next CRN when a proxy-backed deployment exposes only ULA guest IPv6', async () => {
+  const postedBodies: string[] = []
+
+  const result = await executeDeployPlan(
+    {
+      ...DEPLOY_PLAN,
+      crnHash: '',
+      publishPortForwards: false,
+      autoConfigure: false,
+      verifyReachability: false
+    },
+    {
+      sender: '0x1234',
+      signer: async () => '0xsigned',
+      hasher: (() => {
+        let count = 0
+        return () => `hash-u${++count}`
+      })(),
+      sleep: async () => undefined,
+      tcpProbe: async () => ({ ok: true }),
+      fetch: async (url, init) => {
+        if (String(url).includes('crns-list.aleph.sh')) {
+          return jsonResponse({
+            crns: [
+              { hash: 'crn-a', name: 'CRN A', address: 'https://crn-a.example.com', score: 10, country_code: 'DE' },
+              { hash: 'crn-b', name: 'CRN B', address: 'https://crn-b.example.com', score: 9, country_code: 'DE' }
+            ]
+          })
+        }
+
+        if (String(url).includes('/api/v0/messages') && init?.method === 'POST') {
+          postedBodies.push(String(init.body ?? ''))
+          return jsonResponse({ message_status: 'pending' }, 202)
+        }
+
+        if (String(url).includes('scheduler.api.aleph.cloud')) {
+          return jsonResponse({ error: 'VM is not allocated to any node' }, 404)
+        }
+
+        if (String(url).includes('api.2n6.me')) {
+          return jsonResponse({ url: 'https://relay.example.com', active: true })
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-u1') && !init?.method) {
+          return jsonResponse({ status: 'processed', details: {} })
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-u3') && !init?.method) {
+          return jsonResponse({ status: 'processed', details: {} })
+        }
+
+        if (String(url).includes('https://crn-a.example.com/v2/about/executions/list')) {
+          return jsonResponse({
+            'hash-u1': {
+              networking: {
+                host_ipv4: '203.0.113.31',
+                ipv6_ip: 'fc00:1:2:3::31',
+                mapped_ports: {
+                  '22': { host: 32231, tcp: true, udp: false }
+                }
+              }
+            }
+          })
+        }
+
+        if (String(url).includes('https://crn-b.example.com/v2/about/executions/list')) {
+          return jsonResponse({
+            'hash-u3': {
+              networking: {
+                host_ipv4: '203.0.113.32',
+                ipv6_ip: '2001:db8::32',
+                mapped_ports: {
+                  '22': { host: 32232, tcp: true, udp: false }
+                }
+              }
+            }
+          })
+        }
+
+        return jsonResponse({ status: 'processed', message: { type: 'STORE' } })
+      }
+    }
+  )
+
+  assert.equal(result.itemHash, 'hash-u3')
+  assert.equal(result.selectedCrn?.hash, 'crn-b')
+  assert.equal(result.runtime?.hostIpv4, '203.0.113.32')
+  assert.equal(result.runtime?.diagnostics?.state, 'ready')
+
+  const forgetBodies = postedBodies.filter((body) => body.includes('"type":"FORGET"'))
+  assert.equal(forgetBodies.length, 1)
+  assert.match(forgetBodies[0], /hash-u1/)
 })
 
 test('executeDeployPlan configures orbitdb relay pinner after mapped ports appear', async () => {
@@ -463,6 +560,7 @@ test('executeDeployPlan configures orbitdb relay pinner after mapped ports appea
             'hash-o1': {
               networking: {
                 host_ipv4: '203.0.113.8',
+                ipv6_ip: '2001:db8::8',
                 mapped_ports: {
                   '80': { host: 28080, tcp: true, udp: false },
                   '22': { host: 32022, tcp: true, udp: false },
@@ -527,6 +625,7 @@ test('executeDeployPlan configures orbitdb relay pinner after mapped ports appea
   assert.equal(configureBodies.length, 1)
   assert.deepEqual(JSON.parse(configureBodies[0] ?? '{}'), {
     public_ipv4: '203.0.113.8',
+    public_ipv6: '2001:db8::8',
     tcp_port: 29091,
     ws_port: 29443,
     proxy_url: 'https://dragon-belt-friend-share.2n6.me',
@@ -616,6 +715,7 @@ test('executeDeployPlan includes bootstrap owner authorization during the initia
             'hash-d1': {
               networking: {
                 host_ipv4: '203.0.113.9',
+                ipv6_ip: '2001:db8::9',
                 mapped_ports: {
                   '80': { host: 28080, tcp: true, udp: false },
                   '22': { host: 32022, tcp: true, udp: false },
@@ -785,6 +885,7 @@ test('executeDeployPlan pre-seeds orbitdb relay identity from bootstrap publishe
             'hash-s1': {
               networking: {
                 host_ipv4: '203.0.113.9',
+                ipv6_ip: '2001:db8::109',
                 mapped_ports: {
                   '80': { host: 28080, tcp: true, udp: false },
                   '22': { host: 32022, tcp: true, udp: false },

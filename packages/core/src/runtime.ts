@@ -47,6 +47,32 @@ function asNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+function normalizeIpv6(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return null
+  const zoneIndex = normalized.indexOf('%')
+  return zoneIndex >= 0 ? normalized.slice(0, zoneIndex) : normalized
+}
+
+function isLikelyGlobalIpv6(value: string | null | undefined): boolean {
+  const normalized = normalizeIpv6(value)
+  if (!normalized || normalized === '::' || normalized === '::1') return false
+
+  const firstHextetText = normalized.split(':', 1)[0]
+  if (!firstHextetText) return false
+
+  const firstHextet = Number.parseInt(firstHextetText, 16)
+  if (!Number.isFinite(firstHextet)) return false
+
+  if ((firstHextet & 0xfe00) === 0xfc00) return false
+  if ((firstHextet & 0xffc0) === 0xfe80) return false
+  if ((firstHextet & 0xff00) === 0xff00) return false
+  if ((firstHextet & 0xffc0) === 0xfec0) return false
+
+  return true
+}
+
 export function findCrnByHash(crns: ReadonlyArray<CrnRecord>, crnHash: string): CrnRecord | null {
   return crns.find((crn) => crn.hash === crnHash) ?? null
 }
@@ -162,14 +188,36 @@ export function describeRuntimeAvailability(runtime: {
   ipv6?: string | null
   proxyUrl?: string | null
   mappedPorts?: Record<string, unknown>
+  requirePublicGuestIpv6ForProxy?: boolean
 }): RuntimeDiagnostics {
   const execution = runtime.execution ?? null
   const mappedPorts = runtime.mappedPorts ?? {}
   const hostIpv4 = runtime.hostIpv4 ?? null
+  const ipv6 = runtime.ipv6 ?? null
   const proxyUrl = runtime.proxyUrl ?? null
   const schedulerSource = runtime.allocation?.source ?? null
   const webAccessActive = runtime.webAccess?.active ?? null
   const mappedPortCount = Object.keys(mappedPorts).length
+
+  if (
+    hostIpv4 &&
+    mappedPortCount > 0 &&
+    runtime.requirePublicGuestIpv6ForProxy === true &&
+    proxyUrl &&
+    !isLikelyGlobalIpv6(ipv6)
+  ) {
+    return {
+      state: 'execution-invalid-public-ipv6',
+      reason:
+        `The CRN exposed runtime networking, but the guest IPv6${ipv6 ? ` (${ipv6})` : ''} is not globally routable. ` +
+        'Proxy-backed HTTPS activation cannot succeed until the CRN reports a public guest IPv6.',
+      schedulerSource,
+      executionSeen: Boolean(execution),
+      webAccessActive,
+      mappedPortCount,
+      proxyUrl
+    }
+  }
 
   if (hostIpv4 && mappedPortCount > 0) {
     return {
@@ -252,6 +300,7 @@ export async function fetchVmRuntime(args: {
   crnListUrl?: string
   schedulerAllocationUrl?: string
   twoN6HashUrl?: string
+  requirePublicGuestIpv6ForProxy?: boolean
 }): Promise<Omit<InstanceRuntimeDetails, 'messageStatus'>> {
   const crns = args.crns ?? (await fetchCrns({
     url: args.crnListUrl ?? DEFAULT_CRN_LIST_URL,
@@ -312,7 +361,8 @@ export async function fetchVmRuntime(args: {
     hostIpv4,
     ipv6,
     proxyUrl,
-    mappedPorts
+    mappedPorts,
+    requirePublicGuestIpv6ForProxy: args.requirePublicGuestIpv6ForProxy
   })
 
   return {
@@ -339,6 +389,7 @@ export async function waitForVmRuntime(args: {
   crnListUrl?: string
   schedulerAllocationUrl?: string
   twoN6HashUrl?: string
+  requirePublicGuestIpv6ForProxy?: boolean
   attempts?: number
   delayMs?: number
   sleep?: (ms: number) => Promise<void>
@@ -351,7 +402,10 @@ export async function waitForVmRuntime(args: {
   let lastRuntime = await fetchVmRuntime(args)
   args.onAttempt?.(lastRuntime, 1, attempts)
   for (let attempt = 0; attempt < attempts - 1; attempt += 1) {
-    if (lastRuntime.hostIpv4 && Object.keys(lastRuntime.mappedPorts ?? {}).length > 0) {
+    if (
+      lastRuntime.diagnostics?.state === 'ready' ||
+      lastRuntime.diagnostics?.state === 'execution-invalid-public-ipv6'
+    ) {
       return lastRuntime
     }
     await sleep(delayMs)

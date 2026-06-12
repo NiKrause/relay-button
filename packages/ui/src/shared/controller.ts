@@ -773,11 +773,12 @@ export class SponsorRelayController {
 
     this.emitProgress({
       stage: "publishing-bootstrap",
-      label: "Reading relay multiaddrs",
+      label: "Waiting for secure relay metadata",
       progress: 95,
-      status: "info",
+      status: "warning",
       itemHash: args.itemHash,
-      detail: "Waiting for the relay to report its final public multiaddrs.",
+      detail:
+        "Runtime networking is available. Waiting for the secure relay metadata endpoint to report final public multiaddrs.",
     });
 
     const relayMetadata = await fetchRelayMetadataForRuntime({
@@ -825,13 +826,15 @@ export class SponsorRelayController {
         });
         this.emitProgress({
           stage: "publishing-bootstrap",
-          label: "Reading relay multiaddrs",
+          label: result.ready
+            ? "Secure relay metadata ready"
+            : "Waiting for secure relay metadata",
           progress: 95,
-          status: result.ready ? "success" : "info",
+          status: result.ready ? "success" : "warning",
           itemHash: args.itemHash,
           detail: result.ready
-            ? `Relay metadata ${result.attempt}/${result.attempts}: public multiaddrs available.`
-            : `Relay metadata ${result.attempt}/${result.attempts}: waiting for the relay to report public multiaddrs.`,
+            ? `Relay metadata ${result.attempt}/${result.attempts}: secure endpoint responded and public multiaddrs are available.`
+            : `Relay metadata ${result.attempt}/${result.attempts}: waiting for ${result.metadataUrl}.`,
         });
       },
     });
@@ -1004,6 +1007,20 @@ export class SponsorRelayController {
       (currentProgressIsForLatestHash &&
         currentProgress.stage === "completed" &&
         currentProgress.status === "success");
+
+    if (
+      currentProgressIsForLatestHash &&
+      currentProgress.stage === "publishing-bootstrap"
+    ) {
+      this.trace("progress:retain-active-phase", {
+        reason:
+          "latest refresh would overwrite active relay metadata/bootstrap progress",
+        itemHash,
+        label: currentProgress.label,
+        progress: currentProgress.progress,
+      });
+      return;
+    }
 
     const status = latest.details.messageStatus;
 
@@ -1782,13 +1799,11 @@ export class SponsorRelayController {
             crnHash: candidateCrn.hash,
             crns: this.state.crns,
             crnListUrl: this.props.crnListUrl,
+            requirePublicGuestIpv6ForProxy: true,
             attempts: UI_RUNTIME_WAIT_ATTEMPTS,
             delayMs: UI_RUNTIME_WAIT_DELAY_MS,
             onAttempt: (runtime, attempt, attempts) => {
-              if (
-                runtime.hostIpv4 &&
-                Object.keys(runtime.mappedPorts ?? {}).length > 0
-              ) {
+              if (runtime.diagnostics?.state === "ready") {
                 this.emitProgress({
                   stage: "deployment-confirmed",
                   label: "Runtime ready",
@@ -1796,6 +1811,20 @@ export class SponsorRelayController {
                   status: "info",
                   itemHash: result.itemHash,
                   detail: `Runtime ${attempt}/${attempts}: networking and mapped ports are now available.`,
+                });
+                return;
+              }
+
+              if (runtime.diagnostics?.state === "execution-invalid-public-ipv6") {
+                this.emitProgress({
+                  stage: "deployment-confirmed",
+                  label: "Rejecting unusable runtime",
+                  progress: 91,
+                  status: "warning",
+                  itemHash: result.itemHash,
+                  detail: runtime.diagnostics?.reason
+                    ? `Runtime ${attempt}/${attempts}: ${runtime.diagnostics.reason} Cleaning up this CRN attempt before retrying another relay host.`
+                    : `Runtime ${attempt}/${attempts}: the CRN exposed unusable guest networking. Cleaning up this CRN attempt before retrying another relay host.`,
                 });
                 return;
               }
@@ -1813,10 +1842,7 @@ export class SponsorRelayController {
             },
           });
 
-          if (
-            !runtime.hostIpv4 ||
-            Object.keys(runtime.mappedPorts ?? {}).length === 0
-          ) {
+          if (runtime.diagnostics?.state !== "ready") {
             throw new Error(
               runtime.diagnostics?.reason ??
                 "Deployment was processed, but runtime networking never exposed mapped ports.",
@@ -1880,6 +1906,7 @@ export class SponsorRelayController {
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
           const attemptLabel = crnDisplayName;
+          const failedDueToInvalidIpv6 = /not globally routable|public guest IPv6/i.test(lastError.message);
           attemptErrors.push(`${attemptLabel}: ${lastError.message}`);
           this.trace("deploy:crn-attempt-error", {
             crnHash: candidateCrn.hash,
@@ -1889,7 +1916,26 @@ export class SponsorRelayController {
           });
 
           if (attemptItemHash) {
+            this.emitProgress({
+              stage: "deployment-confirmed",
+              label: failedDueToInvalidIpv6 ? "Rejecting unusable runtime" : "Cleaning up failed attempt",
+              progress: failedDueToInvalidIpv6 ? 91 : 16,
+              status: "warning",
+              itemHash: attemptItemHash,
+              detail: failedDueToInvalidIpv6
+                ? `${attemptLabel} exposed runtime networking that cannot support proxy-backed HTTPS. Cleaning up this attempt before retrying another CRN.`
+                : `${attemptLabel} failed: ${lastError.message} Cleaning up this attempt before retrying another CRN.`,
+            });
             if (attemptDeploymentToken) {
+              this.emitProgress({
+                stage: "deployment-confirmed",
+                label: "Cleaning up failed attempt",
+                progress: 17,
+                status: "warning",
+                itemHash: attemptItemHash,
+                detail:
+                  "Removing bootstrap configuration for the failed attempt. MetaMask may request a cleanup signature.",
+              });
               this.trace("deploy:bootstrap-config-cleanup-start", {
                 itemHash: attemptItemHash,
                 deploymentToken: attemptDeploymentToken,
@@ -1922,6 +1968,15 @@ export class SponsorRelayController {
                   });
                 });
             }
+            this.emitProgress({
+              stage: "deployment-confirmed",
+              label: "Cleaning up failed attempt",
+              progress: 18,
+              status: "warning",
+              itemHash: attemptItemHash,
+              detail:
+                "Forgetting the failed deployment attempt on Aleph. MetaMask may request another cleanup signature.",
+            });
             this.trace("deploy:forget-failed-attempt-start", {
               itemHash: attemptItemHash,
               crnHash: candidateCrn.hash,
@@ -1959,11 +2014,11 @@ export class SponsorRelayController {
           if (candidateIndex < orderedCrns.length - 1) {
             this.emitProgress({
               stage: "selecting-crn",
-              label: `Retrying after ${crnAttemptLabel}`,
+              label: "Retrying on next CRN",
               progress: 20,
               status: "warning",
               itemHash: attemptItemHash,
-              detail: `${attemptLabel} failed: ${lastError.message}`,
+              detail: `${attemptLabel} was discarded: ${lastError.message}`,
               error: lastError.message,
             });
             continue;
@@ -2000,6 +2055,25 @@ export class SponsorRelayController {
       return;
     }
 
+    const linkedRegistrationHashes = Array.from(
+      new Set(
+        this.state.bootstrapRegistrations
+          .filter((entry) => entry.instanceItemHash === instanceHash)
+          .map(
+            (entry) =>
+              entry.messageHash?.trim() ??
+              entry.itemHash?.trim() ??
+              entry.hash?.trim() ??
+              null,
+          )
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    const hashesToForget = Array.from(
+      new Set([instanceHash, ...linkedRegistrationHashes]),
+    );
+    const linkedRegistrationCount = linkedRegistrationHashes.length;
+
     this.patch({
       busy: { deletingInstanceHash: instanceHash },
       errorText: null,
@@ -2013,12 +2087,18 @@ export class SponsorRelayController {
         progress: 6,
         status: "warning",
         itemHash: instanceHash,
-        detail: "Preparing Aleph FORGET message.",
+        detail:
+          linkedRegistrationCount > 0
+            ? `Preparing Aleph FORGET message for the instance and ${linkedRegistrationCount} linked bootstrap registration${linkedRegistrationCount === 1 ? "" : "s"}.`
+            : "Preparing Aleph FORGET message.",
       });
       await forgetAlephMessages({
         sender: this.state.wallet.address,
-        hashes: [instanceHash],
-        reason: "Deleted from Sponsor Relay panel",
+        hashes: hashesToForget,
+        reason:
+          linkedRegistrationCount > 0
+            ? `Deleted instance and ${linkedRegistrationCount} linked relay bootstrap registration${linkedRegistrationCount === 1 ? "" : "s"} from Sponsor Relay panel`
+            : "Deleted from Sponsor Relay panel",
         signer: personalSign,
         hasher: sha256Hex,
         fetch: asJsonFetch,
@@ -2038,17 +2118,26 @@ export class SponsorRelayController {
         progress: 92,
         status: "info",
         itemHash: instanceHash,
-        detail: "Reloading current deployments.",
+        detail:
+          linkedRegistrationCount > 0
+            ? "Reloading current deployments and relay bootstrap registrations."
+            : "Reloading current deployments.",
       });
       await this.refresh();
-      this.trace("delete:submitted", { instanceHash });
+      this.trace("delete:submitted", {
+        instanceHash,
+        linkedRegistrationHashes,
+      });
       this.emitProgress({
         stage: "completed",
         label: "Delete completed",
         progress: 100,
         status: "success",
         itemHash: instanceHash,
-        detail: "Delete request submitted and deployments refreshed.",
+        detail:
+          linkedRegistrationCount > 0
+            ? `Delete request submitted, including ${linkedRegistrationCount} linked bootstrap registration${linkedRegistrationCount === 1 ? "" : "s"}, and state refreshed.`
+            : "Delete request submitted and deployments refreshed.",
         error: null,
       });
     } catch (error) {

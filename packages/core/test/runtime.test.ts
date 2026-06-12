@@ -87,6 +87,21 @@ test('describeRuntimeAvailability reports ready runtime when host IPv4 and mappe
   assert.equal(result.reason, null)
 })
 
+test('describeRuntimeAvailability reports invalid guest IPv6 for proxy-backed runtime', () => {
+  const result = describeRuntimeAvailability({
+    allocation: { source: 'scheduler' },
+    execution: { crnUrl: 'https://crn.example.com', version: 'v2', networking: { mapped_ports: {} } },
+    hostIpv4: '203.0.113.9',
+    ipv6: 'fc00:1:2:3::42',
+    proxyUrl: 'https://relay.example.com',
+    mappedPorts: { '22': { host: 32022, tcp: true } },
+    requirePublicGuestIpv6ForProxy: true
+  })
+
+  assert.equal(result.state, 'execution-invalid-public-ipv6')
+  assert.match(result.reason ?? '', /not globally routable/i)
+})
+
 test('fetchVmRuntime combines allocation, execution, and web access details', async () => {
   const result = await fetchVmRuntime({
     itemHash: 'instance-1',
@@ -181,4 +196,53 @@ test('waitForVmRuntime polls until runtime networking is ready', async () => {
 
   assert.equal(result.hostIpv4, '203.0.113.10')
   assert.equal(result.diagnostics?.state, 'ready')
+})
+
+test('waitForVmRuntime returns early when proxy-backed runtime exposes only non-public guest IPv6', async () => {
+  let attempts = 0
+  const result = await waitForVmRuntime({
+    itemHash: 'instance-1',
+    crnHash: 'crn-1',
+    crns: [{ hash: 'crn-1', address: 'https://crn.example.com' }],
+    requirePublicGuestIpv6ForProxy: true,
+    attempts: 2,
+    delayMs: 1,
+    sleep: async () => undefined,
+    fetch: async (url) => {
+      if (String(url).includes('scheduler.api.aleph.cloud')) {
+        return jsonResponse({
+          node: {
+            node_id: 'crn-1',
+            url: 'https://crn.example.com'
+          }
+        })
+      }
+      if (String(url).includes('api.2n6.me')) {
+        return jsonResponse({
+          url: 'https://relay.example.com',
+          active: true
+        })
+      }
+      if (String(url).includes('/v2/about/executions/list')) {
+        attempts += 1
+        return jsonResponse({
+          'instance-1': {
+            networking: {
+              host_ipv4: '203.0.113.10',
+              ipv6_ip: 'fc00:1:2:3::10',
+              mapped_ports: {
+                '22': { host: 32022, tcp: true, udp: false }
+              }
+            }
+          }
+        })
+      }
+      throw new Error(`Unexpected URL ${String(url)}`)
+    }
+  })
+
+  assert.equal(attempts, 1)
+  assert.equal(result.hostIpv4, '203.0.113.10')
+  assert.equal(result.diagnostics?.state, 'execution-invalid-public-ipv6')
+  assert.equal(result.diagnostics?.timedOut, undefined)
 })
