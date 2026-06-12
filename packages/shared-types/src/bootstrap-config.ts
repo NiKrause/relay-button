@@ -2,6 +2,8 @@ import type { PortMapping } from './runtime'
 
 export type VmBootstrapConfigStatus = 'pending' | 'applied' | 'expired' | 'failed'
 
+export type VmBootstrapConfigSignalType = 'applied'
+
 export interface VmBootstrapConfigRuntime {
   publicIpv4: string
   publicIpv6?: string | null
@@ -27,3 +29,17 @@ export interface VmBootstrapConfigRecord {
 }
 
 export type VmBootstrapConfigAggregate = Record<string, VmBootstrapConfigRecord>
+
+export interface VmBootstrapConfigSignalRecord {
+  deploymentToken: string
+  status: VmBootstrapConfigSignalType
+  profile: string
+  ownerAddress: string
+  instanceItemHash: string
+  updatedAt: string
+  publisherAddress?: string | null
+  authorization?: unknown
+  peerId?: string | null
+  probeMultiaddrs?: string[]
+  browserBootstrapMultiaddrs?: string[]
+}

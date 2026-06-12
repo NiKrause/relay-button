@@ -21,6 +21,7 @@ import {
   deleteVmBootstrapConfig,
   deployInstance as deploySharedInstance,
   ensureInstancePortForwards,
+  fetchVmRuntime,
   fetchRelayMetadataForRuntime,
   filterDeployableCrns,
   forgetAlephMessages,
@@ -31,6 +32,7 @@ import {
   waitForRelayBootstrapRegistration,
   waitForDeploymentResult,
   waitForSetupEndpoint,
+  waitForVmBootstrapConfigSignal,
   waitForVmRuntime,
 } from "../../../core/src/index.ts";
 import {
@@ -638,11 +640,18 @@ export class SponsorRelayController {
       throw new Error("Relay runtime did not expose a host IPv4 address.");
     }
 
-    const mappedPorts = args.runtime.mappedPorts ?? {};
+    let runtime = args.runtime;
+    let mappedPorts = runtime.mappedPorts ?? {};
     const setupPort = mappedPorts["80"]?.host ?? null;
     if (!setupPort) {
       throw new Error("Relay runtime did not expose the temporary setup endpoint.");
     }
+
+    let bootstrapSignalRelayMetadata: {
+      peerId: string;
+      probeMultiaddrs: string[];
+      browserBootstrapMultiaddrs: string[];
+    } | null = null;
 
     if (profile === "orbitdb-relay-pinner") {
       this.emitProgress({
@@ -719,6 +728,72 @@ export class SponsorRelayController {
         throw new Error("Missing deployment token for Aleph bootstrap config handoff.");
       }
 
+      if (runtime.proxyUrl && runtime.webAccess?.active !== true) {
+        this.emitProgress({
+          stage: "deployment-confirmed",
+          label: "Waiting for HTTPS route",
+          progress: 93,
+          status: "warning",
+          itemHash: args.itemHash,
+          detail:
+            "The relay received a 2n6 hostname, but it is not active yet. Waiting before handing HTTPS config to the guest.",
+        });
+
+        let latestRuntime = runtime;
+        for (let attempt = 0; attempt < UI_RUNTIME_WAIT_ATTEMPTS; attempt += 1) {
+          if (latestRuntime.webAccess?.active === true) {
+            break;
+          }
+
+          await new Promise((resolve) =>
+            globalThis.setTimeout(resolve, UI_RUNTIME_WAIT_DELAY_MS),
+          );
+          latestRuntime = await fetchVmRuntime({
+            itemHash: args.itemHash,
+            fetch: (url, init) => fetch(url, init),
+            crnHash:
+              runtime.selectedCrn?.hash ??
+              runtime.allocation?.crnHash ??
+              undefined,
+            crns: this.state.crns,
+            crnListUrl: this.props.crnListUrl,
+            requirePublicGuestIpv6ForProxy: true,
+          }).catch(() => latestRuntime);
+          this.emitProgress({
+            stage: "deployment-confirmed",
+            label: "Waiting for HTTPS route",
+            progress: 93,
+            status:
+              latestRuntime.webAccess?.active === true ? "info" : "warning",
+            itemHash: args.itemHash,
+            detail:
+              `2n6 activation ${attempt + 1}/${UI_RUNTIME_WAIT_ATTEMPTS}: ` +
+              `${latestRuntime.webAccess?.active === true ? "active" : "still pending"} ` +
+              `for ${latestRuntime.proxyUrl ?? runtime.proxyUrl ?? "reserved proxy URL"}.`,
+          });
+          this.trace("deploy:bootstrap-proxy-activation", {
+            itemHash: args.itemHash,
+            attempt: attempt + 1,
+            attempts: UI_RUNTIME_WAIT_ATTEMPTS,
+            active: latestRuntime.webAccess?.active === true,
+            proxyUrl: latestRuntime.proxyUrl ?? null,
+          });
+        }
+
+        runtime = latestRuntime;
+        mappedPorts = runtime.mappedPorts ?? mappedPorts;
+      }
+
+      if (!runtime.hostIpv4) {
+        throw new Error(
+          "Relay runtime lost its host IPv4 address while waiting for HTTPS activation.",
+        );
+      }
+
+      const runtimeHostIpv4 = runtime.hostIpv4;
+      const activeProxyUrl =
+        runtime.webAccess?.active === true ? (runtime.proxyUrl ?? null) : null;
+
       this.emitProgress({
         stage: "deployment-confirmed",
         label: "Publishing relay config",
@@ -737,9 +812,9 @@ export class SponsorRelayController {
         expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
         status: "pending",
         runtime: {
-          publicIpv4: args.runtime.hostIpv4,
-          publicIpv6: args.runtime.ipv6 ?? null,
-          proxyUrl: args.runtime.proxyUrl ?? null,
+          publicIpv4: runtimeHostIpv4,
+          publicIpv6: runtime.ipv6 ?? null,
+          proxyUrl: activeProxyUrl,
           mappedPorts: mappedPorts,
         },
         bootstrap: {
@@ -769,75 +844,159 @@ export class SponsorRelayController {
         aggregateItemHash: bootstrapConfigPublication.aggregateItemHash,
         aggregateStatus: bootstrapConfigPublication.aggregateStatus,
       });
-    }
 
-    this.emitProgress({
-      stage: "publishing-bootstrap",
-      label: "Waiting for secure relay metadata",
-      progress: 95,
-      status: "warning",
-      itemHash: args.itemHash,
-      detail:
-        "Runtime networking is available. Waiting for the secure relay metadata endpoint to report final public multiaddrs.",
-    });
+      this.emitProgress({
+        stage: "deployment-confirmed",
+        label: "Waiting for guest config",
+        progress: 94,
+        status: "info",
+        itemHash: args.itemHash,
+        detail:
+          "Waiting for the relay VM to acknowledge that it consumed the Aleph bootstrap config.",
+      });
 
-    const relayMetadata = await fetchRelayMetadataForRuntime({
-      runtime: args.runtime,
-      fetch: (url, init) => fetch(url, init),
-      preferSecureMetadata: profile === "uc-go-peer",
-      attempts: 80,
-      delayMs: 3000,
-      timeoutMs: 240000,
-      onAttempt: (result) => {
-        const payload =
-          result.payload && typeof result.payload === "object"
-            ? (result.payload as Record<string, unknown>)
-            : null;
-        const metadata =
-          payload?.metadata && typeof payload.metadata === "object"
-            ? (payload.metadata as Record<string, unknown>)
-            : null;
-        this.trace("deploy:relay-metadata-attempt", {
+      const bootstrapConfigSignal = await waitForVmBootstrapConfigSignal({
+        deploymentToken: args.deploymentToken,
+        ownerAddress: this.state.wallet.address,
+        instanceItemHash: args.itemHash,
+        fetch: asJsonFetch,
+        apiHost: this.client.apiHost,
+        attempts: 40,
+        delayMs: 3000,
+      });
+
+      this.trace("deploy:bootstrap-config-signal-visible", {
+        itemHash: args.itemHash,
+        deploymentToken: args.deploymentToken,
+        bootstrapConfigSignal,
+      });
+
+      if (!bootstrapConfigSignal) {
+        throw new Error(
+          "The relay VM did not confirm that it applied the Aleph bootstrap config in time.",
+        );
+      }
+
+      bootstrapSignalRelayMetadata =
+        typeof bootstrapConfigSignal.peerId === "string" &&
+        bootstrapConfigSignal.peerId.length > 0 &&
+        Array.isArray(bootstrapConfigSignal.probeMultiaddrs) &&
+        bootstrapConfigSignal.probeMultiaddrs.length > 0
+          ? {
+              peerId: bootstrapConfigSignal.peerId,
+              probeMultiaddrs: bootstrapConfigSignal.probeMultiaddrs,
+              browserBootstrapMultiaddrs:
+                bootstrapConfigSignal.browserBootstrapMultiaddrs ?? [],
+            }
+          : null;
+
+      if (runtime.proxyUrl && runtime.webAccess?.active !== true) {
+        this.trace("deploy:bootstrap-proxy-fallback", {
           itemHash: args.itemHash,
-          attempt: result.attempt,
-          attempts: result.attempts,
-          requestUrl: result.requestUrl,
-          metadataUrl: result.metadataUrl,
-          hostIpv4: result.hostIpv4,
-          setupPort: result.setupPort,
-          ok: result.ok,
-          status: result.status,
-          ready: result.ready,
-          error: result.error ?? null,
-          payloadStatus:
-            payload && typeof payload.status === "string" ? payload.status : null,
-          peerId:
-            metadata && typeof metadata.peer_id === "string"
-              ? metadata.peer_id
-              : null,
-          probeMultiaddrCount: Array.isArray(metadata?.probe_multiaddrs)
-            ? metadata.probe_multiaddrs.length
-            : 0,
-          browserBootstrapMultiaddrCount: Array.isArray(
-            metadata?.browser_bootstrap_multiaddrs,
-          )
-            ? metadata.browser_bootstrap_multiaddrs.length
-            : 0,
+          deploymentToken: args.deploymentToken,
+          proxyUrl: runtime.proxyUrl,
+          bootstrapSignalRelayMetadata,
         });
         this.emitProgress({
-          stage: "publishing-bootstrap",
-          label: result.ready
-            ? "Secure relay metadata ready"
-            : "Waiting for secure relay metadata",
-          progress: 95,
-          status: result.ready ? "success" : "warning",
+          stage: "deployment-confirmed",
+          label: "Continuing without HTTPS route",
+          progress: 94,
+          status: "warning",
           itemHash: args.itemHash,
-          detail: result.ready
-            ? `Relay metadata ${result.attempt}/${result.attempts}: secure endpoint responded and public multiaddrs are available.`
-            : `Relay metadata ${result.attempt}/${result.attempts}: waiting for ${result.metadataUrl}.`,
+          detail:
+            "The 2n6 HTTPS route stayed inactive, so guest setup continued without Caddy. Secure browser routing can be enabled later when the proxy becomes available.",
         });
-      },
-    });
+        runtime = {
+          ...runtime,
+          proxyUrl: null,
+          webAccess: runtime.webAccess
+            ? {
+                ...runtime.webAccess,
+                active: false,
+              }
+            : runtime.webAccess,
+        };
+      }
+    }
+
+    let relayMetadata = bootstrapSignalRelayMetadata;
+    if (relayMetadata) {
+      this.trace("deploy:relay-metadata-from-bootstrap-signal", {
+        itemHash: args.itemHash,
+        peerId: relayMetadata.peerId,
+        probeMultiaddrCount: relayMetadata.probeMultiaddrs.length,
+        browserBootstrapMultiaddrCount:
+          relayMetadata.browserBootstrapMultiaddrs.length,
+      });
+    } else {
+      this.emitProgress({
+        stage: "publishing-bootstrap",
+        label: "Waiting for secure relay metadata",
+        progress: 95,
+        status: "warning",
+        itemHash: args.itemHash,
+        detail:
+          "Runtime networking is available. Waiting for the secure relay metadata endpoint to report final public multiaddrs.",
+      });
+
+      relayMetadata = await fetchRelayMetadataForRuntime({
+        runtime,
+        fetch: (url, init) => fetch(url, init),
+        preferSecureMetadata: profile === "uc-go-peer" && Boolean(runtime.proxyUrl),
+        attempts: 80,
+        delayMs: 3000,
+        timeoutMs: 240000,
+        onAttempt: (result) => {
+          const payload =
+            result.payload && typeof result.payload === "object"
+              ? (result.payload as Record<string, unknown>)
+              : null;
+          const metadata =
+            payload?.metadata && typeof payload.metadata === "object"
+              ? (payload.metadata as Record<string, unknown>)
+              : null;
+          this.trace("deploy:relay-metadata-attempt", {
+            itemHash: args.itemHash,
+            attempt: result.attempt,
+            attempts: result.attempts,
+            requestUrl: result.requestUrl,
+            metadataUrl: result.metadataUrl,
+            hostIpv4: result.hostIpv4,
+            setupPort: result.setupPort,
+            ok: result.ok,
+            status: result.status,
+            ready: result.ready,
+            error: result.error ?? null,
+            payloadStatus:
+              payload && typeof payload.status === "string" ? payload.status : null,
+            peerId:
+              metadata && typeof metadata.peer_id === "string"
+                ? metadata.peer_id
+                : null,
+            probeMultiaddrCount: Array.isArray(metadata?.probe_multiaddrs)
+              ? metadata.probe_multiaddrs.length
+              : 0,
+            browserBootstrapMultiaddrCount: Array.isArray(
+              metadata?.browser_bootstrap_multiaddrs,
+            )
+              ? metadata.browser_bootstrap_multiaddrs.length
+              : 0,
+          });
+          this.emitProgress({
+            stage: "publishing-bootstrap",
+            label: result.ready
+              ? "Secure relay metadata ready"
+              : "Waiting for secure relay metadata",
+            progress: 95,
+            status: result.ready ? "success" : "warning",
+            itemHash: args.itemHash,
+            detail: result.ready
+              ? `Relay metadata ${result.attempt}/${result.attempts}: secure endpoint responded and public multiaddrs are available.`
+              : `Relay metadata ${result.attempt}/${result.attempts}: waiting for ${result.metadataUrl}.`,
+          });
+        },
+      });
+    }
     if (!relayMetadata) {
       throw new Error("Relay metadata did not include a peer ID and public multiaddrs.");
     }

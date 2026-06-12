@@ -10,6 +10,7 @@ import {
   createInstanceContent,
   deployInstance,
   ensureInstancePortForwards,
+  fetchVmRuntime,
   fetchCrns,
   fetchUcGoPeerMetadata,
   notifyCrnAllocationWithRetry,
@@ -399,7 +400,7 @@ export async function executeDeployPlan(
     log(
       `[deploy] waiting for runtime networking on ${candidateCrn.name ?? candidateCrn.hash}`,
     );
-    const runtime = await waitForVmRuntime({
+    let runtime = await waitForVmRuntime({
       itemHash: deployment.itemHash,
       fetch: fetchImpl,
       crnHash: candidateCrn.hash,
@@ -480,11 +481,56 @@ export async function executeDeployPlan(
       plan.autoConfigure !== false &&
       (plan.profile === "uc-go-peer" || plan.profile === "orbitdb-relay-pinner")
     ) {
-      const mappedPorts = runtime.mappedPorts ?? {};
+        const mappedPorts = runtime.mappedPorts ?? {};
       const setupPort = mappedPorts["80"]?.host ?? null;
-      const proxyUrl = plan.enableCaddyProxy
-        ? (runtime.proxyUrl ?? null)
-        : null;
+      let proxyUrl = plan.enableCaddyProxy ? (runtime.proxyUrl ?? null) : null;
+
+      if (
+        plan.enableCaddyProxy &&
+        proxyUrl &&
+        runtime.webAccess?.active !== true
+      ) {
+        log(
+          `[deploy] proxy URL reserved but not active yet for ${deployment.itemHash}; waiting before guest configure`,
+        );
+        let latestRuntime = runtime;
+        for (let attempt = 0; attempt < plan.setupAttempts; attempt += 1) {
+          if (latestRuntime.webAccess?.active === true) {
+            break;
+          }
+          await sleepImpl(plan.setupDelayMs);
+          latestRuntime = await fetchVmRuntime({
+            itemHash: deployment.itemHash,
+            fetch: fetchImpl,
+            crnHash: candidateCrn.hash,
+            crns: candidateCrns,
+            crnListUrl: plan.crnListUrl,
+          }).catch(() => latestRuntime);
+          log(
+            `[deploy] proxy activation ${attempt + 1}/${plan.setupAttempts}: active=${
+              latestRuntime.webAccess?.active === true
+            } proxy=${latestRuntime.proxyUrl ?? "-"}`,
+          );
+        }
+        runtime = latestRuntime;
+        runtimeMetadata.allocation = runtime.allocation;
+        runtimeMetadata.hostIpv4 = runtime.hostIpv4;
+        runtimeMetadata.ipv6 = runtime.ipv6;
+        runtimeMetadata.proxyUrl = runtime.proxyUrl;
+        runtimeMetadata.sshCommand = runtime.sshCommand;
+        runtimeMetadata.mappedPorts = runtime.mappedPorts;
+        runtimeMetadata.diagnostics = runtime.diagnostics;
+        runtimeMetadata.selectedCrn = runtime.selectedCrn ?? {
+          hash: candidateCrn.hash,
+          name: candidateCrn.name ?? "",
+        };
+        proxyUrl = runtime.webAccess?.active === true ? (runtime.proxyUrl ?? null) : null;
+        if (!proxyUrl) {
+          log(
+            `[deploy] proxy URL still inactive for ${deployment.itemHash}; configuring relay without Caddy for now`,
+          );
+        }
+      }
 
       if (setupPort && runtime.hostIpv4) {
         log(

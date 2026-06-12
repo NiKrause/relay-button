@@ -306,19 +306,22 @@ def sign_aleph_message(unsigned_message: dict[str, object], private_key: str) ->
 
 def broadcast_aleph_message(api_host: str, message: dict[str, object]) -> tuple[int, dict]:
     url = urllib.parse.urljoin(api_host.rstrip("/") + "/", "api/v0/messages")
-    attempts = [
-        {"sync": True, "message": message},
-        {**message, "sync": True},
-        dict(message),
-    ]
+    request_body = {"sync": True, "message": message}
+    max_attempts = 3
     last: tuple[int, dict] | None = None
-    for attempt in attempts:
-        last = post_json(url, attempt)
+    for index in range(max_attempts):
+        last = post_json(url, request_body)
         if 200 <= last[0] < 300:
             return last
-    if last is None:
-        raise RuntimeError("Aleph broadcast failed before any attempt was made")
-    raise RuntimeError(f"Aleph broadcast failed: {last[0]} {json_dumps(last[1])}")
+        publication_status = last[1].get("publication_status") if isinstance(last[1], dict) else None
+        retryable = last[0] >= 500 or (
+            isinstance(publication_status, dict)
+            and isinstance(publication_status.get("status"), str)
+            and publication_status.get("status").strip().lower() == "error"
+        )
+        if index >= max_attempts - 1 or not retryable:
+            raise RuntimeError(f"Aleph broadcast failed: {last[0]} {json_dumps(last[1])}")
+    raise RuntimeError("Aleph broadcast failed: retry budget exhausted")
 
 
 def parse_post_record(entry: object) -> dict[str, object] | None:
