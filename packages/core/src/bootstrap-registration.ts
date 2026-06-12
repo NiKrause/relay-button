@@ -61,6 +61,11 @@ export async function waitForRelayBootstrapRegistration(args: {
   postType?: string;
   attempts?: number;
   delayMs?: number;
+  onAttempt?: (
+    match: RelayBootstrapVisibilityResult | null,
+    attempt: number,
+    attempts: number,
+  ) => void;
 }): Promise<RelayBootstrapVisibilityResult | null> {
   const attempts = Math.max(1, Number(args.attempts ?? 10));
   const delayMs = Math.max(0, Number(args.delayMs ?? 2000));
@@ -91,7 +96,7 @@ export async function waitForRelayBootstrapRegistration(args: {
     });
 
     if (match?.content) {
-      return {
+      const visibleRegistration = {
         itemHash: match.itemHash ?? null,
         hash: match.hash ?? null,
         sender: typeof match.address === "string" ? match.address : null,
@@ -102,7 +107,11 @@ export async function waitForRelayBootstrapRegistration(args: {
           ? match.content.browserMultiaddrs
           : [],
       };
+      args.onAttempt?.(visibleRegistration, attempt + 1, attempts);
+      return visibleRegistration;
     }
+
+    args.onAttempt?.(null, attempt + 1, attempts);
 
     if (attempt < attempts - 1) {
       await sleep(delayMs);

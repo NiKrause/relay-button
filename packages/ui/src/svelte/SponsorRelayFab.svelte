@@ -236,7 +236,7 @@ export let apiHost = undefined
                 {#if confirmedRegistration}
                   <span class="chip chip-confirmed">
                     <span class="chip-dot-confirmed"></span>
-                    Registration confirmed
+                    Aleph bootstrap registered
                   </span>
                 {/if}
               </div>
@@ -318,7 +318,7 @@ export let apiHost = undefined
                 <div>Browser multiaddrs: {String(entry.content?.browserMultiaddrs?.length ?? 0)}</div>
                 <div>Updated: {formatDateTime(entry.content?.updatedAt ?? entry.time)}</div>
                 <button
-                  class="delete"
+                  class="warning"
                   type="button"
                   disabled={!registrationHash || state.busy.deletingRegistrationHash === registrationHash}
                   on:click={() => registrationHash && controller.deleteBootstrapRegistration(registrationHash)}
@@ -429,24 +429,41 @@ export let apiHost = undefined
 
   .refresh,
   .primary,
-  .delete {
-    border: 1px solid rgba(255, 255, 255, 0.12);
+  .delete,
+  .warning {
     border-radius: 0.95rem;
     padding: 0.7rem 0.9rem;
     cursor: pointer;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .refresh {
+    border: 1px solid rgba(255, 255, 255, 0.22);
     color: var(--relay-text);
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(8px);
   }
 
   .primary {
     width: 100%;
-    background: linear-gradient(135deg, var(--relay-blue), var(--relay-red));
-    font-weight: 700;
+    border: 1px solid rgba(251, 191, 36, 0.42);
+    background: linear-gradient(135deg, #f6c453 0%, #f59e0b 100%);
+    color: #281606;
+    box-shadow: 0 10px 24px rgba(245, 158, 11, 0.24);
   }
 
   .delete {
-    background: rgba(233, 19, 21, 0.15);
-    color: #ffd4d4;
+    border: 1px solid rgba(248, 113, 113, 0.45);
+    background: rgba(239, 68, 68, 0.18);
+    color: #ffe2e2;
+  }
+
+  .warning {
+    border: 1px solid rgba(251, 146, 60, 0.4);
+    background: rgba(251, 146, 60, 0.16);
+    color: #fed7aa;
   }
 
   .chip-confirmed {

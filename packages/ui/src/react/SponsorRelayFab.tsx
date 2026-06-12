@@ -42,6 +42,57 @@ const fieldStyle: React.CSSProperties = {
   lineHeight: 1.45,
 };
 
+const secondaryButtonStyle: React.CSSProperties = {
+  borderRadius: "0.95rem",
+  border: "1px solid rgba(255,255,255,0.22)",
+  background: "rgba(255,255,255,0.10)",
+  color: "#f8fafc",
+  padding: "0.72rem 0.95rem",
+  fontFamily: '"DM Sans", "Inter", sans-serif',
+  fontSize: "0.92rem",
+  fontWeight: 700,
+  lineHeight: 1.1,
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06)",
+  backdropFilter: "blur(8px)",
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  borderRadius: "0.95rem",
+  border: "1px solid rgba(251, 191, 36, 0.42)",
+  background: "linear-gradient(135deg, #f6c453 0%, #f59e0b 100%)",
+  color: "#281606",
+  padding: "0.82rem 1rem",
+  fontFamily: '"DM Sans", "Inter", sans-serif',
+  fontSize: "0.96rem",
+  fontWeight: 800,
+  lineHeight: 1.1,
+  boxShadow: "0 10px 24px rgba(245, 158, 11, 0.24)",
+};
+
+const dangerButtonStyle: React.CSSProperties = {
+  borderRadius: "0.95rem",
+  border: "1px solid rgba(248, 113, 113, 0.45)",
+  background: "rgba(239, 68, 68, 0.18)",
+  color: "#ffe2e2",
+  padding: "0.72rem 0.95rem",
+  fontFamily: '"DM Sans", "Inter", sans-serif',
+  fontSize: "0.9rem",
+  fontWeight: 700,
+  lineHeight: 1.1,
+};
+
+const warningButtonStyle: React.CSSProperties = {
+  borderRadius: "0.95rem",
+  border: "1px solid rgba(251, 146, 60, 0.4)",
+  background: "rgba(251, 146, 60, 0.16)",
+  color: "#fed7aa",
+  padding: "0.72rem 0.95rem",
+  fontFamily: '"DM Sans", "Inter", sans-serif',
+  fontSize: "0.9rem",
+  fontWeight: 700,
+  lineHeight: 1.1,
+};
+
 const themedLauncherBackground =
   "linear-gradient(135deg, var(--le-space-sponsor-relay-launcher-start, #4f46e5) 0%, var(--le-space-sponsor-relay-launcher-end, #6366f1) 100%)";
 const themedLauncherBorder =
@@ -535,7 +586,11 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   Sponsor Relay
                 </h2>
               </div>
-              <button type="button" onClick={() => void controller.refresh()}>
+              <button
+                type="button"
+                style={secondaryButtonStyle}
+                onClick={() => void controller.refresh()}
+              >
                 {state.busy.refreshing ? "Syncing" : "Refresh"}
               </button>
             </div>
@@ -869,7 +924,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   ? controller.deploy()
                   : controller.connectWallet())
               }
-              style={{ width: "100%", marginTop: "1rem" }}
+              style={{ ...primaryButtonStyle, width: "100%", marginTop: "1rem" }}
             >
               {state.wallet.connected
                 ? state.busy.deploying
@@ -930,7 +985,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                                     "0 0 0 3px rgba(34, 197, 94, 0.18)",
                                 }}
                               />
-                              Registration confirmed
+                              Aleph bootstrap registered
                             </span>
                           ) : null}
                         </span>
@@ -970,6 +1025,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                         </div>
                         <button
                           type="button"
+                          style={dangerButtonStyle}
                           onClick={() =>
                             void controller.deleteInstance(
                               entry.instance.item_hash,
@@ -1045,6 +1101,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                           </div>
                           <button
                             type="button"
+                            style={warningButtonStyle}
                             disabled={
                               !registrationHash ||
                               state.busy.deletingRegistrationHash ===
