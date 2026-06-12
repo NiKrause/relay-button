@@ -1011,6 +1011,7 @@ test('executeDeployPlan waits for 2n6 proxy activation before configuring guest 
             'hash-1': {
               networking: {
                 host_ipv4: '203.0.113.7',
+                ipv6_ip: '2001:db8::7',
                 mapped_ports: {
                   '80': { host: 30080, tcp: true, udp: false },
                   '22': { host: 32022, tcp: true, udp: false },
