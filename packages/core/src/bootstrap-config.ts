@@ -94,7 +94,7 @@ function normalizeVmBootstrapConfigRecord(
   if (expiresAtMs <= nowMs) return null
   if (createdAtMs < nowMs - maxRecordAgeMs) return null
 
-  return candidate as VmBootstrapConfigRecord
+  return candidate as unknown as VmBootstrapConfigRecord
 }
 
 export async function fetchVmBootstrapConfigAggregate(
