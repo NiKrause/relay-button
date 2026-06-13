@@ -223,7 +223,8 @@ function rootfsHealth(args: {
     return {
       tone: "error",
       label: "not found on Aleph",
-      detail: "The referenced rootfs STORE message is not available yet.",
+      detail:
+        "The manifest points to a rootfs STORE message that Aleph cannot find. Check that the manifest URL is correct and that the referenced rootfs was not forgotten.",
     };
   }
 
@@ -265,9 +266,12 @@ function rootfsHealth(args: {
 
   return {
     tone: "error",
-    label: "not deployable",
+    label: "manifest rootfs not deployable",
     detail:
-      args.resolution.rejectionReason ?? "Aleph rejected the rootfs reference.",
+      args.resolution.rejectionReason ??
+      (args.resolution.messageType === "STORE"
+        ? "This manifest points to a rootfs STORE message that exists but is not deployable anymore, for example because it was forgotten or replaced. Double-check the manifest URL."
+        : "Aleph rejected the rootfs reference. Double-check that the manifest URL points to the intended current rootfs."),
   };
 }
 
@@ -1044,6 +1048,19 @@ export class SponsorRelayController {
       });
     }
     if (!relayMetadata) {
+      await this.refresh().catch(() => undefined);
+
+      const confirmedAfterRefresh = this.state.bootstrapRegistrations.some(
+        (entry) => entry.instanceItemHash === args.itemHash && entry.confirmed,
+      );
+
+      if (confirmedAfterRefresh) {
+        this.trace("deploy:relay-metadata-recovered-from-refresh", {
+          itemHash: args.itemHash,
+        });
+        return;
+      }
+
       throw new Error("Relay metadata did not include a peer ID and public multiaddrs.");
     }
 
@@ -1382,6 +1399,23 @@ export class SponsorRelayController {
         itemHash,
         detail:
           "Aleph processed the deployment. Waiting for scheduler/runtime allocation details.",
+      });
+      return;
+    }
+
+    const hasConfirmedBootstrapRegistration = this.state.bootstrapRegistrations.some(
+      (entry) => entry.instanceItemHash === itemHash && entry.confirmed,
+    );
+
+    if (hasConfirmedBootstrapRegistration) {
+      this.emitProgress({
+        stage: "completed",
+        label: "Relay ready",
+        progress: 100,
+        status: "success",
+        itemHash,
+        detail:
+          "Runtime networking is available and the relay bootstrap registration is confirmed on Aleph.",
       });
       return;
     }
@@ -1880,13 +1914,15 @@ export class SponsorRelayController {
     }
     if (
       !this.state.manifest ||
-      !this.state.rootfsVerified ||
+      this.state.rootfsHealth.tone !== "ok" ||
       !this.state.pricingSummary.pricing ||
       !this.state.pricingSummary.tier
     ) {
       this.patch({
         errorText:
-          "Manifest, rootfs, and pricing must be ready before deploying.",
+          this.state.rootfsHealth.tone === "error"
+            ? `Cannot deploy: ${this.state.rootfsHealth.detail ?? this.state.rootfsHealth.label}`
+            : "Manifest, rootfs, and pricing must be ready before deploying.",
       });
       return;
     }
@@ -1933,6 +1969,7 @@ export class SponsorRelayController {
       for (const [candidateIndex, candidateCrn] of orderedCrns.entries()) {
         let attemptItemHash: string | null = null;
         let attemptDeploymentToken: string | null = null;
+        let attemptProfile: ReturnType<typeof relayProfileForManifest> = null;
         const crnAttemptLabel = `CRN ${candidateIndex + 1}/${orderedCrns.length}`;
         const crnDisplayName = candidateCrn.name ?? candidateCrn.hash;
 
@@ -1946,6 +1983,7 @@ export class SponsorRelayController {
 
         try {
           const profile = relayProfileForManifest(this.state.manifest);
+          attemptProfile = profile;
           const sshPublicKey =
             profile === "uc-go-peer"
               ? appendDeploymentTokenToSshPublicKey(
@@ -2224,6 +2262,135 @@ export class SponsorRelayController {
             itemHash: attemptItemHash,
             error: lastError.message,
           });
+
+          if (
+            attemptItemHash &&
+            attemptDeploymentToken &&
+            attemptProfile &&
+            !failedDueToInvalidIpv6
+          ) {
+            try {
+              const latestRuntime = await fetchVmRuntime({
+                itemHash: attemptItemHash,
+                fetch: (url, init) => fetch(url, init),
+                crnHash: candidateCrn.hash,
+                crns: this.state.crns,
+                crnListUrl: this.props.crnListUrl,
+                requirePublicGuestIpv6ForProxy: true,
+              });
+
+              if (latestRuntime.diagnostics?.state === "ready") {
+                const reconciledRelayMetadata = await fetchRelayMetadataForRuntime({
+                  runtime: latestRuntime,
+                  fetch: (url, init) => fetch(url, init),
+                  preferSecureMetadata:
+                    attemptProfile === "uc-go-peer" && Boolean(latestRuntime.proxyUrl),
+                  attempts: 3,
+                  delayMs: 1000,
+                  timeoutMs: 15000,
+                }).catch(() => null);
+
+                if (reconciledRelayMetadata) {
+                  const registrationId = createRelayBootstrapRegistrationId(
+                    attemptProfile,
+                    this.state.instanceName.trim(),
+                    attemptItemHash,
+                  );
+                  const visibleRegistration =
+                    await waitForRelayBootstrapRegistration({
+                      registrationId,
+                      peerId: reconciledRelayMetadata.peerId,
+                      fetch: asJsonFetch,
+                      apiHost: this.client.apiHost,
+                      attempts: 3,
+                      delayMs: 1000,
+                    }).catch(() => null);
+
+                  if (visibleRegistration) {
+                    this.trace("deploy:recovered-after-error", {
+                      itemHash: attemptItemHash,
+                      registrationId,
+                      peerId: reconciledRelayMetadata.peerId,
+                      error: lastError.message,
+                    });
+                    this.rememberRuntimeDetails(attemptItemHash, {
+                      messageStatus: "processed",
+                      allocationSource: latestRuntime.allocation?.source ?? null,
+                      crnUrl:
+                        latestRuntime.allocation?.crnUrl ??
+                        latestRuntime.execution?.crnUrl ??
+                        null,
+                      hostIpv4: latestRuntime.hostIpv4 ?? null,
+                      ipv6: latestRuntime.ipv6 ?? null,
+                      vmIpv4: latestRuntime.execution?.networking?.ipv4_ip ?? null,
+                      webUrl:
+                        latestRuntime.webAccessUrl ??
+                        latestRuntime.proxyUrl ??
+                        latestRuntime.execution?.networking?.proxy_url ??
+                        null,
+                      sshCommand: latestRuntime.sshCommand ?? null,
+                      mappedPorts:
+                        latestRuntime.execution != null
+                          ? mappedPorts(latestRuntime.execution)
+                          : runtimeMappedPorts(latestRuntime.mappedPorts),
+                      execution: latestRuntime.execution ?? null,
+                      error: null,
+                    });
+                    this.patch({
+                      busy: { deploying: false },
+                    });
+                    await this.refresh();
+                    this.lastCompletedDeploymentHash = attemptItemHash;
+                    this.emitProgress({
+                      stage: "completed",
+                      label: "Relay ready",
+                      progress: 100,
+                      status: "success",
+                      itemHash: attemptItemHash,
+                      detail:
+                        "The relay completed startup after a transient UI polling error. Runtime and bootstrap registration are confirmed.",
+                    });
+                    return;
+                  }
+                }
+              }
+            } catch (reconcileError) {
+              this.trace("deploy:recovery-check-error", {
+                itemHash: attemptItemHash,
+                error:
+                  reconcileError instanceof Error
+                    ? reconcileError.message
+                    : String(reconcileError),
+              });
+            }
+
+            await this.refresh().catch(() => undefined);
+            const recoveredRegistration = this.state.bootstrapRegistrations.some(
+              (entry) =>
+                entry.instanceItemHash === attemptItemHash && entry.confirmed,
+            );
+
+            if (recoveredRegistration) {
+              this.trace("deploy:recovered-from-refresh-state", {
+                itemHash: attemptItemHash,
+                error: lastError.message,
+              });
+              this.patch({
+                busy: { deploying: false },
+              });
+              this.lastCompletedDeploymentHash = attemptItemHash;
+              this.emitProgress({
+                stage: "completed",
+                label: "Relay ready",
+                progress: 100,
+                status: "success",
+                itemHash: attemptItemHash,
+                detail:
+                  "The relay completed startup after a transient browser-side polling error. Runtime and bootstrap registration are confirmed.",
+              });
+              return;
+            }
+          }
 
           if (attemptItemHash) {
             this.emitProgress({

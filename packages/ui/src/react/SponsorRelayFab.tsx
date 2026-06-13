@@ -924,6 +924,11 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   ? controller.deploy()
                   : controller.connectWallet())
               }
+              disabled={
+                state.wallet.connected
+                  ? state.busy.deploying || state.rootfsHealth.tone !== "ok"
+                  : state.busy.connectingWallet
+              }
               style={{ ...primaryButtonStyle, width: "100%", marginTop: "1rem" }}
             >
               {state.wallet.connected

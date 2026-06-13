@@ -193,7 +193,7 @@ export let apiHost = undefined
 
     <div class="actions">
       {#if state.wallet.connected}
-        <button class="primary" type="button" on:click={() => controller.deploy()} disabled={state.busy.deploying || !state.rootfsVerified}>
+        <button class="primary" type="button" on:click={() => controller.deploy()} disabled={state.busy.deploying || state.rootfsHealth.tone !== 'ok'}>
           {state.busy.deploying ? 'Deploying…' : 'Deploy Relay'}
         </button>
       {:else}
