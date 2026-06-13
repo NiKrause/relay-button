@@ -194,6 +194,7 @@ export function describeRuntimeAvailability(runtime: {
   const mappedPorts = runtime.mappedPorts ?? {}
   const hostIpv4 = runtime.hostIpv4 ?? null
   const ipv6 = runtime.ipv6 ?? null
+  const executionGuestIpv6 = execution?.networking?.ipv6_ip ?? null
   const proxyUrl = runtime.proxyUrl ?? null
   const schedulerSource = runtime.allocation?.source ?? null
   const webAccessActive = runtime.webAccess?.active ?? null
@@ -204,12 +205,13 @@ export function describeRuntimeAvailability(runtime: {
     mappedPortCount > 0 &&
     runtime.requirePublicGuestIpv6ForProxy === true &&
     proxyUrl &&
-    !isLikelyGlobalIpv6(ipv6)
+    executionGuestIpv6 &&
+    !isLikelyGlobalIpv6(executionGuestIpv6)
   ) {
     return {
       state: 'execution-invalid-public-ipv6',
       reason:
-        `The CRN exposed runtime networking, but the guest IPv6${ipv6 ? ` (${ipv6})` : ''} is not globally routable. ` +
+        `The CRN exposed runtime networking, but the guest IPv6 (${executionGuestIpv6}) is not globally routable. ` +
         'Proxy-backed HTTPS activation cannot succeed until the CRN reports a public guest IPv6.',
       schedulerSource,
       executionSeen: Boolean(execution),
