@@ -2,7 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  createVmBootstrapConfigAggregateContent,
   fetchVmBootstrapConfigSignals,
+  listStaleVmBootstrapConfigAggregateMessageHashes,
   waitForVmBootstrapConfigSignal,
 } from '../src/bootstrap-config.ts'
 
@@ -95,4 +97,102 @@ test('waitForVmBootstrapConfigSignal resolves once the applied signal appears', 
   assert.equal(attempts, 2)
   assert.equal(signal?.status, 'applied')
   assert.equal(signal?.deploymentToken, 'deploy-123')
+})
+
+test('createVmBootstrapConfigAggregateContent prunes expired stale records before appending the new token', () => {
+  const content = createVmBootstrapConfigAggregateContent({
+    sender: '0xowner',
+    now: Date.parse('2026-06-13T12:00:00Z') / 1000,
+    record: {
+      deploymentToken: 'fresh-token',
+      profile: 'uc-go-peer',
+      ownerAddress: '0xowner',
+      instanceItemHash: 'instance-fresh',
+      createdAt: '2026-06-13T12:00:00Z',
+      expiresAt: '2026-06-13T12:30:00Z',
+      status: 'pending',
+      runtime: {
+        publicIpv4: '1.2.3.4',
+        publicIpv6: null,
+        proxyUrl: null,
+        mappedPorts: {},
+      },
+    },
+    existingAggregate: {
+      stale: {
+        deploymentToken: 'stale',
+        profile: 'uc-go-peer',
+        ownerAddress: '0xowner',
+        instanceItemHash: 'instance-stale',
+        createdAt: '2026-06-13T04:00:00Z',
+        expiresAt: '2026-06-13T04:30:00Z',
+        status: 'pending',
+        runtime: {
+          publicIpv4: '1.2.3.4',
+          publicIpv6: null,
+          proxyUrl: null,
+          mappedPorts: {},
+        },
+      },
+      malformed: {
+        deploymentToken: '',
+      } as never,
+    },
+  })
+
+  assert.deepEqual(Object.keys(content.content), ['fresh-token'])
+})
+
+test('listStaleVmBootstrapConfigAggregateMessageHashes returns only old superseded vm-bootstrap-config aggregates', async () => {
+  const hashes = await listStaleVmBootstrapConfigAggregateMessageHashes({
+    address: '0xowner',
+    currentAggregateItemHash: 'current-hash',
+    olderThanMs: 6 * 60 * 60 * 1000,
+    nowMs: Date.parse('2026-06-13T12:00:00Z'),
+    fetch: async (url) => ({
+      ok: true,
+      status: 200,
+      async json() {
+        const requestUrl = new URL(String(url))
+        const page = Number(requestUrl.searchParams.get('page') ?? '1')
+        return {
+          messages:
+            page === 1
+              ? [
+                  {
+                    item_hash: 'current-hash',
+                    time: Date.parse('2026-06-13T11:59:00Z') / 1000,
+                    content: {
+                      key: 'vm-bootstrap-config',
+                    },
+                  },
+                  {
+                    item_hash: 'recent-hash',
+                    time: Date.parse('2026-06-13T10:00:00Z') / 1000,
+                    content: {
+                      key: 'vm-bootstrap-config',
+                    },
+                  },
+                  {
+                    item_hash: 'old-hash',
+                    time: Date.parse('2026-06-13T04:30:00Z') / 1000,
+                    content: {
+                      key: 'vm-bootstrap-config',
+                    },
+                  },
+                  {
+                    item_hash: 'other-key',
+                    time: Date.parse('2026-06-13T02:00:00Z') / 1000,
+                    content: {
+                      key: 'port-forwarding',
+                    },
+                  },
+                ]
+              : [],
+        }
+      },
+    }),
+  })
+
+  assert.deepEqual(hashes, ['old-hash'])
 })

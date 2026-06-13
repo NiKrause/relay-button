@@ -84,6 +84,8 @@ export interface CompactBootstrapRegistrationRecord {
     registrationId?: string
     multiaddrs: string[]
     browserMultiaddrs?: string[]
+    ownerAddress?: string
+    publisherAddress?: string
     updatedAt: number
   } | null
 }

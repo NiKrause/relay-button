@@ -164,6 +164,9 @@ def _build_configure_args(record: dict) -> list[str]:
     registration_id = str(bootstrap.get("registrationId") or "").strip()
     if registration_id:
         args.extend(["--bootstrap-registration-id", registration_id])
+    owner_address = str(record.get("ownerAddress") or "").strip()
+    if owner_address:
+        args.extend(["--bootstrap-owner-address", owner_address])
     owner_auth = str(bootstrap.get("ownerAuthorizationBase64") or "").strip()
     if owner_auth:
         args.extend(["--bootstrap-owner-authorization-b64", owner_auth])
@@ -516,6 +519,7 @@ class Handler(BaseHTTPRequestHandler):
                 "bootstrap_publisher_libp2p_identity_b64"
             )
             bootstrap_owner_private_key = payload.get("bootstrap_owner_private_key")
+            bootstrap_owner_address = payload.get("bootstrap_owner_address")
             bootstrap_owner_authorization_b64 = payload.get("bootstrap_owner_authorization_b64")
             bootstrap_registration_id = payload.get("bootstrap_registration_id")
             no_start = bool(payload.get("no_start"))
@@ -548,6 +552,8 @@ class Handler(BaseHTTPRequestHandler):
                 )
             if bootstrap_owner_private_key is not None:
                 args.extend(["--bootstrap-owner-private-key", str(bootstrap_owner_private_key)])
+            if bootstrap_owner_address is not None:
+                args.extend(["--bootstrap-owner-address", str(bootstrap_owner_address)])
             if bootstrap_owner_authorization_b64 is not None:
                 args.extend(
                     ["--bootstrap-owner-authorization-b64", str(bootstrap_owner_authorization_b64)]

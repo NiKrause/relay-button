@@ -55,6 +55,69 @@ The registration payload stores:
 Only public multiaddrs are published. Loopback, RFC1918, link-local, and
 localhost-style addresses are filtered out before the Aleph `POST` is signed.
 
+### Sponsor Relay Registration Lifecycle
+
+For `uc-go-peer`, the browser Sponsor Relay flow is now a staged handoff rather
+than a single direct bootstrap publish:
+
+1. the browser waits for Aleph runtime networking and mapped ports
+2. if Aleph reserved a `2n6` hostname, the browser waits for that HTTPS route
+   to become active before handing `proxyUrl` to the guest
+3. the browser publishes a short-lived `vm-bootstrap-config` aggregate keyed by
+   the deployment token
+4. the guest consumes that aggregate and emits a
+   `vm-bootstrap-config-status` signal
+5. the browser prefers relay metadata from that guest signal when it already
+   contains `peerId` and public multiaddrs
+6. otherwise the browser polls relay metadata, preferring the secure
+   `https://relay-name.2n6.me/bootstrap/metadata` endpoint when available
+7. the browser waits for the guest to publish its own `relay-bootstrap` `POST`
+   on Aleph
+8. if that guest registration is delayed, the browser publishes a fallback
+   bootstrap record from the owner wallet using the same `registrationId`
+9. after success, the temporary bootstrap-config aggregate is removed
+
+This matters because the relay bootstrap record is now tied to the actual
+runtime addresses seen after deployment, not just to the deployment wallet or
+to build-time assumptions.
+
+### Browser Path And Workflow Path
+
+The browser UI path and the GitHub workflow path now converge on the same final
+bootstrap registration shape, but they still differ in how they hand off guest
+configuration:
+
+- browser `uc-go-peer`
+  - publishes runtime networking into Aleph via `vm-bootstrap-config`
+  - waits for the guest `vm-bootstrap-config-status` signal
+  - can continue without HTTPS if the `2n6` route never activates
+- Node/workflow deploy path
+  - configures the guest directly through the temporary setup endpoint on the
+    mapped host port
+  - polls guest `/metadata` until public relay multiaddrs are ready
+  - publishes the final bootstrap registration from the deploy runner
+
+Both paths ultimately use the same shared registration primitives:
+
+- `createRelayBootstrapRegistrationId(...)`
+- `publishRelayBootstrapRegistration(...)`
+- `waitForRelayBootstrapRegistration(...)`
+
+### Runtime Suitability Checks
+
+Proxy-backed HTTPS activation is only usable when the runtime exposes a public
+guest IPv6. If a CRN reports a private or otherwise non-globally-routable guest
+IPv6, the deploy code now treats that runtime as unsuitable for proxy-backed
+HTTPS:
+
+- the browser UI marks the runtime as unusable, cleans up the failed attempt,
+  and retries another CRN when possible
+- the workflow path does the same cleanup-and-retry behavior before treating
+  that attempt as successful
+
+This is not just a browser fetch quirk. It is a runtime suitability problem for
+the proxy-backed HTTPS path itself.
+
 ### Current Signing Model
 
 Today the codebase supports two bootstrap signing shapes:
@@ -181,6 +244,16 @@ Current implementation detail:
 - otherwise discovery falls back to the newest fresh record per sender address
 - invalid dual-key records are ignored during discovery
 - legacy wallet-signed records are still accepted by default
+
+Current UI state handling also relies on `registrationId`:
+
+- the Sponsor Relay panel marks registrations that match a live instance as
+  confirmed instance-linked registrations
+- registrations for the current wallet that no longer match any instance are
+  shown as orphan bootstrap registrations
+- deleting an instance now forgets the instance and its linked bootstrap
+  registration records together
+- orphan registrations can be forgotten independently from the panel
 
 Discovery can be tightened further with:
 

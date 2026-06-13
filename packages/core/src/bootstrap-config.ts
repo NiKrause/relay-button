@@ -17,6 +17,7 @@ import { DEFAULT_ALEPH_API_HOST } from './manifests.ts'
 export const VM_BOOTSTRAP_CONFIG_AGGREGATE_KEY = 'vm-bootstrap-config'
 export const VM_BOOTSTRAP_CONFIG_SIGNAL_REF = 'vm-bootstrap-config'
 export const VM_BOOTSTRAP_CONFIG_SIGNAL_POST_TYPE = 'vm-bootstrap-config-status'
+export const VM_BOOTSTRAP_CONFIG_HISTORY_RETENTION_MS = 6 * 60 * 60 * 1000
 
 function parseJsonObject(value: string): Record<string, unknown> | null {
   try {
@@ -27,6 +28,73 @@ function parseJsonObject(value: string): Record<string, unknown> | null {
   } catch {
     return null
   }
+}
+
+function parseTimestampMs(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value > 1_000_000_000_000 ? value : value * 1000
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric)) {
+      return numeric > 1_000_000_000_000 ? numeric : numeric * 1000
+    }
+
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
+}
+
+function normalizeVmBootstrapConfigRecord(
+  deploymentTokenKey: string,
+  value: unknown,
+  options: {
+    nowMs?: number
+    maxRecordAgeMs?: number
+  } = {},
+): VmBootstrapConfigRecord | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+
+  const candidate = value as Record<string, unknown>
+  const deploymentToken =
+    typeof candidate.deploymentToken === 'string' ? candidate.deploymentToken.trim() : ''
+  const profile = typeof candidate.profile === 'string' ? candidate.profile.trim() : ''
+  const ownerAddress =
+    typeof candidate.ownerAddress === 'string' ? candidate.ownerAddress.trim() : ''
+  const instanceItemHash =
+    typeof candidate.instanceItemHash === 'string' ? candidate.instanceItemHash.trim() : ''
+  const createdAt = typeof candidate.createdAt === 'string' ? candidate.createdAt.trim() : ''
+  const expiresAt = typeof candidate.expiresAt === 'string' ? candidate.expiresAt.trim() : ''
+
+  if (
+    !deploymentTokenKey.trim() ||
+    !deploymentToken ||
+    deploymentToken !== deploymentTokenKey.trim() ||
+    !profile ||
+    !ownerAddress ||
+    !instanceItemHash ||
+    !createdAt ||
+    !expiresAt
+  ) {
+    return null
+  }
+
+  const nowMs = Math.max(0, Number(options.nowMs ?? Date.now()))
+  const maxRecordAgeMs = Math.max(
+    60_000,
+    Number(options.maxRecordAgeMs ?? VM_BOOTSTRAP_CONFIG_HISTORY_RETENTION_MS),
+  )
+  const createdAtMs = parseTimestampMs(createdAt)
+  const expiresAtMs = parseTimestampMs(expiresAt)
+
+  if (createdAtMs == null || expiresAtMs == null) return null
+  if (expiresAtMs <= nowMs) return null
+  if (createdAtMs < nowMs - maxRecordAgeMs) return null
+
+  return candidate as VmBootstrapConfigRecord
 }
 
 export async function fetchVmBootstrapConfigAggregate(
@@ -53,13 +121,19 @@ export async function fetchVmBootstrapConfigAggregate(
 
 function normalizeVmBootstrapConfigAggregate(
   aggregate: VmBootstrapConfigAggregate | null | undefined,
+  options: {
+    nowMs?: number
+    maxRecordAgeMs?: number
+  } = {},
 ): VmBootstrapConfigAggregate {
   if (!aggregate || typeof aggregate !== 'object') return {}
   return Object.fromEntries(
-    Object.entries(aggregate).filter(
-      (entry): entry is [string, VmBootstrapConfigRecord] =>
-        Boolean(entry[1] && typeof entry[1] === 'object' && !Array.isArray(entry[1])),
-    ),
+    Object.entries(aggregate)
+      .map(([deploymentToken, record]) => [
+        deploymentToken,
+        normalizeVmBootstrapConfigRecord(deploymentToken, record, options),
+      ] as const)
+      .filter((entry): entry is [string, VmBootstrapConfigRecord] => entry[1] != null),
   )
 }
 
@@ -68,8 +142,13 @@ export function createVmBootstrapConfigAggregateContent(args: {
   record: VmBootstrapConfigRecord
   existingAggregate?: VmBootstrapConfigAggregate | null
   now?: number
+  maxRecordAgeMs?: number
 }): AlephAggregateContent<VmBootstrapConfigAggregate> {
-  const content = normalizeVmBootstrapConfigAggregate(args.existingAggregate)
+  const nowMs = Math.max(0, Number(args.now ?? Date.now() / 1000) * 1000)
+  const content = normalizeVmBootstrapConfigAggregate(args.existingAggregate, {
+    nowMs,
+    maxRecordAgeMs: args.maxRecordAgeMs,
+  })
   content[args.record.deploymentToken] = args.record
 
   return {
@@ -138,6 +217,85 @@ async function publishVmBootstrapConfigAggregate(args: {
   }
 }
 
+function normalizeAggregateMessageHashRecord(value: unknown): {
+  itemHash: string
+  timeMs: number
+} | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+
+  const candidate = value as Record<string, unknown>
+  const itemHash = typeof candidate.item_hash === 'string' ? candidate.item_hash.trim() : ''
+  if (!itemHash) return null
+
+  const content =
+    candidate.content && typeof candidate.content === 'object' && !Array.isArray(candidate.content)
+      ? (candidate.content as Record<string, unknown>)
+      : typeof candidate.item_content === 'string'
+        ? parseJsonObject(candidate.item_content)
+        : null
+  if (!content || content.key !== VM_BOOTSTRAP_CONFIG_AGGREGATE_KEY) return null
+
+  const timeMs = parseTimestampMs(candidate.time)
+  if (timeMs == null) return null
+
+  return { itemHash, timeMs }
+}
+
+export async function listStaleVmBootstrapConfigAggregateMessageHashes(args: {
+  address: string
+  currentAggregateItemHash?: string | null
+  olderThanMs?: number
+  fetch: JsonFetchLike
+  apiHost?: string
+  pagination?: number
+  maxPages?: number
+  nowMs?: number
+}): Promise<string[]> {
+  const address = args.address.trim()
+  if (!address) return []
+
+  const currentAggregateItemHash = args.currentAggregateItemHash?.trim() ?? ''
+  const olderThanMs = Math.max(
+    60_000,
+    Number(args.olderThanMs ?? VM_BOOTSTRAP_CONFIG_HISTORY_RETENTION_MS),
+  )
+  const cutoffMs = Math.max(0, Number(args.nowMs ?? Date.now()) - olderThanMs)
+  const pagination = Math.max(1, Number(args.pagination ?? 100))
+  const maxPages = Math.max(1, Number(args.maxPages ?? 10))
+  const hashes = new Set<string>()
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const requestUrl = new URL('/api/v0/messages.json', args.apiHost ?? DEFAULT_ALEPH_API_HOST)
+    requestUrl.searchParams.set('msgType', 'AGGREGATE')
+    requestUrl.searchParams.set('addresses', address)
+    requestUrl.searchParams.set('message_statuses', 'processed,pending,rejected,removing')
+    requestUrl.searchParams.set('pagination', String(pagination))
+    requestUrl.searchParams.set('page', String(page))
+    requestUrl.searchParams.set('sortOrder', '-1')
+
+    const response = await args.fetch(requestUrl.toString(), { cache: 'no-cache' })
+    if (!response.ok) {
+      throw new Error(`VM bootstrap config aggregate history request failed: ${response.status}`)
+    }
+
+    const payload = (await response.json()) as { messages?: unknown[] }
+    const messages = Array.isArray(payload.messages) ? payload.messages : []
+    if (messages.length === 0) break
+
+    for (const message of messages) {
+      const normalized = normalizeAggregateMessageHashRecord(message)
+      if (!normalized) continue
+      if (normalized.itemHash === currentAggregateItemHash) continue
+      if (normalized.timeMs > cutoffMs) continue
+      hashes.add(normalized.itemHash)
+    }
+
+    if (messages.length < pagination) break
+  }
+
+  return [...hashes]
+}
+
 export async function publishVmBootstrapConfig(args: {
   sender: string
   record: VmBootstrapConfigRecord
@@ -161,6 +319,7 @@ export async function publishVmBootstrapConfig(args: {
     sender: args.sender,
     record: args.record,
     existingAggregate: aggregate,
+    maxRecordAgeMs: VM_BOOTSTRAP_CONFIG_HISTORY_RETENTION_MS,
   })
 
   const result = await publishVmBootstrapConfigAggregate({
@@ -199,7 +358,9 @@ export async function deleteVmBootstrapConfig(args: {
     fetch: args.fetch,
   })
 
-  const content = normalizeVmBootstrapConfigAggregate(aggregate)
+  const content = normalizeVmBootstrapConfigAggregate(aggregate, {
+    maxRecordAgeMs: VM_BOOTSTRAP_CONFIG_HISTORY_RETENTION_MS,
+  })
   delete content[args.deploymentToken]
 
   const publishResult = await publishVmBootstrapConfigAggregate({

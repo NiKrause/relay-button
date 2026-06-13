@@ -18,6 +18,7 @@ import {
   configureOrbitdbRelaySetup,
   createDeploymentToken,
   createInstanceContent,
+  VM_BOOTSTRAP_CONFIG_HISTORY_RETENTION_MS,
   deleteVmBootstrapConfig,
   deployInstance as deploySharedInstance,
   ensureInstancePortForwards,
@@ -25,6 +26,7 @@ import {
   fetchRelayMetadataForRuntime,
   filterDeployableCrns,
   forgetAlephMessages,
+  listStaleVmBootstrapConfigAggregateMessageHashes,
   notifyCrnAllocationWithRetry,
   publishRelayBootstrapRegistration,
   publishVmBootstrapConfig,
@@ -305,8 +307,14 @@ function relayBootstrapInstanceItemHash(
   entry: {
     content?: {
       registrationId?: string;
+      ownerAddress?: string;
+      publisherAddress?: string;
       authorization?: {
-        payload?: { instanceItemHash?: string };
+        payload?: {
+          instanceItemHash?: string;
+          ownerAddress?: string;
+          publisherAddress?: string;
+        };
       };
     } | null;
   } | null | undefined,
@@ -319,6 +327,44 @@ function relayBootstrapInstanceItemHash(
     return authorizedInstanceItemHash;
   }
   return registrationIdInstanceItemHash(entry?.content?.registrationId);
+}
+
+function relayBootstrapMatchesCurrentWallet(
+  entry: {
+    address?: string | null;
+    content?: {
+      ownerAddress?: string;
+      publisherAddress?: string;
+      registrationId?: string;
+      authorization?: {
+        payload?: {
+          ownerAddress?: string;
+          publisherAddress?: string;
+          instanceItemHash?: string;
+        };
+      };
+    } | null;
+  } | null | undefined,
+  normalizedWalletAddress: string,
+  activeInstanceHashes: Set<string>,
+): boolean {
+  const instanceItemHash = relayBootstrapInstanceItemHash(entry);
+  if (instanceItemHash && activeInstanceHashes.has(instanceItemHash)) {
+    return true;
+  }
+
+  const candidateAddresses = [
+    entry?.address,
+    entry?.content?.ownerAddress,
+    entry?.content?.authorization?.payload?.ownerAddress,
+    entry?.content?.publisherAddress,
+    entry?.content?.authorization?.payload?.publisherAddress,
+  ];
+
+  return candidateAddresses.some(
+    (value) =>
+      typeof value === "string" && value.trim().toLowerCase() === normalizedWalletAddress,
+  );
 }
 
 async function inspectInstanceRuntime(args: {
@@ -1121,6 +1167,7 @@ export class SponsorRelayController {
     }
 
     if (profile === "uc-go-peer" && args.deploymentToken) {
+      let cleanupAggregateItemHash: string | null = null;
       await deleteVmBootstrapConfig({
         sender: this.state.wallet.address,
         deploymentToken: args.deploymentToken,
@@ -1129,14 +1176,106 @@ export class SponsorRelayController {
         fetch: asJsonFetch,
         apiHost: this.client.apiHost,
         sync: true,
-      }).catch((error) => {
-        this.trace("deploy:bootstrap-config-cleanup-error", {
+      })
+        .then((cleanupResult) => {
+          cleanupAggregateItemHash = cleanupResult.aggregateItemHash;
+          this.trace("deploy:bootstrap-config-cleanup-complete", {
+            itemHash: args.itemHash,
+            deploymentToken: args.deploymentToken,
+            aggregateItemHash: cleanupResult.aggregateItemHash,
+            aggregateStatus: cleanupResult.aggregateStatus,
+          });
+        })
+        .catch((error) => {
+          this.trace("deploy:bootstrap-config-cleanup-error", {
+            itemHash: args.itemHash,
+            deploymentToken: args.deploymentToken,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+
+      await this.cleanupStaleVmBootstrapConfigHistory({
+        itemHash: args.itemHash,
+        currentAggregateItemHash: cleanupAggregateItemHash,
+        stage: "publishing-bootstrap",
+        progress: 99,
+      });
+    }
+  }
+
+  private async cleanupStaleVmBootstrapConfigHistory(args: {
+    itemHash: string;
+    currentAggregateItemHash?: string | null;
+    stage: DeploymentProgressEvent["stage"];
+    progress: number;
+  }): Promise<void> {
+    if (!this.state.wallet.address || !args.currentAggregateItemHash) {
+      return;
+    }
+
+    const staleHashes = await listStaleVmBootstrapConfigAggregateMessageHashes({
+      address: this.state.wallet.address,
+      currentAggregateItemHash: args.currentAggregateItemHash,
+      olderThanMs: VM_BOOTSTRAP_CONFIG_HISTORY_RETENTION_MS,
+      fetch: asJsonFetch,
+      apiHost: this.client.apiHost,
+    }).catch((error) => {
+      this.trace("deploy:bootstrap-config-history-scan-error", {
+        itemHash: args.itemHash,
+        currentAggregateItemHash: args.currentAggregateItemHash,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    });
+
+    if (staleHashes.length === 0) {
+      return;
+    }
+
+    const staleCount = staleHashes.length;
+    this.emitProgress({
+      stage: args.stage,
+      label: "Cleaning up stale handoff history",
+      progress: args.progress,
+      status: "warning",
+      itemHash: args.itemHash,
+      detail:
+        `Forgetting ${staleCount} superseded Aleph handoff aggregate message${staleCount === 1 ? "" : "s"} ` +
+        "older than 6 hours. MetaMask may request another cleanup signature.",
+    });
+    this.trace("deploy:bootstrap-config-history-cleanup-start", {
+      itemHash: args.itemHash,
+      currentAggregateItemHash: args.currentAggregateItemHash,
+      staleHashes,
+    });
+
+    await forgetAlephMessages({
+      sender: this.state.wallet.address,
+      hashes: staleHashes,
+      reason: "Prune stale vm-bootstrap-config aggregate history older than 6 hours",
+      signer: personalSign,
+      hasher: sha256Hex,
+      fetch: asJsonFetch,
+      apiHost: this.client.apiHost,
+      sync: true,
+    })
+      .then((cleanupResult) => {
+        this.trace("deploy:bootstrap-config-history-cleanup-complete", {
           itemHash: args.itemHash,
-          deploymentToken: args.deploymentToken,
+          currentAggregateItemHash: args.currentAggregateItemHash,
+          staleHashes,
+          forgetItemHash: cleanupResult.itemHash,
+          forgetStatus: cleanupResult.status,
+        });
+      })
+      .catch((error) => {
+        this.trace("deploy:bootstrap-config-history-cleanup-error", {
+          itemHash: args.itemHash,
+          currentAggregateItemHash: args.currentAggregateItemHash,
+          staleHashes,
           error: error instanceof Error ? error.message : String(error),
         });
       });
-    }
   }
 
   private syncLatestDeploymentProgress(
@@ -1627,7 +1766,11 @@ export class SponsorRelayController {
         bootstrapRegistrations = selectCurrentRelayBootstrapPosts(rawBootstrapPosts)
           .filter(
             (entry): boolean =>
-              entry.address?.toLowerCase() === normalizedWalletAddress,
+              relayBootstrapMatchesCurrentWallet(
+                entry,
+                normalizedWalletAddress,
+                activeInstanceHashes,
+              ),
           )
           .map((entry): CompactBootstrapRegistrationRecord => {
             const instanceItemHash = relayBootstrapInstanceItemHash(entry);
@@ -1652,6 +1795,14 @@ export class SponsorRelayController {
                     browserMultiaddrs: Array.isArray(entry.content.browserMultiaddrs)
                       ? entry.content.browserMultiaddrs
                       : [],
+                    ownerAddress:
+                      typeof entry.content.ownerAddress === "string"
+                        ? entry.content.ownerAddress
+                        : undefined,
+                    publisherAddress:
+                      typeof entry.content.publisherAddress === "string"
+                        ? entry.content.publisherAddress
+                        : undefined,
                     updatedAt: entry.content.updatedAt,
                   }
                 : null,
@@ -2086,6 +2237,7 @@ export class SponsorRelayController {
                 : `${attemptLabel} failed: ${lastError.message} Cleaning up this attempt before retrying another CRN.`,
             });
             if (attemptDeploymentToken) {
+              let cleanupAggregateItemHash: string | null = null;
               this.emitProgress({
                 stage: "deployment-confirmed",
                 label: "Cleaning up failed attempt",
@@ -2109,6 +2261,7 @@ export class SponsorRelayController {
                 sync: true,
               })
                 .then((cleanupResult) => {
+                  cleanupAggregateItemHash = cleanupResult.aggregateItemHash;
                   this.trace("deploy:bootstrap-config-cleanup-complete", {
                     itemHash: attemptItemHash,
                     deploymentToken: attemptDeploymentToken,
@@ -2126,6 +2279,13 @@ export class SponsorRelayController {
                         : String(cleanupError),
                   });
                 });
+
+              await this.cleanupStaleVmBootstrapConfigHistory({
+                itemHash: attemptItemHash,
+                currentAggregateItemHash: cleanupAggregateItemHash,
+                stage: "deployment-confirmed",
+                progress: 18,
+              });
             }
             this.emitProgress({
               stage: "deployment-confirmed",

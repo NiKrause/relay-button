@@ -18,8 +18,15 @@ It is meant as a visual map for the parts that are easiest to lose track of:
 The current target behavior is guest-owned runtime bootstrap publication.
 
 The browser still orchestrates the deployment and waits for confirmation, but
-the VM should publish the final relay bootstrap record with the relay-side
-publisher identity after the guest has real runtime networking.
+the `uc-go-peer` handoff is now a multi-phase flow:
+
+1. wait for usable runtime networking
+2. wait for `2n6` activation when proxy-backed HTTPS is possible
+3. publish `vm-bootstrap-config` into Aleph
+4. wait for the guest config signal
+5. confirm secure relay metadata
+6. wait for the guest bootstrap registration
+7. publish a browser fallback only when the guest registration stays delayed
 
 ```mermaid
 sequenceDiagram
@@ -39,21 +46,40 @@ sequenceDiagram
   Aleph-->>Browser: pending / processed deployment status
   Browser->>CRN: notify selected CRN allocation
   Browser->>Aleph: poll deployment result and runtime details
-  Aleph-->>Browser: processed + mapped ports + host IP / proxy URL
-  Browser->>VM: configure guest with rootfs/runtime/bootstrap inputs
-  Note over Browser,VM: configure writes owner authorization, publisher key material,<br/>deployment token, port-forwarding state, and optional proxy/Caddy settings.
+  Aleph-->>Browser: processed + mapped ports + host IP / proxy URL + guest IPv6
 
-  VM->>Relay: start relay with guest config and persisted identity
-  Relay-->>VM: peerId + public multiaddrs + browser-safe multiaddrs
-  VM->>Registry: publish relay-bootstrap POST with guest publisher identity
-  Registry-->>Browser: bootstrap registration becomes visible
-  Browser->>Registry: verify guest-published bootstrap registration
-
-  alt guest registration is delayed
-    Browser->>Registry: publish browser-side fallback bootstrap record
-    Note over Browser,Registry: This is the temporary safety path used when the guest<br/>record does not appear in time.
+  alt proxy-backed HTTPS is possible
+    Browser->>Aleph: wait for active 2n6 route
+    Aleph-->>Browser: https://relay-name.2n6.me active
+    Browser->>Aleph: publish vm-bootstrap-config aggregate with active proxyUrl
+  else proxy route stays inactive after waiting
+    Browser->>Aleph: publish vm-bootstrap-config aggregate without proxyUrl
+  else guest IPv6 is not public
+    Note over Browser,Aleph: A non-public guest IPv6 is treated as unusable for proxy-backed HTTPS.<br/>The browser cleans up that attempt and retries another CRN instead of continuing.
   end
 
+  VM->>Aleph: read vm-bootstrap-config aggregate
+  VM->>Relay: start relay with persisted identity and runtime config
+  Relay-->>VM: peerId + public multiaddrs + browser-safe multiaddrs
+  VM->>Aleph: publish vm-bootstrap-config-status signal
+
+  alt signal already contains relay metadata
+    Browser->>Aleph: accept peerId + public multiaddrs from config signal
+  else signal is incomplete
+    Browser->>VM: poll relay metadata endpoint
+    Note over Browser,VM: Prefer https://relay-name.2n6.me/bootstrap/metadata when active.<br/>Otherwise fall back to the temporary setup endpoint.
+  end
+
+  VM->>Registry: publish relay-bootstrap POST with guest publisher identity
+  Browser->>Registry: wait for guest registration by registrationId + peerId
+
+  alt guest registration is delayed
+    Browser->>Registry: publish browser fallback relay-bootstrap POST
+    Browser->>Registry: wait for fallback registration visibility
+    Note over Browser,Registry: This safety path keeps browser discovery usable even when the guest<br/>registration arrives late.
+  end
+
+  Browser->>Aleph: remove temporary vm-bootstrap-config aggregate
   App->>Registry: discover freshest bootstrap records at startup
   Registry-->>App: browserMultiaddrs / public relay multiaddrs
   App->>Relay: dial relay using discovered runtime addresses
@@ -70,6 +96,10 @@ sequenceDiagram
 
 This is the high-level sequence for the UC workflow when a run is started with
 `publish=true` and `deploy_vm=true`.
+
+Unlike the browser `uc-go-peer` path, the workflow path still drives guest
+configuration through the temporary mapped setup port. It then converges on the
+same final bootstrap registration and Aleph visibility checks.
 
 ```mermaid
 sequenceDiagram
@@ -116,10 +146,28 @@ sequenceDiagram
     Aleph-->>DeployAction: pending / processed message status
     DeployAction->>Scheduler: notify selected CRN allocation
     DeployAction->>Aleph: poll deployment status until runtime details exist
-    Aleph-->>DeployAction: runtime networking, mapped ports, proxy URL
-    DeployAction->>Guest: configure guest services and bootstrap inputs
-    Guest->>Aleph: publish guest bootstrap registration after relay start
-    Guest-->>DeployAction: peerId, probe multiaddrs, browser bootstrap multiaddrs
+    Aleph-->>DeployAction: runtime networking, mapped ports, proxy URL, guest IPv6
+
+    alt proxy URL reserved but not active yet
+      DeployAction->>Aleph: wait for proxy activation attempts
+      Aleph-->>DeployAction: active 2n6 route or still inactive
+    end
+
+    alt guest IPv6 is not globally routable for proxy-backed HTTPS
+      DeployAction->>Aleph: clean up failed attempt
+      DeployAction->>Scheduler: retry next compatible CRN
+    else runtime is usable
+      DeployAction->>Guest: wait for temporary /health and call /configure
+      Guest-->>DeployAction: configuration accepted
+      DeployAction->>Guest: poll /metadata until peerId + public multiaddrs are ready
+      Guest-->>DeployAction: metadata ready
+      DeployAction->>Guest: optional reachability verification
+      Guest-->>DeployAction: reachable transports confirmed
+      DeployAction->>Aleph: publish relay-bootstrap POST
+      DeployAction->>Aleph: wait for bootstrap registration visibility
+      DeployAction->>Aleph: forget/replace older records for the same registrationId
+    end
+
     DeployAction-->>Reusable: VM outputs, verification JSON, runtime address sets
 
     Reusable->>Probe: relay-probe mode
@@ -156,6 +204,34 @@ If you are debugging a broken rollout, read the system in this order:
 1. rootfs publish and manifest outputs
 2. site publish and final manifest URL selection
 3. VM deploy and CRN allocation notification
-4. guest configure and relay runtime verification
-5. guest bootstrap registration visibility on Aleph
-6. browser discovery and relay dial from the published registry state
+4. runtime suitability checks for proxy-backed HTTPS, including public guest IPv6
+5. guest configure handoff and relay metadata confirmation
+6. guest bootstrap registration visibility on Aleph
+7. browser fallback publication, if any
+8. browser discovery and relay dial from the published registry state
+
+## Delete And Orphan Cleanup
+
+The registration lifecycle does not end at publish time. The Sponsor Relay UI
+also cleans up linked and orphaned registrations explicitly.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Browser as SponsorRelayFab / browser controller
+  participant Wallet as Owner wallet
+  participant Aleph as Aleph API
+  participant Registry as Aleph bootstrap POST registry
+
+  alt deleting a live instance
+    Browser->>Wallet: sign FORGET for instance + linked registration hashes
+    Browser->>Aleph: forget instance and linked bootstrap registrations
+    Browser->>Aleph: refresh current instances and registrations
+    Aleph-->>Browser: linked registration removed from panel state
+  else forgetting an orphan registration
+    Browser->>Wallet: sign FORGET for orphan registration hash
+    Browser->>Registry: forget orphan bootstrap registration
+    Browser->>Aleph: refresh current registrations
+    Registry-->>Browser: orphan entry disappears from the panel
+  end
+```
