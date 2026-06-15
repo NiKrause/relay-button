@@ -25,6 +25,8 @@
   },
   "scripts": {
     "aleph": "node ./scripts/aleph-cli.mjs",
+    "check:aleph-rs-drift": "node ./scripts/check-aleph-rs-drift.mjs",
+    "review:aleph-rs-llm": "node ./scripts/review-aleph-rs-with-llm.mjs",
     "build": "pnpm -r build",
     "build:publishable": "pnpm --filter @le-space/shared-types run build:publish && pnpm --filter @le-space/aleph-bootstrap run build:publish && pnpm --filter @le-space/core run build:publish && pnpm --filter @le-space/rootfs run build:publish && pnpm --filter @le-space/browser run build:publish && pnpm --filter @le-space/node run build:publish && pnpm --filter @le-space/ui run build:publish",
     "publish:prepare": "pnpm build:publishable && node ./scripts/prepare-publish.mjs",

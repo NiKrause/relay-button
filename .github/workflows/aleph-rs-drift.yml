@@ -1,0 +1,150 @@
+name: Aleph RS Drift Check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+  pull_request:
+    paths:
+      - ".github/workflows/aleph-rs-drift.yml"
+      - "scripts/check-aleph-rs-drift.mjs"
+      - "packages/browser/src/aleph-api.ts"
+      - "packages/core/src/forget.ts"
+      - "packages/core/src/retention.ts"
+      - "packages/core/src/runtime.ts"
+      - "packages/ui/src/shared/controller.ts"
+      - "packages/rootfs/reference/orbitdb-relay-pinner/rootfs/build-rootfs.sh"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/aleph-rs-drift.yml"
+      - "scripts/check-aleph-rs-drift.mjs"
+      - "packages/browser/src/aleph-api.ts"
+      - "packages/core/src/forget.ts"
+      - "packages/core/src/retention.ts"
+      - "packages/core/src/runtime.ts"
+      - "packages/ui/src/shared/controller.ts"
+      - "packages/rootfs/reference/orbitdb-relay-pinner/rootfs/build-rootfs.sh"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-24.04
+    outputs:
+      drift_detected: ${{ steps.drift.outcome == 'failure' }}
+    steps:
+      - name: Checkout shared-aleph-tooling
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      - name: Checkout aleph-rs
+        run: git clone --depth 1 https://github.com/aleph-im/aleph-rs.git /tmp/aleph-rs
+
+      - name: Run drift check
+        id: drift
+        continue-on-error: true
+        env:
+          ALEPH_RS_DIR: /tmp/aleph-rs
+          REPORT_PATH: /tmp/aleph-rs-drift-report.md
+        run: node ./scripts/check-aleph-rs-drift.mjs
+
+      - name: Upload drift report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aleph-rs-drift-report
+          path: /tmp/aleph-rs-drift-report.md
+
+      - name: Fail job when drift is detected
+        if: steps.drift.outcome == 'failure'
+        run: exit 1
+
+  sync-issue:
+    runs-on: ubuntu-24.04
+    needs: drift-check
+    if: always() && github.event_name != 'pull_request'
+    steps:
+      - name: Download drift report
+        uses: actions/download-artifact@v5
+        with:
+          name: aleph-rs-drift-report
+          path: /tmp/aleph-rs-drift
+
+      - name: Create, update, or close drift issue
+        uses: actions/github-script@v8
+        env:
+          DRIFT_DETECTED: ${{ needs.drift-check.outputs.drift_detected }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const title = 'Aleph drift detected against aleph-rs';
+            const reportPath = '/tmp/aleph-rs-drift/aleph-rs-drift-report.md';
+            const report = fs.existsSync(reportPath)
+              ? fs.readFileSync(reportPath, 'utf8')
+              : '# Aleph Drift Report\n\nNo report file was produced.';
+            const { owner, repo } = context.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              creator: 'github-actions[bot]',
+              per_page: 100,
+            });
+            const existing = issues.find((issue) => issue.title === title);
+            const driftDetected = process.env.DRIFT_DETECTED === 'true';
+
+            if (driftDetected) {
+              const body = [
+                'The automated Aleph compatibility check found drift between `shared-aleph-tooling` and upstream `aleph-rs`.',
+                '',
+                report,
+                '',
+                'This issue was opened automatically by `.github/workflows/aleph-rs-drift.yml`.',
+              ].join('\n');
+
+              if (existing) {
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: existing.number,
+                  body,
+                });
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: existing.number,
+                  body: 'Drift is still present on the latest check. The report has been refreshed.',
+                });
+              } else {
+                await github.rest.issues.create({
+                  owner,
+                  repo,
+                  title,
+                  body,
+                });
+              }
+              return;
+            }
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body: 'The latest automated Aleph drift check passed, so this issue is being closed automatically.',
+              });
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                state: 'closed',
+              });
+            }

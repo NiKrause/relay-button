@@ -1,0 +1,170 @@
+name: Aleph RS LLM Review
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 5 * * 1"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/aleph-rs-llm-review.yml"
+      - "scripts/review-aleph-rs-with-llm.mjs"
+      - "packages/browser/src/aleph-api.ts"
+      - "packages/core/src/forget.ts"
+      - "packages/core/src/retention.ts"
+      - "packages/core/src/runtime.ts"
+      - "packages/ui/src/shared/controller.ts"
+      - "packages/rootfs/reference/orbitdb-relay-pinner/rootfs/build-rootfs.sh"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  llm-review:
+    runs-on: ubuntu-24.04
+    outputs:
+      drift_detected: ${{ steps.review.outcome == 'failure' }}
+    steps:
+      - name: Checkout shared-aleph-tooling
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      - name: Check reviewer configuration
+        id: config
+        env:
+          OPENAI_COMPAT_API_KEY: ${{ secrets.OPENAI_COMPAT_API_KEY }}
+          OPENAI_COMPAT_BASE_URL: ${{ vars.OPENAI_COMPAT_BASE_URL }}
+          OPENAI_COMPAT_MODEL: ${{ vars.OPENAI_COMPAT_MODEL }}
+        run: |
+          if [ -z "$OPENAI_COMPAT_API_KEY" ] || [ -z "$OPENAI_COMPAT_BASE_URL" ] || [ -z "$OPENAI_COMPAT_MODEL" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            printf '# Aleph LLM Drift Review\n\nReviewer is not configured yet.\n\nExpected:\n- secret: `OPENAI_COMPAT_API_KEY`\n- variable: `OPENAI_COMPAT_BASE_URL`\n- variable: `OPENAI_COMPAT_MODEL`\n' > /tmp/aleph-rs-llm-review.md
+            printf '{\n  "verdict": "uncertain",\n  "summary": "Reviewer not configured.",\n  "findings": [],\n  "suggested_issue_title": "Aleph LLM reviewer needs configuration",\n  "suggested_issue_labels": ["automation", "aleph"],\n  "recommended_followups": ["Add the OpenAI-compatible API secret and variables in GitHub."]\n}\n' > /tmp/aleph-rs-llm-review.json
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout aleph-rs
+        if: steps.config.outputs.configured == 'true'
+        run: git clone --depth 1 https://github.com/aleph-im/aleph-rs.git /tmp/aleph-rs
+
+      - name: Run LLM drift review
+        if: steps.config.outputs.configured == 'true'
+        id: review
+        continue-on-error: true
+        env:
+          ALEPH_RS_DIR: /tmp/aleph-rs
+          OPENAI_COMPAT_API_KEY: ${{ secrets.OPENAI_COMPAT_API_KEY }}
+          OPENAI_COMPAT_BASE_URL: ${{ vars.OPENAI_COMPAT_BASE_URL }}
+          OPENAI_COMPAT_MODEL: ${{ vars.OPENAI_COMPAT_MODEL }}
+          REPORT_PATH: /tmp/aleph-rs-llm-review.md
+          JSON_PATH: /tmp/aleph-rs-llm-review.json
+        run: node ./scripts/review-aleph-rs-with-llm.mjs
+
+      - name: Upload LLM review artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aleph-rs-llm-review
+          path: |
+            /tmp/aleph-rs-llm-review.md
+            /tmp/aleph-rs-llm-review.json
+
+      - name: Fail job when LLM reviewer detects drift
+        if: steps.config.outputs.configured == 'true' && steps.review.outcome == 'failure'
+        run: exit 1
+
+  sync-issue:
+    runs-on: ubuntu-24.04
+    needs: llm-review
+    if: always()
+    steps:
+      - name: Download review artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: aleph-rs-llm-review
+          path: /tmp/aleph-rs-llm-review
+
+      - name: Create, update, or close issue
+        uses: actions/github-script@v8
+        env:
+          DRIFT_DETECTED: ${{ needs.llm-review.outputs.drift_detected }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const reportPath = '/tmp/aleph-rs-llm-review/aleph-rs-llm-review.md';
+            const jsonPath = '/tmp/aleph-rs-llm-review/aleph-rs-llm-review.json';
+            const report = fs.existsSync(reportPath)
+              ? fs.readFileSync(reportPath, 'utf8')
+              : '# Aleph LLM Drift Review\n\nNo markdown report was produced.';
+            const parsed = fs.existsSync(jsonPath)
+              ? JSON.parse(fs.readFileSync(jsonPath, 'utf8'))
+              : {
+                  verdict: 'uncertain',
+                  suggested_issue_title: 'Aleph LLM review needs attention',
+                  recommended_followups: [],
+                };
+            const title = parsed.suggested_issue_title || 'Aleph drift detected against aleph-rs (LLM)';
+            const { owner, repo } = context.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              creator: 'github-actions[bot]',
+              per_page: 100,
+            });
+            const existing = issues.find((issue) => issue.title === title);
+            const driftDetected = process.env.DRIFT_DETECTED === 'true';
+            const body = [
+              'The automated OpenAI-compatible Aleph reviewer compared `shared-aleph-tooling` with upstream `aleph-rs`.',
+              '',
+              report,
+              '',
+              'This issue is maintained automatically by `.github/workflows/aleph-rs-llm-review.yml`.',
+            ].join('\n');
+
+            if (driftDetected) {
+              if (existing) {
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: existing.number,
+                  body,
+                });
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: existing.number,
+                  body: 'The latest LLM review still sees drift. The report has been refreshed.',
+                });
+              } else {
+                await github.rest.issues.create({
+                  owner,
+                  repo,
+                  title,
+                  body,
+                });
+              }
+              return;
+            }
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body: 'The latest LLM review no longer reports drift, so this issue is being closed automatically.',
+              });
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                state: 'closed',
+              });
+            }
