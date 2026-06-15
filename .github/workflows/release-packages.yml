@@ -87,12 +87,33 @@ jobs:
             exit 1
           fi
 
-      - name: Inspect npm authentication
+      - name: Verify npm authentication
         if: ${{ !inputs.dry_run }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm whoami || echo 'npm whoami failed; continuing so npm publish can report the real auth result.' >&2
+          if ! npm whoami; then
+            echo "npm authentication failed for the configured NPM_TOKEN." >&2
+            echo "Refresh the token and confirm it has publish rights for the @${{ inputs.npm_scope }} scope." >&2
+            exit 1
+          fi
+
+      - name: Verify npm scope access
+        if: ${{ !inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if ! npm access ls-packages --json >/tmp/npm-access.json 2>/tmp/npm-access.err; then
+            echo "Could not inspect npm package access for the active account." >&2
+            cat /tmp/npm-access.err >&2 || true
+            exit 1
+          fi
+
+          if ! node -e "const fs=require('node:fs'); const payload=JSON.parse(fs.readFileSync('/tmp/npm-access.json','utf8')); const names=Object.keys(payload || {}); const scope='@${{ inputs.npm_scope }}/'; if(!names.some((name)=>name.startsWith(scope))){ console.error('The active npm account does not appear to have package access under ' + scope); process.exit(1) }"; then
+            echo "The configured NPM_TOKEN does not appear to have access to the @${{ inputs.npm_scope }} scope." >&2
+            echo "Use an npm token from an account that can publish @${{ inputs.npm_scope }} packages." >&2
+            exit 1
+          fi
 
       - name: Publish dist packages
         if: ${{ !inputs.dry_run }}
