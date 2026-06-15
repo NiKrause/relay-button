@@ -24,7 +24,7 @@ if (!cid) {
 }
 
 const wallet = new Wallet(requiredEnv('ALEPH_PRIVATE_KEY'))
-const apiHost = normalizeApiHost(process.env.ALEPH_API_HOST?.trim() || 'https://api2.aleph.im')
+const apiHost = normalizeApiHost(process.env.ALEPH_API_HOST?.trim() || 'https://api.aleph.im')
 const channel = process.env.CHANNEL?.trim() || 'ALEPH-CLOUDSOLUTIONS'
 const ref = process.env.ALEPH_ROOTFS_REF?.trim() || undefined
 const time = Date.now() / 1000

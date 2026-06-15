@@ -416,10 +416,7 @@ async function inspectInstanceRuntime(args: {
     executionLookupVersion: null as string | null,
   };
 
-  if (
-    details.messageStatus === "rejected" ||
-    details.messageStatus === "removing"
-  ) {
+  if (details.messageStatus === "rejected") {
     return { details, lookup };
   }
 

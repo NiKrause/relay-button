@@ -182,7 +182,7 @@ test('fetchInstances requests instance messages and normalizes confirmed items t
     const url = new URL(capturedUrl)
     assert.equal(url.searchParams.get('msgTypes'), 'INSTANCE')
     assert.equal(url.searchParams.get('addresses'), '0xabc')
-    assert.equal(url.searchParams.get('message_statuses'), 'processed,pending,rejected,removing')
+    assert.equal(url.searchParams.get('message_statuses'), 'processed,pending,rejected')
     assert.deepEqual(instances, [
       {
         item_hash: 'a'.repeat(64),
@@ -542,7 +542,7 @@ test('inspectDeploymentResult resolves related references and rejection reason',
     globalThis.fetch = async (input) => {
       const url = String(input)
 
-      if (url.startsWith(`https://api2.aleph.im/api/v0/messages/${'a'.repeat(64)}`)) {
+      if (url.startsWith(`https://api.aleph.im/api/v0/messages/${'a'.repeat(64)}`)) {
         return new Response(
           JSON.stringify({
             status: 'rejected',
@@ -553,7 +553,7 @@ test('inspectDeploymentResult resolves related references and rejection reason',
         )
       }
 
-      if (url.startsWith(`https://api2.aleph.im/api/v0/messages/${'b'.repeat(64)}`)) {
+      if (url.startsWith(`https://api.aleph.im/api/v0/messages/${'b'.repeat(64)}`)) {
         return new Response(
           JSON.stringify({
             status: 'pending',

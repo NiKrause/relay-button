@@ -134,7 +134,7 @@ test('emitRootfsOutputs writes shared rootfs publish outputs', async () => {
         skipBuild: false,
         ipfsAddUrl: 'https://ipfs.aleph.cloud/api/v0/add',
         ipfsGatewayUrl: 'https://ipfs.aleph.cloud/ipfs',
-        alephApiHost: 'https://api2.aleph.im',
+        alephApiHost: 'https://api.aleph.im',
         alephMessageWaitAttempts: 60,
         alephMessageWaitDelaySeconds: 5,
         alephPinAttempts: 4,
@@ -216,7 +216,7 @@ test('runRootfsMode executes rootfs-publish and emits outputs through the direct
       assert.equal(init?.headers instanceof Headers ? init.headers.get('range') : (init?.headers as Record<string, string>)?.range, 'bytes=0-0')
       return new Response('', { status: 206 })
     }
-    if (url === 'https://api2.aleph.im/api/v0/messages') {
+    if (url === 'https://api.aleph.im/api/v0/messages') {
       const body = JSON.parse(String(init?.body ?? '{}')) as { message?: { type?: string; item_content?: string; signature?: string } }
       const message = body.message ?? {}
       assert.equal(message.type, 'STORE')
@@ -228,7 +228,7 @@ test('runRootfsMode executes rootfs-publish and emits outputs through the direct
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (url === 'https://api2.aleph.im/api/v0/messages/store-item-hash') {
+    if (url === 'https://api.aleph.im/api/v0/messages/store-item-hash') {
       return new Response(JSON.stringify({ status: 'processed' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -289,6 +289,6 @@ test('runRootfsMode executes rootfs-publish and emits outputs through the direct
   const outputs = await readFile(outputFile, 'utf8')
   assert.match(outputs, /rootfs_item_hash=store-item-hash/)
   assert.match(outputs, /rootfs_cid=bafyrootfs/)
-  assert.ok(calls.includes('https://api2.aleph.im/api/v0/messages'))
+  assert.ok(calls.includes('https://api.aleph.im/api/v0/messages'))
   assert.match(writes.join(''), /uc-go-peer-git-20260516-deadbee/)
 })

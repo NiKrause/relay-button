@@ -170,7 +170,7 @@ export async function runActionMode(
       hasher: async (content) => defaultHasher(content),
       fetch: globalThis.fetch.bind(globalThis),
       channel: optionalEnv("ALEPH_VM_CHANNEL", "TEST", env),
-      apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api2.aleph.im", env),
+      apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api.aleph.im", env),
     });
 
     await appendGithubOutput(
@@ -267,7 +267,7 @@ export async function runActionMode(
       signer: publisherIdentity.signer,
       hasher: async (content) => defaultHasher(content),
       fetch: globalThis.fetch.bind(globalThis),
-      apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api2.aleph.im", env),
+      apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api.aleph.im", env),
       peerId,
       multiaddrs,
       browserMultiaddrs,
@@ -292,7 +292,7 @@ export async function runActionMode(
           signer: publisherIdentity.signer,
           hasher: async (content) => defaultHasher(content),
           fetch: globalThis.fetch.bind(globalThis),
-          apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api2.aleph.im", env),
+          apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api.aleph.im", env),
           profile,
           ownerAddress: ownerIdentity?.address,
           ownerSigner: ownerIdentity?.signer,

@@ -19,7 +19,7 @@ test("parseDeployPlan reads required deploy env and defaults", () => {
   assert.equal(plan.profile, "uc-go-peer");
   assert.equal(plan.bootstrapPublisherPrivateKey, "");
   assert.equal(plan.bootstrapOwnerPrivateKey, "");
-  assert.equal(plan.apiHost, "https://api2.aleph.im");
+  assert.equal(plan.apiHost, "https://api.aleph.im");
   assert.equal(plan.crnListUrl, "https://crns-list.aleph.sh/crns.json");
   assert.equal(plan.rootfsSizeMiB, 20480);
   assert.equal(plan.preferredCountryCode, "DE");

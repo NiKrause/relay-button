@@ -179,7 +179,7 @@ async function main() {
       "Default CCN host matches upstream README mainnet default",
       "warn",
       browserApi.includes("https://api.aleph.im"),
-      "shared-aleph-tooling defaults to `https://api2.aleph.im`, while upstream aleph-rs README documents `https://api.aleph.im` as the mainnet default CCN.",
+      "shared-aleph-tooling still defaults to a non-canonical CCN host, while upstream aleph-rs README documents `https://api.aleph.im` as the mainnet default CCN.",
     ),
     createCheck(
       "rootfs-script-not-pinned-to-aleph-client",

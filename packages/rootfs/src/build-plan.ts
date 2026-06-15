@@ -143,7 +143,7 @@ export function createRootfsBuildPlan(contract: RootfsContract, options: RootfsB
     skipBuild: options.skipBuild === true,
     ipfsAddUrl: options.ipfsAddUrl?.trim() || 'https://ipfs.aleph.cloud/api/v0/add',
     ipfsGatewayUrl: options.ipfsGatewayUrl?.trim() || 'https://ipfs.aleph.cloud/ipfs',
-    alephApiHost: options.alephApiHost?.trim() || 'https://api2.aleph.im',
+    alephApiHost: options.alephApiHost?.trim() || 'https://api.aleph.im',
     alephMessageWaitAttempts: positiveInteger(options.alephMessageWaitAttempts, 60),
     alephMessageWaitDelaySeconds: positiveInteger(options.alephMessageWaitDelaySeconds, 5),
     alephPinAttempts: positiveInteger(options.alephPinAttempts, 4),

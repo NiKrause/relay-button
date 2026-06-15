@@ -61,7 +61,7 @@ test('runDomainLinkMode detaches and attaches the production domain', async () =
   const originalFetch = globalThis.fetch
   const requests: Array<Record<string, unknown>> = []
   globalThis.fetch = (async (input, init) => {
-    if (String(input) !== 'https://api2.aleph.im/api/v0/messages') {
+    if (String(input) !== 'https://api.aleph.im/api/v0/messages') {
       throw new Error(`Unexpected fetch call: ${String(input)}`)
     }
     const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
@@ -210,7 +210,7 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (String(input) === 'https://api2.aleph.im/api/v0/messages') {
+    if (String(input) === 'https://api.aleph.im/api/v0/messages') {
       const body = JSON.parse(String(init?.body ?? '{}')) as {
         message?: {
           type?: string
@@ -243,7 +243,7 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (String(input) === 'https://api2.aleph.im/api/v0/messages/store123') {
+    if (String(input) === 'https://api.aleph.im/api/v0/messages/store123') {
       return new Response(JSON.stringify({ status: 'processed' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -268,7 +268,7 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
 
   const outputs = await readFile(outputFile, 'utf8')
   assert.match(outputs, /item_hash=store123/)
-  assert.equal(calls.filter((call) => call.url === 'https://api2.aleph.im/api/v0/messages').length, 1)
+  assert.equal(calls.filter((call) => call.url === 'https://api.aleph.im/api/v0/messages').length, 1)
 })
 
 test('runSitePublishMode forgets older STORE messages for the same ALEPH_SITE_REF only', async () => {
@@ -288,7 +288,7 @@ test('runSitePublishMode forgets older STORE messages for the same ALEPH_SITE_RE
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (url === 'https://api2.aleph.im/api/v0/messages' && init?.method === 'POST') {
+    if (url === 'https://api.aleph.im/api/v0/messages' && init?.method === 'POST') {
       const body = JSON.parse(String(init.body ?? '{}')) as { message?: { type?: string; item_content?: string } }
       const message = body.message ?? {}
       if (message.type === 'STORE') {
@@ -306,13 +306,13 @@ test('runSitePublishMode forgets older STORE messages for the same ALEPH_SITE_RE
         })
       }
     }
-    if (url === 'https://api2.aleph.im/api/v0/messages/store123') {
+    if (url === 'https://api.aleph.im/api/v0/messages/store123') {
       return new Response(JSON.stringify({ status: 'processed' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (url.startsWith('https://api2.aleph.im/api/v0/messages.json?')) {
+    if (url.startsWith('https://api.aleph.im/api/v0/messages.json?')) {
       const parsedUrl = new URL(url)
       assert.equal(parsedUrl.searchParams.get('msgTypes'), 'STORE')
       assert.equal(parsedUrl.searchParams.get('pagination'), '100')
@@ -348,7 +348,7 @@ test('runSitePublishMode forgets older STORE messages for the same ALEPH_SITE_RE
     globalThis.fetch = originalFetch
   }
 
-  assert.equal(calls.filter((call) => call.url === 'https://api2.aleph.im/api/v0/messages').length, 2)
+  assert.equal(calls.filter((call) => call.url === 'https://api.aleph.im/api/v0/messages').length, 2)
 })
 
 test('parseLastJsonObject parses multiline trailing JSON output', () => {

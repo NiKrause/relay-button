@@ -19,7 +19,7 @@ import type {
   RelaySetupResult
 } from './types'
 
-export const DEFAULT_ALEPH_API_HOST = 'https://api2.aleph.im'
+export const DEFAULT_ALEPH_API_HOST = 'https://api.aleph.im'
 export const DEFAULT_CRN_LIST_URL = 'https://crns-list.aleph.sh/crns.json'
 export const DEFAULT_ALEPH_SCHEDULER_API_HOST = 'https://scheduler.api.aleph.cloud'
 export const DEFAULT_2N6_API_HOST = 'https://api.2n6.me'
@@ -182,7 +182,7 @@ export async function fetchInstances(address: string, apiHost = DEFAULT_ALEPH_AP
   const url = new URL('/api/v0/messages.json', apiHost)
   url.searchParams.set('msgTypes', 'INSTANCE')
   url.searchParams.set('addresses', address)
-  url.searchParams.set('message_statuses', 'processed,pending,rejected,removing')
+  url.searchParams.set('message_statuses', 'processed,pending,rejected')
   url.searchParams.set('pagination', '100')
   url.searchParams.set('page', '1')
   url.searchParams.set('sortOrder', '-1')

@@ -24,7 +24,7 @@ ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay-pinner")
 DESCRIBE_SCRIPT = os.environ.get(
     "DESCRIBE_SCRIPT", "/usr/local/sbin/orbitdb-relay-pinner-describe.py"
 )
-DEFAULT_API_HOST = os.environ.get("ALEPH_BOOTSTRAP_API_HOST", "https://api2.aleph.im")
+DEFAULT_API_HOST = os.environ.get("ALEPH_BOOTSTRAP_API_HOST", "https://api.aleph.im")
 DEFAULT_CHANNEL = os.environ.get("ALEPH_BOOTSTRAP_CHANNEL", "simple-todo")
 DEFAULT_REF = os.environ.get("ALEPH_BOOTSTRAP_REF", "simple-todo-bootstrap")
 DEFAULT_POST_TYPE = os.environ.get("ALEPH_BOOTSTRAP_POST_TYPE", "relay-bootstrap")

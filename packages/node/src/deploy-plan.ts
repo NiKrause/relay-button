@@ -193,7 +193,7 @@ export function parseDeployPlan(
       "",
       env,
     ),
-    apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api2.aleph.im", env),
+    apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api.aleph.im", env),
     crnListUrl: optionalEnv(
       "ALEPH_VM_CRN_LIST_URL",
       "https://crns-list.aleph.sh/crns.json",

@@ -60,7 +60,7 @@ test('rootfsBuildShellEnv emits UC-compatible builder variables', async () => {
   assert.equal(env.SKIP_UPLOAD, '1')
   assert.equal(env.SKIP_BUILD, '1')
   assert.equal(env.ROOTFS_CONTRACT_FILE, '/workspace/universal-connectivity/go-peer/aleph/root-profiles/uc-go-peer.json')
-  assert.equal(env.ALEPH_API_HOST, 'https://api2.aleph.im')
+  assert.equal(env.ALEPH_API_HOST, 'https://api.aleph.im')
 })
 
 test('createRootfsBuildPlan uses profile-aware defaults for orbitdb relay pinner', async () => {

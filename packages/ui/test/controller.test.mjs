@@ -145,7 +145,7 @@ test('controller waits for active 2n6 web access before publishing guest proxyUr
 
   try {
     const controller = createSponsorRelayController({
-      apiHost: 'https://api2.aleph.im',
+      apiHost: 'https://api.aleph.im',
       crnListUrl: 'https://crns-list.aleph.sh/crns.json',
       twoN6ApiHost: 'https://api.2n6.me/api/hash',
     })
@@ -366,7 +366,7 @@ test('controller falls back to bootstrap signal metadata when 2n6 never becomes 
 
   try {
     const controller = createSponsorRelayController({
-      apiHost: 'https://api2.aleph.im',
+      apiHost: 'https://api.aleph.im',
       crnListUrl: 'https://crns-list.aleph.sh/crns.json',
       twoN6ApiHost: 'https://api.2n6.me/api/hash',
     })
@@ -503,7 +503,7 @@ test('controller erases the VM on the CRN before broadcasting FORGET', async () 
 
   try {
     const controller = createSponsorRelayController({
-      apiHost: 'https://api2.aleph.im',
+      apiHost: 'https://api.aleph.im',
       schedulerApiHost: 'https://scheduler.api.aleph.cloud',
     })
 

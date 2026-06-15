@@ -1,7 +1,7 @@
 import { bootstrap } from "@libp2p/bootstrap";
 import { recoverMessageAddress } from "viem";
 
-export const DEFAULT_ALEPH_API_HOST = "https://api2.aleph.im";
+export const DEFAULT_ALEPH_API_HOST = "https://api.aleph.im";
 export const DEFAULT_ALEPH_BOOTSTRAP_CHANNEL = "simple-todo";
 export const DEFAULT_ALEPH_BOOTSTRAP_REF = "simple-todo-bootstrap";
 export const DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE = "relay-bootstrap";

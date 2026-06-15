@@ -31,7 +31,7 @@ export function parseLastJsonObject(text: string): Record<string, unknown> {
 }
 
 async function waitForAlephMessage(itemHash: string, env: NodeJS.ProcessEnv = process.env): Promise<void> {
-  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api2.aleph.im', env)
+  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env)
   const attempts = Number(optionalEnv('ALEPH_SITE_ALEPH_MESSAGE_WAIT_ATTEMPTS', '60', env))
   const delayMs = Number(optionalEnv('ALEPH_SITE_ALEPH_MESSAGE_WAIT_DELAY_MS', '5000', env))
 
@@ -308,7 +308,7 @@ async function retainRecentSiteStores(args: {
   }
 
   const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
-  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api2.aleph.im', env)
+  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env)
   const channel = optionalEnv('ALEPH_SITE_CHANNEL', 'TEST', env)
   const identity = await createPrivateKeyIdentity(privateKey)
   const records = await fetchScopedSiteStoreRecords({
@@ -345,7 +345,7 @@ async function retainRecentSiteStores(args: {
 async function pinIpfsCidOnAleph(cidV0: string, env: NodeJS.ProcessEnv = process.env): Promise<string> {
   const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
   const channel = optionalEnv('ALEPH_SITE_CHANNEL', 'TEST', env)
-  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api2.aleph.im', env)
+  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env)
   const ref = optionalEnv('ALEPH_SITE_REF', '', env).trim() || undefined
   const identity = await createPrivateKeyIdentity(privateKey)
   const now = Date.now() / 1000
@@ -424,7 +424,7 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): P
   const domain = requiredEnv('ALEPH_SITE_DOMAIN', env)
   const itemHash = requiredEnv('ALEPH_SITE_ITEM_HASH', env)
   const catchAllPath = optionalEnv('ALEPH_SITE_DOMAIN_CATCH_ALL_PATH', '/index.html', env)
-  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api2.aleph.im', env)
+  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env)
   const identity = await createPrivateKeyIdentity(privateKey)
 
   const detachPublication = await publishAggregateKey({

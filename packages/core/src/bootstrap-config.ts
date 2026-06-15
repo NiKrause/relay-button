@@ -268,7 +268,7 @@ export async function listStaleVmBootstrapConfigAggregateMessageHashes(args: {
     const requestUrl = new URL('/api/v0/messages.json', args.apiHost ?? DEFAULT_ALEPH_API_HOST)
     requestUrl.searchParams.set('msgType', 'AGGREGATE')
     requestUrl.searchParams.set('addresses', address)
-    requestUrl.searchParams.set('message_statuses', 'processed,pending,rejected,removing')
+    requestUrl.searchParams.set('message_statuses', 'processed,pending,rejected')
     requestUrl.searchParams.set('pagination', String(pagination))
     requestUrl.searchParams.set('page', String(page))
     requestUrl.searchParams.set('sortOrder', '-1')

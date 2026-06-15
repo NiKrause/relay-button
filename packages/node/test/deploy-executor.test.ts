@@ -12,7 +12,7 @@ const DEPLOY_PLAN: DeployPlan = {
   privateKey: '0x0123456789012345678901234567890123456789012345678901234567890123',
   bootstrapPublisherPrivateKey: '',
   bootstrapOwnerPrivateKey: '',
-  apiHost: 'https://api2.aleph.im',
+  apiHost: 'https://api.aleph.im',
   crnListUrl: 'https://crns-list.aleph.sh/crns.json',
   name: 'uc-go-peer',
   sshPublicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest key@example',

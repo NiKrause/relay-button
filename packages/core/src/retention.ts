@@ -103,7 +103,7 @@ export async function fetchAggregateKey(args: {
   fetch: JsonFetchLike
   apiHost?: string
 }): Promise<unknown> {
-  const requestUrl = new URL(`/api/v0/aggregates/${args.address}.json`, args.apiHost ?? 'https://api2.aleph.im')
+  const requestUrl = new URL(`/api/v0/aggregates/${args.address}.json`, args.apiHost ?? 'https://api.aleph.im')
   requestUrl.searchParams.set('keys', args.key)
 
   const response = await args.fetch(requestUrl.toString(), { cache: 'no-cache' })
@@ -183,7 +183,7 @@ async function fetchMessageStatus(args: {
   fetch: JsonFetchLike
   apiHost?: string
 }): Promise<string> {
-  const requestUrl = new URL(`/api/v0/messages/${args.hash}`, args.apiHost ?? 'https://api2.aleph.im')
+  const requestUrl = new URL(`/api/v0/messages/${args.hash}`, args.apiHost ?? 'https://api.aleph.im')
   const response = await args.fetch(requestUrl.toString(), { cache: 'no-cache' })
   if (response.status === 404) return 'missing'
   if (!response.ok) return 'unknown'

@@ -103,7 +103,7 @@ async function fetchOwnerInstances(
   const url = new URL("/api/v0/messages.json", options.apiHost ?? DEFAULT_ALEPH_API_HOST)
   url.searchParams.set("msgTypes", "INSTANCE")
   url.searchParams.set("addresses", address)
-  url.searchParams.set("message_statuses", "processed,pending,rejected,removing")
+  url.searchParams.set("message_statuses", "processed,pending,rejected")
   url.searchParams.set("pagination", "100")
   url.searchParams.set("page", "1")
   url.searchParams.set("sortOrder", "-1")

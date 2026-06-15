@@ -1,7 +1,7 @@
 import type { RootfsManifest, RootfsManifestState, RootfsResolution, MessageStatus } from '@le-space/shared-types'
 
 export const ITEM_HASH_RE = /^[a-fA-F0-9]{64}$/
-export const DEFAULT_ALEPH_API_HOST = 'https://api2.aleph.im'
+export const DEFAULT_ALEPH_API_HOST = 'https://api.aleph.im'
 export const DEFAULT_IPFS_GATEWAY_BASE_URL = 'https://ipfs.aleph.cloud/ipfs/'
 
 export interface FetchLikeResponse {

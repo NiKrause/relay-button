@@ -292,7 +292,7 @@ export let apiHost = undefined
               {#if entry.details.webUrl}
                 <a href={entry.details.webUrl} target="_blank" rel="noreferrer">Web</a>
               {/if}
-              <a href={`https://api2.aleph.im/api/v0/messages/${entry.instance.item_hash}`} target="_blank" rel="noreferrer">API</a>
+              <a href={`https://api.aleph.im/api/v0/messages/${entry.instance.item_hash}`} target="_blank" rel="noreferrer">API</a>
               <a href={`https://explorer.aleph.cloud/address/ETH/${entry.instance.sender}/message/INSTANCE/${entry.instance.item_hash}`} target="_blank" rel="noreferrer">Explorer</a>
             </div>
 
