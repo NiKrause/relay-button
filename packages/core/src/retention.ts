@@ -7,6 +7,7 @@ import type {
 
 import { broadcastAlephMessage, normalizeBroadcastStatus, type JsonFetchLike, signAlephMessage } from './broadcast.ts'
 import { DEFAULT_ALEPH_CHANNEL } from './constants.ts'
+import { eraseInstanceOnCrn } from './crn-control.ts'
 import { forgetAlephMessages } from './forget.ts'
 
 export const SUCCESSFUL_DEPLOYMENTS_AGGREGATE_KEY = 'uc-go-peer-successful-deployments'
@@ -311,6 +312,8 @@ export async function retainSuccessfulDeployments(args: {
   reason?: string
   channel?: string
   apiHost?: string
+  crnListUrl?: string
+  schedulerAllocationUrl?: string
   now?: number
 }) {
   const keepCount = Math.max(0, Number.parseInt(String(args.keepCount ?? 0), 10) || 0)
@@ -372,6 +375,7 @@ export async function retainSuccessfulDeployments(args: {
   const forgetStageResults: Array<{
     stage: 'instances' | 'dependents'
     hashes: string[]
+    eraseResults?: Array<{ hash: string; status: 'erased' | 'missing' | 'skipped'; crnUrl: string | null; crnHash: string | null; source: 'provided' | 'scheduler' | 'manual' | 'missing' }>
     skipped?: boolean
     skippedReason?: string
     forgottenHashes: string[]
@@ -388,6 +392,20 @@ export async function retainSuccessfulDeployments(args: {
   const followUpForgetResults: Array<{ hash: string; result: Awaited<ReturnType<typeof forgetAlephMessages>> }> = []
 
   if (instanceForgetHashes.length > 0) {
+    const eraseResults = await Promise.all(
+      instanceForgetHashes.map(async (hash) => ({
+        hash,
+        ...(await eraseInstanceOnCrn({
+          sender: args.sender,
+          signer: args.signer,
+          instanceHash: hash,
+          fetch: args.fetch,
+          apiHost: args.apiHost,
+          crnListUrl: args.crnListUrl,
+          schedulerAllocationUrl: args.schedulerAllocationUrl,
+        })),
+      })),
+    )
     const instanceStage = await executeForgetStage({
       sender: args.sender,
       hashes: instanceForgetHashes,
@@ -400,7 +418,7 @@ export async function retainSuccessfulDeployments(args: {
       now: args.now
     })
 
-    forgetStageResults.push({ stage: 'instances', ...instanceStage })
+    forgetStageResults.push({ stage: 'instances', eraseResults, ...instanceStage })
     forgottenHashes.push(...instanceStage.forgottenHashes)
     outstandingForgetHashes.push(...instanceStage.outstandingForgetHashes)
     forgetStatuses = { ...forgetStatuses, ...instanceStage.statuses }

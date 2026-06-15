@@ -461,3 +461,114 @@ test('controller falls back to bootstrap signal metadata when 2n6 never becomes 
     globalThis.setTimeout = originalSetTimeout
   }
 })
+
+test('controller erases the VM on the CRN before broadcasting FORGET', async () => {
+  const originalFetch = globalThis.fetch
+  const originalWindow = globalThis.window
+
+  const writes = []
+  const itemHash = 'c'.repeat(64)
+  const walletAddress = '0x1234000000000000000000000000000000000000'
+
+  globalThis.window = {
+    ethereum: {
+      isMetaMask: true,
+      async request(args) {
+        if (args.method === 'personal_sign') {
+          return '0xsigned'
+        }
+        throw new Error(`Unexpected provider request: ${args.method}`)
+      }
+    }
+  }
+
+  globalThis.fetch = async (input, init) => {
+    const url = String(input)
+
+    if (url === `https://crn.example.com/control/machine/${itemHash}/erase`) {
+      writes.push({ type: 'erase', url, init })
+      return jsonResponse({})
+    }
+
+    if (url.includes('/api/v0/messages') && init?.method === 'POST') {
+      writes.push({ type: 'forget', url, init })
+      return jsonResponse({
+        publication_status: { status: 'success' },
+        message_status: 'processed'
+      })
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+
+  try {
+    const controller = createSponsorRelayController({
+      apiHost: 'https://api2.aleph.im',
+      schedulerApiHost: 'https://scheduler.api.aleph.cloud',
+    })
+
+    controller.refresh = async () => {}
+    controller.patch({
+      wallet: {
+        connected: true,
+        address: walletAddress,
+        chainId: '0x1',
+        isMetaMask: true,
+      },
+      instances: [
+        {
+          instance: {
+            item_hash: itemHash,
+            status: 'processed',
+            confirmed: true,
+            content: {
+              requirements: {
+                node: {
+                  node_hash: 'crn-1',
+                },
+              },
+            },
+          },
+          details: {
+            messageStatus: 'processed',
+            allocationSource: 'manual',
+            crnUrl: 'https://crn.example.com',
+            hostIpv4: null,
+            ipv6: null,
+            vmIpv4: null,
+            webUrl: null,
+            sshCommand: null,
+            mappedPorts: [],
+            execution: null,
+            error: null,
+          },
+        },
+      ],
+      bootstrapRegistrations: [
+        {
+          messageHash: 'registration-hash',
+          hash: 'registration-hash',
+          itemHash: 'registration-hash',
+          address: walletAddress,
+          time: Date.now(),
+          instanceItemHash: itemHash,
+          confirmed: true,
+          content: null,
+        },
+      ],
+    })
+
+    await controller.deleteInstance(itemHash)
+
+    assert.equal(writes.length, 2)
+    assert.equal(writes[0].type, 'erase')
+    assert.equal(writes[1].type, 'forget')
+
+    const forgetPayload = JSON.parse(String(writes[1].init.body))
+    const forgetContent = JSON.parse(forgetPayload.message.item_content)
+    assert.deepEqual(forgetContent.hashes, [itemHash, 'registration-hash'])
+  } finally {
+    globalThis.fetch = originalFetch
+    globalThis.window = originalWindow
+  }
+})

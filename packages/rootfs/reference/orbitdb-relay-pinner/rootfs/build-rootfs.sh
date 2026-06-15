@@ -31,12 +31,12 @@ die() {
 
 load_rootfs_contract() {
   [ -n "${ROOTFS_CONTRACT_FILE}" ] || return 0
-  require python3
+  require node
   [ -f "${ROOTFS_CONTRACT_FILE}" ] || die "Rootfs contract does not exist: ${ROOTFS_CONTRACT_FILE}"
 
   # The contract is relay-owned metadata. We load it once here so users can
   # select a standardized profile without repeating profile/install-mode flags.
-  eval "$(python3 "${SCRIPT_DIR}/read-rootfs-contract.py" "${ROOTFS_CONTRACT_FILE}")"
+  eval "$(node "${SCRIPT_DIR}/read-rootfs-contract.mjs" "${ROOTFS_CONTRACT_FILE}")"
 
   if [ -n "${ROOTFS_PROFILE}" ] && [ "${ROOTFS_PROFILE}" != "${ROOTFS_CONTRACT_PROFILE}" ]; then
     die "ROOTFS_PROFILE=${ROOTFS_PROFILE} conflicts with contract profile ${ROOTFS_CONTRACT_PROFILE}"
@@ -119,25 +119,11 @@ resolve_rootfs_version() {
 
   if [ "${ROOTFS_PROFILE}" = "orbitdb-relay-pinner" ] && [ -n "${ORBITDB_RELAY_PINNER_DIR}" ]; then
     local orbitdb_package_json="${ORBITDB_RELAY_PINNER_DIR}/package.json"
-    if [ -f "${orbitdb_package_json}" ] && command -v python3 >/dev/null 2>&1; then
+    if [ -f "${orbitdb_package_json}" ] && command -v node >/dev/null 2>&1; then
       local orbitdb_version
-      orbitdb_version="$(python3 - "${orbitdb_package_json}" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-try:
-    payload = json.loads(Path(sys.argv[1]).read_text())
-except Exception:
-    raise SystemExit(1)
-
-version = payload.get("version")
-if not isinstance(version, str) or not version.strip():
-    raise SystemExit(1)
-
-print(f"orbitdb-relay-pinner-v{version.strip().lstrip('v')}")
-PY
-)" || orbitdb_version=""
+      orbitdb_version="$(
+        node -e "const fs=require('node:fs');const payload=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const version=typeof payload.version==='string'?payload.version.trim():'';if(!version)process.exit(1);console.log('orbitdb-relay-pinner-v'+version.replace(/^v/,''));" "${orbitdb_package_json}"
+      )" || orbitdb_version=""
 
       if [ -n "${orbitdb_version}" ]; then
         printf '%s\n' "${orbitdb_version}"
@@ -171,27 +157,6 @@ PY
 }
 
 ROOTFS_VERSION="$(resolve_rootfs_version)"
-
-resolve_aleph_bin() {
-  if [ -n "${ALEPH_BIN:-}" ]; then
-    printf '%s\n' "${ALEPH_BIN}"
-    return
-  fi
-
-  local local_aleph="${REPO_DIR}/aleph-client/.venv/bin/aleph"
-  if [ -x "${local_aleph}" ]; then
-    printf '%s\n' "${local_aleph}"
-    return
-  fi
-
-  if command -v aleph >/dev/null 2>&1; then
-    command -v aleph
-    return
-  fi
-
-  echo "Missing aleph CLI. Set ALEPH_BIN=/path/to/aleph or install aleph-client." >&2
-  exit 1
-}
 
 build_with_host_tools() {
   echo "Using host virt-customize/qemu-img toolchain."
@@ -412,10 +377,7 @@ EOF
 }
 
 upload_image() {
-  local aleph_bin
-  aleph_bin="$(resolve_aleph_bin)"
-
-  require python3
+  require node
   require curl
   [ -f "${IMAGE}" ] || die "Rootfs image does not exist: ${IMAGE}"
 
@@ -430,48 +392,20 @@ upload_image() {
   fi
 
   local cid
-  if ! cid="$(python3 - "${OUT_DIR}/ipfs-add-response.jsonl" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-lines = [line for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
-if not lines:
-    raise SystemExit("No response received from the IPFS add endpoint")
-
-payload = json.loads(lines[-1])
-cid = payload.get("Hash")
-if not cid:
-    raise SystemExit(f"IPFS add response did not include a Hash: {payload}")
-
-print(cid)
-PY
-)"; then
+  if ! cid="$(
+    node -e "const fs=require('node:fs');const lines=fs.readFileSync(process.argv[1],'utf8').split(/\\r?\\n/).map((line)=>line.trim()).filter(Boolean);if(!lines.length){console.error('No response received from the IPFS add endpoint');process.exit(1)}const payload=JSON.parse(lines.at(-1));if(typeof payload.Hash!=='string'||!payload.Hash.trim()){console.error('IPFS add response did not include a Hash');process.exit(1)}console.log(payload.Hash.trim());" "${OUT_DIR}/ipfs-add-response.jsonl"
+  )"; then
     die "Failed to extract CID from ${OUT_DIR}/ipfs-add-response.jsonl"
   fi
   [ -n "${cid}" ] || die "IPFS upload returned an empty CID"
 
-  echo "Pinning CID ${cid} on Aleph Cloud with ${aleph_bin}..." >&2
+  echo "Pinning CID ${cid} on Aleph Cloud via direct API call..." >&2
   : > "${OUT_DIR}/store-message.json"
-  if ! "${aleph_bin}" file pin "${cid}" \
-    --channel "${CHANNEL}" \
-    > "${OUT_DIR}/store-message.json"; then
+  if ! node "${SCRIPT_DIR}/publish-store-message.mjs" "${cid}" > "${OUT_DIR}/store-message.json"; then
     die "Aleph pin failed for CID ${cid}"
   fi
 
-  if ! python3 - "${OUT_DIR}/store-message.json" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-content = Path(sys.argv[1]).read_text().strip()
-if not content:
-    raise SystemExit("Aleph pin returned an empty response")
-
-payload = json.loads(content)
-print(payload["item_hash"])
-PY
-  then
+  if ! node -e "const fs=require('node:fs');const content=fs.readFileSync(process.argv[1],'utf8').trim();if(!content){console.error('Aleph pin returned an empty response');process.exit(1)}const payload=JSON.parse(content);if(typeof payload.item_hash!=='string'||!payload.item_hash.trim()){console.error('Failed to extract item_hash');process.exit(1)}console.log(payload.item_hash.trim());" "${OUT_DIR}/store-message.json"; then
     die "Failed to extract item_hash from ${OUT_DIR}/store-message.json"
   fi
 }

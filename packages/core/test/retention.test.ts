@@ -15,6 +15,7 @@ function jsonResponse(payload: unknown, status = 200) {
 
 test('retainSuccessfulDeployments keeps latest records, publishes aggregate, and forgets pruned hashes in dependency order', async () => {
   const writes: Array<{ url: string; body: string }> = []
+  const eraseRequests: string[] = []
 
   const messageStatuses: Record<string, string> = {
     'instance-old': 'processed',
@@ -61,6 +62,20 @@ test('retainSuccessfulDeployments keeps latest records, publishes aggregate, and
         return jsonResponse({ status: messageStatuses[hash] ?? 'unknown' })
       }
 
+      if (String(url).includes('/api/v0/allocation/instance-old')) {
+        return jsonResponse({
+          node: {
+            node_id: 'crn-1',
+            url: 'https://crn.example.com',
+          }
+        })
+      }
+
+      if (String(url).includes('/control/machine/instance-old/erase')) {
+        eraseRequests.push(String(url))
+        return jsonResponse({})
+      }
+
       writes.push({
         url: String(url),
         body: String(init?.body ?? '')
@@ -84,8 +99,10 @@ test('retainSuccessfulDeployments keeps latest records, publishes aggregate, and
   assert.deepEqual(result.forgottenHashes.sort(), ['extra-hash', 'instance-old', 'rootfs-old', 'site-old'].sort())
   assert.deepEqual(result.outstandingForgetHashes, [])
   assert.equal(result.forgetStageResults.length, 2)
+  assert.equal(result.forgetStageResults[0].eraseResults?.[0]?.status, 'erased')
   assert.deepEqual(result.forgetStageResults[0].hashes, ['instance-old'])
   assert.deepEqual(result.forgetStageResults[1].hashes, ['rootfs-old', 'site-old', 'extra-hash'])
+  assert.deepEqual(eraseRequests, ['https://crn.example.com/control/machine/instance-old/erase'])
   assert.equal(writes.length, 3)
 
   const forgetBodies = writes.slice(1).map(({ body }) => {

@@ -21,6 +21,7 @@ import {
   VM_BOOTSTRAP_CONFIG_HISTORY_RETENTION_MS,
   deleteVmBootstrapConfig,
   deployInstance as deploySharedInstance,
+  eraseInstanceOnCrn,
   ensureInstancePortForwards,
   fetchVmRuntime,
   fetchRelayMetadataForRuntime,
@@ -2559,6 +2560,9 @@ export class SponsorRelayController {
       new Set([instanceHash, ...linkedRegistrationHashes]),
     );
     const linkedRegistrationCount = linkedRegistrationHashes.length;
+    const knownInstance = this.state.instances.find(
+      (entry) => entry.instance.item_hash === instanceHash,
+    );
 
     this.patch({
       busy: { deletingInstanceHash: instanceHash },
@@ -2569,14 +2573,46 @@ export class SponsorRelayController {
     try {
       this.emitProgress({
         stage: "validating",
-        label: "Validating delete request",
+        label: "Resolving CRN for delete",
         progress: 6,
         status: "warning",
         itemHash: instanceHash,
         detail:
           linkedRegistrationCount > 0
-            ? `Preparing Aleph FORGET message for the instance and ${linkedRegistrationCount} linked bootstrap registration${linkedRegistrationCount === 1 ? "" : "s"}.`
-            : "Preparing Aleph FORGET message.",
+            ? `Preparing CRN erase and Aleph FORGET for the instance and ${linkedRegistrationCount} linked bootstrap registration${linkedRegistrationCount === 1 ? "" : "s"}.`
+            : "Preparing CRN erase and Aleph FORGET.",
+      });
+      const eraseResult = await eraseInstanceOnCrn({
+        sender: this.state.wallet.address,
+        signer: personalSign,
+        instanceHash,
+        fetch: asJsonFetch,
+        apiHost: this.client.apiHost,
+        crnUrl: knownInstance?.details.crnUrl,
+        crnHash:
+          knownInstance?.instance.content?.requirements?.node?.node_hash ?? null,
+        crnListUrl: this.props.crnListUrl,
+        schedulerAllocationUrl: this.client.schedulerApiHost
+          ? `${this.client.schedulerApiHost.replace(/\/+$/u, "")}/api/v0/allocation`
+          : undefined,
+      });
+      this.emitProgress({
+        stage: "broadcasting-delete",
+        label:
+          eraseResult.status === "erased"
+            ? "Erased VM on CRN"
+            : eraseResult.status === "missing"
+              ? "VM already absent on CRN"
+              : "CRN erase skipped",
+        progress: 34,
+        status: eraseResult.status === "skipped" ? "warning" : "info",
+        itemHash: instanceHash,
+        detail:
+          eraseResult.status === "erased"
+            ? `Erased runtime on ${eraseResult.crnUrl ?? "selected CRN"} before sending FORGET.`
+            : eraseResult.status === "missing"
+              ? `The CRN no longer reports this VM on ${eraseResult.crnUrl ?? "the selected node"}, so the delete flow can continue with FORGET.`
+              : "Could not resolve a CRN endpoint for this instance, so the delete flow is falling back to FORGET-only cleanup.",
       });
       await forgetAlephMessages({
         sender: this.state.wallet.address,
