@@ -5,6 +5,7 @@ import process from 'node:process'
 
 const repoRoot = process.cwd()
 const packagesDir = join(repoRoot, 'packages')
+const repositoryUrl = 'https://github.com/NiKrause/shared-aleph-tooling'
 const publishScope = process.env.NPM_SCOPE?.trim().replace(/^@/, '') || null
 const dependencyVersionOverrides = (() => {
   const raw = process.env.PUBLISH_DEP_VERSION_OVERRIDES?.trim()
@@ -141,6 +142,14 @@ async function main() {
             },
       publishConfig: {
         access: 'public'
+      },
+      repository: {
+        type: 'git',
+        url: repositoryUrl
+      },
+      homepage: repositoryUrl,
+      bugs: {
+        url: `${repositoryUrl}/issues`
       },
       dependencies: normalizeDependencies(packageJson.dependencies, versionsByName),
       peerDependencies: normalizeDependencies(packageJson.peerDependencies, versionsByName)
