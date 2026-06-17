@@ -189,6 +189,6 @@ For consumer repos:
 
 1. keep one small contract file per deployable profile
 2. keep project-specific values in the contract
-3. keep reusable RootFS logic and guest baselines in `shared-aleph-tooling`
+3. keep reusable RootFS logic and guest baselines in `relay-button`
 
 That keeps consumer repos thin while preserving explicit profile-level control.

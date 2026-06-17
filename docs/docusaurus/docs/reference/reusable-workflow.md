@@ -8,7 +8,7 @@ Its purpose is to give consumer repositories a ready-made GitHub Actions job
 for:
 
 1. checking out the caller repository
-2. checking out `shared-aleph-tooling`
+2. checking out `relay-button`
 3. installing the shared workspace
 4. building a RootFS image through the Aleph Rootfs Runner
 5. optionally publishing that RootFS to IPFS and Aleph
@@ -32,8 +32,8 @@ Specifically:
 If `deploy_vm=true` is passed today, the workflow fails fast on purpose and
 tells the caller to use the shared deploy action separately.
 
-This limitation applies to the shared reusable workflow in
-`shared-aleph-tooling` itself. Consumer repositories such as
+This limitation applies to the shared reusable workflow in `relay-button`
+itself. Consumer repositories such as
 `universal-connectivity` may still layer their own VM deployment workflow on
 top of the shared RootFS stage.
 
@@ -57,7 +57,7 @@ Current supported inputs:
 - `project_checkout_path`
   Checkout path used for the caller repository.
 - `tooling_checkout_path`
-  Checkout path used for `shared-aleph-tooling`.
+  Checkout path used for `relay-button`.
 - `tooling_repository`
   Repository that contains the shared tooling source.
 - `tooling_ref`
@@ -99,7 +99,7 @@ These outputs let a caller workflow continue with repo-specific steps such as:
 At a high level, the workflow:
 
 1. checks out the caller repository
-2. checks out `shared-aleph-tooling`
+2. checks out `relay-button`
 3. installs `pnpm` and Node
 4. installs the shared workspace dependencies
 5. validates input combinations

@@ -137,7 +137,7 @@ function extractRelevantContext(labelToSource, isUpstream = false) {
 
 function buildPrompt(localContext, upstreamContext) {
   return [
-    "You are reviewing drift between a local repository named shared-aleph-tooling and upstream aleph-rs.",
+    "You are reviewing drift between a local repository named relay-button and upstream aleph-rs.",
     "Focus on Aleph API behavior, instance lifecycle operations, file/store deletion behavior, runtime lookup endpoints, and any remaining Python-client assumptions.",
     "Be strict and concrete. Do not speculate beyond the provided evidence.",
     "Important: if upstream requires a CRN erase before a FORGET, and local code only issues FORGET, that is a high-severity mismatch.",

@@ -17,8 +17,7 @@ What is still not done:
 - dependencies have not been installed in this workspace yet
 - the site has not been built or previewed yet in this environment
 
-Once dependencies are installed, the repo-level scripts in
-[package.json](/Users/nandi/Documents/projekte/DecentraSol/shared-aleph-tooling/package.json)
+Once dependencies are installed, the repo-level scripts in `package.json`
 can be used:
 
 - `pnpm docs:dev`

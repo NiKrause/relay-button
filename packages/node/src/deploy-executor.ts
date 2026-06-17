@@ -289,7 +289,7 @@ export async function executeDeployPlan(
       seconds: plan.seconds,
       rootfsVersion: plan.rootfsVersion || "custom-rootfs",
       crnHash: candidateCrn.hash,
-      deployer: "shared-aleph-tooling",
+      deployer: "relay-button",
     });
 
     const deployment = await deployInstance({

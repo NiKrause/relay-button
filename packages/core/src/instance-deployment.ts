@@ -75,7 +75,7 @@ export function appendDeploymentTokenToSshPublicKey(
   return `${algorithm} ${key} aleph-bootstrap-config:${owner}:${token}`
 }
 
-export function createReleaseMetadata(name: string, rootfsVersion: string, deployer = 'shared-aleph-tooling') {
+export function createReleaseMetadata(name: string, rootfsVersion: string, deployer = 'relay-button') {
   return {
     name,
     rootfs_version: rootfsVersion,

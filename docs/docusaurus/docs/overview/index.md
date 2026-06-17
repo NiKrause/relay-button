@@ -1,6 +1,6 @@
-# Shared Aleph Tooling
+# Relay Button
 
-`shared-aleph-tooling` provides reusable Aleph Cloud deployment tooling for
+`relay-button` provides reusable Aleph Cloud deployment tooling for
 consumer projects that need to:
 
 - build and publish RootFS images

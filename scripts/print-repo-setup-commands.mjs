@@ -13,7 +13,7 @@ if (!owner) {
 
 const repoSlug = `${owner}/${repoName}`;
 const repoUrl = `git@github.com:${repoSlug}.git`;
-const repoPath = "/Users/nandi/Documents/projekte/DecentraSol/shared-aleph-tooling";
+const repoPath = process.cwd();
 
 const lines = [
   `# GitHub CLI create-and-push`,

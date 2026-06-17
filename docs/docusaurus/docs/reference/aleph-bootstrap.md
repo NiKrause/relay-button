@@ -187,7 +187,7 @@ Important design note:
 
 ### Current Transport Reality
 
-Today, `shared-aleph-tooling` submits those signed Aleph `POST` messages
+Today, `relay-button` submits those signed Aleph `POST` messages
 through Aleph's HTTP/Core Channel Node gateway.
 
 Aleph's platform documentation also describes peer-to-peer message broadcast as

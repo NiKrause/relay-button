@@ -6,7 +6,7 @@ This example directory is for a minimal external repository consuming:
 - the future shared reusable workflow
 
 The goal is to show the external-consumer contract without copying a full
-production application into `shared-aleph-tooling`.
+production application into `relay-button`.
 
 For a real integration reference, see:
 

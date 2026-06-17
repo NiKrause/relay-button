@@ -20,7 +20,7 @@ execution.
 ## Goal
 
 Move reusable browser-side deployment and guest-setup logic out of the local
-PWA repository and into `shared-aleph-tooling`, while respecting the existing,
+PWA repository and into `relay-button`, while respecting the existing,
 working `@le-space/*` package boundaries and avoiding new duplication.
 
 The primary consolidation target is the post-deploy guest setup lifecycle,

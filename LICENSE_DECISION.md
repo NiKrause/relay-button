@@ -35,7 +35,7 @@ Use this if:
 
 ## Selected Default
 
-For `shared-aleph-tooling`, the selected default is:
+For `relay-button`, the selected default is:
 
 - `MIT`
 

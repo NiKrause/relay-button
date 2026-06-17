@@ -1,8 +1,7 @@
 # Examples
 
 The `examples/` directory is for thin reference skeletons and integration
-shapes, not for copying full production applications into
-`shared-aleph-tooling`.
+shapes, not for copying full production applications into `relay-button`.
 
 Use these examples to show:
 

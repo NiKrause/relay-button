@@ -192,10 +192,10 @@ These diagrams are derived from the current implementation in:
 - `universal-connectivity/.github/workflows/build-aleph-go-peer-rootfs.yml`
 - `universal-connectivity/.github/workflows/uc-go-peer-rootfs-reusable.yml`
 - `universal-connectivity/go-peer/aleph/README.md`
-- `shared-aleph-tooling/packages/node/src/deploy-executor.ts`
-- `shared-aleph-tooling/packages/ui/src/shared/controller.ts`
-- `shared-aleph-tooling/packages/core/src/bootstrap-registration.ts`
-- `shared-aleph-tooling/packages/core/src/bootstrap-config.ts`
+- `relay-button/packages/node/src/deploy-executor.ts`
+- `relay-button/packages/ui/src/shared/controller.ts`
+- `relay-button/packages/core/src/bootstrap-registration.ts`
+- `relay-button/packages/core/src/bootstrap-config.ts`
 
 ## Practical Reading Guide
 

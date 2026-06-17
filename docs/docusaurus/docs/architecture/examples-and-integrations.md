@@ -1,6 +1,6 @@
 # Examples And Real Integrations
 
-`shared-aleph-tooling` needs two kinds of documentation around usage:
+`relay-button` needs two kinds of documentation around usage:
 
 - thin reference examples
 - links to real integrations
@@ -84,7 +84,7 @@ Use it to understand:
 
 ## What Does Not Belong In `examples/`
 
-Do not move full production apps into `shared-aleph-tooling/examples/` just to
+Do not move full production apps into `relay-button/examples/` just to
 have “examples” in one repo.
 
 For example:
