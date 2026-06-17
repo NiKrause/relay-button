@@ -12,10 +12,10 @@ const nodeRunner = path.join(repoRoot, "packages/node/src/action-runner.ts");
 const rootfsRunner = path.join(repoRoot, "packages/node/src/rootfs-runner.ts");
 
 function printHelp() {
-  console.log(`shared-aleph-tooling CLI
+  console.log(`relay-button CLI
 
 Usage:
-  pnpm aleph <command>
+  pnpm relay-button <command>
 
 Commands:
   deploy            Deploy a VM from a published rootfs item hash
@@ -27,8 +27,9 @@ Commands:
   help              Show this help
 
 Examples:
-  pnpm aleph deploy
-  pnpm aleph rootfs-publish
+  pnpm relay-button deploy
+  pnpm relay-button rootfs-publish
+  pnpm exec shared-aleph deploy   Compatibility alias during the rebrand transition
 
 Required environment for deploy:
   ALEPH_VM_PRIVATE_KEY

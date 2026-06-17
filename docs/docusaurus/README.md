@@ -1,7 +1,7 @@
 # Docusaurus App
 
 This directory now contains the Docusaurus app scaffold for
-`shared-aleph-tooling`.
+`relay-button`.
 
 What is in place:
 
@@ -18,7 +18,7 @@ What is still not done:
 - the site has not been built or previewed yet in this environment
 
 Once dependencies are installed, the repo-level scripts in
-[package.json](/Users/nandi/Documents/projekte/DecentraSol/universal-connectivity/shared-aleph-tooling/package.json)
+[package.json](/Users/nandi/Documents/projekte/DecentraSol/shared-aleph-tooling/package.json)
 can be used:
 
 - `pnpm docs:dev`

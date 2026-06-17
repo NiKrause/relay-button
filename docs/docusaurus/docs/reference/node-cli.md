@@ -1,6 +1,6 @@
 # Node CLI
 
-`shared-aleph-tooling` now includes a small Node-only CLI wrapper around the
+`relay-button` now includes a small Node-only CLI wrapper around the
 same shared runners used by the GitHub Action and reusable workflow layers.
 
 It does not use any browser package code. It simply dispatches into:
@@ -13,15 +13,17 @@ It does not use any browser package code. It simply dispatches into:
 From the repository root:
 
 ```bash
-pnpm aleph <command>
+pnpm relay-button <command>
 ```
 
 For machine-readable JSON output without the `pnpm run` banner, use the local
 binary directly:
 
 ```bash
-pnpm exec shared-aleph <command>
+pnpm exec relay-button <command>
 ```
+
+The legacy `shared-aleph` command remains available as a compatibility alias.
 
 Supported commands:
 
@@ -36,9 +38,9 @@ Supported commands:
 Examples:
 
 ```bash
-pnpm exec shared-aleph list-crns | jq
-pnpm exec shared-aleph deploy
-pnpm exec shared-aleph rootfs-publish
+pnpm exec relay-button list-crns | jq
+pnpm exec relay-button deploy
+pnpm exec relay-button rootfs-publish
 ```
 
 ## Deploy A VM
@@ -46,7 +48,7 @@ pnpm exec shared-aleph rootfs-publish
 Manifest-driven `uc-go-peer` example:
 
 ```bash
-cd /path/to/shared-aleph-tooling
+cd /path/to/relay-button
 
 export ALEPH_VM_PRIVATE_KEY=0x...
 export ALEPH_VM_NAME=uc-go-peer
@@ -55,7 +57,7 @@ export ALEPH_VM_ROOTFS_MANIFEST_URL='https://connect.nicokrause.com/rootfs/uc-go
 export ALEPH_VM_PREFERRED_COUNTRY_CODE=DE
 export ALEPH_VM_ENABLE_CADDY_PROXY=true
 
-pnpm aleph deploy
+pnpm relay-button deploy
 ```
 
 When `ALEPH_VM_ROOTFS_MANIFEST_URL` is set, the shared CLI derives:
@@ -70,7 +72,7 @@ from the remote manifest automatically.
 Direct item-hash example:
 
 ```bash
-cd /path/to/shared-aleph-tooling
+cd /path/to/relay-button
 
 export ALEPH_VM_PRIVATE_KEY=0x...
 export ALEPH_VM_NAME=orbitdb-relay-pinner-01
@@ -91,7 +93,7 @@ export ALEPH_VM_REQUIRED_PORTS_JSON='[
   {"port":9094,"tcp":false,"udp":true,"purpose":"QUIC"}
 ]'
 
-pnpm aleph deploy
+pnpm relay-button deploy
 ```
 
 Important:
@@ -137,27 +139,27 @@ Dual-key bootstrap note:
 ## Build Or Publish A RootFS
 
 ```bash
-cd /path/to/shared-aleph-tooling
+cd /path/to/relay-button
 
 export ALEPH_ROOTFS_PROJECT_DIR=/path/to/consumer-repo
 export ALEPH_ROOTFS_CONTRACT_PATH=/path/to/consumer-repo/go-peer/aleph/root-profiles/uc-go-peer.json
 
-pnpm aleph rootfs-plan
-pnpm aleph rootfs-build
-pnpm aleph rootfs-publish
+pnpm relay-button rootfs-plan
+pnpm relay-button rootfs-build
+pnpm relay-button rootfs-publish
 ```
 
 OrbitDB relay example:
 
 ```bash
-cd /path/to/shared-aleph-tooling
+cd /path/to/relay-button
 
 export ALEPH_ROOTFS_PROJECT_DIR=/path/to/relay-deployer-pwa
-export ALEPH_ROOTFS_CONTRACT_PATH=/path/to/shared-aleph-tooling/packages/rootfs/reference/orbitdb-relay-pinner/contract.json
+export ALEPH_ROOTFS_CONTRACT_PATH=/path/to/relay-button/packages/rootfs/reference/orbitdb-relay-pinner/contract.json
 export ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR=/path/to/orbitdb-relay-pinner
 
-pnpm aleph rootfs-build
-pnpm aleph rootfs-publish
+pnpm relay-button rootfs-build
+pnpm relay-button rootfs-publish
 ```
 
 Minimum required environment for `rootfs-publish`:
@@ -185,7 +187,7 @@ can retry the upload/publication step without rebuilding the image:
 ```bash
 export ALEPH_ROOTFS_DRIVER=docker
 export ALEPH_ROOTFS_SKIP_BUILD=true
-pnpm aleph rootfs-publish
+pnpm relay-button rootfs-publish
 ```
 
 The shared rootfs runner now auto-detects `docker` / `virt-customize` when
@@ -199,7 +201,7 @@ you need to force or debug toolchain selection.
 This CLI does not add a new deployment implementation. It exposes the existing
 shared Node runners in a local command-line form.
 
-- `pnpm aleph deploy`
+- `pnpm relay-button deploy`
   matches the same shared deploy path used by the `aleph-vm-deploy` action
-- `pnpm aleph rootfs-publish`
+- `pnpm relay-button rootfs-publish`
   matches the same shared RootFS publish path used by the reusable workflow

@@ -6,7 +6,7 @@ import Layout from '@theme/Layout'
 const cards = [
   {
     title: 'Shared Deploy Core',
-    body: 'Common Aleph deployment, runtime, retry, and guest lifecycle logic lives in one place instead of being duplicated across consumer repos.',
+    body: 'Common relay deployment, runtime, retry, and guest lifecycle logic lives in one place instead of being duplicated across consumer repos.',
     to: '/docs/architecture/deployment-lifecycle'
   },
   {
@@ -27,14 +27,14 @@ export default function Home() {
 
   return (
     <Layout
-      title="Shared Aleph Tooling"
-      description="Shared Aleph VM deployment, rootfs, and automation tooling."
+      title="Relay Button"
+      description="Relay deployment, rootfs, and automation tooling."
     >
       <header className="hero hero--shared">
         <div className="container">
-          <h1 className="hero__title">Shared Aleph Tooling</h1>
+          <h1 className="hero__title">Relay Button</h1>
           <p className="hero__subtitle">
-            A shared foundation for Aleph VM deployment, rootfs automation, GitHub Actions,
+            A shared foundation for relay deployment, rootfs automation, GitHub Actions,
             and future browser-driven deployment flows.
           </p>
           <p style={{ marginTop: '0.75rem', fontWeight: 600 }}>
