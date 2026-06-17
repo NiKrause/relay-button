@@ -1,295 +1,167 @@
-# Filecoin ProPGF Batch 3 Application Draft
-
-This page captures the current public-facing draft copy for a Filecoin ProPGF
-Batch 3 application responding to Focus Area 1: Customer-facing products built
-on Filecoin.
-
-The proposal centers on a decentralized Filecoin archive, upload, and pinning
-gateway for local-first peer-to-peer applications. It intentionally excludes
-private reviewer-only details such as named references, confidential operating
-data, and internal budget notes that belong in the application form rather than
-the public docs site.
+# Filecoin ProPGF Batch 3 Proposal Notes
 
-## Suggested Form Values
+This page captures the public-facing outline for a Filecoin ProPGF Batch 3
+proposal aligned with Focus Area 1: customer-facing products built on
+Filecoin.
 
-- Project name:
-  `Decentralized Filecoin Archive, Upload, and Pinning Gateway for Local-First P2P Applications`
-- Category:
-  `RFP Response` for Batch 3 Focus Area 1: Customer-facing products built on
-  Filecoin
-- Open source status: `Fully Open Source`
-- Beneficiaries:
-  - `Application Builders`
-  - `Application Users`
-  - `Network Infrastructure`
-  - `Storage Providers`
-- Total funding requested: `$200,000`
-- Grant period: `2026-08-01` to `2027-01-31`
-- Delivery shape: three two-month milestones
-
-## Project Summary
-
-We propose a customer-facing Filecoin-backed archive, upload, and
-IPFS/OrbitDB pinning gateway for local-first peer-to-peer applications. The
-product combines an IPFS-hosted, UCAN-based upload PWA, Filecoin archival
-visibility, OrbitDB/IPFS pinning, and on-demand relay continuity for
-IPFS-hosted applications that need their data and networking to stay available
-when end-user devices go offline. The first phase hardens a local-first upload
-wall and deploys the archival gateway on one decentralized compute network,
-while later phases add OrbitDB pinning and passkey-based peer replication and
-recovery. This supports application builders and end users who want
-Filecoin-backed durability without having to run a centralized backend, and it
-creates a practical path for local-first applications to adopt Filecoin
-archival as part of normal product flows. We are not introducing a new token or
-chain; the goal is to make verifiable Filecoin storage usable inside real
-customer-facing applications that are user-owned and censorship-resistant.
+The proposal is centered on a decentralized Filecoin archive, upload, and
+pinning gateway for local-first peer-to-peer applications. It is meant to read
+as product and architecture notes rather than as a verbatim grant form export.
 
-## Open Source Context
+## Proposal At A Glance
 
-This project will be fully open source. The upload PWA, archival gateway
-components, pinning and relay continuity flows, deployment tooling, and
-reference integrations will be developed in public with reproducible deployment
-instructions and public documentation. We are not proposing a proprietary
-chain, token, or closed backend. The goal is to provide open, user-owned
-building blocks and a finished customer-facing product that help local-first
-applications adopt Filecoin-backed archival without surrendering control to
-centralized infrastructure.
+We want to build a customer-facing product that helps local-first applications
+use Filecoin-backed archival without falling back to a traditional centralized
+backend.
 
-## Milestones And Budget
+The proposed product combines:
 
-### Milestone 1
+- an IPFS-hosted, UCAN-based upload PWA
+- Filecoin archival visibility for uploaded content
+- IPFS and OrbitDB pinning for application data continuity
+- relay continuity for IPFS-hosted applications whose peers go offline
+- a deployment path on decentralized compute, starting with one production
+  target and keeping the architecture portable to others
 
-**Title**
+The goal is to make verifiable Filecoin storage usable inside real browser
+applications that are user-owned, portable, and censorship-resistant.
 
-IPFS-hosted UCAN upload PWA and Filecoin archival gateway on one decentralized
-compute network
+## The Problem
 
-**Due date**
+Local-first and peer-to-peer applications can be highly resilient from a user
+ownership perspective, but they still face practical availability problems:
 
-`2026-09-30`
+- browser peers go offline
+- application data needs pinning or archival somewhere durable
+- upload and authorization flows often drift back toward centralized services
+- relay continuity becomes an extra operational burden for app builders
 
-**Funding requested**
+This creates a gap between the promise of local-first software and the reality
+of operating it at product level. Filecoin-backed archival is a strong match
+for this problem space, but many application builders still need a practical,
+customer-facing path rather than only low-level infrastructure.
 
-`$66,667`
+## Proposed Product
 
-**Description**
+The product is a browser-first gateway and continuity layer for local-first
+applications.
 
-Build and harden a customer-facing, IPFS-hosted UCAN upload PWA and connect it
-to a Filecoin-backed archival gateway deployed on one selected decentralized
-compute network. This milestone uses Storacha-compatible technical patterns and
-a browser-first local-first upload wall as the implementation starting point,
-while focusing on production hardening, user-facing flows, archival visibility,
-and deployment portability. The result is a usable product for browser-native
-uploads where authorization remains client-side and users do not need to trust
-a traditional centralized backend.
+On the front end, users interact with an IPFS-hosted upload PWA that uses
+UCAN-based authorization patterns and stays aligned with local-first
+principles. On the storage side, the service exposes Filecoin archival
+visibility and durable content references rather than acting as a black box.
+On the continuity side, the product extends beyond uploads into OrbitDB and
+IPFS pinning, plus relay support for IPFS-hosted applications that need their
+networking to stay reachable when end-user devices are offline.
 
-**Completion criteria**
+The architecture is intentionally open and modular:
 
-- A browser-first upload PWA is live from IPFS and supports UCAN-based
-  authorization flows.
-- The archival gateway is deployed and documented on one decentralized compute
-  target.
-- Upload outputs expose content CIDs and a working Filecoin archival
-  information path.
-- Public operator and user documentation is published, along with a working
-  demo flow for end users and developers.
+- upload UX stays browser-first
+- authorization stays user-controlled
+- archival is verifiable
+- pinning and relay continuity are deployable on decentralized compute
+- application builders can adopt the product without introducing a new token,
+  new chain, or proprietary backend dependency
 
-### Milestone 2
+## Why This Fits Filecoin
 
-**Title**
+This work is not aimed at inventing a new protocol token or speculative
+economic layer. The value is in making Filecoin-backed archival visible and
+usable as an application feature.
 
-OrbitDB/IPFS pinning and relay continuity for local-first applications
+Instead of treating Filecoin as something hidden behind an infrastructure
+provider, the product makes archival part of the normal workflow for local-first
+applications:
 
-**Due date**
+- upload content from an IPFS-hosted PWA
+- preserve durable references and archival visibility
+- keep OrbitDB and IPFS application data available
+- preserve networking continuity through relay support
+- let builders ship user-owned applications with stronger durability
 
-`2026-11-30`
+That is the main reason this proposal is framed as a customer-facing product
+rather than as generic infrastructure work.
 
-**Funding requested**
+## Three-Stage Roadmap
 
-`$66,667`
+The current delivery plan is organized into three two-month stages across a
+six-month grant period.
 
-**Description**
+### Stage 1
 
-Extend the archival gateway with OrbitDB/IPFS pinning and replication
-continuity using OrbitDB Voyager and orbitdb-relay-pinner as technical
-references. This milestone focuses on keeping application data available when
-originating browser peers are offline and on enabling IPFS-hosted local-first
-applications to launch or sponsor relay continuity on decentralized compute. It
-includes at least one documented deployment profile, reference integration
-flows for OrbitDB-based applications, and published operational guidance for
-pinning, replication, and relay continuity.
+Build and harden the IPFS-hosted UCAN upload PWA and connect it to a
+Filecoin-backed archival gateway running on one selected decentralized compute
+network.
 
-**Completion criteria**
+This stage is about getting the customer-facing upload and archival experience
+into a usable product shape:
 
-- OrbitDB pinning and continuity flows are working on the selected
-  decentralized compute target.
-- At least one relay and pinning deployment profile is reproducible and
-  publicly documented.
-- An IPFS-hosted local-first application can use the documented relay
-  continuity flow.
-- Reference integration material is published for OrbitDB-style applications.
+- browser-first upload flow
+- UCAN-based authorization
+- content CID and archival visibility outputs
+- public documentation and demo flows
+- one supported decentralized compute deployment target
 
-### Milestone 3
+### Stage 2
 
-**Title**
+Extend the gateway with OrbitDB and IPFS pinning plus relay continuity for
+local-first applications.
 
-Passkey-based peer replication and recovery integrated with Filecoin archival
-and OrbitDB pinning
+This stage focuses on application availability when original peers are offline.
+It uses OrbitDB Voyager and orbitdb-relay-pinner as technical reference points
+while keeping the end result focused on a coherent product:
 
-**Due date**
+- documented pinning and replication continuity flows
+- at least one reproducible relay and pinning deployment profile
+- integration guidance for IPFS-hosted OrbitDB-style applications
+- a practical path for applications to launch or sponsor continuity services
 
-`2027-01-31`
+### Stage 3
 
-**Funding requested**
+Integrate passkey-based peer replication and recovery with the archival and
+pinning stack.
 
-`$66,666`
+This stage is about making local-first applications more recoverable and
+multi-device friendly without abandoning user ownership:
 
-**Description**
+- passkey-based recovery and replication patterns
+- example multi-peer or multi-device recovery demos
+- public builder documentation
+- documented security notes and known limitations
 
-Add passkey-based peer replication and recovery patterns to the stack so
-local-first applications can recover state and continue synchronization across
-devices while using the archival and pinning flows from Milestones 1 and 2.
-This milestone uses p2pass as a reference prototype and aligns passkey-backed
-identity with OrbitDB pinning and user-controlled continuity. The goal is to
-make local-first applications more durable, user-owned, and censorship-resistant
-without falling back to a centralized service model.
+## Delivery Principles
 
-**Completion criteria**
+The proposal is guided by a few simple constraints:
 
-- A passkey-based replication demo is integrated with the archival and pinning
-  path.
-- Recovery and sync are demonstrated across multiple peers or devices.
-- Public example code and integration documentation are published for builders.
-- Security notes and known limitations are documented.
+- fully open source
+- no new token or chain
+- customer-facing product first, not SDK-only scope
+- one production-grade decentralized compute target first
+- portable architecture that can later support additional decentralized compute
+  environments
+- emphasis on user-owned and censorship-resistant application patterns
 
-## Target Network Objectives And KPIs
+## What Success Looks Like
 
-- Drive Paid Onchain Deals: `Indirect`
-- Strengthen Network Profitability & Cryptoeconomics: `Indirect`
-- Scale Paid Onchain Flagship Client Adoption: `Direct`
+By the end of the grant period, the intended outcome is not just a set of
+components but a usable application layer path for builders:
 
-## Impact Pathway
+- local-first applications can use an IPFS-hosted upload PWA with UCAN-based
+  authorization
+- uploaded content has visible Filecoin archival information
+- OrbitDB and IPFS application data can remain available when browser peers are
+  offline
+- IPFS-hosted applications have a documented relay continuity path
+- builders can adopt the system without moving back to a centralized backend
 
-This work creates a practical path for user-owned, censorship-resistant
-local-first applications to use Filecoin-backed archival as part of normal
-product behavior. The immediate outputs are an IPFS-hosted upload PWA, a
-Filecoin archival gateway, OrbitDB/IPFS pinning, and relay continuity for
-applications that need their data and networking to remain available when
-end-user devices are offline. Those outputs let application builders ship
-browser-native products without operating a traditional centralized backend
-while still benefiting from verifiable archival and continuity infrastructure.
-The resulting outcome is that more local-first applications can become durable,
-recoverable, and multi-device friendly while using Filecoin as their long-term
-storage substrate. That directly supports flagship client adoption by turning
-Filecoin-backed archival into a visible customer feature rather than a hidden
-infrastructure detail.
-
-## Verification Metrics
-
-### Metric 1
-
-**Metric**
-
-Number of Filecoin deal IDs associated with archived uploads produced by the
-gateway.
-
-**Data source**
-
-Archival outputs and Filecoin archival information lookups.
-
-**How it is measured**
-
-Count unique deal IDs observed for data archived through the product.
-
-**Target by end of grant**
-
-At least 100 observed deals across pilot application data.
-
-### Metric 2
-
-**Metric**
-
-Total bytes with verifiable Filecoin archival through the product.
-
-**Data source**
-
-Upload logs, content CIDs, piece CIDs, and archival proof lookups.
-
-**How it is measured**
-
-Sum bytes for uploads whose archival status can be externally verified.
-
-**Target by end of grant**
-
-At least 250 GB of archived data across pilots.
-
-### Metric 3
-
-**Metric**
-
-Externally verifiable product adoption and continuity metrics.
-
-**Data source**
-
-Public demos, deployment docs, published integrations, and service telemetry.
-
-**How it is measured**
-
-Count completed pilot integrations, supported decentralized compute targets,
-OrbitDB database addresses under documented pinning flows, and public demos
-showing relay continuity or passkey-based recovery.
-
-**Target by end of grant**
-
-At least 3 pilot application integrations, at least 1 decentralized compute
-target supported in production, at least 10 OrbitDB database addresses under
-documented pinning flows, and at least 2 public demos showing relay continuity
-or passkey-based recovery.
-
-## If The Grant Is Not Awarded
-
-Without this grant, the underlying prototypes would likely continue only as
-slower part-time work across separate repositories rather than as one
-integrated customer-facing Filecoin product. The likely result would be delayed
-hardening of the IPFS-hosted upload PWA, slower rollout of OrbitDB pinning and
-relay continuity, and a significant delay in integrating passkey-based
-replication and recovery. The ideas would still be technically possible, but
-the end-to-end productization, documentation, and pilot deployments would
-likely slip by at least 6 to 12 months.
-
-## Key Risks And Dependencies
-
-The main risks are production-hardening browser-first and prototype-stage
-components, operating a customer-facing archival service reliably on
-decentralized compute, and aligning UCAN authorization, IPFS, OrbitDB, relay
-continuity, and passkey-based identity across browser and service layers.
-Upstream dependencies include Storacha-compatible protocols and client flows,
-the maturity of OrbitDB and related replication tooling, and the ingress,
-persistence, and networking characteristics of the selected decentralized
-compute platform. We reduce risk by delivering first on one compute target,
-keeping the architecture modular, publishing reference deployments at each
-phase, and documenting security assumptions and known limitations as part of
-every milestone.
-
-## Other Notes
-
-We are deliberately not proposing a new token, a new chain, or a speculative
-economic layer. The value of this project is to make Filecoin-backed archival,
-pinning, and continuity usable inside real local-first applications through
-browser-first UX, open-source implementations, and portable deployment patterns
-on decentralized compute. We also believe this work is meaningfully aligned
-with user-owned and censorship-resistant software: the product is designed so
-applications can remain browser-native and IPFS-hosted while still gaining
-durable archival and continuity services.
-
-## Application Process Feedback
-
-The RFP direction is clear and helpful. The main improvement would be making
-the form labels and category options match the latest Batch 3 focus area
-wording exactly, and showing the expected milestone date format more explicitly
-inside the form UI.
+In short, the product should help move Filecoin-backed archival from hidden
+infrastructure into an understandable, user-facing feature for real local-first
+applications.
 
 ## Public Reference Projects
+
+These projects are relevant technical references for the current proposal
+direction:
 
 - [NiKrause/ucan-upload-wall](https://github.com/NiKrause/ucan-upload-wall)
 - [orbitdb/voyager](https://github.com/orbitdb/voyager)
