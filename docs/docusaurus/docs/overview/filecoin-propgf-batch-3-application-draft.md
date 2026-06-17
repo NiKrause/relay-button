@@ -189,7 +189,7 @@ These projects are relevant technical references for the current proposal
 direction:
 
 - [NiKrause/ucan-upload-wall](https://github.com/NiKrause/ucan-upload-wall)
-- [NiKrause/shared-aleph-tooling](https://github.com/NiKrause/shared-aleph-tooling/)
+- [NiKrause/relay-button](https://github.com/NiKrause/shared-aleph-tooling/)
   infrastructure for on-demand relay instance hosting
 - [orbitdb/voyager](https://github.com/orbitdb/voyager)
 - [NiKrause/orbitdb-relay-pinner](https://github.com/NiKrause/orbitdb-relay-pinner)
