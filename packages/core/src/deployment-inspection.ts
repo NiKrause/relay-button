@@ -22,6 +22,16 @@ type MessageEnvelope = {
   messages?: Array<{ type?: unknown }> | null
 }
 
+const TRANSIENT_MESSAGE_LOOKUP_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504])
+
+export function isTransientMessageLookupError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  const match = message.match(/Message lookup failed: (\d{3})/)
+  if (!match) return false
+
+  return TRANSIENT_MESSAGE_LOOKUP_STATUSES.has(Number(match[1]))
+}
+
 export async function fetchMessageEnvelope(
   itemHash: string,
   options: {

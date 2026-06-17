@@ -16,7 +16,7 @@ import {
   type RootfsToolchainAvailability,
 } from "../../rootfs/src/index.ts";
 import { broadcastAlephMessage, normalizeBroadcastStatus, signAlephMessage } from "../../core/src/index.ts";
-import { inspectMessageResult } from "../../core/src/deployment-inspection.ts";
+import { inspectMessageResult, isTransientMessageLookupError } from "../../core/src/deployment-inspection.ts";
 
 import { booleanEnv, optionalEnv, requiredEnv } from "./env.ts";
 import { appendGithubOutput, appendGithubSummary } from "./github-outputs.ts";
@@ -412,14 +412,20 @@ async function pinRootfsCidOnAleph(buildPlan: RootfsBuildPlan, cid: string, env:
 
 async function waitForAlephMessageProcessed(buildPlan: RootfsBuildPlan, itemHash: string): Promise<void> {
   for (let attempt = 1; attempt <= buildPlan.alephMessageWaitAttempts; attempt += 1) {
-    const result = await inspectMessageResult(itemHash, {
-      apiHost: buildPlan.alephApiHost,
-      fetch,
-      label: 'Aleph STORE message',
-    })
-    if (result.status === 'processed') return
-    if (result.status === 'rejected') {
-      throw new Error(result.rejectionReason ?? `Aleph STORE message ${itemHash} was rejected.`)
+    try {
+      const result = await inspectMessageResult(itemHash, {
+        apiHost: buildPlan.alephApiHost,
+        fetch,
+        label: 'Aleph STORE message',
+      })
+      if (result.status === 'processed') return
+      if (result.status === 'rejected') {
+        throw new Error(result.rejectionReason ?? `Aleph STORE message ${itemHash} was rejected.`)
+      }
+    } catch (error) {
+      if (!isTransientMessageLookupError(error) || attempt >= buildPlan.alephMessageWaitAttempts) {
+        throw error
+      }
     }
     if (attempt < buildPlan.alephMessageWaitAttempts) {
       await new Promise((resolve) => setTimeout(resolve, buildPlan.alephMessageWaitDelaySeconds * 1000))

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   fetchMessageEnvelope,
+  isTransientMessageLookupError,
   inspectDeploymentResult,
   inspectMessageResult,
   waitForDeploymentResult
@@ -63,6 +64,13 @@ test('inspectMessageResult explains rejected balance errors', async () => {
   assert.equal(result.status, 'rejected')
   assert.match(result.rejectionReason ?? '', /insufficient Aleph balance/i)
   assert.match(result.rejectionReason ?? '', /2\.000 short/i)
+})
+
+test('isTransientMessageLookupError detects retryable Aleph message lookup failures', () => {
+  assert.equal(isTransientMessageLookupError(new Error('Message lookup failed: 503')), true)
+  assert.equal(isTransientMessageLookupError(new Error('Message lookup failed: 429')), true)
+  assert.equal(isTransientMessageLookupError(new Error('Message lookup failed: 404')), false)
+  assert.equal(isTransientMessageLookupError(new Error('Something else failed')), false)
 })
 
 test('inspectDeploymentResult loads related references and explains rejected rootfs dependencies', async () => {

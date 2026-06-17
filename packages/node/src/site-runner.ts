@@ -4,7 +4,7 @@ import { readFile, readdir } from "node:fs/promises"
 import { isAbsolute, join, relative, resolve } from "node:path"
 
 import { broadcastAlephMessage, forgetAlephMessages, normalizeBroadcastStatus, publishAggregateKey, signAlephMessage } from "../../core/src/index.ts"
-import { inspectMessageResult } from "../../core/src/deployment-inspection.ts"
+import { inspectMessageResult, isTransientMessageLookupError } from "../../core/src/deployment-inspection.ts"
 
 import { optionalEnv, requiredEnv } from "./env.ts"
 import { appendGithubOutput, appendGithubSummary } from "./github-outputs.ts"
@@ -36,14 +36,20 @@ async function waitForAlephMessage(itemHash: string, env: NodeJS.ProcessEnv = pr
   const delayMs = Number(optionalEnv('ALEPH_SITE_ALEPH_MESSAGE_WAIT_DELAY_MS', '5000', env))
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const result = await inspectMessageResult(itemHash, {
-      apiHost,
-      fetch: fetch,
-      label: 'Aleph STORE message',
-    })
-    if (result.status === 'processed') return
-    if (result.status === 'rejected') {
-      throw new Error(result.rejectionReason ?? `Aleph STORE message ${itemHash} was rejected.`)
+    try {
+      const result = await inspectMessageResult(itemHash, {
+        apiHost,
+        fetch: fetch,
+        label: 'Aleph STORE message',
+      })
+      if (result.status === 'processed') return
+      if (result.status === 'rejected') {
+        throw new Error(result.rejectionReason ?? `Aleph STORE message ${itemHash} was rejected.`)
+      }
+    } catch (error) {
+      if (!isTransientMessageLookupError(error) || attempt >= attempts) {
+        throw error
+      }
     }
     if (attempt < attempts) {
       await new Promise((resolve) => setTimeout(resolve, delayMs))

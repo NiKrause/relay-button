@@ -292,3 +292,88 @@ test('runRootfsMode executes rootfs-publish and emits outputs through the direct
   assert.ok(calls.includes('https://api.aleph.im/api/v0/messages'))
   assert.match(writes.join(''), /uc-go-peer-git-20260516-deadbee/)
 })
+
+test('runRootfsMode retries transient Aleph message lookup failures during rootfs publish', async () => {
+  const projectDir = await mkdtemp(join(tmpdir(), 'shared-rootfs-retry-project-'))
+  const { env, outputFile } = await createActionEnv('shared-rootfs-retry-', projectDir)
+  const originalFetch = globalThis.fetch
+  let messageLookupCalls = 0
+
+  globalThis.fetch = (async (input) => {
+    const url = String(input)
+    if (url === 'https://ipfs.aleph.cloud/ipfs/bafyrootfs') {
+      return new Response('', { status: 206 })
+    }
+    if (url === 'https://api.aleph.im/api/v0/messages') {
+      return new Response(JSON.stringify({ item_hash: 'store-item-hash' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url === 'https://api.aleph.im/api/v0/messages/store-item-hash') {
+      messageLookupCalls += 1
+      if (messageLookupCalls === 1) {
+        return new Response('temporarily unavailable', { status: 503 })
+      }
+      return new Response(JSON.stringify({ status: 'processed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    throw new Error(`Unexpected fetch call: ${url}`)
+  }) as typeof fetch
+
+  try {
+    await runRootfsMode({
+      ...env,
+      ALEPH_VM_MODE: 'rootfs-publish',
+      ALEPH_ROOTFS_VERSION: 'uc-go-peer-git-20260516-deadbee',
+      ALEPH_ROOTFS_SKIP_UPLOAD: 'false',
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+      ALEPH_ROOTFS_ALEPH_MESSAGE_WAIT_ATTEMPTS: '3',
+      ALEPH_ROOTFS_ALEPH_MESSAGE_WAIT_DELAY_SECONDS: '0',
+    }, {
+      buildRootfs: async (buildPlan) => {
+        await mkdir(join(projectDir, 'go-peer/aleph/dist-rootfs'), { recursive: true })
+        await writeFile(buildPlan.imagePath, 'qcow2-binary')
+        return {
+          pipeline: {
+            buildPlan,
+            executionPlan: {
+              mode: 'docker',
+              reason: 'test',
+              referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+              runCommand: { command: '/bin/bash', args: ['build-rootfs.sh'] },
+            },
+            publicationArtifacts: {
+              ipfsAddResponsePath: '/tmp/ipfs-add-response.jsonl',
+              storeMessagePath: '/tmp/store-message.json',
+              storeMessageStderrPath: '/tmp/store-message.stderr.log',
+            },
+            manifestPaths: {
+              primaryPath: buildPlan.manifestPath,
+              copyTargetPath: buildPlan.latestManifestPath ?? undefined,
+              versionedTargetPath: buildPlan.versionedManifestPath ?? undefined,
+            },
+          },
+          executedCommands: [],
+        }
+      },
+      uploadRootfsImageToIpfs: async () => ({
+        cid: 'bafyrootfs',
+        responseText: JSON.stringify({
+          Name: 'aleph-uc-go-peer.qcow2',
+          Hash: 'bafyrootfs',
+          Size: '987654321',
+        }),
+        sourceSizeBytes: 987654321,
+      }),
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, /rootfs_item_hash=store-item-hash/)
+  assert.equal(messageLookupCalls, 2)
+})
