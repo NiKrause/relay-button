@@ -114,10 +114,7 @@ attach steps, not a separate Python site-upload helper stack.
 
 Docs site:
 
-- https://nikrause.github.io/shared-aleph-tooling/
-
-The docs site path can move to `/relay-button/` once the GitHub repository slug
-is renamed.
+- https://nikrause.github.io/relay-button/
 
 Source docs live in [docs/docusaurus](./docs/docusaurus).
 

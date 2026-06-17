@@ -13,9 +13,9 @@ const config = {
   tagline: 'Relay deployment, rootfs, and automation tooling',
   favicon: 'img/favicon.svg',
   url: 'https://nikrause.github.io',
-  baseUrl: '/shared-aleph-tooling/',
+  baseUrl: '/relay-button/',
   organizationName: 'NiKrause',
-  projectName: 'shared-aleph-tooling',
+  projectName: 'relay-button',
   onBrokenLinks: 'throw',
   markdown: {
     mermaid: true,

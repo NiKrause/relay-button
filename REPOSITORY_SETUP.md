@@ -1,7 +1,7 @@
 # Repository Setup
 
 This document describes the current external setup for
-`NiKrause/shared-aleph-tooling`.
+`NiKrause/relay-button`.
 
 It is meant for maintainers who need to understand which GitHub and npm pieces
 must exist for the repo to build docs, release packages, and support consumer
@@ -9,9 +9,9 @@ repositories such as `universal-connectivity`.
 
 ## Current Repository State
 
-The repository already exists on GitHub:
+The repository is expected to exist on GitHub as:
 
-- `https://github.com/NiKrause/shared-aleph-tooling`
+- `https://github.com/NiKrause/relay-button`
 
 Current supporting services are already in use:
 
@@ -65,7 +65,7 @@ Not yet released:
 
 The Docusaurus site is published via GitHub Pages at:
 
-- `https://nikrause.github.io/shared-aleph-tooling/`
+- `https://nikrause.github.io/relay-button/`
 
 The Pages deployment is handled by:
 

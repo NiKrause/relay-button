@@ -2,7 +2,7 @@
 
 const owner = process.argv[2];
 const visibility = process.argv[3] ?? "private";
-const repoName = process.argv[4] ?? "shared-aleph-tooling";
+const repoName = process.argv[4] ?? "relay-button";
 
 if (!owner) {
   console.error(
