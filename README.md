@@ -1,6 +1,6 @@
-# shared-aleph-tooling
+# relay-button
 
-Reusable Aleph Cloud deployment tooling for projects that need to:
+Relay Button is reusable Aleph Cloud deployment tooling for projects that need to:
 
 - build and publish RootFS images
 - deploy Aleph VM instances
@@ -10,6 +10,10 @@ Reusable Aleph Cloud deployment tooling for projects that need to:
 
 This repository is the implementation layer behind the Aleph deployment flows
 used by consumer projects such as `universal-connectivity`.
+
+This first rebrand phase keeps the published `@le-space/*` package scope and
+existing Aleph-specific package names stable for consumer compatibility while
+introducing `relay-button` as the new product and CLI name.
 
 ## What It Contains
 
@@ -92,10 +96,11 @@ pnpm test
 
 Useful commands:
 
-- `pnpm aleph help`
-- `pnpm aleph deploy`
-- `pnpm aleph rootfs-publish`
-- `pnpm exec shared-aleph list-crns | jq`
+- `pnpm relay-button help`
+- `pnpm relay-button deploy`
+- `pnpm relay-button rootfs-publish`
+- `pnpm exec relay-button list-crns | jq`
+- `pnpm exec shared-aleph list-crns | jq` (compatibility alias during the rebrand transition)
 - `pnpm --filter @le-space/core test`
 - `pnpm --filter @le-space/node test`
 - `pnpm docs:dev`
@@ -110,6 +115,9 @@ attach steps, not a separate Python site-upload helper stack.
 Docs site:
 
 - https://nikrause.github.io/shared-aleph-tooling/
+
+The docs site path can move to `/relay-button/` once the GitHub repository slug
+is renamed.
 
 Source docs live in [docs/docusaurus](./docs/docusaurus).
 
@@ -166,9 +174,9 @@ You can run the shared Node-side deployment and RootFS flows locally through a
 small CLI wrapper:
 
 ```bash
-pnpm aleph help
-pnpm aleph deploy
-pnpm aleph rootfs-publish
+pnpm relay-button help
+pnpm relay-button deploy
+pnpm relay-button rootfs-publish
 ```
 
 When deploying from the CLI, `ALEPH_VM_REQUIRED_PORTS_JSON` must be a JSON
@@ -184,11 +192,11 @@ the external source checkout directly:
 
 ```bash
 export ALEPH_ROOTFS_PROJECT_DIR=/path/to/relay-deployer-pwa
-export ALEPH_ROOTFS_CONTRACT_PATH=/path/to/shared-aleph-tooling/packages/rootfs/reference/orbitdb-relay-pinner/contract.json
+export ALEPH_ROOTFS_CONTRACT_PATH=/path/to/relay-button/packages/rootfs/reference/orbitdb-relay-pinner/contract.json
 export ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR=/path/to/orbitdb-relay-pinner
 
-pnpm aleph rootfs-build
-pnpm aleph rootfs-publish
+pnpm relay-button rootfs-build
+pnpm relay-button rootfs-publish
 ```
 
 If the image build already succeeded but the later Aleph `STORE` publication
@@ -198,7 +206,7 @@ upload/publication step without rebuilding the qcow2:
 ```bash
 export ALEPH_ROOTFS_DRIVER=docker
 export ALEPH_ROOTFS_SKIP_BUILD=true
-pnpm aleph rootfs-publish
+pnpm relay-button rootfs-publish
 ```
 
 The runner now auto-detects `docker` / `virt-customize` when those env flags
@@ -212,7 +220,7 @@ deployment logic as the shared action/workflow layers.
 For machine-readable JSON output without the extra `pnpm run` banner, prefer:
 
 ```bash
-node ./scripts/aleph-cli.mjs list-crns | jq
+pnpm exec relay-button list-crns | jq
 ```
 
 ## Support

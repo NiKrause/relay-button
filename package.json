@@ -1,10 +1,11 @@
 {
-  "name": "shared-aleph-tooling",
+  "name": "relay-button",
   "private": true,
   "version": "0.4.5",
-  "description": "Shared Aleph VM deployment, rootfs, and automation tooling monorepo.",
+  "description": "Relay Button deployment, rootfs, and automation tooling monorepo.",
   "license": "MIT",
   "bin": {
+    "relay-button": "./scripts/aleph-cli.mjs",
     "shared-aleph": "./scripts/aleph-cli.mjs"
   },
   "packageManager": "pnpm@10.33.0",
@@ -25,6 +26,7 @@
   },
   "scripts": {
     "aleph": "node ./scripts/aleph-cli.mjs",
+    "relay-button": "node ./scripts/aleph-cli.mjs",
     "review:aleph-rs-llm": "node ./scripts/review-aleph-rs-with-llm.mjs",
     "build": "pnpm -r build",
     "build:publishable": "pnpm --filter @le-space/shared-types run build:publish && pnpm --filter @le-space/aleph-bootstrap run build:publish && pnpm --filter @le-space/core run build:publish && pnpm --filter @le-space/rootfs run build:publish && pnpm --filter @le-space/browser run build:publish && pnpm --filter @le-space/node run build:publish && pnpm --filter @le-space/ui run build:publish",

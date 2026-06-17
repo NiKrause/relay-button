@@ -9,8 +9,8 @@ const nodePackage = JSON.parse(
 const packageVersion = nodePackage.version
 
 const config = {
-  title: 'Shared Aleph Tooling',
-  tagline: 'Shared Aleph VM deployment, rootfs, and automation tooling',
+  title: 'Relay Button',
+  tagline: 'Relay deployment, rootfs, and automation tooling',
   favicon: 'img/favicon.svg',
   url: 'https://nikrause.github.io',
   baseUrl: '/shared-aleph-tooling/',
@@ -46,9 +46,9 @@ const config = {
   },
   themeConfig: {
     navbar: {
-      title: 'Shared Aleph Tooling',
+      title: 'Relay Button',
       logo: {
-        alt: 'Shared Aleph Tooling',
+        alt: 'Relay Button',
         src: 'img/favicon.svg'
       },
       items: [
@@ -95,7 +95,7 @@ const config = {
           ]
         }
       ],
-      copyright: `Copyright ${new Date().getFullYear()} Shared Aleph Tooling · Current package version v${packageVersion}`
+      copyright: `Copyright ${new Date().getFullYear()} Relay Button · Current package version v${packageVersion}`
     },
     colorMode: {
       defaultMode: 'light',
