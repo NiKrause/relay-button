@@ -31,7 +31,8 @@ const config = {
         docs: {
           path: 'docs',
           routeBasePath: 'docs',
-          sidebarPath: './sidebars.mjs'
+          sidebarPath: './sidebars.mjs',
+          showLastUpdateTime: true
         },
         blog: false,
         theme: {
