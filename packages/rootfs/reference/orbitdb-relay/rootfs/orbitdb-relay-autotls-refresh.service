@@ -1,0 +1,24 @@
+[Unit]
+Description=Persist AutoTLS secure announce addresses for orbitdb-relay
+After=orbitdb-relay.service
+Wants=orbitdb-relay.service
+ConditionPathExists=/etc/default/orbitdb-relay.ready
+ConditionPathExists=!/etc/default/orbitdb-relay.autotls-ready
+
+[Service]
+Type=oneshot
+Environment=ENV_FILE=/etc/default/orbitdb-relay
+Environment=READY_FILE=/etc/default/orbitdb-relay.ready
+Environment=AUTOTLS_READY_FILE=/etc/default/orbitdb-relay.autotls-ready
+Environment=AUTOTLS_ZONE_FILE=/etc/default/orbitdb-relay.autotls-zone
+Environment=AUTOTLS_HOSTS_FILE=/etc/default/orbitdb-relay.autotls-hosts
+Environment=AUTOTLS_CADDY_READY_FILE=/etc/default/orbitdb-relay.caddy-ready
+Environment=SERVICE_NAME=orbitdb-relay.service
+Environment=CADDY_SERVICE=caddy.service
+Environment=CADDYFILE=/etc/caddy/Caddyfile
+ExecStart=/usr/bin/python3 /usr/local/sbin/orbitdb-relay-autotls-refresh.py
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

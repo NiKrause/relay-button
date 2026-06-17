@@ -377,3 +377,135 @@ test('executeDeployPlan configures orbitdb relay pinner after mapped ports appea
     quic_port: 29094
   })
 })
+
+test('executeDeployPlan configures orbitdb relay after mapped ports appear', async () => {
+  const configureBodies: string[] = []
+  const result = await executeDeployPlan(
+    {
+      ...DEPLOY_PLAN,
+      profile: 'orbitdb-relay',
+      name: 'orbitdb-relay',
+      requiredPorts: [
+        { port: 22, tcp: true, udp: false, purpose: 'SSH' },
+        { port: 80, tcp: true, udp: false, purpose: 'Temporary setup endpoint' },
+        { port: 9090, tcp: true, udp: false, purpose: 'Metrics and health API' },
+        { port: 9091, tcp: true, udp: false, purpose: 'Relay TCP' },
+        { port: 443, tcp: true, udp: false, purpose: 'HTTPS and WSS proxy' },
+        { port: 9093, tcp: false, udp: true, purpose: 'WebRTC' },
+        { port: 9094, tcp: false, udp: true, purpose: 'QUIC' },
+      ],
+    },
+    {
+      sender: '0x1234',
+      signer: async () => '0xsigned',
+      hasher: (() => {
+        let count = 0
+        return () => `hash-r${++count}`
+      })(),
+      sleep: async () => undefined,
+      tcpProbe: async () => ({ ok: true }),
+      fetch: async (url, init) => {
+        if (String(url).includes('crns-list.aleph.sh')) {
+          return jsonResponse({
+            crns: [{ hash: 'crn-1', name: 'CRN One', address: 'https://crn.example.com', score: 10, country_code: 'DE' }]
+          })
+        }
+
+        if (String(url).includes('/api/v0/aggregates/0x1234.json')) {
+          return jsonResponse({})
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-r1') && !init?.method) {
+          return jsonResponse({ status: 'processed', details: { rootfs: DEPLOY_PLAN.rootfsItemHash } })
+        }
+
+        if (String(url).includes('scheduler.api.aleph.cloud')) {
+          return jsonResponse({
+            node: {
+              node_id: 'crn-1',
+              url: 'https://crn.example.com'
+            }
+          })
+        }
+
+        if (String(url).includes('api.2n6.me')) {
+          return jsonResponse({
+            url: 'https://dragon-belt-friend-share.2n6.me',
+            active: true
+          })
+        }
+
+        if (String(url).includes('/v2/about/executions/list')) {
+          return jsonResponse({
+            'hash-r1': {
+              networking: {
+                host_ipv4: '203.0.113.18',
+                mapped_ports: {
+                  '80': { host: 28080, tcp: true, udp: false },
+                  '22': { host: 32022, tcp: true, udp: false },
+                  '9090': { host: 29090, tcp: true, udp: false },
+                  '9091': { host: 29091, tcp: true, udp: false },
+                  '443': { host: 29443, tcp: true, udp: false },
+                  '9093': { host: 29093, tcp: false, udp: true },
+                  '9094': { host: 29094, tcp: false, udp: true }
+                }
+              }
+            }
+          })
+        }
+
+        if (String(url).includes('/health')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/configure')) {
+          configureBodies.push(String(init?.body ?? ''))
+          return jsonResponse({ status: 'configured' })
+        }
+
+        if (String(url).includes('/metadata')) {
+          return jsonResponse({
+            status: 'ready',
+            metadata: {
+              peer_id: '12D3KooOrbitdbRelay',
+              probe_multiaddrs: ['/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/12D3KooOrbitdbRelay'],
+              browser_bootstrap_multiaddrs: ['/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/12D3KooOrbitdbRelay']
+            }
+          })
+        }
+
+        if (String(url).includes('/control/allocation/notify')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/api/v0/messages/') && !init?.method) {
+          return jsonResponse({ status: 'processed', message: { type: 'STORE' } })
+        }
+
+        return jsonResponse(
+          {
+            publication_status: { status: 'success' },
+            message_status: 'pending'
+          },
+          202
+        )
+      }
+    }
+  )
+
+  assert.equal(result.itemHash, 'hash-r1')
+  assert.equal(result.configuration?.metadata?.peer_id, '12D3KooOrbitdbRelay')
+  assert.equal(result.runtime?.hostIpv4, '203.0.113.18')
+  assert.equal(result.verification?.ok, true)
+  assert.equal(configureBodies.length, 1)
+  assert.deepEqual(JSON.parse(configureBodies[0] ?? '{}'), {
+    public_ipv4: '203.0.113.18',
+    tcp_port: 29091,
+    ws_port: 29443,
+    proxy_url: 'https://dragon-belt-friend-share.2n6.me',
+    metrics_port: 29090,
+    metrics_https_port: 29443,
+    webrtc_port: 29093,
+    quic_port: 29094
+  })
+})

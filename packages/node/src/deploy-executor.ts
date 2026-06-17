@@ -207,7 +207,7 @@ export async function executeDeployPlan(
       seconds: plan.seconds,
       rootfsVersion: plan.rootfsVersion || "custom-rootfs",
       crnHash: candidateCrn.hash,
-      deployer: "shared-aleph-tooling",
+      deployer: "relay-button",
     });
 
     const deployment = await deployInstance({
@@ -392,7 +392,11 @@ export async function executeDeployPlan(
     if (
       runtime.hostIpv4 &&
       plan.autoConfigure !== false &&
-      (plan.profile === "uc-go-peer" || plan.profile === "orbitdb-relay-pinner")
+      (
+        plan.profile === "uc-go-peer" ||
+        plan.profile === "orbitdb-relay" ||
+        plan.profile === "orbitdb-relay-pinner"
+      )
     ) {
       const mappedPorts = runtime.mappedPorts ?? {};
       const setupPort = mappedPorts["80"]?.host ?? null;
@@ -442,7 +446,10 @@ export async function executeDeployPlan(
           continue;
         }
 
-        if (plan.profile === "orbitdb-relay-pinner") {
+        if (
+          plan.profile === "orbitdb-relay" ||
+          plan.profile === "orbitdb-relay-pinner"
+        ) {
           const orbitdbTcpPort = mappedPorts["9091"]?.host ?? null;
           const orbitdbWsPort =
             mappedPorts["9092"]?.host ?? mappedPorts["443"]?.host ?? null;
@@ -469,6 +476,7 @@ export async function executeDeployPlan(
 
         log(`[deploy] calling guest /configure for ${deployment.itemHash}`);
         const configureResult =
+          plan.profile === "orbitdb-relay" ||
           plan.profile === "orbitdb-relay-pinner"
             ? await configureOrbitdbRelaySetup({
                 hostIpv4: runtime.hostIpv4,

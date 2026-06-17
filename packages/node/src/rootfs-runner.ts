@@ -41,12 +41,12 @@ interface RootfsUploadRuntimeOptions {
   connectTimeoutMs: number;
 }
 
-async function deriveOrbitdbRelayPinnerVersion(sourceDir: string): Promise<string | undefined> {
+async function deriveOrbitdbRelayVersion(sourceDir: string): Promise<string | undefined> {
   const packageJsonPath = path.join(sourceDir, 'package.json')
   try {
     const payload = JSON.parse(await readFile(packageJsonPath, 'utf8')) as { version?: unknown }
     if (typeof payload.version === 'string' && payload.version.trim()) {
-      return `orbitdb-relay-pinner-v${payload.version.trim().replace(/^v/u, '')}`
+      return `orbitdb-relay-v${payload.version.trim().replace(/^v/u, '')}`
     }
   } catch {
     return undefined
@@ -61,8 +61,10 @@ export async function parseRootfsRunnerInputs(env: NodeJS.ProcessEnv = process.e
   const orbitdbRelayPinnerDir = optionalEnv('ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR', undefined, env) || undefined
   const explicitRootfsVersion = optionalEnv('ALEPH_ROOTFS_VERSION', undefined, env) || undefined
   const derivedOrbitdbVersion =
-    !explicitRootfsVersion && contract.id === 'orbitdb-relay-pinner' && orbitdbRelayPinnerDir
-      ? await deriveOrbitdbRelayPinnerVersion(orbitdbRelayPinnerDir)
+    !explicitRootfsVersion &&
+    (contract.id === 'orbitdb-relay' || contract.id === 'orbitdb-relay-pinner') &&
+    orbitdbRelayPinnerDir
+      ? await deriveOrbitdbRelayVersion(orbitdbRelayPinnerDir)
       : undefined
   const buildPlan = createRootfsBuildPlan(contract, {
     projectDir: requiredEnv('ALEPH_ROOTFS_PROJECT_DIR', env),

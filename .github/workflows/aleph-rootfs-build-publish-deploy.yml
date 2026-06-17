@@ -38,14 +38,14 @@ on:
         default: project
         type: string
       tooling_checkout_path:
-        description: Checkout path for shared-aleph-tooling
+        description: Checkout path for relay-button
         required: false
-        default: shared-aleph-tooling
+        default: relay-button
         type: string
       tooling_repository:
         description: Repository that contains the shared tooling source
         required: false
-        default: NiKrause/shared-aleph-tooling
+        default: NiKrause/relay-button
         type: string
       tooling_ref:
         description: Ref of the shared tooling repository to checkout
@@ -111,7 +111,7 @@ jobs:
         with:
           path: ${{ inputs.project_checkout_path }}
 
-      - name: Checkout shared aleph tooling
+      - name: Checkout relay-button tooling
         uses: actions/checkout@v6
         with:
           repository: ${{ inputs.tooling_repository }}
@@ -130,9 +130,16 @@ jobs:
           cache: pnpm
           cache-dependency-path: ${{ inputs.tooling_checkout_path }}/pnpm-lock.yaml
 
-      - name: Install shared tooling workspace dependencies
+      - name: Install relay-button workspace dependencies
         working-directory: ${{ inputs.tooling_checkout_path }}
         run: pnpm install --frozen-lockfile
+
+      - name: Build caller project artifacts required by the rootfs profile
+        if: ${{ inputs.profile == 'orbitdb-relay' || inputs.profile == 'orbitdb-relay-pinner' }}
+        working-directory: ${{ inputs.project_checkout_path }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
 
       - name: Validate shared workflow inputs
         run: |
@@ -199,6 +206,7 @@ jobs:
           ALEPH_ROOTFS_PROJECT_DIR: ${{ github.workspace }}/${{ inputs.project_checkout_path }}
           ALEPH_ROOTFS_CONTRACT_PATH: ${{ github.workspace }}/${{ inputs.project_checkout_path }}/${{ inputs.rootfs_contract_path }}
           ALEPH_ROOTFS_REFERENCE_ROOTFS_DIR: ${{ github.workspace }}/${{ inputs.tooling_checkout_path }}/packages/rootfs/reference/${{ inputs.profile }}/rootfs
+          ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR: ${{ (inputs.profile == 'orbitdb-relay' || inputs.profile == 'orbitdb-relay-pinner') && format('{0}/{1}', github.workspace, inputs.project_checkout_path) || '' }}
           ALEPH_ROOTFS_DRIVER: ${{ inputs.rootfs_driver }}
           ALEPH_ROOTFS_VERSION: ${{ inputs.rootfs_version }}
           ALEPH_ROOTFS_SKIP_UPLOAD: ${{ inputs.publish && 'false' || 'true' }}
