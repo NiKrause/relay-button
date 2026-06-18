@@ -144,7 +144,7 @@ export function createRootfsBuildPlan(contract: RootfsContract, options: RootfsB
     ipfsAddUrl: options.ipfsAddUrl?.trim() || 'https://ipfs.aleph.cloud/api/v0/add',
     ipfsGatewayUrl: options.ipfsGatewayUrl?.trim() || 'https://ipfs.aleph.cloud/ipfs',
     alephApiHost: options.alephApiHost?.trim() || 'https://api2.aleph.im',
-    alephMessageWaitAttempts: positiveInteger(options.alephMessageWaitAttempts, 60),
+    alephMessageWaitAttempts: positiveInteger(options.alephMessageWaitAttempts, 120),
     alephMessageWaitDelaySeconds: positiveInteger(options.alephMessageWaitDelaySeconds, 5),
     alephPinAttempts: positiveInteger(options.alephPinAttempts, 4),
     alephPinDelaySeconds: positiveInteger(options.alephPinDelaySeconds, 10),
