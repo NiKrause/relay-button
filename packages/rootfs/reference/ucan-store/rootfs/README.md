@@ -18,6 +18,14 @@ Service identity shape:
 - hostname-derived DID fallback: `did:web:<proxy-hostname>`
 - no-host fallback: persisted `did:key`
 
+Delegation issuance shape:
+
+- admin endpoint: `POST /admin/delegations`
+- policy endpoint: `GET /admin/delegations/policy`
+- auth: `Authorization: Bearer $UCAN_STORE_ADMIN_API_TOKEN`
+- export format: `m...` multibase base64 UCAN CAR proof string
+- chaining: child delegations include the persisted bootstrap root delegation as proof
+
 The guest publishes metadata for the browser PWA after configuration, including:
 
 - `VITE_UPLOAD_SERVICE_URL`
@@ -30,7 +38,6 @@ Not included in this base milestone:
 
 - public Helia/libp2p exposure
 - Filecoin/archive publishing glue
-- service-side delegation issuance from an admin DID
 
 Bootstrap package handling in the current guest scaffold:
 
@@ -39,12 +46,19 @@ Bootstrap package handling in the current guest scaffold:
 - guest metadata includes a `bootstrap_validation` summary
 - guest metadata now also includes `bootstrap_proof_validation`
 - guest metadata now also includes `service_identity`
+- guest metadata now also includes `delegation_issuance`
 - invalid package shape or runtime mismatches fail metadata publication
 - `ucan-store.service` now verifies the persisted package again at startup and
   refuses to keep the upload service running when the package is missing
   (by default), malformed, or inconsistent with the runtime DID/origin
 - the upload service now reuses one persisted Ed25519 signer on the VM instead
   of generating a fresh test identity on every boot
+- the request guard can now mint long-lived service-to-user delegations when an
+  admin bearer token is configured, enforcing:
+  - `allowedCapabilities`
+  - `spaceDid`
+  - `defaultUserDelegationExpiration`
+  - `maxUserDelegationExpiration`
 - the guest now performs cryptographic verification of the bootstrap root
   delegation with the installed `ucanto` / Storacha packages before the
   service is allowed to stay up
@@ -54,6 +68,6 @@ Bootstrap package handling in the current guest scaffold:
   - the invocation `can` stays inside the configured `allowedCapabilities`
   - the invocation proof tree includes the configured bootstrap root delegation
 
-The current guest still does not expose service-side user-delegation issuance
-or runtime PWA discovery metadata publication yet; those remain follow-up
-steps.
+The current guest still does not expose this issuance flow through
+`relay-button` yet, and it still does not publish runtime PWA discovery
+metadata for multi-tenant binding; those remain follow-up steps.

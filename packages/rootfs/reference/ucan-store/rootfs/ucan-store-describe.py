@@ -111,6 +111,12 @@ def main() -> None:
             ).strip()
             or None,
         },
+        "delegation_issuance": {
+            "enabled": bool(env_values.get("UCAN_STORE_ADMIN_API_TOKEN", "").strip()),
+            "policy_endpoint": f"{upload_url}/admin/delegations/policy" if upload_url else None,
+            "issue_endpoint": f"{upload_url}/admin/delegations" if upload_url else None,
+            "proof_format": "ucan-car-multibase-base64",
+        },
         "upload_service_url": upload_url or None,
         "upload_service_did": service_did,
         "revocation_url": revocation_url or None,

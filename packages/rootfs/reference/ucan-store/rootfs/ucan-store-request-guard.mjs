@@ -12,6 +12,11 @@ const DEFAULT_BOOTSTRAP_PACKAGE_FILE =
   process.env.UCAN_STORE_BOOTSTRAP_PACKAGE_FILE || '/etc/ucan-store/bootstrap-package.json';
 const DEFAULT_REQUIRE_BOOTSTRAP =
   process.env.UCAN_STORE_REQUIRE_BOOTSTRAP_PACKAGE || '1';
+const DEFAULT_ADMIN_API_TOKEN = process.env.UCAN_STORE_ADMIN_API_TOKEN || '';
+const DEFAULT_SERVICE_SIGNER_FILE =
+  process.env.UCAN_STORE_SERVICE_SIGNER_FILE || '/var/lib/ucan-store/service-ed25519.key';
+const DEFAULT_SERVICE_DID =
+  process.env.UCAN_STORE_SERVICE_DID || process.env.PUBLIC_UPLOAD_SERVICE_DID || '';
 
 function printHelp() {
   console.log(`Usage:
@@ -22,7 +27,10 @@ Environment:
   UCAN_STORE_PROXY_PORT            Bind port (default: 8788)
   STORACHA_LOCAL_PORT              Upstream upload-service port (default: 8787)
   UCAN_STORE_BOOTSTRAP_PACKAGE_FILE  Bootstrap package path
-  UCAN_STORE_REQUIRE_BOOTSTRAP_PACKAGE  Enforce bootstrap package presence (default: 1)`);
+  UCAN_STORE_REQUIRE_BOOTSTRAP_PACKAGE  Enforce bootstrap package presence (default: 1)
+  UCAN_STORE_ADMIN_API_TOKEN       Bearer token for /admin/delegations
+  UCAN_STORE_SERVICE_SIGNER_FILE   Persisted service signer path
+  UCAN_STORE_SERVICE_DID           Explicit service DID alias for delegated proofs`);
 }
 
 function normalizeString(value) {
@@ -131,6 +139,45 @@ function isTruthy(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
+function base64ToBytes(value) {
+  return new Uint8Array(Buffer.from(value, 'base64'));
+}
+
+function bytesToBase64(bytes) {
+  return Buffer.from(bytes).toString('base64');
+}
+
+function bytesToBase64Url(bytes) {
+  return bytesToBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function didStringFromPrincipal(principal) {
+  if (!principal) {
+    return null;
+  }
+  if (typeof principal.did === 'function') {
+    return principal.did();
+  }
+  return normalizeString(principal.did || principal);
+}
+
+async function readJsonBody(req, bodyBuffer) {
+  if (!bodyBuffer || bodyBuffer.length === 0) {
+    return {};
+  }
+  try {
+    const payload = JSON.parse(bodyBuffer.toString('utf8'));
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new Error('JSON body must be an object.');
+    }
+    return payload;
+  } catch (error) {
+    throw new Error(
+      `Invalid JSON body: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 async function parseDelegationProof(proof, importFromWeb) {
   const base64UrlToBase64 = (value) => {
     const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
@@ -174,6 +221,182 @@ function collectProofCids(proofs, seen = new Set()) {
     }
   }
   return seen;
+}
+
+async function loadServiceSigner(config) {
+  const signerFile = normalizeString(config.serviceSignerFile);
+  if (!signerFile) {
+    throw new Error('UCAN_STORE_SERVICE_SIGNER_FILE is not configured.');
+  }
+
+  const { parse } = await config.policy.importFromWeb('@ucanto/principal/ed25519');
+  const raw = await fs.readFile(signerFile, 'utf8');
+  const signer = parse(raw.trim());
+  const configuredServiceDid = normalizeString(config.serviceDid);
+  return configuredServiceDid ? signer.withDID(configuredServiceDid) : signer;
+}
+
+function resolveRequestedCapabilities(payload, config) {
+  const requested = Array.isArray(payload.capabilities)
+    ? payload.capabilities.map(normalizeString).filter(Boolean)
+    : [];
+  const requestedCapabilities =
+    requested.length > 0 ? requested : [...(config.policy.allowedCapabilities ?? [])];
+
+  if (requestedCapabilities.length === 0) {
+    throw new Error('No capabilities were requested and no bootstrap default exists.');
+  }
+
+  for (const capability of requestedCapabilities) {
+    const allowed = config.policy.allowedCapabilities.some((entry) =>
+      capabilityCovers(entry, capability),
+    );
+    if (!allowed) {
+      throw new Error(
+        `Requested capability ${capability} is outside the configured bootstrap capability envelope.`,
+      );
+    }
+  }
+
+  return requestedCapabilities;
+}
+
+function resolveRequestedExpiration(payload, config) {
+  const defaultSeconds = Number.isInteger(config.policy.package.defaultUserDelegationExpiration)
+    ? config.policy.package.defaultUserDelegationExpiration
+    : null;
+  const maxSeconds = Number.isInteger(config.policy.package.maxUserDelegationExpiration)
+    ? config.policy.package.maxUserDelegationExpiration
+    : null;
+
+  let requestedSeconds = null;
+  if (payload.expirationSeconds === null) {
+    requestedSeconds = null;
+  } else if (Number.isInteger(payload.expirationSeconds) && payload.expirationSeconds >= 0) {
+    requestedSeconds = payload.expirationSeconds;
+  } else if (
+    typeof payload.expirationHours === 'number' &&
+    Number.isFinite(payload.expirationHours) &&
+    payload.expirationHours >= 0
+  ) {
+    requestedSeconds = Math.floor(payload.expirationHours * 60 * 60);
+  } else if (payload.expirationSeconds !== undefined || payload.expirationHours !== undefined) {
+    throw new Error('expirationSeconds must be null or a non-negative integer.');
+  } else {
+    requestedSeconds = defaultSeconds;
+  }
+
+  if (requestedSeconds === null && maxSeconds !== null) {
+    throw new Error(
+      'An unbounded delegation expiration is not allowed when maxUserDelegationExpiration is configured.',
+    );
+  }
+
+  if (requestedSeconds !== null && maxSeconds !== null && requestedSeconds > maxSeconds) {
+    throw new Error(
+      `Requested expiration ${requestedSeconds}s exceeds configured maxUserDelegationExpiration ${maxSeconds}s.`,
+    );
+  }
+
+  return requestedSeconds;
+}
+
+async function createDelegationExport(config, bodyBuffer, req) {
+  if (!config.policy) {
+    throw new Error('Bootstrap policy is unavailable; delegation issuance is disabled.');
+  }
+
+  const authHeader = normalizeString(req.headers.authorization);
+  const bearerPrefix = 'Bearer ';
+  const expectedToken = normalizeString(config.adminApiToken);
+  if (!expectedToken) {
+    return {
+      status: 503,
+      payload: {
+        status: 'disabled',
+        error:
+          'UCAN_STORE_ADMIN_API_TOKEN is not configured; admin delegation issuance is disabled.',
+      },
+    };
+  }
+  if (!authHeader || !authHeader.startsWith(bearerPrefix) || authHeader.slice(bearerPrefix.length) !== expectedToken) {
+    return {
+      status: 401,
+      payload: {
+        status: 'unauthorized',
+        error: 'Missing or invalid admin bearer token.',
+      },
+    };
+  }
+
+  const payload = await readJsonBody(req, bodyBuffer);
+  const targetDid =
+    normalizeString(payload.targetDid) || normalizeString(payload.audienceDid) || null;
+  if (!targetDid || !targetDid.startsWith('did:')) {
+    throw new Error('targetDid must be a non-empty DID string.');
+  }
+
+  const capabilities = resolveRequestedCapabilities(payload, config);
+  const expirationSeconds = resolveRequestedExpiration(payload, config);
+  const { Verifier } = await config.policy.importFromWeb('@ucanto/principal');
+  const { delegate } = await config.policy.importFromWeb('@ucanto/core/delegation');
+
+  const serviceSigner = await loadServiceSigner(config);
+  const audience = Verifier.parse(targetDid);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const expiration =
+    expirationSeconds === null ? undefined : nowSeconds + expirationSeconds;
+
+  const delegation = await delegate({
+    issuer: serviceSigner,
+    audience,
+    capabilities: capabilities.map((can) => ({
+      with: config.policy.spaceDid,
+      can,
+    })),
+    expiration,
+    proofs: [config.policy.delegation],
+    facts: [],
+  });
+
+  const archiveResult = await delegation.archive();
+  const carBytes =
+    archiveResult instanceof Uint8Array
+      ? archiveResult
+      : archiveResult && typeof archiveResult === 'object' && archiveResult.ok instanceof Uint8Array
+        ? archiveResult.ok
+        : null;
+  if (!carBytes || carBytes.length === 0) {
+    throw new Error('Failed to archive delegated proof.');
+  }
+
+  const proofBase64 = bytesToBase64(carBytes);
+  const proofBase64Url = bytesToBase64Url(carBytes);
+  const proof = `m${proofBase64}`;
+  const expiresAt = typeof expiration === 'number' ? new Date(expiration * 1000).toISOString() : null;
+  const proofCids = Array.from(collectProofCids([delegation]));
+
+  return {
+    status: 200,
+    payload: {
+      status: 'ok',
+      delegation: {
+        cid: delegation.cid?.toString?.() ?? null,
+        issuerDid: didStringFromPrincipal(serviceSigner),
+        audienceDid: targetDid,
+        spaceDid: config.policy.spaceDid,
+        capabilities,
+        proof,
+        proofFormat: 'ucan-car-multibase-base64',
+        proofBase64,
+        proofBase64Url,
+        proofChainCids: proofCids,
+        expiresAt,
+        expiresInSeconds: expirationSeconds,
+        importHint: 'Paste the `proof` value into the ucan-store UI import form.',
+      },
+    },
+  };
 }
 
 async function loadBootstrapPolicy(args) {
@@ -326,6 +549,9 @@ async function main() {
     bindPort: DEFAULT_BIND_PORT,
     upstreamHost: '127.0.0.1',
     upstreamPort: DEFAULT_UPSTREAM_PORT,
+    adminApiToken: DEFAULT_ADMIN_API_TOKEN,
+    serviceSignerFile: DEFAULT_SERVICE_SIGNER_FILE,
+    serviceDid: DEFAULT_SERVICE_DID,
     policy: null,
   };
 
@@ -361,6 +587,52 @@ async function main() {
       chunks.push(chunk);
     }
     const bodyBuffer = chunks.length > 0 ? Buffer.concat(chunks) : null;
+
+    if (req.method === 'POST' && req.url === '/admin/delegations') {
+      try {
+        const result = await createDelegationExport(config, bodyBuffer, req);
+        sendJson(res, result.status, result.payload);
+      } catch (error) {
+        sendJson(res, 400, {
+          status: 'invalid_request',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/admin/delegations/policy') {
+      const expectedToken = normalizeString(config.adminApiToken);
+      const authHeader = normalizeString(req.headers.authorization);
+      const authorized =
+        expectedToken &&
+        authHeader &&
+        authHeader.startsWith('Bearer ') &&
+        authHeader.slice('Bearer '.length) === expectedToken;
+      if (!authorized) {
+        sendJson(res, 401, {
+          status: 'unauthorized',
+          error: 'Missing or invalid admin bearer token.',
+        });
+        return;
+      }
+
+      sendJson(res, 200, {
+        status: 'ok',
+        policy: {
+          serviceDid: normalizeString(config.serviceDid),
+          spaceDid: config.policy?.spaceDid ?? null,
+          allowedCapabilities: config.policy?.allowedCapabilities ?? [],
+          defaultUserDelegationExpiration:
+            config.policy?.package?.defaultUserDelegationExpiration ?? null,
+          maxUserDelegationExpiration:
+            config.policy?.package?.maxUserDelegationExpiration ?? null,
+          endpoint: '/admin/delegations',
+          proofFormat: 'ucan-car-multibase-base64',
+        },
+      });
+      return;
+    }
 
     const policyResult = await enforceRequestPolicy(bodyBuffer, req, config);
     if (!policyResult.ok) {

@@ -112,6 +112,7 @@ EOF
   write_env_var "UCAN_STORE_SERVICE_KEY_ALGORITHM" "ed25519"
   write_env_var "UCAN_STORE_SERVICE_SIGNER_FILE" "${DATA_DIR}/service-ed25519.key"
   write_env_var "UCAN_STORE_SERVICE_DID" ""
+  write_env_var "UCAN_STORE_ADMIN_API_TOKEN" ""
   write_env_var "WEBAUTHN_ORIGIN" "http://localhost:5173"
   write_env_var "WEBAUTHN_ORIGIN_FALLBACKS" ""
   write_env_var "UCAN_STORE_ADMIN_DID" ""

@@ -18,6 +18,7 @@ PROXY_HOSTNAME=""
 WEBAUTHN_ORIGIN=""
 WEBAUTHN_ORIGIN_FALLBACKS=""
 ADMIN_DID=""
+ADMIN_API_TOKEN=""
 BOOTSTRAP_PACKAGE_INPUT_FILE=""
 START_SERVICE=1
 
@@ -31,6 +32,7 @@ Usage:
     [--webauthn-origin <origin>] \
     [--webauthn-origin-fallbacks <csv>] \
     [--admin-did <did>] \
+    [--admin-api-token <token>] \
     [--bootstrap-package-file <path>] \
     [--no-start]
 
@@ -152,6 +154,10 @@ while [ "$#" -gt 0 ]; do
       ADMIN_DID="${2:-}"
       shift 2
       ;;
+    --admin-api-token)
+      ADMIN_API_TOKEN="${2:-}"
+      shift 2
+      ;;
     --bootstrap-package-file)
       BOOTSTRAP_PACKAGE_INPUT_FILE="${2:-}"
       shift 2
@@ -184,6 +190,7 @@ write_env_var "PUBLIC_IPV6" "${PUBLIC_IPV6}"
 write_env_var "PROXY_HOSTNAME" "${PROXY_HOSTNAME}"
 write_env_var "UCAN_STORE_SERVICE_KEY_ALGORITHM" "${UCAN_STORE_SERVICE_KEY_ALGORITHM:-ed25519}"
 write_env_var "UCAN_STORE_ADMIN_DID" "${ADMIN_DID}"
+write_env_var "UCAN_STORE_ADMIN_API_TOKEN" "${ADMIN_API_TOKEN}"
 write_env_var "UCAN_STORE_BOOTSTRAP_PACKAGE_FILE" "${BOOTSTRAP_PACKAGE_FILE}"
 write_env_var "UCAN_STORE_BOOTSTRAP_VERIFICATION_FILE" "${BOOTSTRAP_VERIFICATION_FILE}"
 

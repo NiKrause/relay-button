@@ -12,6 +12,7 @@ Current scope:
 - guest-side setup/configure scripts that publish the service URLs and DID back to deployment tooling
 - stable guest-side service signer persistence with an Ed25519 default and hostname-aware DID selection
 - a guest-side request guard that narrows public UCAN invocations to the configured bootstrap envelope
+- a guest-side admin delegation issuance API that can mint importable child delegations from the service DID
 
 Known inputs from the current `ucan-upload-wall` sources:
 
@@ -31,7 +32,6 @@ Known inputs from the current `ucan-upload-wall` sources:
 What is not implemented yet in this shared profile:
 
 - a fixed public Helia/libp2p listener contract for direct IPFS fetches
-- long-lived admin/service delegation issuance on the guest
 - service-specific Aleph VM workflow glue for full bootstrap-package collection in `relay-button`
 
 Current bootstrap-package support in this shared profile:
@@ -71,6 +71,12 @@ Current bootstrap-package support in this shared profile:
   - capabilities outside the configured `allowedCapabilities`
   - requests for a different `spaceDid`
   - invocation proof trees that do not include the configured bootstrap root delegation
+- service-side user delegation issuance that:
+  - uses the persisted service signer as issuer
+  - chains back to the stored root bootstrap delegation
+  - exports a CAR-backed `m...` proof string the current UI can import directly
+  - enforces configured capability and expiration policy
+  - can be protected with `UCAN_STORE_ADMIN_API_TOKEN`
 
 This still does not emit protocol-native UCAN error receipts from the guard
 layer yet; rejected requests currently fail at HTTP level before they reach the
