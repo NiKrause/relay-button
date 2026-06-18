@@ -1,0 +1,21 @@
+[Unit]
+Description=Temporary orbitdb-relay setup endpoint
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!/etc/default/orbitdb-relay.ready
+
+[Service]
+Environment=ENV_FILE=/etc/default/orbitdb-relay
+Environment=READY_FILE=/etc/default/orbitdb-relay.ready
+Environment=SERVICE_NAME=orbitdb-relay.service
+Environment=BOOTSTRAP_SERVICE=orbitdb-relay-bootstrap.service
+Environment=METADATA_FILE=/run/orbitdb-relay-setup-metadata.json
+Environment=METADATA_ERROR_FILE=/run/orbitdb-relay-setup-metadata.error
+ExecStart=/usr/bin/python3 /usr/local/sbin/orbitdb-relay-setup-server.py
+StandardOutput=journal
+StandardError=journal
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target

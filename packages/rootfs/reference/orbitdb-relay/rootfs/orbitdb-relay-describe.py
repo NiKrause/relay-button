@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+import json
+import os
+import time
+import urllib.error
+import urllib.request
+
+
+ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay")
+METRICS_PORT = int(os.environ.get("METRICS_PORT", "9090"))
+WAIT_TIMEOUT_SECONDS = int(os.environ.get("DESCRIBE_WAIT_TIMEOUT_SECONDS", "240"))
+WAIT_INTERVAL_SECONDS = float(os.environ.get("DESCRIBE_WAIT_INTERVAL_SECONDS", "2"))
+AUTOTLS_EXTRA_WAIT_SECONDS = int(os.environ.get("DESCRIBE_AUTOTLS_EXTRA_WAIT_SECONDS", "120"))
+
+
+def parse_env_file(path: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not os.path.exists(path):
+        return values
+
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, value = stripped.split("=", 1)
+            values[key.strip()] = value.strip()
+    return values
+
+
+def fetch_json(path: str) -> dict:
+    url = f"http://127.0.0.1:{METRICS_PORT}{path}"
+    with urllib.request.urlopen(url, timeout=5) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+
+def normalize_multiaddrs(payload: dict) -> list[str]:
+    values = payload.get("all")
+    if not isinstance(values, list):
+        return []
+    return [entry for entry in values if isinstance(entry, str) and entry.strip()]
+
+
+def build_grouped_multiaddrs(env_values: dict[str, str], all_multiaddrs: list[str], peer_id: str) -> dict[str, list[str]]:
+    proxy_hostname = env_values.get("PROXY_HOSTNAME", "").strip().lower()
+    direct_tcp_multiaddrs = [addr for addr in all_multiaddrs if "/tcp/" in addr and "/ws" not in addr]
+    autotls_wss_multiaddrs = [
+        addr
+        for addr in all_multiaddrs
+        if addr.endswith("/ws/p2p/" + peer_id) and "/tls/ws" in addr and proxy_hostname not in addr.lower()
+    ]
+    plain_ws_multiaddrs = [
+        addr for addr in all_multiaddrs if addr.endswith("/ws/p2p/" + peer_id) and "/tls/ws" not in addr
+    ]
+    proxy_wss_multiaddrs: list[str] = []
+    if proxy_hostname:
+        proxy_wss_multiaddrs = [
+            f"/dns4/{proxy_hostname}/tcp/443/tls/ws/p2p/{peer_id}",
+            f"/dns6/{proxy_hostname}/tcp/443/tls/ws/p2p/{peer_id}",
+        ]
+    quic_multiaddrs = [addr for addr in all_multiaddrs if "/quic-v1" in addr and "/webtransport" not in addr]
+    webtransport_multiaddrs = [addr for addr in all_multiaddrs if "/webtransport" in addr]
+    webrtc_direct_multiaddrs = [addr for addr in all_multiaddrs if "/webrtc-direct" in addr]
+
+    browser_bootstrap_multiaddrs = dedupe(
+        proxy_wss_multiaddrs
+        + autotls_wss_multiaddrs
+        + plain_ws_multiaddrs
+        + webtransport_multiaddrs
+        + webrtc_direct_multiaddrs
+    )
+    probe_multiaddrs = dedupe(
+        direct_tcp_multiaddrs
+        + proxy_wss_multiaddrs
+        + autotls_wss_multiaddrs
+        + quic_multiaddrs
+        + webtransport_multiaddrs
+    )
+
+    return {
+        "direct_tcp_multiaddrs": dedupe(direct_tcp_multiaddrs),
+        "autotls_wss_multiaddrs": dedupe(autotls_wss_multiaddrs),
+        "proxy_wss_multiaddrs": dedupe(proxy_wss_multiaddrs),
+        "plain_ws_multiaddrs": dedupe(plain_ws_multiaddrs),
+        "quic_multiaddrs": dedupe(quic_multiaddrs),
+        "webtransport_multiaddrs": dedupe(webtransport_multiaddrs),
+        "webrtc_direct_multiaddrs": dedupe(webrtc_direct_multiaddrs),
+        "browser_bootstrap_multiaddrs": browser_bootstrap_multiaddrs,
+        "probe_multiaddrs": probe_multiaddrs,
+    }
+
+
+def main() -> None:
+    started_at = time.monotonic()
+    deadline = started_at + WAIT_TIMEOUT_SECONDS
+    health: dict = {}
+    multiaddrs_payload: dict = {}
+    grouped = {
+        "direct_tcp_multiaddrs": [],
+        "autotls_wss_multiaddrs": [],
+        "proxy_wss_multiaddrs": [],
+        "plain_ws_multiaddrs": [],
+        "quic_multiaddrs": [],
+        "webtransport_multiaddrs": [],
+        "webrtc_direct_multiaddrs": [],
+        "browser_bootstrap_multiaddrs": [],
+        "probe_multiaddrs": [],
+    }
+
+    while time.monotonic() < deadline:
+        try:
+            env_values = parse_env_file(ENV_FILE)
+            health = fetch_json("/health")
+            multiaddrs_payload = fetch_json("/multiaddrs")
+            peer_id = health.get("peerId") or multiaddrs_payload.get("peerId")
+            if not isinstance(peer_id, str) or not peer_id.strip():
+                time.sleep(WAIT_INTERVAL_SECONDS)
+                continue
+
+            all_multiaddrs = normalize_multiaddrs(multiaddrs_payload)
+            grouped = build_grouped_multiaddrs(env_values, all_multiaddrs, peer_id)
+            proxy_hostname = env_values.get("PROXY_HOSTNAME", "").strip()
+            if grouped["autotls_wss_multiaddrs"]:
+                break
+            if proxy_hostname and grouped["proxy_wss_multiaddrs"] and time.monotonic() - started_at >= AUTOTLS_EXTRA_WAIT_SECONDS:
+                break
+            if not proxy_hostname and time.monotonic() - started_at >= AUTOTLS_EXTRA_WAIT_SECONDS:
+                break
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+            pass
+
+        time.sleep(WAIT_INTERVAL_SECONDS)
+
+    peer_id = health.get("peerId") or multiaddrs_payload.get("peerId")
+    if not isinstance(peer_id, str) or not peer_id.strip():
+        raise SystemExit("unable to discover orbitdb relay peer ID from metrics endpoints")
+
+    env_values = parse_env_file(ENV_FILE)
+    payload = {
+        "peer_id": peer_id,
+        "announce_addrs": [
+            entry.strip()
+            for entry in env_values.get("VITE_APPEND_ANNOUNCE", "").split(",")
+            if entry.strip()
+        ],
+        "listening_addrs": normalize_multiaddrs(multiaddrs_payload),
+        "auto_tls_serving_zone": health.get("autoTlsServingZone"),
+        "metrics_https": health.get("metricsHttps"),
+        **grouped,
+    }
+    print(json.dumps(payload))
+
+
+if __name__ == "__main__":
+    main()

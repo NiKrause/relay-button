@@ -244,9 +244,11 @@ export async function executeDeployPlan(
   const bootstrapOwnerIdentity = plan.bootstrapOwnerPrivateKey
     ? await createPrivateKeyIdentity(plan.bootstrapOwnerPrivateKey)
     : null;
+  const isOrbitdbRelayProfile =
+    plan.profile === "orbitdb-relay" ||
+    plan.profile === "orbitdb-relay-pinner";
   const publisherDerivedRelayIdentity =
-    (plan.profile === "uc-go-peer" ||
-      plan.profile === "orbitdb-relay-pinner") &&
+    (plan.profile === "uc-go-peer" || isOrbitdbRelayProfile) &&
     resolvedBootstrapPublisherPrivateKey
       ? deriveLibp2pSecp256k1IdentityFromEvmKey(
           resolvedBootstrapPublisherPrivateKey,
@@ -479,7 +481,7 @@ export async function executeDeployPlan(
     if (
       runtime.hostIpv4 &&
       plan.autoConfigure !== false &&
-      (plan.profile === "uc-go-peer" || plan.profile === "orbitdb-relay-pinner")
+      (plan.profile === "uc-go-peer" || isOrbitdbRelayProfile)
     ) {
         const mappedPorts = runtime.mappedPorts ?? {};
       const setupPort = mappedPorts["80"]?.host ?? null;
@@ -574,7 +576,7 @@ export async function executeDeployPlan(
           continue;
         }
 
-        if (plan.profile === "orbitdb-relay-pinner") {
+        if (isOrbitdbRelayProfile) {
           const orbitdbTcpPort = mappedPorts["9091"]?.host ?? null;
           const orbitdbWsPort =
             mappedPorts["9092"]?.host ?? mappedPorts["443"]?.host ?? null;
@@ -610,8 +612,7 @@ export async function executeDeployPlan(
         const precomputedOwnerAuthorization =
           bootstrapOwnerIdentity != null &&
           publisherDerivedRelayIdentity != null &&
-          (plan.profile === "uc-go-peer" ||
-            plan.profile === "orbitdb-relay-pinner")
+          (plan.profile === "uc-go-peer" || isOrbitdbRelayProfile)
             ? await signRelayBootstrapAuthorization({
                 ownerAddress: bootstrapOwnerIdentity.address,
                 publisherAddress,
@@ -624,7 +625,7 @@ export async function executeDeployPlan(
               })
             : undefined;
         const configureResult =
-          plan.profile === "orbitdb-relay-pinner"
+          isOrbitdbRelayProfile
             ? await configureOrbitdbRelaySetup({
                 hostIpv4: runtime.hostIpv4,
                 publicIpv6: runtime.ipv6,
@@ -882,7 +883,7 @@ export async function executeDeployPlan(
             if (
               ownerAuthorization &&
               runtime.hostIpv4 &&
-              plan.profile === "orbitdb-relay-pinner" &&
+              isOrbitdbRelayProfile &&
               !publisherDerivedRelayIdentity
             ) {
               const ownerAuthorizationBase64 = Buffer.from(

@@ -152,7 +152,11 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build caller project artifacts required by the rootfs profile
-        if: ${{ inputs.profile == 'orbitdb-relay-pinner' }}
+        if: >-
+          ${{
+            inputs.profile == 'orbitdb-relay-pinner' ||
+            inputs.profile == 'orbitdb-relay'
+          }}
         working-directory: ${{ inputs.project_checkout_path }}
         run: |
           pnpm install --frozen-lockfile
@@ -191,7 +195,12 @@ jobs:
           ALEPH_ROOTFS_PROJECT_DIR: ${{ github.workspace }}/${{ inputs.project_checkout_path }}
           ALEPH_ROOTFS_CONTRACT_PATH: ${{ github.workspace }}/${{ inputs.project_checkout_path }}/${{ inputs.rootfs_contract_path }}
           ALEPH_ROOTFS_REFERENCE_ROOTFS_DIR: ${{ github.workspace }}/${{ inputs.tooling_checkout_path }}/packages/rootfs/reference/${{ inputs.profile }}/rootfs
-          ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR: ${{ inputs.profile == 'orbitdb-relay-pinner' && format('{0}/{1}', github.workspace, inputs.project_checkout_path) || '' }}
+          ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR: >-
+            ${{
+              (inputs.profile == 'orbitdb-relay-pinner' || inputs.profile == 'orbitdb-relay') &&
+              format('{0}/{1}', github.workspace, inputs.project_checkout_path) ||
+              ''
+            }}
           ALEPH_ROOTFS_DRIVER: ${{ inputs.rootfs_driver }}
           ALEPH_ROOTFS_VERSION: ${{ inputs.rootfs_version }}
           ALEPH_ROOTFS_SKIP_UPLOAD: ${{ inputs.publish && 'false' || 'true' }}
