@@ -45,11 +45,25 @@ write_env_var() {
   local key="$1"
   local value="$2"
 
-  if grep -Eq "^[#[:space:]]*${key}=" "${ENV_FILE}"; then
-    sed -i "s|^[#[:space:]]*${key}=.*|${key}=${value}|" "${ENV_FILE}"
-  else
-    printf '%s=%s\n' "${key}" "${value}" >> "${ENV_FILE}"
-  fi
+  python3 - "${ENV_FILE}" "${key}" "${value}" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+env_file, key, value = sys.argv[1:4]
+target = Path(env_file)
+pattern = re.compile(rf"^[#\s]*{re.escape(key)}=.*$", re.MULTILINE)
+
+raw = target.read_text(encoding="utf-8") if target.exists() else ""
+replacement = f"{key}={value}"
+
+if pattern.search(raw):
+    updated = pattern.sub(replacement, raw, count=1)
+else:
+    updated = raw + ("" if raw.endswith("\n") or not raw else "\n") + replacement + "\n"
+
+target.write_text(updated, encoding="utf-8")
+PY
 }
 
 write_caddyfile() {
