@@ -29,6 +29,9 @@ Bootstrap package handling in the current guest scaffold:
 - the package is persisted on the VM for the running upload service
 - guest metadata includes a `bootstrap_validation` summary
 - invalid package shape or runtime mismatches fail metadata publication
+- `ucan-store.service` now verifies the persisted package again at startup and
+  refuses to keep the upload service running when the package is missing
+  (by default), malformed, or inconsistent with the runtime DID/origin
 
 Current validation is structural and consistency-oriented. Full cryptographic
 validation of the root UCAN delegation proof still belongs in the actual

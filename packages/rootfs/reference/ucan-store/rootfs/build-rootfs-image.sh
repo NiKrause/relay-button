@@ -87,6 +87,7 @@ virt-customize \
   --copy-in "${SCRIPT_DIR}/ucan-store-configure.sh:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan-store-describe.py:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan-store-setup-server.py:/usr/local/sbin" \
+  --copy-in "${SCRIPT_DIR}/ucan-store-service-start.sh:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan_store_bootstrap_validate.py:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan-store-bootstrap.service:/etc/systemd/system" \
   --copy-in "${SCRIPT_DIR}/ucan-store-autotls-refresh.service:/etc/systemd/system" \
@@ -96,6 +97,7 @@ virt-customize \
   --run-command "chmod 0755 /usr/local/sbin/ucan-store-configure.sh" \
   --run-command "chmod 0755 /usr/local/sbin/ucan-store-describe.py" \
   --run-command "chmod 0755 /usr/local/sbin/ucan-store-setup-server.py" \
+  --run-command "chmod 0755 /usr/local/sbin/ucan-store-service-start.sh" \
   --run-command "chmod 0755 /usr/local/sbin/ucan_store_bootstrap_validate.py" \
   --run-command "INSTALL_DIR=${ROOTFS_CONTRACT_INSTALL_DIR} DATA_DIR=${ROOTFS_CONTRACT_DATA_DIR} ENV_FILE=${ROOTFS_CONTRACT_ENV_FILE} SERVICE_USER=ucan-store APP_BINARY=${ROOTFS_CONTRACT_BINARY_PATH} /usr/local/sbin/ucan-store-bootstrap.sh all" \
   --run-command "systemctl enable ${ROOTFS_CONTRACT_BOOTSTRAP_SERVICE}" \

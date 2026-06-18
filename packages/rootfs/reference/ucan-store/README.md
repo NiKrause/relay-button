@@ -49,6 +49,10 @@ Current bootstrap-package support in this shared profile:
 - runtime consistency checks that compare:
   - bootstrap `serviceDid` against the running service DID when provided
   - bootstrap `serviceOrigin` against the configured public upload-service origin
+- `ucan-store.service` startup gating that:
+  - requires a bootstrap package by default
+  - re-validates the package before the service stays up
+  - probes the live `did:web` document and rejects startup on DID/origin mismatches
 
 This does not yet perform full cryptographic UCAN proof verification of
 `rootDelegationProof`; that remains a follow-up step for the upload-service
