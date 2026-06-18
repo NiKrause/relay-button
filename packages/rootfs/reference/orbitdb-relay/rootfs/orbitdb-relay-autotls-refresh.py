@@ -8,17 +8,17 @@ import urllib.request
 from typing import Iterable
 
 
-ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay-pinner")
-READY_FILE = os.environ.get("READY_FILE", "/etc/default/orbitdb-relay-pinner.ready")
+ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay")
+READY_FILE = os.environ.get("READY_FILE", "/etc/default/orbitdb-relay.ready")
 AUTOTLS_READY_FILE = os.environ.get(
-    "AUTOTLS_READY_FILE", "/etc/default/orbitdb-relay-pinner.autotls-ready"
+    "AUTOTLS_READY_FILE", "/etc/default/orbitdb-relay.autotls-ready"
 )
-AUTOTLS_ZONE_FILE = os.environ.get("AUTOTLS_ZONE_FILE", "/etc/default/orbitdb-relay-pinner.autotls-zone")
-AUTOTLS_HOSTS_FILE = os.environ.get("AUTOTLS_HOSTS_FILE", "/etc/default/orbitdb-relay-pinner.autotls-hosts")
+AUTOTLS_ZONE_FILE = os.environ.get("AUTOTLS_ZONE_FILE", "/etc/default/orbitdb-relay.autotls-zone")
+AUTOTLS_HOSTS_FILE = os.environ.get("AUTOTLS_HOSTS_FILE", "/etc/default/orbitdb-relay.autotls-hosts")
 AUTOTLS_CADDY_READY_FILE = os.environ.get(
-    "AUTOTLS_CADDY_READY_FILE", "/etc/default/orbitdb-relay-pinner.caddy-ready"
+    "AUTOTLS_CADDY_READY_FILE", "/etc/default/orbitdb-relay.caddy-ready"
 )
-SERVICE_NAME = os.environ.get("SERVICE_NAME", "orbitdb-relay-pinner.service")
+SERVICE_NAME = os.environ.get("SERVICE_NAME", "orbitdb-relay.service")
 CADDY_SERVICE = os.environ.get("CADDY_SERVICE", "caddy.service")
 CADDYFILE = os.environ.get("CADDYFILE", "/etc/caddy/Caddyfile")
 METRICS_PORT = int(os.environ.get("METRICS_PORT", "9090"))

@@ -12,7 +12,7 @@ const LOCAL_FILES = {
   coreRetention: "packages/core/src/retention.ts",
   coreRuntime: "packages/core/src/runtime.ts",
   browserApi: "packages/browser/src/aleph-api.ts",
-  rootfsBuild: "packages/rootfs/reference/orbitdb-relay-pinner/rootfs/build-rootfs.sh",
+  rootfsBuild: "packages/rootfs/reference/orbitdb-relay/rootfs/build-rootfs.sh",
 };
 
 const UPSTREAM_FILES = {

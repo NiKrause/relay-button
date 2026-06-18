@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INSTALL_DIR="${INSTALL_DIR:-/opt/orbitdb-relay-pinner}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/orbitdb-relay}"
 SERVICE_USER="${SERVICE_USER:-orbitdb-relay}"
-DATA_DIR="${DATA_DIR:-/var/lib/orbitdb-relay-pinner}"
-ENV_FILE="${ENV_FILE:-/etc/default/orbitdb-relay-pinner}"
+DATA_DIR="${DATA_DIR:-/var/lib/orbitdb-relay}"
+ENV_FILE="${ENV_FILE:-/etc/default/orbitdb-relay}"
 NODE_MIN_MAJOR="${NODE_MIN_MAJOR:-22}"
-CADDY_READY_FILE="${CADDY_READY_FILE:-/etc/default/orbitdb-relay-pinner.caddy-ready}"
+CADDY_READY_FILE="${CADDY_READY_FILE:-/etc/default/orbitdb-relay.caddy-ready}"
 
 if [ ! -d "${INSTALL_DIR}" ]; then
-  echo "Missing ${INSTALL_DIR}; the rootfs build did not copy orbitdb-relay-pinner."
+  echo "Missing ${INSTALL_DIR}; the rootfs build did not copy orbitdb-relay."
   exit 1
 fi
 
@@ -74,17 +74,17 @@ rm -rf "${DATA_DIR}/.cache/corepack" "${DATA_DIR}/.npm" "${DATA_DIR}/.cache/npm"
 rm -rf "${INSTALL_DIR}/node_modules/.cache"
 
 mkdir -p "${INSTALL_DIR}/node_modules"
-ln -sfn "${INSTALL_DIR}" "${INSTALL_DIR}/node_modules/orbitdb-relay-pinner"
+ln -sfn "${INSTALL_DIR}" "${INSTALL_DIR}/node_modules/orbitdb-relay"
 
-cat > /usr/local/bin/orbitdb-relay-pinner <<'EOF'
+cat > /usr/local/bin/orbitdb-relay <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-exec /usr/bin/node /opt/orbitdb-relay-pinner/dist/cli.js "$@"
+exec /usr/bin/node /opt/orbitdb-relay/dist/cli.js "$@"
 EOF
-chmod 0755 /usr/local/bin/orbitdb-relay-pinner
+chmod 0755 /usr/local/bin/orbitdb-relay
 
-if [ -f "${INSTALL_DIR}/deploy/orbitdb-relay-pinner.env.example" ] && [ ! -f "${ENV_FILE}" ]; then
-  cp "${INSTALL_DIR}/deploy/orbitdb-relay-pinner.env.example" "${ENV_FILE}"
+if [ -f "${INSTALL_DIR}/deploy/orbitdb-relay.env.example" ] && [ ! -f "${ENV_FILE}" ]; then
+  cp "${INSTALL_DIR}/deploy/orbitdb-relay.env.example" "${ENV_FILE}"
 fi
 
 touch "${ENV_FILE}"
@@ -93,7 +93,7 @@ chown "root:${SERVICE_USER}" "${ENV_FILE}"
 rm -f "${CADDY_READY_FILE}"
 
 mkdir -p /etc/caddy /etc/systemd/system/caddy.service.d
-cat > /etc/systemd/system/caddy.service.d/orbitdb-relay-pinner.conf <<EOF
+cat > /etc/systemd/system/caddy.service.d/orbitdb-relay.conf <<EOF
 [Unit]
 ConditionPathExists=${CADDY_READY_FILE}
 EOF

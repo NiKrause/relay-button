@@ -13,6 +13,7 @@ APP_BINARY="${OUT_DIR}/universal-chat-go"
 ROOTFS_IMAGE_SIZE="${ROOTFS_IMAGE_SIZE:-20G}"
 ROOTFS_SPARSIFY="${ROOTFS_SPARSIFY:-1}"
 ROOTFS_BUILD_TMPDIR=""
+ROOTFS_SPARSIFY_TMPDIR=""
 HOST_UID="${HOST_UID:-}"
 HOST_GID="${HOST_GID:-}"
 
@@ -33,6 +34,10 @@ cleanup() {
   if [ -n "${ROOTFS_BUILD_TMPDIR}" ] && [ -d "${ROOTFS_BUILD_TMPDIR}" ]; then
     chmod -R u+w "${ROOTFS_BUILD_TMPDIR}" 2>/dev/null || true
     rm -rf "${ROOTFS_BUILD_TMPDIR}"
+  fi
+  if [ -n "${ROOTFS_SPARSIFY_TMPDIR}" ] && [ -d "${ROOTFS_SPARSIFY_TMPDIR}" ]; then
+    chmod -R u+w "${ROOTFS_SPARSIFY_TMPDIR}" 2>/dev/null || true
+    rm -rf "${ROOTFS_SPARSIFY_TMPDIR}"
   fi
 }
 
@@ -115,8 +120,10 @@ virt-customize \
 if [ "${ROOTFS_SPARSIFY}" = "1" ] && command -v virt-sparsify >/dev/null 2>&1; then
   SPARSE_IMAGE="${IMAGE%.qcow2}.sparse.qcow2"
   rm -f "${SPARSE_IMAGE}"
+  ROOTFS_SPARSIFY_TMPDIR="$(mktemp -d "${OUT_DIR}/virt-sparsify-tmp.XXXXXX")"
   echo "Sparsifying and compressing ${IMAGE}..."
-  virt-sparsify --compress "${IMAGE}" "${SPARSE_IMAGE}"
+  echo "Using ${ROOTFS_SPARSIFY_TMPDIR} for virt-sparsify scratch space"
+  TMPDIR="${ROOTFS_SPARSIFY_TMPDIR}" virt-sparsify --check-tmpdir=continue --compress "${IMAGE}" "${SPARSE_IMAGE}"
   mv "${SPARSE_IMAGE}" "${IMAGE}"
 fi
 

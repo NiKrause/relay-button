@@ -6,7 +6,7 @@ import urllib.error
 import urllib.request
 
 
-ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay-pinner")
+ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay")
 METRICS_PORT = int(os.environ.get("METRICS_PORT", "9090"))
 WAIT_TIMEOUT_SECONDS = int(os.environ.get("DESCRIBE_WAIT_TIMEOUT_SECONDS", "240"))
 WAIT_INTERVAL_SECONDS = float(os.environ.get("DESCRIBE_WAIT_INTERVAL_SECONDS", "2"))

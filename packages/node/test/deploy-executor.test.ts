@@ -491,11 +491,11 @@ test('executeDeployPlan retries on the next CRN when a proxy-backed deployment e
   assert.match(forgetBodies[0], /hash-u1/)
 })
 
-test('executeDeployPlan configures orbitdb relay pinner after mapped ports appear', async () => {
+test('executeDeployPlan configures orbitdb relay after mapped ports appear', async () => {
   const configureBodies: string[] = []
   const derivedBootstrapPublisherPrivateKey = deriveBootstrapPublisherPrivateKey({
     sourcePrivateKey: DEPLOY_PLAN.privateKey,
-    profile: 'orbitdb-relay-pinner',
+    profile: 'orbitdb-relay',
   })
   const expectedRelayIdentity = deriveLibp2pSecp256k1IdentityFromEvmKey(
     derivedBootstrapPublisherPrivateKey,
@@ -503,8 +503,8 @@ test('executeDeployPlan configures orbitdb relay pinner after mapped ports appea
   const result = await executeDeployPlan(
     {
       ...DEPLOY_PLAN,
-      profile: 'orbitdb-relay-pinner',
-      name: 'orbitdb-relay-pinner',
+      profile: 'orbitdb-relay',
+      name: 'orbitdb-relay',
       requiredPorts: [
         { port: 22, tcp: true, udp: false, purpose: 'SSH' },
         { port: 80, tcp: true, udp: false, purpose: 'Temporary setup endpoint' },
@@ -635,7 +635,7 @@ test('executeDeployPlan configures orbitdb relay pinner after mapped ports appea
     quic_port: 29094,
     bootstrap_publisher_private_key: derivedBootstrapPublisherPrivateKey,
     bootstrap_publisher_libp2p_identity_hex: Buffer.from(expectedRelayIdentity.protobuf).toString('hex'),
-    bootstrap_registration_id: 'relay:orbitdb-relay-pinner:orbitdb-relay-pinner',
+    bootstrap_registration_id: 'relay:orbitdb-relay:orbitdb-relay',
   })
 })
 
@@ -643,7 +643,7 @@ test('executeDeployPlan includes bootstrap owner authorization during the initia
   const configureBodies: string[] = []
   const derivedBootstrapPublisherPrivateKey = deriveBootstrapPublisherPrivateKey({
     sourcePrivateKey: DEPLOY_PLAN.privateKey,
-    profile: 'orbitdb-relay-pinner',
+    profile: 'orbitdb-relay',
   })
   const expectedRelayIdentity = deriveLibp2pSecp256k1IdentityFromEvmKey(
     derivedBootstrapPublisherPrivateKey,
@@ -655,7 +655,7 @@ test('executeDeployPlan includes bootstrap owner authorization during the initia
   const result = await executeDeployPlan(
     {
       ...DEPLOY_PLAN,
-      profile: 'orbitdb-relay-pinner',
+      profile: 'orbitdb-relay',
       bootstrapPublisherPrivateKey: '',
       bootstrapOwnerPrivateKey: '0x8b3a350cf5c34c9194ca3a9d8b5421f0b2b7215e7ff5b0e97c85af9a81d3d1ad',
       rootfsItemHash: 'b'.repeat(64),
@@ -816,7 +816,7 @@ test('executeDeployPlan includes bootstrap owner authorization during the initia
   assert.equal(authorization.payload?.peerId, expectedRelayIdentity.peerId)
   assert.equal(
     authorization.payload?.registrationId,
-    'relay:orbitdb-relay-pinner:uc-go-peer:hash-d1'
+    'relay:orbitdb-relay:uc-go-peer:hash-d1'
   )
   assert.match(String(authorization.payload?.publisherAddress ?? ''), /^0x/i)
   assert.match(String(authorization.payload?.ownerAddress ?? ''), /^0x/i)
@@ -836,7 +836,7 @@ test('executeDeployPlan pre-seeds orbitdb relay identity from bootstrap publishe
   const result = await executeDeployPlan(
     {
       ...DEPLOY_PLAN,
-      profile: 'orbitdb-relay-pinner',
+      profile: 'orbitdb-relay',
       bootstrapPublisherPrivateKey,
       bootstrapOwnerPrivateKey
     },

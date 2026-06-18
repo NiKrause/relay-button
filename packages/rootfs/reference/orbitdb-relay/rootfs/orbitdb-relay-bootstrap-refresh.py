@@ -20,15 +20,15 @@ except ImportError as error:  # pragma: no cover - runtime dependency
     ) from error
 
 
-ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay-pinner")
+ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay")
 DESCRIBE_SCRIPT = os.environ.get(
-    "DESCRIBE_SCRIPT", "/usr/local/sbin/orbitdb-relay-pinner-describe.py"
+    "DESCRIBE_SCRIPT", "/usr/local/sbin/orbitdb-relay-describe.py"
 )
 DEFAULT_API_HOST = os.environ.get("ALEPH_BOOTSTRAP_API_HOST", "https://api.aleph.im")
 DEFAULT_CHANNEL = os.environ.get("ALEPH_BOOTSTRAP_CHANNEL", "simple-todo")
 DEFAULT_REF = os.environ.get("ALEPH_BOOTSTRAP_REF", "simple-todo-bootstrap")
 DEFAULT_POST_TYPE = os.environ.get("ALEPH_BOOTSTRAP_POST_TYPE", "relay-bootstrap")
-DEFAULT_PROFILE = os.environ.get("ALEPH_BOOTSTRAP_PROFILE", "orbitdb-relay-pinner")
+DEFAULT_PROFILE = os.environ.get("ALEPH_BOOTSTRAP_PROFILE", "orbitdb-relay")
 MAX_PREVIOUS_PAGES = int(os.environ.get("ALEPH_BOOTSTRAP_MAX_PREVIOUS_PAGES", "5"))
 PAGINATION = int(os.environ.get("ALEPH_BOOTSTRAP_PAGINATION", "50"))
 

@@ -8,7 +8,7 @@ ROOTFS_CONTRACT_FILE="${ROOTFS_CONTRACT_FILE:-}"
 ROOTFS_PROFILE="${ROOTFS_PROFILE:-}"
 ROOTFS_INSTALL_MODE="${ROOTFS_INSTALL_MODE:-}"
 PY_LIBP2P_DIR="${PY_LIBP2P_DIR:-${REPO_DIR}/py-libp2p}"
-ORBITDB_RELAY_PINNER_DIR="${ORBITDB_RELAY_PINNER_DIR:-}"
+ORBITDB_RELAY_DIR="${ORBITDB_RELAY_DIR:-}"
 UNIVERSAL_CONNECTIVITY_DIR="${UNIVERSAL_CONNECTIVITY_DIR:-}"
 OUT_DIR="${OUT_DIR:-${APP_DIR}/dist-rootfs}"
 HOST_UID="${HOST_UID:-}"
@@ -17,6 +17,16 @@ BASE_URL="${BASE_URL:-https://cloud.debian.org/images/cloud/bookworm/latest/debi
 BASE_IMAGE="${OUT_DIR}/debian-12-genericcloud-amd64.qcow2"
 IMAGE_SIZE="${IMAGE_SIZE:-${ROOTFS_IMAGE_SIZE:-20G}}"
 ROOTFS_SPARSIFY="${ROOTFS_SPARSIFY:-1}"
+ROOTFS_SPARSIFY_TMPDIR=""
+
+cleanup() {
+  if [ -n "${ROOTFS_SPARSIFY_TMPDIR}" ] && [ -d "${ROOTFS_SPARSIFY_TMPDIR}" ]; then
+    chmod -R u+w "${ROOTFS_SPARSIFY_TMPDIR}" 2>/dev/null || true
+    rm -rf "${ROOTFS_SPARSIFY_TMPDIR}"
+  fi
+}
+
+trap cleanup EXIT
 
 require() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -32,13 +42,13 @@ require tar
 
 load_rootfs_contract() {
   [ -n "${ROOTFS_CONTRACT_FILE}" ] || return 0
-  require python3
+  require node
   [ -f "${ROOTFS_CONTRACT_FILE}" ] || {
     echo "Rootfs contract does not exist: ${ROOTFS_CONTRACT_FILE}" >&2
     exit 1
   }
 
-  eval "$(python3 "${SCRIPT_DIR}/read-rootfs-contract.py" "${ROOTFS_CONTRACT_FILE}")"
+  eval "$(node "${SCRIPT_DIR}/read-rootfs-contract.mjs" "${ROOTFS_CONTRACT_FILE}")"
 
   if [ -n "${ROOTFS_PROFILE}" ] && [ "${ROOTFS_PROFILE}" != "${ROOTFS_CONTRACT_PROFILE}" ]; then
     echo "ROOTFS_PROFILE=${ROOTFS_PROFILE} conflicts with contract profile ${ROOTFS_CONTRACT_PROFILE}" >&2
@@ -77,27 +87,27 @@ case "${ROOTFS_PROFILE}" in
       exit 1
     fi
     ;;
-  orbitdb-relay-pinner)
-    IMAGE="${OUT_DIR}/aleph-orbitdb-relay-pinner.qcow2"
-    APP_TAR="${OUT_DIR}/orbitdb-relay-pinner.tar"
+  orbitdb-relay)
+    IMAGE="${OUT_DIR}/aleph-orbitdb-relay.qcow2"
+    APP_TAR="${OUT_DIR}/orbitdb-relay.tar"
     if [ -z "${ROOTFS_INSTALL_MODE}" ]; then
       ROOTFS_INSTALL_MODE="prebaked"
     fi
-    if [ -z "${ORBITDB_RELAY_PINNER_DIR}" ]; then
-      echo "ROOTFS_PROFILE=orbitdb-relay-pinner requires ORBITDB_RELAY_PINNER_DIR=/path/to/orbitdb-relay-pinner" >&2
+    if [ -z "${ORBITDB_RELAY_DIR}" ]; then
+      echo "ROOTFS_PROFILE=orbitdb-relay requires ORBITDB_RELAY_DIR=/path/to/orbitdb-relay" >&2
       exit 1
     fi
-    if [ ! -d "${ORBITDB_RELAY_PINNER_DIR}" ]; then
-      echo "Missing orbitdb-relay-pinner directory: ${ORBITDB_RELAY_PINNER_DIR}" >&2
+    if [ ! -d "${ORBITDB_RELAY_DIR}" ]; then
+      echo "Missing orbitdb-relay directory: ${ORBITDB_RELAY_DIR}" >&2
       exit 1
     fi
-    if [ ! -d "${ORBITDB_RELAY_PINNER_DIR}/dist" ]; then
-      echo "Missing orbitdb-relay-pinner dist directory: ${ORBITDB_RELAY_PINNER_DIR}/dist" >&2
-      echo "Build orbitdb-relay-pinner before creating this rootfs image." >&2
+    if [ ! -d "${ORBITDB_RELAY_DIR}/dist" ]; then
+      echo "Missing orbitdb-relay dist directory: ${ORBITDB_RELAY_DIR}/dist" >&2
+      echo "Build orbitdb-relay before creating this rootfs image." >&2
       exit 1
     fi
     if [ "${ROOTFS_INSTALL_MODE}" = "thin" ]; then
-      echo "ROOTFS_PROFILE=orbitdb-relay-pinner now requires ROOTFS_INSTALL_MODE=prebaked." >&2
+      echo "ROOTFS_PROFILE=orbitdb-relay now requires ROOTFS_INSTALL_MODE=prebaked." >&2
       echo "The runtime is installed into the image, then configured with mapped ports before first start." >&2
       exit 1
     fi
@@ -144,7 +154,7 @@ case "${ROOTFS_PROFILE}" in
     ;;
   *)
     echo "Unsupported ROOTFS_PROFILE: ${ROOTFS_PROFILE}" >&2
-    echo "Expected one of: py-libp2p, orbitdb-relay-pinner, uc-go-peer, uc-rust-peer" >&2
+    echo "Expected one of: py-libp2p, orbitdb-relay, uc-go-peer, uc-rust-peer" >&2
     exit 1
     ;;
 esac
@@ -205,9 +215,9 @@ case "${ROOTFS_PROFILE}" in
 
     virt-customize "${py_customize_args[@]}"
     ;;
-  orbitdb-relay-pinner)
+  orbitdb-relay)
     tar \
-      -C "${ORBITDB_RELAY_PINNER_DIR}" \
+      -C "${ORBITDB_RELAY_DIR}" \
       -cf "${APP_TAR}" \
       dist \
       deploy \
@@ -220,35 +230,35 @@ case "${ROOTFS_PROFILE}" in
 
     orbitdb_customize_args=(
       -a "${IMAGE}"
-      --mkdir /opt/orbitdb-relay-pinner
-      --mkdir /var/lib/orbitdb-relay-pinner
-      --mkdir /etc/systemd/system/orbitdb-relay-pinner.service.d
+      --mkdir /opt/orbitdb-relay
+      --mkdir /var/lib/orbitdb-relay
+      --mkdir /etc/systemd/system/orbitdb-relay.service.d
       --copy-in "${APP_TAR}:/opt"
-      --copy-in "${SCRIPT_DIR}/orbitdb-relay-pinner-bootstrap.sh:/usr/local/sbin"
-      --copy-in "${SCRIPT_DIR}/orbitdb-relay-pinner-configure.sh:/usr/local/sbin"
-      --copy-in "${SCRIPT_DIR}/orbitdb-relay-pinner-bootstrap-refresh.py:/usr/local/sbin"
-      --copy-in "${SCRIPT_DIR}/orbitdb-relay-pinner-autotls-refresh.py:/usr/local/sbin"
-      --copy-in "${SCRIPT_DIR}/orbitdb-relay-pinner-setup-server.py:/usr/local/sbin"
-      --copy-in "${SCRIPT_DIR}/orbitdb-relay-pinner-describe.py:/usr/local/sbin"
-      --copy-in "${SCRIPT_DIR}/orbitdb-relay-pinner-bootstrap.service:/etc/systemd/system"
-      --copy-in "${SCRIPT_DIR}/orbitdb-relay-pinner-bootstrap-refresh.service:/etc/systemd/system"
-      --copy-in "${SCRIPT_DIR}/orbitdb-relay-pinner-bootstrap-refresh.timer:/etc/systemd/system"
-      --copy-in "${SCRIPT_DIR}/orbitdb-relay-pinner-autotls-refresh.service:/etc/systemd/system"
-      --copy-in "${SCRIPT_DIR}/orbitdb-relay-pinner-bootstrap.conf:/etc/systemd/system/orbitdb-relay-pinner.service.d"
-      --run-command "tar -xf /opt/$(basename "${APP_TAR}") -C /opt/orbitdb-relay-pinner"
-      --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-pinner-bootstrap.sh"
-      --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-pinner-configure.sh"
-      --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-pinner-bootstrap-refresh.py"
-      --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-pinner-autotls-refresh.py"
-      --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-pinner-setup-server.py"
-      --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-pinner-describe.py"
-      --run-command "cp /opt/orbitdb-relay-pinner/deploy/orbitdb-relay-pinner.service /etc/systemd/system/orbitdb-relay-pinner.service"
-      --run-command "INSTALL_DIR=/opt/orbitdb-relay-pinner DATA_DIR=/var/lib/orbitdb-relay-pinner ENV_FILE=/etc/default/orbitdb-relay-pinner SERVICE_USER=orbitdb-relay /usr/local/sbin/orbitdb-relay-pinner-bootstrap.sh"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap.sh:/usr/local/sbin"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-configure.sh:/usr/local/sbin"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap-refresh.py:/usr/local/sbin"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-autotls-refresh.py:/usr/local/sbin"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-setup-server.py:/usr/local/sbin"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-describe.py:/usr/local/sbin"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap.service:/etc/systemd/system"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap-refresh.service:/etc/systemd/system"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap-refresh.timer:/etc/systemd/system"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-autotls-refresh.service:/etc/systemd/system"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap.conf:/etc/systemd/system/orbitdb-relay.service.d"
+      --run-command "tar -xf /opt/$(basename "${APP_TAR}") -C /opt/orbitdb-relay"
+      --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-bootstrap.sh"
+      --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-configure.sh"
+      --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-bootstrap-refresh.py"
+      --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-autotls-refresh.py"
+      --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-setup-server.py"
+      --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-describe.py"
+      --run-command "cp /opt/orbitdb-relay/deploy/orbitdb-relay.service /etc/systemd/system/orbitdb-relay.service"
+      --run-command "INSTALL_DIR=/opt/orbitdb-relay DATA_DIR=/var/lib/orbitdb-relay ENV_FILE=/etc/default/orbitdb-relay SERVICE_USER=orbitdb-relay /usr/local/sbin/orbitdb-relay-bootstrap.sh"
     )
 
     orbitdb_customize_args+=(
-      --run-command "systemctl enable orbitdb-relay-pinner-bootstrap.service"
-      --run-command "systemctl enable orbitdb-relay-pinner.service"
+      --run-command "systemctl enable orbitdb-relay-bootstrap.service"
+      --run-command "systemctl enable orbitdb-relay.service"
       --run-command "rm -f /opt/$(basename "${APP_TAR}")"
     )
 
@@ -333,8 +343,10 @@ esac
 if [ "${ROOTFS_SPARSIFY}" = "1" ] && command -v virt-sparsify >/dev/null 2>&1; then
   SPARSE_IMAGE="${IMAGE%.qcow2}.sparse.qcow2"
   rm -f "${SPARSE_IMAGE}"
+  ROOTFS_SPARSIFY_TMPDIR="$(mktemp -d "${OUT_DIR}/virt-sparsify-tmp.XXXXXX")"
   echo "Sparsifying and compressing ${IMAGE}..."
-  virt-sparsify --compress "${IMAGE}" "${SPARSE_IMAGE}"
+  echo "Using ${ROOTFS_SPARSIFY_TMPDIR} for virt-sparsify scratch space"
+  TMPDIR="${ROOTFS_SPARSIFY_TMPDIR}" virt-sparsify --check-tmpdir=continue --compress "${IMAGE}" "${SPARSE_IMAGE}"
   mv "${SPARSE_IMAGE}" "${IMAGE}"
 fi
 

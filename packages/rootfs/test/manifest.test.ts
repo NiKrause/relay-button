@@ -55,7 +55,7 @@ test("createRootfsManifest mirrors the UC rootfs manifest shape", async () => {
 
 test("validateRootfsManifest accepts a complete manifest", () => {
   const result = validateRootfsManifest({
-    profile: "orbitdb-relay-pinner",
+    profile: "orbitdb-relay",
     version: "relay-v0.1.0",
     rootfsInstallStrategy: "thin",
     requiresBootstrapNetwork: true,
@@ -77,7 +77,7 @@ test("validateRootfsManifest accepts a complete manifest", () => {
 
 test("validateRootfsManifest rejects invalid port-forward and hash declarations", () => {
   const result = validateRootfsManifest({
-    profile: "orbitdb-relay-pinner",
+    profile: "orbitdb-relay",
     version: "relay-v0.1.0",
     rootfsInstallStrategy: "thin",
     requiredPortForwards: [

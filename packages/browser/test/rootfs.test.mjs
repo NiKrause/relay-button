@@ -10,7 +10,7 @@ import {
 
 test('validateRootfsManifest accepts a complete manifest', () => {
   const result = validateRootfsManifest({
-    profile: 'orbitdb-relay-pinner',
+    profile: 'orbitdb-relay',
     version: 'relay-v0.1.0',
     rootfsInstallStrategy: 'thin',
     requiresBootstrapNetwork: true,
@@ -38,7 +38,7 @@ test('loadRootfsManifest supports remote absolute URLs', async () => {
       capturedUrl = String(input)
       return new Response(
         JSON.stringify({
-          profile: 'orbitdb-relay-pinner',
+          profile: 'orbitdb-relay',
           version: 'relay-v0.1.0',
           rootfsInstallStrategy: 'thin',
           requiresBootstrapNetwork: true,
@@ -69,7 +69,7 @@ test('loadRootfsManifest supports relative URLs with an explicit remote base URL
       capturedUrl = String(input)
       return new Response(
         JSON.stringify({
-          profile: 'orbitdb-relay-pinner',
+          profile: 'orbitdb-relay',
           version: 'relay-v0.1.0',
           rootfsInstallStrategy: 'thin',
           requiresBootstrapNetwork: true,

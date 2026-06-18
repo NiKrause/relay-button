@@ -95,12 +95,15 @@ async function detectRootfsToolchainAvailability(env: NodeJS.ProcessEnv): Promis
   }
 }
 
-async function deriveOrbitdbRelayPinnerVersion(sourceDir: string): Promise<string | undefined> {
+async function deriveOrbitdbRelayVersion(
+  sourceDir: string,
+  profileId: 'orbitdb-relay',
+): Promise<string | undefined> {
   const packageJsonPath = path.join(sourceDir, 'package.json')
   try {
     const payload = JSON.parse(await readFile(packageJsonPath, 'utf8')) as { version?: unknown }
     if (typeof payload.version === 'string' && payload.version.trim()) {
-      return `orbitdb-relay-pinner-v${payload.version.trim().replace(/^v/u, '')}`
+      return `${profileId}-v${payload.version.trim().replace(/^v/u, '')}`
     }
   } catch {
     return undefined
@@ -112,15 +115,20 @@ async function deriveOrbitdbRelayPinnerVersion(sourceDir: string): Promise<strin
 export async function parseRootfsRunnerInputs(env: NodeJS.ProcessEnv = process.env): Promise<ParsedRootfsRunnerInputs> {
   const contractPath = requiredEnv('ALEPH_ROOTFS_CONTRACT_PATH', env);
   const contract = await readRootfsContractFile(contractPath);
-  const orbitdbRelayPinnerDir = optionalEnv('ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR', undefined, env) || undefined
+  const orbitdbRelayDir = optionalEnv('ALEPH_ROOTFS_ORBITDB_RELAY_DIR', undefined, env) || undefined
   const explicitRootfsVersion = optionalEnv('ALEPH_ROOTFS_VERSION', undefined, env) || undefined
   const derivedOrbitdbVersion =
-    !explicitRootfsVersion && contract.id === 'orbitdb-relay-pinner' && orbitdbRelayPinnerDir
-      ? await deriveOrbitdbRelayPinnerVersion(orbitdbRelayPinnerDir)
+    !explicitRootfsVersion &&
+    contract.id === 'orbitdb-relay' &&
+    orbitdbRelayDir
+      ? await deriveOrbitdbRelayVersion(
+          orbitdbRelayDir,
+          contract.id,
+        )
       : undefined
   const buildPlan = createRootfsBuildPlan(contract, {
     projectDir: requiredEnv('ALEPH_ROOTFS_PROJECT_DIR', env),
-    orbitdbRelayPinnerDir,
+    orbitdbRelayDir,
     contractPath,
     alephDir: optionalEnv('ALEPH_ROOTFS_ALEPH_DIR', undefined, env) || undefined,
     outDir: optionalEnv('ALEPH_ROOTFS_OUT_DIR', undefined, env) || undefined,

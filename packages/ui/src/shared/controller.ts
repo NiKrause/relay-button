@@ -75,7 +75,7 @@ import type {
 import type { RootfsManifest as SharedRootfsManifest } from "../../../shared-types/src/manifest.ts";
 import type { VmBootstrapConfigRecord } from "../../../shared-types/src/bootstrap-config.ts";
 
-type RelayProfile = "uc-go-peer" | "orbitdb-relay-pinner";
+type RelayProfile = "uc-go-peer" | "orbitdb-relay";
 
 function asJsonFetch(
   input: RequestInfo | URL,
@@ -289,8 +289,8 @@ function relayProfileForManifest(
   manifest: RootfsManifest | null | undefined,
 ): RelayProfile | null {
   if (manifest?.profile === "uc-go-peer") return "uc-go-peer";
-  if (manifest?.profile === "orbitdb-relay-pinner") {
-    return "orbitdb-relay-pinner";
+  if (manifest?.profile === "orbitdb-relay") {
+    return manifest.profile;
   }
   return null;
 }
@@ -701,7 +701,7 @@ export class SponsorRelayController {
       browserBootstrapMultiaddrs: string[];
     } | null = null;
 
-    if (profile === "orbitdb-relay-pinner") {
+    if (profile === "orbitdb-relay") {
       this.emitProgress({
         stage: "deployment-confirmed",
         label: "Configuring relay",

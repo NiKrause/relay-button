@@ -36,7 +36,7 @@ sequenceDiagram
   participant Aleph as Aleph API
   participant CRN as Scheduler / CRN
   participant VM as Guest VM
-  participant Relay as uc-go-peer / orbitdb-relay-pinner
+  participant Relay as uc-go-peer / orbitdb-relay
   participant Registry as Aleph bootstrap POST registry
   participant App as js-peer / browser libp2p app
 

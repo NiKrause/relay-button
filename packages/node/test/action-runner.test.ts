@@ -270,7 +270,7 @@ test('runActionMode refresh-bootstrap can emit dual-key publication inputs', asy
       ALEPH_VM_PUBLISHER_PRIVATE_KEY: '0xpublisher',
       ALEPH_VM_OWNER_PRIVATE_KEY: '0xowner',
       ALEPH_VM_NAME: 'relay-demo',
-      ALEPH_VM_PROFILE: 'orbitdb-relay-pinner',
+      ALEPH_VM_PROFILE: 'orbitdb-relay',
       ALEPH_VM_RELAY_PEER_ID: '12D3KooWDual',
       ALEPH_VM_PROBE_MULTIADDRS_JSON: JSON.stringify([
         '/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWDual'

@@ -31,11 +31,11 @@ Current implementation:
 
 - legacy bootstrap `POST`s are still possible and remain wallet-signed
 - dual-key bootstrap `POST`s are supported and readers can verify them
-- both `uc-go-peer` and `orbitdb-relay-pinner` can now preseed their libp2p
+- both `uc-go-peer` and `orbitdb-relay` can now preseed their libp2p
   secp256k1 identity from publisher key `B`, so the relay `peerId` and Aleph
   publisher identity share the same cryptographic root when that key is
   supplied
-- `orbitdb-relay-pinner` still keeps its older Ed25519-generated fallback when
+- `orbitdb-relay` still keeps its older Ed25519-generated fallback when
   no publisher key `B` is supplied
 
 Target implementation:
@@ -324,7 +324,7 @@ Status:
 - let relay key `B` refresh the bootstrap record from inside the VM
 - for both relay profiles, preseed the relay libp2p secp256k1 identity from
   publisher key `B` before first start when that key is supplied
-- for `orbitdb-relay-pinner`, continue supporting the older owner-authorization
+- for `orbitdb-relay`, continue supporting the older owner-authorization
   writeback flow when publisher key `B` is not supplied
 - store only the owner authorization record plus publisher key `B` in the
   guest
@@ -337,10 +337,10 @@ Goal:
 
 Status:
 
-- implemented for `uc-go-peer` and `orbitdb-relay-pinner`
+- implemented for `uc-go-peer` and `orbitdb-relay`
 - both relay profiles now pre-seed the relay libp2p identity from publisher
   key `B` when it is supplied
-- `orbitdb-relay-pinner` still retains the Ed25519 fallback when `B` is not
+- `orbitdb-relay` still retains the Ed25519 fallback when `B` is not
   supplied
 - remaining work is mainly operational validation on real deployments and
   deciding when consumers should require dual-key attestation by default

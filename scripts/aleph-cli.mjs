@@ -55,7 +55,7 @@ Typical optional environment:
   ALEPH_ROOTFS_VERSION
   ALEPH_ROOTFS_SKIP_UPLOAD
   ALEPH_ROOTFS_SKIP_BUILD
-  ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR
+  ALEPH_ROOTFS_ORBITDB_RELAY_DIR
 
 This CLI is a thin wrapper around:
   - packages/node/src/action-runner.ts

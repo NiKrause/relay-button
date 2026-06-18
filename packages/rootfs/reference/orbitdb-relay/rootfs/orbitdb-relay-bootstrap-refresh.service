@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh Aleph bootstrap registration for orbitdb-relay
+Wants=network-online.target
+After=network-online.target orbitdb-relay.service
+ConditionPathExists=/etc/default/orbitdb-relay.ready
+
+[Service]
+Type=oneshot
+Environment=ENV_FILE=/etc/default/orbitdb-relay
+Environment=DESCRIBE_SCRIPT=/usr/local/sbin/orbitdb-relay-describe.py
+ExecStart=/usr/bin/python3 /usr/local/sbin/orbitdb-relay-bootstrap-refresh.py
+StandardOutput=journal
+StandardError=journal

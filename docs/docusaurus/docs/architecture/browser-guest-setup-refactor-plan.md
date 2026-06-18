@@ -155,7 +155,7 @@ The state machine should cover:
 It should also support profile-aware behavior, beginning with:
 
 - `uc-go-peer`
-- `orbitdb-relay-pinner`
+- `orbitdb-relay`
 
 Output of this step:
 

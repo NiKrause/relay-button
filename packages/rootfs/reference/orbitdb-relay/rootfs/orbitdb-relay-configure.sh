@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ENV_FILE="${ENV_FILE:-/etc/default/orbitdb-relay-pinner}"
-READY_FILE="${READY_FILE:-/etc/default/orbitdb-relay-pinner.ready}"
-AUTOTLS_READY_FILE="${AUTOTLS_READY_FILE:-/etc/default/orbitdb-relay-pinner.autotls-ready}"
-AUTOTLS_ZONE_FILE="${AUTOTLS_ZONE_FILE:-/etc/default/orbitdb-relay-pinner.autotls-zone}"
-AUTOTLS_HOSTS_FILE="${AUTOTLS_HOSTS_FILE:-/etc/default/orbitdb-relay-pinner.autotls-hosts}"
-SERVICE_NAME="${SERVICE_NAME:-orbitdb-relay-pinner.service}"
+ENV_FILE="${ENV_FILE:-/etc/default/orbitdb-relay}"
+READY_FILE="${READY_FILE:-/etc/default/orbitdb-relay.ready}"
+AUTOTLS_READY_FILE="${AUTOTLS_READY_FILE:-/etc/default/orbitdb-relay.autotls-ready}"
+AUTOTLS_ZONE_FILE="${AUTOTLS_ZONE_FILE:-/etc/default/orbitdb-relay.autotls-zone}"
+AUTOTLS_HOSTS_FILE="${AUTOTLS_HOSTS_FILE:-/etc/default/orbitdb-relay.autotls-hosts}"
+SERVICE_NAME="${SERVICE_NAME:-orbitdb-relay.service}"
 CADDY_SERVICE="${CADDY_SERVICE:-caddy.service}"
-CADDY_READY_FILE="${CADDY_READY_FILE:-/etc/default/orbitdb-relay-pinner.caddy-ready}"
+CADDY_READY_FILE="${CADDY_READY_FILE:-/etc/default/orbitdb-relay.caddy-ready}"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 CADDY_UPSTREAM_WSS_PORT="${CADDY_UPSTREAM_WSS_PORT:-9092}"
 CADDY_UPSTREAM_HOST="${CADDY_UPSTREAM_HOST:-127.0.0.1}"
 CADDY_UPSTREAM_METRICS_PORT="${CADDY_UPSTREAM_METRICS_PORT:-9090}"
-AUTOTLS_REFRESH_SERVICE="${AUTOTLS_REFRESH_SERVICE:-orbitdb-relay-pinner-autotls-refresh.service}"
-BOOTSTRAP_REFRESH_TIMER="${BOOTSTRAP_REFRESH_TIMER:-orbitdb-relay-pinner-bootstrap-refresh.timer}"
+AUTOTLS_REFRESH_SERVICE="${AUTOTLS_REFRESH_SERVICE:-orbitdb-relay-autotls-refresh.service}"
+BOOTSTRAP_REFRESH_TIMER="${BOOTSTRAP_REFRESH_TIMER:-orbitdb-relay-bootstrap-refresh.timer}"
 PUBLIC_IPV4=""
 PUBLIC_IPV6=""
 TCP_PORT=""
@@ -34,7 +34,7 @@ START_SERVICE=1
 usage() {
   cat <<'EOF'
 Usage:
-  orbitdb-relay-pinner-configure.sh \
+  orbitdb-relay-configure.sh \
     --public-ipv4 <ip> \
     [--public-ipv6 <ipv6>] \
     --tcp-port <host-port> \
@@ -76,7 +76,7 @@ write_caddyfile() {
 }
 
 ${hostname} {
-  # Proxy the full orbitdb-relay-pinner HTTP API surface to the metrics/HTTP port.
+  # Proxy the full orbitdb-relay HTTP API surface to the metrics/HTTP port.
   # Everything else falls through to the relay WebSocket backend for browser libp2p.
   handle /health {
     reverse_proxy 127.0.0.1:${CADDY_UPSTREAM_METRICS_PORT}
@@ -263,7 +263,7 @@ fi
 if [ -n "${BOOTSTRAP_REGISTRATION_ID}" ]; then
   write_env_var "ALEPH_BOOTSTRAP_REGISTRATION_ID" "${BOOTSTRAP_REGISTRATION_ID}"
 fi
-write_env_var "ALEPH_BOOTSTRAP_PROFILE" "orbitdb-relay-pinner"
+write_env_var "ALEPH_BOOTSTRAP_PROFILE" "orbitdb-relay"
 touch "${READY_FILE}"
 
 if [ "${START_SERVICE}" -eq 1 ]; then

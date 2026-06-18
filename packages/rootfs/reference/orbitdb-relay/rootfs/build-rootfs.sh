@@ -14,7 +14,7 @@ CHANNEL="${CHANNEL:-ALEPH-CLOUDSOLUTIONS}"
 SKIP_UPLOAD="${SKIP_UPLOAD:-0}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 IPFS_ADD_URL="${IPFS_ADD_URL:-https://ipfs.aleph.cloud/api/v0/add}"
-ORBITDB_RELAY_PINNER_DIR="${ORBITDB_RELAY_PINNER_DIR:-}"
+ORBITDB_RELAY_DIR="${ORBITDB_RELAY_DIR:-}"
 UNIVERSAL_CONNECTIVITY_DIR="${UNIVERSAL_CONNECTIVITY_DIR:-}"
 
 require() {
@@ -61,9 +61,9 @@ case "${ROOTFS_PROFILE}" in
       ROOTFS_INSTALL_MODE="thin"
     fi
     ;;
-  orbitdb-relay-pinner)
-    IMAGE_BASENAME="aleph-orbitdb-relay-pinner.qcow2"
-    DEFAULT_ROOTFS_VERSION="orbitdb-relay-pinner-v0.1.0"
+  orbitdb-relay)
+    IMAGE_BASENAME="aleph-orbitdb-relay.qcow2"
+    DEFAULT_ROOTFS_VERSION="orbitdb-relay-v0.1.0"
     if [ -z "${ROOTFS_INSTALL_MODE}" ]; then
       ROOTFS_INSTALL_MODE="prebaked"
     fi
@@ -84,7 +84,7 @@ case "${ROOTFS_PROFILE}" in
     ;;
   *)
     echo "Unsupported ROOTFS_PROFILE: ${ROOTFS_PROFILE}" >&2
-    echo "Expected one of: py-libp2p, orbitdb-relay-pinner, uc-go-peer, uc-rust-peer" >&2
+    echo "Expected one of: py-libp2p, orbitdb-relay, uc-go-peer, uc-rust-peer" >&2
     exit 1
     ;;
 esac
@@ -117,12 +117,12 @@ resolve_rootfs_version() {
     return
   fi
 
-  if [ "${ROOTFS_PROFILE}" = "orbitdb-relay-pinner" ] && [ -n "${ORBITDB_RELAY_PINNER_DIR}" ]; then
-    local orbitdb_package_json="${ORBITDB_RELAY_PINNER_DIR}/package.json"
+  if [ "${ROOTFS_PROFILE}" = "orbitdb-relay" ] && [ -n "${ORBITDB_RELAY_DIR}" ]; then
+    local orbitdb_package_json="${ORBITDB_RELAY_DIR}/package.json"
     if [ -f "${orbitdb_package_json}" ] && command -v node >/dev/null 2>&1; then
       local orbitdb_version
       orbitdb_version="$(
-        node -e "const fs=require('node:fs');const payload=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const version=typeof payload.version==='string'?payload.version.trim():'';if(!version)process.exit(1);console.log('orbitdb-relay-pinner-v'+version.replace(/^v/,''));" "${orbitdb_package_json}"
+        node -e "const fs=require('node:fs');const payload=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const version=typeof payload.version==='string'?payload.version.trim():'';if(!version)process.exit(1);console.log('orbitdb-relay-v'+version.replace(/^v/,''));" "${orbitdb_package_json}"
       )" || orbitdb_version=""
 
       if [ -n "${orbitdb_version}" ]; then
@@ -185,17 +185,17 @@ build_with_docker() {
   local orbitdb_env=()
   local uc_mount=()
   local uc_env=()
-  if [ "${ROOTFS_PROFILE}" = "orbitdb-relay-pinner" ]; then
-    if [ -z "${ORBITDB_RELAY_PINNER_DIR}" ]; then
-      echo "ROOTFS_PROFILE=orbitdb-relay-pinner requires ORBITDB_RELAY_PINNER_DIR=/path/to/orbitdb-relay-pinner" >&2
+  if [ "${ROOTFS_PROFILE}" = "orbitdb-relay" ]; then
+    if [ -z "${ORBITDB_RELAY_DIR}" ]; then
+      echo "ROOTFS_PROFILE=orbitdb-relay requires ORBITDB_RELAY_DIR=/path/to/orbitdb-relay" >&2
       exit 1
     fi
-    if [ ! -d "${ORBITDB_RELAY_PINNER_DIR}" ]; then
-      echo "Missing orbitdb-relay-pinner directory: ${ORBITDB_RELAY_PINNER_DIR}" >&2
+    if [ ! -d "${ORBITDB_RELAY_DIR}" ]; then
+      echo "Missing orbitdb-relay directory: ${ORBITDB_RELAY_DIR}" >&2
       exit 1
     fi
-    orbitdb_mount=(-v "${ORBITDB_RELAY_PINNER_DIR}:/workspace-orbitdb-relay-pinner:ro")
-    orbitdb_env=(-e ORBITDB_RELAY_PINNER_DIR=/workspace-orbitdb-relay-pinner)
+    orbitdb_mount=(-v "${ORBITDB_RELAY_DIR}:/workspace-orbitdb-relay:ro")
+    orbitdb_env=(-e ORBITDB_RELAY_DIR=/workspace-orbitdb-relay)
   fi
   if [ "${ROOTFS_PROFILE}" = "uc-rust-peer" ]; then
     if [ -z "${UNIVERSAL_CONNECTIVITY_DIR}" ]; then
@@ -247,7 +247,7 @@ required_port_forwards_json() {
   fi
 
   case "${ROOTFS_PROFILE}" in
-    orbitdb-relay-pinner)
+    orbitdb-relay)
       cat <<'EOF'
   "requiredPortForwards": [
     { "port": 22, "tcp": true, "udp": false, "purpose": "SSH" },

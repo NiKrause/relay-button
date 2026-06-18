@@ -124,7 +124,7 @@ Extend the gateway with OrbitDB and IPFS pinning plus relay continuity for
 local-first applications.
 
 This stage focuses on application availability when original peers are offline.
-It uses OrbitDB Voyager and orbitdb-relay-pinner as technical reference points
+It uses OrbitDB Voyager and orbitdb-relay as technical reference points
 while keeping the end result focused on a coherent product:
 
 - documented pinning and replication continuity flows
@@ -192,7 +192,7 @@ direction:
 - [NiKrause/relay-button](https://github.com/NiKrause/relay-button/)
   infrastructure for on-demand relay instance hosting
 - [orbitdb/voyager](https://github.com/orbitdb/voyager)
-- [NiKrause/orbitdb-relay-pinner](https://github.com/NiKrause/orbitdb-relay-pinner)
+- [NiKrause/orbitdb-relay](https://github.com/NiKrause/orbitdb-relay)
 - [NiKrause/simple-todo](https://github.com/NiKrause/simple-todo)
-  a demo for a simple p2p app working with orbitdb-relay-pinner
+  a demo for a simple p2p app working with orbitdb-relay
 - [asabya/p2pass](https://asabya.github.io/p2pass/)

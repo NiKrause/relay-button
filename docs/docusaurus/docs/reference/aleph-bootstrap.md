@@ -20,7 +20,7 @@ Today it is used by:
 - `simple-todo`
 - `universal-connectivity/js-peer`
 - shared relay deployment flows such as `uc-go-peer` and
-  `orbitdb-relay-pinner`
+  `orbitdb-relay`
 
 The package still ships with a backward-compatible default namespace rooted in
 the earliest `simple-todo` integration:
@@ -36,7 +36,7 @@ isolation between environments.
 ## Relay Registration
 
 The shared deploy flows now register bootstrap addresses automatically for the
-`uc-go-peer` and `orbitdb-relay-pinner` RootFS profiles when they are launched
+`uc-go-peer` and `orbitdb-relay` RootFS profiles when they are launched
 through:
 
 - the shared GitHub Action VM deploy path
@@ -135,7 +135,7 @@ Current profile behavior:
     as the Aleph publisher identity
   - if owner key `A` is also supplied, the owner authorization can be minted
     up front and stored in the first guest configure call
-- `orbitdb-relay-pinner`
+- `orbitdb-relay`
   - now also accepts a preseeded libp2p secp256k1 identity derived from
     publisher key `B`
   - when publisher key `B` is supplied, the relay `peerId` comes from the
@@ -150,7 +150,7 @@ So the remaining trust gap is now narrower than before:
 
 - `uc-go-peer` can already bind publisher key `B` and relay `peerId` to the
   same secp256k1 root
-- `orbitdb-relay-pinner` can now do the same when publisher key `B` is
+- `orbitdb-relay` can now do the same when publisher key `B` is
   supplied
 - legacy wallet-signed records are still accepted by default for backward
   compatibility
@@ -379,12 +379,12 @@ Current in-guest refresh behavior:
 - both relay profiles can additionally store a precomputed libp2p secp256k1
   identity derived from publisher key `B`, so the runtime `peerId` is known
   before the relay first starts
-- if `orbitdb-relay-pinner` is deployed without publisher key `B`, it still
+- if `orbitdb-relay` is deployed without publisher key `B`, it still
   generates owner authorization after the real relay `peerId` is known and
   writes it back into the guest with a second `no_start` configure call
 - the guest runs a systemd timer:
   - `uc-go-peer-bootstrap-refresh.timer`
-  - `orbitdb-relay-pinner-bootstrap-refresh.timer`
+  - `orbitdb-relay-bootstrap-refresh.timer`
 - the timer invokes a local Python refresher that:
   - calls the profile-specific `*-describe.py` helper
   - signs the relay proof with publisher key `B`

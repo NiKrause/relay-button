@@ -6,7 +6,7 @@ import { resolveManifestSource } from '../dist/shared/index.js'
 test('resolveManifestSource parses pasted manifest JSON', () => {
   const result = resolveManifestSource({
     manifestJson: JSON.stringify({
-      profile: 'orbitdb-relay-pinner',
+      profile: 'orbitdb-relay',
       version: 'relay-v0.1.0',
       rootfsItemHash: 'f'.repeat(64),
       rootfsSizeMiB: 20480,

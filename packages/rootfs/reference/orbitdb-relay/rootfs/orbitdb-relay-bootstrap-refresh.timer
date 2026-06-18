@@ -1,12 +1,12 @@
 [Unit]
-Description=Periodic Aleph bootstrap refresh for orbitdb-relay-pinner
+Description=Periodic Aleph bootstrap refresh for orbitdb-relay
 
 [Timer]
 OnBootSec=20m
 OnUnitActiveSec=6h
 RandomizedDelaySec=15m
 Persistent=true
-Unit=orbitdb-relay-pinner-bootstrap-refresh.service
+Unit=orbitdb-relay-bootstrap-refresh.service
 
 [Install]
 WantedBy=timers.target

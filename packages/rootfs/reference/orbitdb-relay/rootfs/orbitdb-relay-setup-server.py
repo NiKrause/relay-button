@@ -9,14 +9,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 
-ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay-pinner")
-READY_FILE = os.environ.get("READY_FILE", "/etc/default/orbitdb-relay-pinner.ready")
-SERVICE_NAME = os.environ.get("SERVICE_NAME", "orbitdb-relay-pinner.service")
-BOOTSTRAP_SERVICE = os.environ.get("BOOTSTRAP_SERVICE", "orbitdb-relay-pinner-bootstrap.service")
-CONFIGURE_SCRIPT = "/usr/local/sbin/orbitdb-relay-pinner-configure.sh"
-DESCRIBE_SCRIPT = "/usr/local/sbin/orbitdb-relay-pinner-describe.py"
-METADATA_FILE = os.environ.get("METADATA_FILE", "/run/orbitdb-relay-pinner-setup-metadata.json")
-METADATA_ERROR_FILE = os.environ.get("METADATA_ERROR_FILE", "/run/orbitdb-relay-pinner-setup-metadata.error")
+ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay")
+READY_FILE = os.environ.get("READY_FILE", "/etc/default/orbitdb-relay.ready")
+SERVICE_NAME = os.environ.get("SERVICE_NAME", "orbitdb-relay.service")
+BOOTSTRAP_SERVICE = os.environ.get("BOOTSTRAP_SERVICE", "orbitdb-relay-bootstrap.service")
+CONFIGURE_SCRIPT = "/usr/local/sbin/orbitdb-relay-configure.sh"
+DESCRIBE_SCRIPT = "/usr/local/sbin/orbitdb-relay-describe.py"
+METADATA_FILE = os.environ.get("METADATA_FILE", "/run/orbitdb-relay-setup-metadata.json")
+METADATA_ERROR_FILE = os.environ.get("METADATA_ERROR_FILE", "/run/orbitdb-relay-setup-metadata.error")
 
 
 def _cors_headers(handler: BaseHTTPRequestHandler) -> None:

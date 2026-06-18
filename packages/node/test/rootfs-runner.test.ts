@@ -8,8 +8,16 @@ import { fileURLToPath } from 'node:url'
 import { emitRootfsOutputs, parseRootfsRunnerInputs, runRootfsMode } from '../src/rootfs-runner.ts'
 
 const rootfsContractPath = fileURLToPath(new URL('../../rootfs/reference/uc-go-peer/contract.json', import.meta.url))
+const orbitdbRelayContractPath = fileURLToPath(
+  new URL('../../rootfs/reference/orbitdb-relay/contract.json', import.meta.url),
+)
 
-async function createActionEnv(prefix: string, projectDir = '/workspace/universal-connectivity') {
+async function createActionEnv(
+  prefix: string,
+  projectDir = '/workspace/universal-connectivity',
+  contractPath = rootfsContractPath,
+  referenceRootfsDir = '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+) {
   const dir = await mkdtemp(join(tmpdir(), prefix))
   const outputFile = join(dir, 'output.txt')
   const summaryFile = join(dir, 'summary.txt')
@@ -18,8 +26,8 @@ async function createActionEnv(prefix: string, projectDir = '/workspace/universa
       GITHUB_OUTPUT: outputFile,
       GITHUB_STEP_SUMMARY: summaryFile,
       ALEPH_ROOTFS_PROJECT_DIR: projectDir,
-      ALEPH_ROOTFS_CONTRACT_PATH: rootfsContractPath,
-      ALEPH_ROOTFS_REFERENCE_ROOTFS_DIR: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+      ALEPH_ROOTFS_CONTRACT_PATH: contractPath,
+      ALEPH_ROOTFS_REFERENCE_ROOTFS_DIR: referenceRootfsDir,
     },
     outputFile,
     summaryFile,
@@ -46,6 +54,35 @@ test('parseRootfsRunnerInputs creates a shared rootfs build plan from env', asyn
   assert.equal(parsed.buildPlan.rootfsVersion, 'uc-go-peer-git-20260516-deadbee')
   assert.equal(parsed.availability.hasDocker, true)
   assert.equal(parsed.referenceRootfsDir, '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs')
+})
+
+test('parseRootfsRunnerInputs derives orbitdb relay rootfs versions from the caller package', async () => {
+  const projectDir = await mkdtemp(join(tmpdir(), 'shared-orbitdb-relay-project-'))
+  await mkdir(projectDir, { recursive: true })
+  await writeFile(
+    join(projectDir, 'package.json'),
+    JSON.stringify({ name: 'orbitdb-relay', version: '0.9.2' }),
+  )
+
+  const { env } = await createActionEnv(
+    'shared-rootfs-orbitdb-relay-',
+    projectDir,
+    orbitdbRelayContractPath,
+    '/workspace/shared-aleph-tooling/packages/rootfs/reference/orbitdb-relay/rootfs',
+  )
+  const parsed = await parseRootfsRunnerInputs({
+    ...env,
+    ALEPH_ROOTFS_DRIVER: 'docker',
+    ALEPH_ROOTFS_HAS_DOCKER: 'true',
+    ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING: 'true',
+    ALEPH_ROOTFS_ORBITDB_RELAY_DIR: projectDir,
+  })
+
+  assert.equal(parsed.buildPlan.rootfsVersion, 'orbitdb-relay-v0.9.2')
+  assert.equal(
+    parsed.referenceRootfsDir,
+    '/workspace/shared-aleph-tooling/packages/rootfs/reference/orbitdb-relay/rootfs',
+  )
 })
 
 test('parseRootfsRunnerInputs auto-detects docker and virt-customize when env flags are omitted', async () => {
