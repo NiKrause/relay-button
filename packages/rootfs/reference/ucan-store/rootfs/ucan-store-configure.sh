@@ -5,10 +5,13 @@ ENV_FILE="${ENV_FILE:-/etc/default/ucan-store}"
 READY_FILE="${READY_FILE:-/etc/default/ucan-store.ready}"
 BOOTSTRAP_PACKAGE_FILE="${BOOTSTRAP_PACKAGE_FILE:-/etc/ucan-store/bootstrap-package.json}"
 BOOTSTRAP_VALIDATOR="${BOOTSTRAP_VALIDATOR:-/usr/local/sbin/ucan_store_bootstrap_validate.py}"
+BOOTSTRAP_CRYPTO_VERIFIER="${BOOTSTRAP_CRYPTO_VERIFIER:-/usr/local/sbin/ucan-store-bootstrap-verify.mjs}"
+BOOTSTRAP_VERIFICATION_FILE="${BOOTSTRAP_VERIFICATION_FILE:-/etc/ucan-store/bootstrap-verification.json}"
 SERVICE_NAME="${SERVICE_NAME:-ucan-store.service}"
 CADDY_SERVICE="${CADDY_SERVICE:-caddy.service}"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
-UPSTREAM_PORT="${UPSTREAM_PORT:-8787}"
+SERVICE_PORT="${SERVICE_PORT:-8787}"
+PROXY_PORT="${PROXY_PORT:-8788}"
 PUBLIC_IPV4=""
 PUBLIC_IPV6=""
 PROXY_HOSTNAME=""
@@ -56,13 +59,13 @@ write_caddyfile() {
 }
 
 ${hostname} {
-  reverse_proxy 127.0.0.1:${UPSTREAM_PORT}
+  reverse_proxy 127.0.0.1:${PROXY_PORT}
 }
 EOF
 }
 
 probe_service_did() {
-  python3 - "${UPSTREAM_PORT}" <<'PY'
+  python3 - "${SERVICE_PORT}" <<'PY'
 import json
 import sys
 import time
@@ -95,8 +98,13 @@ install_bootstrap_package() {
   local source_file="$1"
   mkdir -p "$(dirname "${BOOTSTRAP_PACKAGE_FILE}")"
   python3 "${BOOTSTRAP_VALIDATOR}" --package-file "${source_file}" >/dev/null
+  node "${BOOTSTRAP_CRYPTO_VERIFIER}" \
+    --package-file "${source_file}" \
+    --admin-did "${ADMIN_DID}" \
+    --summary-file "${BOOTSTRAP_VERIFICATION_FILE}" >/dev/null
   cp "${source_file}" "${BOOTSTRAP_PACKAGE_FILE}"
   chmod 0640 "${BOOTSTRAP_PACKAGE_FILE}"
+  chmod 0644 "${BOOTSTRAP_VERIFICATION_FILE}"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -157,6 +165,7 @@ write_env_var "PUBLIC_IPV6" "${PUBLIC_IPV6}"
 write_env_var "PROXY_HOSTNAME" "${PROXY_HOSTNAME}"
 write_env_var "UCAN_STORE_ADMIN_DID" "${ADMIN_DID}"
 write_env_var "UCAN_STORE_BOOTSTRAP_PACKAGE_FILE" "${BOOTSTRAP_PACKAGE_FILE}"
+write_env_var "UCAN_STORE_BOOTSTRAP_VERIFICATION_FILE" "${BOOTSTRAP_VERIFICATION_FILE}"
 
 if [ -n "${BOOTSTRAP_PACKAGE_INPUT_FILE}" ]; then
   install_bootstrap_package "${BOOTSTRAP_PACKAGE_INPUT_FILE}"
@@ -197,5 +206,11 @@ if [ "${START_SERVICE}" = "1" ]; then
       --runtime-service-did "${SERVICE_DID}" \
       --runtime-service-origin "${RUNTIME_SERVICE_ORIGIN}" \
       --admin-did "${ADMIN_DID}" >/dev/null
+    node "${BOOTSTRAP_CRYPTO_VERIFIER}" \
+      --package-file "${BOOTSTRAP_PACKAGE_FILE}" \
+      --runtime-service-did "${SERVICE_DID}" \
+      --runtime-service-origin "${RUNTIME_SERVICE_ORIGIN}" \
+      --admin-did "${ADMIN_DID}" \
+      --summary-file "${BOOTSTRAP_VERIFICATION_FILE}" >/dev/null
   fi
 fi

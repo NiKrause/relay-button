@@ -85,6 +85,8 @@ virt-customize \
   --copy-in "${APP_TAR}:/opt" \
   --copy-in "${SCRIPT_DIR}/ucan-store-bootstrap.sh:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan-store-configure.sh:/usr/local/sbin" \
+  --copy-in "${SCRIPT_DIR}/ucan-store-bootstrap-verify.mjs:/usr/local/sbin" \
+  --copy-in "${SCRIPT_DIR}/ucan-store-request-guard.mjs:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan-store-describe.py:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan-store-setup-server.py:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan-store-service-start.sh:/usr/local/sbin" \
@@ -95,6 +97,8 @@ virt-customize \
   --run-command "tar -xf /opt/$(basename "${APP_TAR}") -C ${ROOTFS_CONTRACT_INSTALL_DIR}" \
   --run-command "chmod 0755 /usr/local/sbin/ucan-store-bootstrap.sh" \
   --run-command "chmod 0755 /usr/local/sbin/ucan-store-configure.sh" \
+  --run-command "chmod 0755 /usr/local/sbin/ucan-store-bootstrap-verify.mjs" \
+  --run-command "chmod 0755 /usr/local/sbin/ucan-store-request-guard.mjs" \
   --run-command "chmod 0755 /usr/local/sbin/ucan-store-describe.py" \
   --run-command "chmod 0755 /usr/local/sbin/ucan-store-setup-server.py" \
   --run-command "chmod 0755 /usr/local/sbin/ucan-store-service-start.sh" \

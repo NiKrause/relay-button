@@ -10,10 +10,12 @@ Current scope:
 - documented browser/runtime configuration inputs used by the existing PWA
 - a prebaked qcow2 scaffold for the current local upload service runtime
 - guest-side setup/configure scripts that publish the service URLs and DID back to deployment tooling
+- a guest-side request guard that narrows public UCAN invocations to the configured bootstrap envelope
 
 Known inputs from the current `ucan-upload-wall` sources:
 
 - Internal upload API process port: `STORACHA_LOCAL_PORT` with default `8787`
+- Internal bootstrap-policy request guard port: `UCAN_STORE_PROXY_PORT` with default `8788`
 - Local WebAuthn origin inputs: `WEBAUTHN_ORIGIN`, `WEBAUTHN_ORIGIN_FALLBACKS`
 - Browser upload-service wiring:
   - `VITE_UPLOAD_SERVICE_URL`
@@ -53,7 +55,17 @@ Current bootstrap-package support in this shared profile:
   - requires a bootstrap package by default
   - re-validates the package before the service stays up
   - probes the live `did:web` document and rejects startup on DID/origin mismatches
+- cryptographic bootstrap proof verification that checks:
+  - root delegation signature
+  - root delegation issuer against `adminDid`
+  - root delegation audience against the configured service DID
+  - delegation lifetime (`nbf` / `exp`)
+  - coverage of the configured `allowedCapabilities` for the configured `spaceDid`
+- request-time public invocation narrowing that rejects:
+  - capabilities outside the configured `allowedCapabilities`
+  - requests for a different `spaceDid`
+  - invocation proof trees that do not include the configured bootstrap root delegation
 
-This does not yet perform full cryptographic UCAN proof verification of
-`rootDelegationProof`; that remains a follow-up step for the upload-service
-implementation itself.
+This still does not emit protocol-native UCAN error receipts from the guard
+layer yet; rejected requests currently fail at HTTP level before they reach the
+underlying upload API.

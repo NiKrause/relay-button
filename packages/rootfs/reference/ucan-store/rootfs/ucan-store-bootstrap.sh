@@ -7,6 +7,7 @@ DATA_DIR="${DATA_DIR:-/var/lib/ucan-store}"
 ENV_FILE="${ENV_FILE:-/etc/default/ucan-store}"
 READY_FILE="${READY_FILE:-/etc/default/ucan-store.ready}"
 BOOTSTRAP_PACKAGE_FILE="${BOOTSTRAP_PACKAGE_FILE:-/etc/ucan-store/bootstrap-package.json}"
+BOOTSTRAP_VERIFICATION_FILE="${BOOTSTRAP_VERIFICATION_FILE:-/etc/ucan-store/bootstrap-verification.json}"
 APP_BINARY="${APP_BINARY:-/usr/local/bin/ucan-store}"
 NODE_MIN_MAJOR="${NODE_MIN_MAJOR:-22}"
 PHASE="${1:-all}"
@@ -85,10 +86,12 @@ EOF
 
   write_env_var "NODE_ENV" "production"
   write_env_var "STORACHA_LOCAL_PORT" "8787"
+  write_env_var "UCAN_STORE_PROXY_PORT" "8788"
   write_env_var "WEBAUTHN_ORIGIN" "http://localhost:5173"
   write_env_var "WEBAUTHN_ORIGIN_FALLBACKS" ""
   write_env_var "UCAN_STORE_ADMIN_DID" ""
   write_env_var "UCAN_STORE_BOOTSTRAP_PACKAGE_FILE" "${BOOTSTRAP_PACKAGE_FILE}"
+  write_env_var "UCAN_STORE_BOOTSTRAP_VERIFICATION_FILE" "${BOOTSTRAP_VERIFICATION_FILE}"
   write_env_var "UCAN_STORE_REQUIRE_BOOTSTRAP_PACKAGE" "1"
   write_env_var "BOOTSTRAP_VERIFICATION_TIMEOUT_SECONDS" "60"
   write_env_var "BOOTSTRAP_VERIFICATION_INTERVAL_SECONDS" "2"
@@ -101,7 +104,7 @@ EOF
   write_env_var "PUBLIC_REVOCATION_DID" ""
   write_env_var "PUBLIC_RECEIPTS_URL" ""
 
-  rm -f "${BOOTSTRAP_PACKAGE_FILE}"
+  rm -f "${BOOTSTRAP_PACKAGE_FILE}" "${BOOTSTRAP_VERIFICATION_FILE}"
 }
 
 case "${PHASE}" in

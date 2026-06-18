@@ -4,10 +4,14 @@ set -euo pipefail
 ENV_FILE="${ENV_FILE:-/etc/default/ucan-store}"
 APP_BINARY="${APP_BINARY:-/usr/local/bin/ucan-store}"
 BOOTSTRAP_VALIDATOR="${BOOTSTRAP_VALIDATOR:-/usr/local/sbin/ucan_store_bootstrap_validate.py}"
+BOOTSTRAP_CRYPTO_VERIFIER="${BOOTSTRAP_CRYPTO_VERIFIER:-/usr/local/sbin/ucan-store-bootstrap-verify.mjs}"
+REQUEST_GUARD="${REQUEST_GUARD:-/usr/local/sbin/ucan-store-request-guard.mjs}"
 BOOTSTRAP_PACKAGE_FILE_DEFAULT="${BOOTSTRAP_PACKAGE_FILE:-/etc/ucan-store/bootstrap-package.json}"
+BOOTSTRAP_VERIFICATION_FILE_DEFAULT="${BOOTSTRAP_VERIFICATION_FILE:-/etc/ucan-store/bootstrap-verification.json}"
 VERIFY_TIMEOUT_DEFAULT="${BOOTSTRAP_VERIFICATION_TIMEOUT_SECONDS:-60}"
 VERIFY_INTERVAL_DEFAULT="${BOOTSTRAP_VERIFICATION_INTERVAL_SECONDS:-2}"
 APP_PID=""
+GUARD_PID=""
 
 if [ -f "${ENV_FILE}" ]; then
   set -a
@@ -18,6 +22,7 @@ fi
 
 SERVICE_PORT="${STORACHA_LOCAL_PORT:-8787}"
 BOOTSTRAP_PACKAGE_FILE="${UCAN_STORE_BOOTSTRAP_PACKAGE_FILE:-${BOOTSTRAP_PACKAGE_FILE_DEFAULT}}"
+BOOTSTRAP_VERIFICATION_FILE="${UCAN_STORE_BOOTSTRAP_VERIFICATION_FILE:-${BOOTSTRAP_VERIFICATION_FILE_DEFAULT}}"
 PUBLIC_UPLOAD_SERVICE_URL="${PUBLIC_UPLOAD_SERVICE_URL:-}"
 ADMIN_DID="${UCAN_STORE_ADMIN_DID:-}"
 VERIFY_TIMEOUT_SECONDS="${BOOTSTRAP_VERIFICATION_TIMEOUT_SECONDS:-${VERIFY_TIMEOUT_DEFAULT}}"
@@ -41,6 +46,10 @@ terminate_child() {
     kill "${APP_PID}" 2>/dev/null || true
     wait "${APP_PID}" 2>/dev/null || true
   fi
+  if [ -n "${GUARD_PID}" ] && kill -0 "${GUARD_PID}" 2>/dev/null; then
+    kill "${GUARD_PID}" 2>/dev/null || true
+    wait "${GUARD_PID}" 2>/dev/null || true
+  fi
 }
 
 validate_bootstrap_preflight() {
@@ -59,6 +68,15 @@ validate_bootstrap_preflight() {
     --runtime-service-origin "${PUBLIC_UPLOAD_SERVICE_URL}" \
     --admin-did "${ADMIN_DID}" >/dev/null; then
     echo "Bootstrap package preflight validation failed." >&2
+    exit 1
+  fi
+
+  if ! node "${BOOTSTRAP_CRYPTO_VERIFIER}" \
+    --package-file "${BOOTSTRAP_PACKAGE_FILE}" \
+    --runtime-service-origin "${PUBLIC_UPLOAD_SERVICE_URL}" \
+    --admin-did "${ADMIN_DID}" \
+    --summary-file "${BOOTSTRAP_VERIFICATION_FILE}" >/dev/null; then
+    echo "Bootstrap delegation cryptographic preflight validation failed." >&2
     exit 1
   fi
 }
@@ -103,11 +121,38 @@ APP_PID="$!"
 
 if [ "${BOOTSTRAP_VALIDATION_MODE}" = "enforce" ]; then
   SERVICE_DID="$(probe_service_did)"
+  RUNTIME_SERVICE_ORIGIN=""
+  if [ -n "${PUBLIC_UPLOAD_SERVICE_URL}" ]; then
+    RUNTIME_SERVICE_ORIGIN="$(python3 - <<'PY'
+import os
+from urllib.parse import urlsplit
+
+value = os.environ.get("PUBLIC_UPLOAD_SERVICE_URL", "").strip()
+parts = urlsplit(value)
+if parts.scheme and parts.netloc:
+    print(f"{parts.scheme}://{parts.netloc}")
+PY
+)"
+  fi
   python3 "${BOOTSTRAP_VALIDATOR}" \
     --package-file "${BOOTSTRAP_PACKAGE_FILE}" \
     --runtime-service-did "${SERVICE_DID}" \
-    --runtime-service-origin "${PUBLIC_UPLOAD_SERVICE_URL}" \
+    --runtime-service-origin "${RUNTIME_SERVICE_ORIGIN}" \
     --admin-did "${ADMIN_DID}" >/dev/null
+  node "${BOOTSTRAP_CRYPTO_VERIFIER}" \
+    --package-file "${BOOTSTRAP_PACKAGE_FILE}" \
+    --runtime-service-did "${SERVICE_DID}" \
+    --runtime-service-origin "${RUNTIME_SERVICE_ORIGIN}" \
+    --admin-did "${ADMIN_DID}" \
+    --summary-file "${BOOTSTRAP_VERIFICATION_FILE}" >/dev/null
 fi
 
-wait "${APP_PID}"
+node "${REQUEST_GUARD}" &
+GUARD_PID="$!"
+
+set +e
+wait -n "${APP_PID}" "${GUARD_PID}"
+STATUS="$?"
+set -e
+terminate_child
+exit "${STATUS}"

@@ -18,6 +18,10 @@ BOOTSTRAP_PACKAGE_FILE = os.environ.get(
     "BOOTSTRAP_PACKAGE_FILE",
     "/etc/ucan-store/bootstrap-package.json",
 )
+BOOTSTRAP_VERIFICATION_FILE = os.environ.get(
+    "BOOTSTRAP_VERIFICATION_FILE",
+    "/etc/ucan-store/bootstrap-verification.json",
+)
 
 
 def parse_env_file(path: str) -> dict[str, str]:
@@ -55,6 +59,14 @@ def fetch_service_did(port: int) -> str:
     raise SystemExit(last_error or "unable to discover upload service DID")
 
 
+def read_json_file(path: str) -> dict[str, object] | None:
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    return payload if isinstance(payload, dict) else None
+
+
 def main() -> None:
     env_values = parse_env_file(ENV_FILE)
     service_did = env_values.get("PUBLIC_UPLOAD_SERVICE_DID", "").strip() or fetch_service_did(SERVICE_PORT)
@@ -65,6 +77,10 @@ def main() -> None:
         env_values.get("UCAN_STORE_BOOTSTRAP_PACKAGE_FILE", "").strip()
         or BOOTSTRAP_PACKAGE_FILE
     )
+    bootstrap_verification_file = (
+        env_values.get("UCAN_STORE_BOOTSTRAP_VERIFICATION_FILE", "").strip()
+        or BOOTSTRAP_VERIFICATION_FILE
+    )
     bootstrap_validation = summarize_bootstrap_package(
         bootstrap_package_file,
         runtime_service_did=service_did,
@@ -72,10 +88,16 @@ def main() -> None:
         admin_did=env_values.get("UCAN_STORE_ADMIN_DID", "").strip() or None,
         allow_missing=True,
     )
+    bootstrap_proof_validation = read_json_file(bootstrap_verification_file)
     if bootstrap_validation.get("status") == "invalid":
         raise SystemExit(
             "bootstrap package validation failed: "
             + "; ".join(bootstrap_validation.get("errors", [])),
+        )
+    if bootstrap_proof_validation and bootstrap_proof_validation.get("status") == "invalid":
+        raise SystemExit(
+            "bootstrap proof verification failed: "
+            + "; ".join(bootstrap_proof_validation.get("errors", [])),
         )
 
     payload = {
@@ -92,6 +114,7 @@ def main() -> None:
         "webauthn_origin": env_values.get("WEBAUTHN_ORIGIN", "").strip() or None,
         "webauthn_origin_fallbacks": env_values.get("WEBAUTHN_ORIGIN_FALLBACKS", "").strip() or None,
         "bootstrap_validation": bootstrap_validation,
+        "bootstrap_proof_validation": bootstrap_proof_validation,
         "pwa_env": {
             "VITE_UPLOAD_SERVICE_URL": upload_url or None,
             "VITE_UPLOAD_SERVICE_DID": service_did,
