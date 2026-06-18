@@ -42,7 +42,7 @@ test('createRootfsScriptCommand runs the shared build-rootfs script with UC-comp
       IPFS_ADD_URL: 'https://ipfs.aleph.cloud/api/v0/add',
       IPFS_GATEWAY_URL: 'https://ipfs.aleph.cloud/ipfs',
       ALEPH_API_HOST: 'https://api.aleph.im',
-      ALEPH_MESSAGE_WAIT_ATTEMPTS: '60',
+      ALEPH_MESSAGE_WAIT_ATTEMPTS: '120',
       ALEPH_MESSAGE_WAIT_DELAY_SECONDS: '5',
       ALEPH_PIN_ATTEMPTS: '4',
       ALEPH_PIN_DELAY_SECONDS: '10',
