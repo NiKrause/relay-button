@@ -32,13 +32,13 @@ require tar
 
 load_rootfs_contract() {
   [ -n "${ROOTFS_CONTRACT_FILE}" ] || return 0
-  require python3
+  require node
   [ -f "${ROOTFS_CONTRACT_FILE}" ] || {
     echo "Rootfs contract does not exist: ${ROOTFS_CONTRACT_FILE}" >&2
     exit 1
   }
 
-  eval "$(python3 "${SCRIPT_DIR}/read-rootfs-contract.py" "${ROOTFS_CONTRACT_FILE}")"
+  eval "$(node "${SCRIPT_DIR}/read-rootfs-contract.mjs" "${ROOTFS_CONTRACT_FILE}")"
 
   if [ -n "${ROOTFS_PROFILE}" ] && [ "${ROOTFS_PROFILE}" != "${ROOTFS_CONTRACT_PROFILE}" ]; then
     echo "ROOTFS_PROFILE=${ROOTFS_PROFILE} conflicts with contract profile ${ROOTFS_CONTRACT_PROFILE}" >&2

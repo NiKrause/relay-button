@@ -86,3 +86,11 @@ test('createRootfsBuildPlan uses profile-aware defaults for orbitdb relay', asyn
   const env = rootfsBuildShellEnv(plan)
   assert.equal(env.ORBITDB_RELAY_DIR, '/workspace/orbitdb-relay')
 })
+
+test('orbitdb relay image builder loads rootfs contracts through the JS helper', async () => {
+  const scriptPath = referenceProfileContractPath('orbitdb-relay').replace(/contract\.json$/, 'rootfs/build-rootfs-image.sh')
+  const script = await readFile(scriptPath, 'utf8')
+
+  assert.match(script, /read-rootfs-contract\.mjs/)
+  assert.doesNotMatch(script, /read-rootfs-contract\.py/)
+})

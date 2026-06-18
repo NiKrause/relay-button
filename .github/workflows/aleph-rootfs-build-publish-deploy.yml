@@ -195,9 +195,9 @@ jobs:
           ALEPH_ROOTFS_PROJECT_DIR: ${{ github.workspace }}/${{ inputs.project_checkout_path }}
           ALEPH_ROOTFS_CONTRACT_PATH: ${{ github.workspace }}/${{ inputs.project_checkout_path }}/${{ inputs.rootfs_contract_path }}
           ALEPH_ROOTFS_REFERENCE_ROOTFS_DIR: ${{ github.workspace }}/${{ inputs.tooling_checkout_path }}/packages/rootfs/reference/${{ inputs.profile }}/rootfs
-          ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR: >-
+          ALEPH_ROOTFS_ORBITDB_RELAY_DIR: >-
             ${{
-              (inputs.profile == 'orbitdb-relay-pinner' || inputs.profile == 'orbitdb-relay') &&
+              inputs.profile == 'orbitdb-relay' &&
               format('{0}/{1}', github.workspace, inputs.project_checkout_path) ||
               ''
             }}
@@ -233,7 +233,7 @@ jobs:
 
       - name: Publish rootfs manifest JSON to IPFS
         id: publish_manifest
-        if: ${{ always() }}
+        if: ${{ always() && steps.run_rootfs.outputs.rootfs_manifest_path != '' }}
         env:
           MANIFEST_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_path }}
           IPFS_ADD_URL: https://ipfs.aleph.cloud/api/v0/add
@@ -283,7 +283,7 @@ jobs:
           echo "rootfs_manifest_gateway_url=${manifest_gateway_url}" >> "$GITHUB_OUTPUT"
 
       - name: Upload rootfs workspace artifacts
-        if: ${{ always() }}
+        if: ${{ always() && steps.run_rootfs.outputs.rootfs_manifest_path != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: rootfs-${{ inputs.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -296,7 +296,7 @@ jobs:
 
       - name: Resolve rootfs artifact URLs
         id: resolve_artifact
-        if: ${{ always() }}
+        if: ${{ always() && steps.run_rootfs.outputs.rootfs_manifest_path != '' }}
         env:
           ARTIFACT_NAME: rootfs-${{ inputs.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
           GITHUB_TOKEN: ${{ github.token }}
