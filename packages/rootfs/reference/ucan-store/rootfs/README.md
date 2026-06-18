@@ -22,3 +22,14 @@ Not included in this base milestone:
 - public Helia/libp2p exposure
 - Filecoin/archive publishing glue
 - service-side delegation issuance from an admin DID
+
+Bootstrap package handling in the current guest scaffold:
+
+- the setup endpoint now accepts a canonical `bootstrap_package` JSON object
+- the package is persisted on the VM for the running upload service
+- guest metadata includes a `bootstrap_validation` summary
+- invalid package shape or runtime mismatches fail metadata publication
+
+Current validation is structural and consistency-oriented. Full cryptographic
+validation of the root UCAN delegation proof still belongs in the actual
+upload-service implementation.

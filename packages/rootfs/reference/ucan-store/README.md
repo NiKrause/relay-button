@@ -30,4 +30,26 @@ What is not implemented yet in this shared profile:
 - a fixed public Helia/libp2p listener contract for direct IPFS fetches
 - long-lived admin/service delegation issuance on the guest
 - a stable custom `did:web` service identity derived from the deployed hostname
-- service-specific Aleph VM workflow glue for admin DID handoff in `relay-button`
+- service-specific Aleph VM workflow glue for full bootstrap-package collection in `relay-button`
+
+Current bootstrap-package support in this shared profile:
+
+- canonical JSON bootstrap package shape accepted by the shared node deploy runner
+- guest-side storage of the bootstrap package on the VM
+- guest-side structural validation for:
+  - `operatorAddress`
+  - `adminDid`
+  - optional `serviceDid`
+  - `spaceDid`
+  - `rootDelegationProof`
+  - `allowedCapabilities`
+  - delegation expiration policy
+  - `pwaOrigin`
+  - `serviceOrigin`
+- runtime consistency checks that compare:
+  - bootstrap `serviceDid` against the running service DID when provided
+  - bootstrap `serviceOrigin` against the configured public upload-service origin
+
+This does not yet perform full cryptographic UCAN proof verification of
+`rootDelegationProof`; that remains a follow-up step for the upload-service
+implementation itself.

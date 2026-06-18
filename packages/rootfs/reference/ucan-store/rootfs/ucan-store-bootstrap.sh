@@ -6,6 +6,7 @@ SERVICE_USER="${SERVICE_USER:-ucan-store}"
 DATA_DIR="${DATA_DIR:-/var/lib/ucan-store}"
 ENV_FILE="${ENV_FILE:-/etc/default/ucan-store}"
 READY_FILE="${READY_FILE:-/etc/default/ucan-store.ready}"
+BOOTSTRAP_PACKAGE_FILE="${BOOTSTRAP_PACKAGE_FILE:-/etc/ucan-store/bootstrap-package.json}"
 APP_BINARY="${APP_BINARY:-/usr/local/bin/ucan-store}"
 NODE_MIN_MAJOR="${NODE_MIN_MAJOR:-22}"
 PHASE="${1:-all}"
@@ -67,7 +68,7 @@ run_phase_build() {
 }
 
 run_phase_finalize() {
-  mkdir -p "${DATA_DIR}" "$(dirname "${ENV_FILE}")" /etc/caddy
+  mkdir -p "${DATA_DIR}" "$(dirname "${ENV_FILE}")" /etc/caddy "$(dirname "${BOOTSTRAP_PACKAGE_FILE}")"
   chown -R "${SERVICE_USER}:${SERVICE_USER}" "${DATA_DIR}" "${INSTALL_DIR}"
 
   cat > "${APP_BINARY}" <<'EOF'
@@ -87,6 +88,7 @@ EOF
   write_env_var "WEBAUTHN_ORIGIN" "http://localhost:5173"
   write_env_var "WEBAUTHN_ORIGIN_FALLBACKS" ""
   write_env_var "UCAN_STORE_ADMIN_DID" ""
+  write_env_var "UCAN_STORE_BOOTSTRAP_PACKAGE_FILE" "${BOOTSTRAP_PACKAGE_FILE}"
   write_env_var "PUBLIC_IPV4" ""
   write_env_var "PUBLIC_IPV6" ""
   write_env_var "PROXY_HOSTNAME" ""
@@ -95,6 +97,8 @@ EOF
   write_env_var "PUBLIC_REVOCATION_URL" ""
   write_env_var "PUBLIC_REVOCATION_DID" ""
   write_env_var "PUBLIC_RECEIPTS_URL" ""
+
+  rm -f "${BOOTSTRAP_PACKAGE_FILE}"
 }
 
 case "${PHASE}" in

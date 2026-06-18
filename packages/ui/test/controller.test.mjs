@@ -509,12 +509,29 @@ test('controller configures the ucan-store guest without relay bootstrap publica
     })
 
     controller.patch({
+      wallet: {
+        connected: true,
+        address: '0x1234000000000000000000000000000000000000',
+        chainId: '0x1',
+        isMetaMask: true,
+      },
       manifest: {
         profile: 'ucan-store',
         version: 'test-v1',
         rootfsItemHash: 'f'.repeat(64),
         rootfsSizeMiB: 1024,
         createdAt: '2026-06-18T00:00:00.000Z',
+      },
+      ucanStoreBootstrap: {
+        adminDid: 'did:key:zAdmin',
+        serviceDid: '',
+        spaceDid: 'did:key:zSpace',
+        rootDelegationProof: 'uEgVjYW5wcm9vZg',
+        allowedCapabilities: 'space/blob/add\nspace/blob/list',
+        defaultUserDelegationExpiration: '86400',
+        maxUserDelegationExpiration: '604800',
+        pwaOrigin: 'https://store.example.com',
+        serviceOrigin: '',
       },
     })
 
@@ -557,9 +574,89 @@ test('controller configures the ucan-store guest without relay bootstrap publica
     const configurePayload = JSON.parse(configureBodies[0] ?? '{}')
     assert.equal(configurePayload.proxy_url, 'https://upload.example.com')
     assert.equal(configurePayload.webauthn_origin, 'https://upload.example.com')
+    assert.equal(
+      configurePayload.bootstrap_package.operatorAddress,
+      '0x1234000000000000000000000000000000000000'
+    )
+    assert.equal(
+      configurePayload.bootstrap_package.serviceOrigin,
+      'https://upload.example.com'
+    )
+    assert.deepEqual(configurePayload.bootstrap_package.allowedCapabilities, [
+      'space/blob/add',
+      'space/blob/list',
+    ])
   } finally {
     globalThis.fetch = originalFetch
   }
+})
+
+test('controller blocks ucan-store deploys when the bootstrap package is incomplete', async () => {
+  const controller = createSponsorRelayController({
+    apiHost: 'https://api.aleph.im',
+  })
+
+  controller.patch({
+    wallet: {
+      connected: true,
+      address: '0x1234000000000000000000000000000000000000',
+      chainId: '0x1',
+      isMetaMask: true,
+    },
+    manifest: {
+      profile: 'ucan-store',
+      version: 'test-v1',
+      rootfsItemHash: 'f'.repeat(64),
+      rootfsSizeMiB: 1024,
+      createdAt: '2026-06-18T00:00:00.000Z',
+      requiredPortForwards: [],
+    },
+    rootfsHealth: {
+      tone: 'ok',
+      label: 'deployable',
+      detail: 'ok',
+    },
+    pricingSummary: {
+      pricing: {
+        compute_unit: {
+          vcpus: 1,
+          memory_mib: 1024,
+          disk_mib: 10240,
+        },
+        price: { compute_unit: 1 },
+        tiers: [{ id: 'tiny', compute_units: 1 }],
+      },
+      tier: { id: 'tiny', compute_units: 1 },
+      requiredCredits: 1,
+      availableCredits: 100,
+      vcpus: 1,
+      memoryMiB: 1024,
+      diskMiB: 10240,
+    },
+    crns: [
+      { hash: 'crn-1', name: 'CRN One', address: 'https://crn.example.com' },
+    ],
+    selectedCrn: { hash: 'crn-1', name: 'CRN One', address: 'https://crn.example.com' },
+    ucanStoreBootstrap: {
+      adminDid: '',
+      serviceDid: '',
+      spaceDid: '',
+      rootDelegationProof: '',
+      allowedCapabilities: '',
+      defaultUserDelegationExpiration: '',
+      maxUserDelegationExpiration: '',
+      pwaOrigin: '',
+      serviceOrigin: '',
+    },
+  })
+
+  await controller.deploy()
+
+  assert.equal(controller.getState().busy.deploying, false)
+  assert.equal(
+    controller.getState().errorText,
+    'Admin DID must be a non-empty DID string.'
+  )
 })
 
 test('controller refresh skips bootstrap registration lookups for ucan-store manifests', async () => {

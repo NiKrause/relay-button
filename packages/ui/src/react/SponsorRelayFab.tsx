@@ -946,6 +946,147 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                       }
                     />
                   </details>
+                  {stateDeploymentProfile(state) === "ucan-store" ? (
+                    <details open>
+                      <summary>UCAN Store Bootstrap</summary>
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: "0.75rem",
+                          marginTop: "0.65rem",
+                        }}
+                      >
+                        <input
+                          style={fieldStyle}
+                          value={state.ucanStoreBootstrap.adminDid}
+                          onChange={(event) =>
+                            controller.setUcanStoreBootstrapField(
+                              "adminDid",
+                              event.currentTarget.value,
+                            )
+                          }
+                          placeholder="Admin DID"
+                        />
+                        <input
+                          style={fieldStyle}
+                          value={state.ucanStoreBootstrap.serviceDid}
+                          onChange={(event) =>
+                            controller.setUcanStoreBootstrapField(
+                              "serviceDid",
+                              event.currentTarget.value,
+                            )
+                          }
+                          placeholder="Service DID override (optional)"
+                        />
+                        <input
+                          style={fieldStyle}
+                          value={state.ucanStoreBootstrap.spaceDid}
+                          onChange={(event) =>
+                            controller.setUcanStoreBootstrapField(
+                              "spaceDid",
+                              event.currentTarget.value,
+                            )
+                          }
+                          placeholder="Space DID"
+                        />
+                        <textarea
+                          style={fieldStyle}
+                          rows={5}
+                          value={state.ucanStoreBootstrap.rootDelegationProof}
+                          onChange={(event) =>
+                            controller.setUcanStoreBootstrapField(
+                              "rootDelegationProof",
+                              event.currentTarget.value,
+                            )
+                          }
+                          placeholder="Root delegation proof"
+                        />
+                        <textarea
+                          style={fieldStyle}
+                          rows={4}
+                          value={state.ucanStoreBootstrap.allowedCapabilities}
+                          onChange={(event) =>
+                            controller.setUcanStoreBootstrapField(
+                              "allowedCapabilities",
+                              event.currentTarget.value,
+                            )
+                          }
+                          placeholder={"Allowed capabilities, one per line or comma-separated\nspace/blob/add\nspace/blob/list"}
+                        />
+                        <div
+                          style={{
+                            display: "grid",
+                            gap: "0.75rem",
+                            gridTemplateColumns:
+                              "repeat(auto-fit, minmax(10rem, 1fr))",
+                          }}
+                        >
+                          <input
+                            style={fieldStyle}
+                            value={
+                              state.ucanStoreBootstrap
+                                .defaultUserDelegationExpiration
+                            }
+                            onChange={(event) =>
+                              controller.setUcanStoreBootstrapField(
+                                "defaultUserDelegationExpiration",
+                                event.currentTarget.value,
+                              )
+                            }
+                            placeholder="Default expiration (seconds)"
+                          />
+                          <input
+                            style={fieldStyle}
+                            value={
+                              state.ucanStoreBootstrap.maxUserDelegationExpiration
+                            }
+                            onChange={(event) =>
+                              controller.setUcanStoreBootstrapField(
+                                "maxUserDelegationExpiration",
+                                event.currentTarget.value,
+                              )
+                            }
+                            placeholder="Max expiration (seconds)"
+                          />
+                        </div>
+                        <input
+                          style={fieldStyle}
+                          value={state.ucanStoreBootstrap.pwaOrigin}
+                          onChange={(event) =>
+                            controller.setUcanStoreBootstrapField(
+                              "pwaOrigin",
+                              event.currentTarget.value,
+                            )
+                          }
+                          placeholder="PWA origin override (optional, defaults to current page origin)"
+                        />
+                        <input
+                          style={fieldStyle}
+                          value={state.ucanStoreBootstrap.serviceOrigin}
+                          onChange={(event) =>
+                            controller.setUcanStoreBootstrapField(
+                              "serviceOrigin",
+                              event.currentTarget.value,
+                            )
+                          }
+                          placeholder="Service origin override (optional, defaults to runtime proxy URL)"
+                        />
+                        <div
+                          style={{
+                            color: "#9fb2ca",
+                            fontSize: "0.74rem",
+                            lineHeight: 1.35,
+                            marginTop: "-0.15rem",
+                          }}
+                        >
+                          Operator address comes from the connected MetaMask
+                          account. If you leave service origin empty,
+                          `relay-button` will use the runtime proxy URL during
+                          guest configuration.
+                        </div>
+                      </div>
+                    </details>
+                  ) : null}
                 </div>
               </details>
             </div>

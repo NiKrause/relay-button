@@ -697,6 +697,7 @@ export async function executeDeployPlan(
                   proxyUrl: runtime.proxyUrl ?? proxyUrl ?? null,
                   webauthnOrigin: runtime.proxyUrl ?? proxyUrl ?? null,
                   adminDid: plan.adminDid ?? null,
+                  bootstrapPackage: plan.ucanStoreBootstrapPackage ?? null,
                   fetch: fetchImpl,
                   timeoutMs: plan.configureTimeoutMs,
                 })

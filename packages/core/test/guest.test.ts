@@ -189,6 +189,18 @@ test("configureUcanStore posts the expected payload to the guest", async () => {
     webauthnOrigin: "https://upload.example.com",
     webauthnOriginFallbacks: "https://alt-upload.example.com",
     adminDid: "did:key:zAdmin",
+    bootstrapPackage: {
+      operatorAddress: "0x1234000000000000000000000000000000000000",
+      adminDid: "did:key:zAdmin",
+      serviceDid: "did:key:zService",
+      spaceDid: "did:key:zSpace",
+      rootDelegationProof: "uEgVjYW5wcm9vZg",
+      allowedCapabilities: ["space/blob/add"],
+      defaultUserDelegationExpiration: 86400,
+      maxUserDelegationExpiration: 604800,
+      pwaOrigin: "https://store.example.com",
+      serviceOrigin: "https://upload.example.com",
+    },
     noStart: true,
     fetch: async (_url, init) => {
       body = String(init?.body ?? "");
@@ -206,6 +218,9 @@ test("configureUcanStore posts the expected payload to the guest", async () => {
     /"webauthn_origin_fallbacks":"https:\/\/alt-upload\.example\.com"/,
   );
   assert.match(body, /"admin_did":"did:key:zAdmin"/);
+  assert.match(body, /"bootstrap_package":\{/);
+  assert.match(body, /"serviceDid":"did:key:zService"/);
+  assert.match(body, /"rootDelegationProof":"uEgVjYW5wcm9vZg"/);
   assert.match(body, /"no_start":true/);
 });
 

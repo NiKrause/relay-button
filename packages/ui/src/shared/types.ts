@@ -13,12 +13,25 @@ import type { DeploymentProgressEvent } from '../../../shared-types/src/deployme
 
 export type SponsorRelayHealthTone = 'ok' | 'caution' | 'error' | 'idle'
 
+export interface SponsorRelayUcanStoreBootstrapInput {
+  adminDid: string
+  serviceDid: string
+  spaceDid: string
+  rootDelegationProof: string
+  allowedCapabilities: string
+  defaultUserDelegationExpiration: string
+  maxUserDelegationExpiration: string
+  pwaOrigin: string
+  serviceOrigin: string
+}
+
 export interface SponsorRelayProps {
   debug?: boolean
   manifestUrl?: string
   manifestJson?: string
   sshPublicKey?: string
   instanceName?: string
+  ucanStoreBootstrap?: Partial<SponsorRelayUcanStoreBootstrapInput>
   showInstances?: boolean
   openByDefault?: boolean
   launcherMode?: 'floating' | 'inline'
@@ -98,6 +111,7 @@ export interface SponsorRelayState {
   manifestJson: string
   sshPublicKey: string
   instanceName: string
+  ucanStoreBootstrap: SponsorRelayUcanStoreBootstrapInput
   tierId: string
   showAdvanced: boolean
   showInstances: boolean

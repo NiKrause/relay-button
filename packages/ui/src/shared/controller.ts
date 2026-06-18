@@ -62,6 +62,13 @@ import { buildSshCommand } from "./format";
 import { resolveManifestSource } from "./manifest-source";
 import { connectWallet, personalSign, watchWallet } from "./wallet-controller";
 import type {
+  UcanStoreBootstrapPackage,
+  UcanStoreBootstrapValidationResult,
+} from "../../../shared-types/src/index.ts";
+import {
+  validateUcanStoreBootstrapPackage,
+} from "../../../shared-types/src/index.ts";
+import type {
   CompactBootstrapRegistrationRecord,
   CompactInstanceDetails,
   CompactInstanceRecord,
@@ -69,6 +76,7 @@ import type {
   SponsorRelayRootfsHealth,
   SponsorRelayState,
   SponsorRelaySubscriber,
+  SponsorRelayUcanStoreBootstrapInput,
 } from "./types";
 import type {
   DeploymentProgressEvent,
@@ -104,6 +112,156 @@ function isConfirmedGuestSetupResult(value: unknown): value is { status: "config
   );
 }
 
+function defaultUcanStoreBootstrapInput(
+  props: SponsorRelayProps,
+): SponsorRelayUcanStoreBootstrapInput {
+  return {
+    adminDid: props.ucanStoreBootstrap?.adminDid ?? "",
+    serviceDid: props.ucanStoreBootstrap?.serviceDid ?? "",
+    spaceDid: props.ucanStoreBootstrap?.spaceDid ?? "",
+    rootDelegationProof: props.ucanStoreBootstrap?.rootDelegationProof ?? "",
+    allowedCapabilities: props.ucanStoreBootstrap?.allowedCapabilities ?? "",
+    defaultUserDelegationExpiration:
+      props.ucanStoreBootstrap?.defaultUserDelegationExpiration ?? "",
+    maxUserDelegationExpiration:
+      props.ucanStoreBootstrap?.maxUserDelegationExpiration ?? "",
+    pwaOrigin: props.ucanStoreBootstrap?.pwaOrigin ?? "",
+    serviceOrigin: props.ucanStoreBootstrap?.serviceOrigin ?? "",
+  };
+}
+
+function currentPageOrigin(): string | null {
+  try {
+    const origin = globalThis.location?.origin?.trim();
+    return origin ? origin : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseOptionalExpiration(value: string): number | null | undefined {
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  const parsed = Number.parseInt(normalized, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function parseAllowedCapabilities(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function draftUcanStoreBootstrapErrors(args: {
+  input: SponsorRelayUcanStoreBootstrapInput;
+  operatorAddress: string | null;
+}): string[] {
+  const errors: string[] = [];
+  const { input } = args;
+
+  if (!args.operatorAddress) {
+    errors.push("Connect MetaMask before configuring the ucan-store bootstrap package.");
+  }
+  if (!input.adminDid.trim().startsWith("did:")) {
+    errors.push("Admin DID must be a non-empty DID string.");
+  }
+  if (input.serviceDid.trim() && !input.serviceDid.trim().startsWith("did:")) {
+    errors.push("Service DID must be empty or a non-empty DID string.");
+  }
+  if (!input.spaceDid.trim().startsWith("did:")) {
+    errors.push("Space DID must be a non-empty DID string.");
+  }
+  if (!input.rootDelegationProof.trim()) {
+    errors.push("Root delegation proof is required.");
+  }
+  if (parseAllowedCapabilities(input.allowedCapabilities).length === 0) {
+    errors.push("Add at least one allowed capability.");
+  }
+
+  const defaultExpiration = parseOptionalExpiration(
+    input.defaultUserDelegationExpiration,
+  );
+  if (defaultExpiration === null) {
+    errors.push(
+      "Default user delegation expiration must be a non-negative integer number of seconds.",
+    );
+  }
+
+  const maxExpiration = parseOptionalExpiration(
+    input.maxUserDelegationExpiration,
+  );
+  if (maxExpiration === null) {
+    errors.push(
+      "Max user delegation expiration must be a non-negative integer number of seconds.",
+    );
+  }
+  if (
+    typeof defaultExpiration === "number" &&
+    typeof maxExpiration === "number" &&
+    defaultExpiration > maxExpiration
+  ) {
+    errors.push(
+      "Default user delegation expiration cannot exceed the max user delegation expiration.",
+    );
+  }
+
+  const pwaOrigin = input.pwaOrigin.trim() || currentPageOrigin() || "";
+  if (!pwaOrigin) {
+    errors.push("PWA origin is required for the ucan-store bootstrap package.");
+  }
+
+  return errors;
+}
+
+function buildUcanStoreBootstrapPackage(args: {
+  input: SponsorRelayUcanStoreBootstrapInput;
+  operatorAddress: string;
+  serviceOriginFallback?: string | null;
+  pwaOriginFallback?: string | null;
+}): UcanStoreBootstrapValidationResult {
+  const candidate: Record<string, unknown> = {
+    operatorAddress: args.operatorAddress,
+    adminDid: args.input.adminDid.trim(),
+    serviceDid: args.input.serviceDid.trim() || null,
+    spaceDid: args.input.spaceDid.trim(),
+    rootDelegationProof: args.input.rootDelegationProof.trim(),
+    allowedCapabilities: parseAllowedCapabilities(args.input.allowedCapabilities),
+    defaultUserDelegationExpiration: parseOptionalExpiration(
+      args.input.defaultUserDelegationExpiration,
+    ),
+    maxUserDelegationExpiration: parseOptionalExpiration(
+      args.input.maxUserDelegationExpiration,
+    ),
+    pwaOrigin:
+      args.input.pwaOrigin.trim() ||
+      args.pwaOriginFallback?.trim() ||
+      currentPageOrigin() ||
+      "",
+    serviceOrigin:
+      args.input.serviceOrigin.trim() ||
+      args.serviceOriginFallback?.trim() ||
+      "",
+  };
+
+  if (candidate.defaultUserDelegationExpiration === undefined) {
+    delete candidate.defaultUserDelegationExpiration;
+  }
+  if (candidate.maxUserDelegationExpiration === undefined) {
+    delete candidate.maxUserDelegationExpiration;
+  }
+  if (candidate.serviceDid === null) {
+    delete candidate.serviceDid;
+  }
+
+  return validateUcanStoreBootstrapPackage(
+    candidate as unknown as UcanStoreBootstrapPackage,
+  );
+}
+
 function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
   return {
     ready: false,
@@ -118,6 +276,7 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     manifestJson: props.manifestJson ?? "",
     sshPublicKey: props.sshPublicKey ?? "",
     instanceName: props.instanceName ?? DEFAULT_INSTANCE_NAME,
+    ucanStoreBootstrap: defaultUcanStoreBootstrapInput(props),
     tierId: DEFAULT_TIER_ID,
     showAdvanced: Boolean(props.manifestJson?.trim() || props.sshPublicKey?.trim()),
     showInstances: props.showInstances ?? true,
@@ -751,6 +910,22 @@ export class SponsorRelayController {
       if (!serviceProxyUrl) {
         throw new Error("Service runtime did not expose a proxy URL.");
       }
+      const walletAddress = this.state.wallet.address;
+      if (!walletAddress) {
+        throw new Error("A connected wallet is required to configure the ucan-store bootstrap package.");
+      }
+      const bootstrapValidation = buildUcanStoreBootstrapPackage({
+        input: this.state.ucanStoreBootstrap,
+        operatorAddress: walletAddress,
+        serviceOriginFallback: serviceProxyUrl,
+        pwaOriginFallback: currentPageOrigin(),
+      });
+      if (!bootstrapValidation.valid || !bootstrapValidation.bootstrapPackage) {
+        throw new Error(
+          bootstrapValidation.errors[0] ??
+            "The ucan-store bootstrap package is invalid.",
+        );
+      }
 
       this.emitProgress({
         stage: "deployment-confirmed",
@@ -802,6 +977,8 @@ export class SponsorRelayController {
         setupPort,
         proxyUrl: serviceProxyUrl,
         webauthnOrigin: serviceProxyUrl,
+        adminDid: bootstrapValidation.bootstrapPackage.adminDid,
+        bootstrapPackage: bootstrapValidation.bootstrapPackage,
         fetch: (url, init) => fetch(url, init),
         timeoutMs: 180000,
       });
@@ -1790,6 +1967,19 @@ export class SponsorRelayController {
     this.patch({ instanceName });
   }
 
+  setUcanStoreBootstrapField(
+    field: keyof SponsorRelayUcanStoreBootstrapInput,
+    value: string,
+  ): void {
+    this.patch({
+      ucanStoreBootstrap: {
+        ...this.state.ucanStoreBootstrap,
+        [field]: value,
+      },
+      showAdvanced: this.state.showAdvanced || Boolean(value.trim()),
+    } as SponsorRelayStatePatch);
+  }
+
   setTierId(tierId: string): void {
     this.patch({ tierId });
     this.recomputePricingSummary();
@@ -2141,6 +2331,17 @@ export class SponsorRelayController {
             : "Manifest, rootfs, and pricing must be ready before deploying.",
       });
       return;
+    }
+
+    if (deploymentProfileForManifest(this.state.manifest) === "ucan-store") {
+      const draftErrors = draftUcanStoreBootstrapErrors({
+        input: this.state.ucanStoreBootstrap,
+        operatorAddress: this.state.wallet.address,
+      });
+      if (draftErrors.length > 0) {
+        this.patch({ errorText: draftErrors[0] });
+        return;
+      }
     }
 
     this.patch({

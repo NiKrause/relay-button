@@ -5,11 +5,17 @@ import time
 import urllib.error
 import urllib.request
 
+from ucan_store_bootstrap_validate import summarize_bootstrap_package
+
 
 ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/ucan-store")
 SERVICE_PORT = int(os.environ.get("STORACHA_LOCAL_PORT", "8787"))
 WAIT_TIMEOUT_SECONDS = int(os.environ.get("DESCRIBE_WAIT_TIMEOUT_SECONDS", "120"))
 WAIT_INTERVAL_SECONDS = float(os.environ.get("DESCRIBE_WAIT_INTERVAL_SECONDS", "2"))
+BOOTSTRAP_PACKAGE_FILE = os.environ.get(
+    "BOOTSTRAP_PACKAGE_FILE",
+    "/etc/ucan-store/bootstrap-package.json",
+)
 
 
 def parse_env_file(path: str) -> dict[str, str]:
@@ -53,6 +59,22 @@ def main() -> None:
     upload_url = env_values.get("PUBLIC_UPLOAD_SERVICE_URL", "").strip()
     revocation_url = env_values.get("PUBLIC_REVOCATION_URL", "").strip() or upload_url
     receipts_url = env_values.get("PUBLIC_RECEIPTS_URL", "").strip() or (upload_url.rstrip("/") + "/receipt/" if upload_url else "")
+    bootstrap_package_file = (
+        env_values.get("UCAN_STORE_BOOTSTRAP_PACKAGE_FILE", "").strip()
+        or BOOTSTRAP_PACKAGE_FILE
+    )
+    bootstrap_validation = summarize_bootstrap_package(
+        bootstrap_package_file,
+        runtime_service_did=service_did,
+        runtime_service_origin=upload_url or None,
+        admin_did=env_values.get("UCAN_STORE_ADMIN_DID", "").strip() or None,
+        allow_missing=True,
+    )
+    if bootstrap_validation.get("status") == "invalid":
+        raise SystemExit(
+            "bootstrap package validation failed: "
+            + "; ".join(bootstrap_validation.get("errors", [])),
+        )
 
     payload = {
         "service_did": service_did,
@@ -67,6 +89,7 @@ def main() -> None:
         "admin_did": env_values.get("UCAN_STORE_ADMIN_DID", "").strip() or None,
         "webauthn_origin": env_values.get("WEBAUTHN_ORIGIN", "").strip() or None,
         "webauthn_origin_fallbacks": env_values.get("WEBAUTHN_ORIGIN_FALLBACKS", "").strip() or None,
+        "bootstrap_validation": bootstrap_validation,
         "pwa_env": {
             "VITE_UPLOAD_SERVICE_URL": upload_url or None,
             "VITE_UPLOAD_SERVICE_DID": service_did,

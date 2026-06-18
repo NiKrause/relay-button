@@ -2,6 +2,7 @@ import type {
   DeploymentProgressListener,
   PortMapping,
 } from "@le-space/shared-types";
+import type { UcanStoreBootstrapPackage } from "@le-space/shared-types";
 
 import type { FetchLike } from "./manifests.ts";
 
@@ -381,6 +382,7 @@ export async function configureUcanStore(args: {
   webauthnOrigin?: string | null;
   webauthnOriginFallbacks?: string | null;
   adminDid?: string | null;
+  bootstrapPackage?: UcanStoreBootstrapPackage | null;
   noStart?: boolean;
   fetch: FetchLike;
   timeoutMs?: number;
@@ -398,6 +400,7 @@ export async function configureUcanStore(args: {
     webauthn_origin: args.webauthnOrigin ?? undefined,
     webauthn_origin_fallbacks: args.webauthnOriginFallbacks ?? undefined,
     admin_did: args.adminDid ?? undefined,
+    bootstrap_package: args.bootstrapPackage ?? undefined,
     no_start: args.noStart === true ? true : undefined,
   };
 

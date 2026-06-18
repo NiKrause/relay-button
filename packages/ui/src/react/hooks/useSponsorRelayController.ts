@@ -16,7 +16,8 @@ export function useSponsorRelayController(props: SponsorRelayProps) {
       props.schedulerApiHost,
       props.showInstances,
       props.sshPublicKey,
-      props.twoN6ApiHost
+      props.twoN6ApiHost,
+      props.ucanStoreBootstrap
     ]
   )
 

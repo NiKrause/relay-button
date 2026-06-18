@@ -9,9 +9,10 @@
   import './styles/theme.css'
 
   export let manifestUrl = './rootfs-manifest.json'
-  export let manifestJson = ''
-  export let sshPublicKey = ''
+export let manifestJson = ''
+export let sshPublicKey = ''
 export let instanceName = 'sponsor-relay'
+  export let ucanStoreBootstrap = undefined
 export let showInstances = true
 export let openByDefault = false
 export let launcherMode = 'floating'
@@ -26,6 +27,7 @@ export let apiHost = undefined
     manifestJson,
     sshPublicKey,
     instanceName,
+    ucanStoreBootstrap,
     showInstances,
   openByDefault,
   launcherMode,
@@ -190,6 +192,50 @@ export let apiHost = undefined
             <textarea rows="7" on:input={(event) => controller.setManifestJson(event.currentTarget.value)}>{state.manifestJson}</textarea>
           </label>
         </AccordionSection>
+
+        {#if deploymentProfile() === 'ucan-store'}
+          <AccordionSection title="UCAN Store Bootstrap" open={true}>
+            <label class="field wide">
+              <span>Admin DID</span>
+              <input value={state.ucanStoreBootstrap.adminDid} on:input={(event) => controller.setUcanStoreBootstrapField('adminDid', event.currentTarget.value)} />
+            </label>
+            <label class="field wide">
+              <span>Service DID Override</span>
+              <input value={state.ucanStoreBootstrap.serviceDid} on:input={(event) => controller.setUcanStoreBootstrapField('serviceDid', event.currentTarget.value)} />
+            </label>
+            <label class="field wide">
+              <span>Space DID</span>
+              <input value={state.ucanStoreBootstrap.spaceDid} on:input={(event) => controller.setUcanStoreBootstrapField('spaceDid', event.currentTarget.value)} />
+            </label>
+            <label class="field wide">
+              <span>Root Delegation Proof</span>
+              <textarea rows="5" on:input={(event) => controller.setUcanStoreBootstrapField('rootDelegationProof', event.currentTarget.value)}>{state.ucanStoreBootstrap.rootDelegationProof}</textarea>
+            </label>
+            <label class="field wide">
+              <span>Allowed Capabilities</span>
+              <textarea rows="4" on:input={(event) => controller.setUcanStoreBootstrapField('allowedCapabilities', event.currentTarget.value)}>{state.ucanStoreBootstrap.allowedCapabilities}</textarea>
+            </label>
+            <div class="grid">
+              <label class="field">
+                <span>Default Expiration</span>
+                <input value={state.ucanStoreBootstrap.defaultUserDelegationExpiration} on:input={(event) => controller.setUcanStoreBootstrapField('defaultUserDelegationExpiration', event.currentTarget.value)} />
+              </label>
+              <label class="field">
+                <span>Max Expiration</span>
+                <input value={state.ucanStoreBootstrap.maxUserDelegationExpiration} on:input={(event) => controller.setUcanStoreBootstrapField('maxUserDelegationExpiration', event.currentTarget.value)} />
+              </label>
+            </div>
+            <label class="field wide">
+              <span>PWA Origin Override</span>
+              <input value={state.ucanStoreBootstrap.pwaOrigin} on:input={(event) => controller.setUcanStoreBootstrapField('pwaOrigin', event.currentTarget.value)} />
+            </label>
+            <label class="field wide">
+              <span>Service Origin Override</span>
+              <input value={state.ucanStoreBootstrap.serviceOrigin} on:input={(event) => controller.setUcanStoreBootstrapField('serviceOrigin', event.currentTarget.value)} />
+            </label>
+            <small>Operator address comes from the connected MetaMask account. If service origin is empty, the runtime proxy URL is used during guest configuration.</small>
+          </AccordionSection>
+        {/if}
       </div>
     </details>
 

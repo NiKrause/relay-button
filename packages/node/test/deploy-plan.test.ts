@@ -108,6 +108,44 @@ test("parseDeployPlan parses integer, boolean, and JSON overrides", () => {
   ]);
 });
 
+test("parseDeployPlan accepts a canonical ucan-store bootstrap package", () => {
+  const plan = parseDeployPlan({
+    ALEPH_VM_PROFILE: "ucan-store",
+    ALEPH_VM_PRIVATE_KEY: "0xabc",
+    ALEPH_VM_NAME: "ucan-store",
+    ALEPH_VM_SSH_PUBLIC_KEY:
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest key@example",
+    ALEPH_VM_ROOTFS_ITEM_HASH: "c".repeat(64),
+    ALEPH_VM_UCAN_STORE_BOOTSTRAP_JSON: JSON.stringify({
+      operatorAddress: "0x1234000000000000000000000000000000000000",
+      adminDid: "did:key:zAdmin",
+      serviceDid: "did:key:zService",
+      spaceDid: "did:key:zSpace",
+      rootDelegationProof: "uEgVjYW5wcm9vZg",
+      allowedCapabilities: ["space/blob/add", "space/blob/list"],
+      defaultUserDelegationExpiration: 86400,
+      maxUserDelegationExpiration: 604800,
+      pwaOrigin: "https://store.example.com",
+      serviceOrigin: "https://upload.example.com",
+    }),
+  });
+
+  assert.equal(plan.profile, "ucan-store");
+  assert.equal(plan.adminDid, "did:key:zAdmin");
+  assert.deepEqual(plan.ucanStoreBootstrapPackage, {
+    operatorAddress: "0x1234000000000000000000000000000000000000",
+    adminDid: "did:key:zAdmin",
+    serviceDid: "did:key:zService",
+    spaceDid: "did:key:zSpace",
+    rootDelegationProof: "uEgVjYW5wcm9vZg",
+    allowedCapabilities: ["space/blob/add", "space/blob/list"],
+    defaultUserDelegationExpiration: 86400,
+    maxUserDelegationExpiration: 604800,
+    pwaOrigin: "https://store.example.com",
+    serviceOrigin: "https://upload.example.com",
+  });
+});
+
 test("parseDeployPlan rejects raw numeric required port arrays", () => {
   assert.throws(
     () =>

@@ -1,7 +1,9 @@
 import type {
   RootfsManifest,
   RootfsRequiredPortForward,
+  UcanStoreBootstrapPackage,
 } from "@le-space/shared-types";
+import { validateUcanStoreBootstrapPackage } from "@le-space/shared-types";
 
 import {
   validateRootfsManifest,
@@ -19,6 +21,7 @@ import {
 export interface DeployPlan {
   profile: string;
   adminDid?: string;
+  ucanStoreBootstrapPackage?: UcanStoreBootstrapPackage;
   privateKey: string;
   bootstrapPublisherPrivateKey: string;
   bootstrapOwnerPrivateKey: string;
@@ -107,6 +110,35 @@ function parseRequiredPorts(
   return requiredPorts;
 }
 
+function parseUcanStoreBootstrapPackage(
+  env: NodeJS.ProcessEnv = process.env,
+): UcanStoreBootstrapPackage | undefined {
+  const raw = optionalEnv("ALEPH_VM_UCAN_STORE_BOOTSTRAP_JSON", "", env).trim();
+  if (!raw) {
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `ALEPH_VM_UCAN_STORE_BOOTSTRAP_JSON must be valid JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  const result = validateUcanStoreBootstrapPackage(parsed);
+  if (!result.valid || !result.bootstrapPackage) {
+    throw new Error(
+      `ALEPH_VM_UCAN_STORE_BOOTSTRAP_JSON is invalid: ${result.errors.join(" ")}`,
+    );
+  }
+
+  return result.bootstrapPackage;
+}
+
 export async function loadRootfsManifestForDeploy(args: {
   manifestUrl: string;
   fetch: FetchLike;
@@ -180,10 +212,15 @@ export function parseDeployPlan(
   }
 
   const requiredPorts = parseRequiredPorts(env);
+  const ucanStoreBootstrapPackage = parseUcanStoreBootstrapPackage(env);
 
   return {
     profile: optionalEnv("ALEPH_VM_PROFILE", "uc-go-peer", env),
-    adminDid: optionalEnv("ALEPH_VM_ADMIN_DID", "", env).trim() || undefined,
+    adminDid:
+      optionalEnv("ALEPH_VM_ADMIN_DID", "", env).trim() ||
+      ucanStoreBootstrapPackage?.adminDid ||
+      undefined,
+    ucanStoreBootstrapPackage,
     privateKey: requiredEnv("ALEPH_VM_PRIVATE_KEY", env),
     bootstrapPublisherPrivateKey: optionalEnv(
       "ALEPH_VM_BOOTSTRAP_PUBLISHER_PRIVATE_KEY",

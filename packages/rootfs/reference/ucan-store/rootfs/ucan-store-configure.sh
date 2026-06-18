@@ -3,6 +3,8 @@ set -euo pipefail
 
 ENV_FILE="${ENV_FILE:-/etc/default/ucan-store}"
 READY_FILE="${READY_FILE:-/etc/default/ucan-store.ready}"
+BOOTSTRAP_PACKAGE_FILE="${BOOTSTRAP_PACKAGE_FILE:-/etc/ucan-store/bootstrap-package.json}"
+BOOTSTRAP_VALIDATOR="${BOOTSTRAP_VALIDATOR:-/usr/local/sbin/ucan_store_bootstrap_validate.py}"
 SERVICE_NAME="${SERVICE_NAME:-ucan-store.service}"
 CADDY_SERVICE="${CADDY_SERVICE:-caddy.service}"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
@@ -13,6 +15,7 @@ PROXY_HOSTNAME=""
 WEBAUTHN_ORIGIN=""
 WEBAUTHN_ORIGIN_FALLBACKS=""
 ADMIN_DID=""
+BOOTSTRAP_PACKAGE_INPUT_FILE=""
 START_SERVICE=1
 
 usage() {
@@ -25,6 +28,7 @@ Usage:
     [--webauthn-origin <origin>] \
     [--webauthn-origin-fallbacks <csv>] \
     [--admin-did <did>] \
+    [--bootstrap-package-file <path>] \
     [--no-start]
 
 Writes the public service wiring for the current ucan-store deployment,
@@ -87,6 +91,14 @@ raise SystemExit(last_error or "service DID probe timed out")
 PY
 }
 
+install_bootstrap_package() {
+  local source_file="$1"
+  mkdir -p "$(dirname "${BOOTSTRAP_PACKAGE_FILE}")"
+  python3 "${BOOTSTRAP_VALIDATOR}" --package-file "${source_file}" >/dev/null
+  cp "${source_file}" "${BOOTSTRAP_PACKAGE_FILE}"
+  chmod 0640 "${BOOTSTRAP_PACKAGE_FILE}"
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --public-ipv4)
@@ -111,6 +123,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --admin-did)
       ADMIN_DID="${2:-}"
+      shift 2
+      ;;
+    --bootstrap-package-file)
+      BOOTSTRAP_PACKAGE_INPUT_FILE="${2:-}"
       shift 2
       ;;
     --no-start)
@@ -140,6 +156,11 @@ write_env_var "PUBLIC_IPV4" "${PUBLIC_IPV4}"
 write_env_var "PUBLIC_IPV6" "${PUBLIC_IPV6}"
 write_env_var "PROXY_HOSTNAME" "${PROXY_HOSTNAME}"
 write_env_var "UCAN_STORE_ADMIN_DID" "${ADMIN_DID}"
+write_env_var "UCAN_STORE_BOOTSTRAP_PACKAGE_FILE" "${BOOTSTRAP_PACKAGE_FILE}"
+
+if [ -n "${BOOTSTRAP_PACKAGE_INPUT_FILE}" ]; then
+  install_bootstrap_package "${BOOTSTRAP_PACKAGE_INPUT_FILE}"
+fi
 
 if [ -n "${WEBAUTHN_ORIGIN}" ]; then
   write_env_var "WEBAUTHN_ORIGIN" "${WEBAUTHN_ORIGIN}"
@@ -165,4 +186,16 @@ if [ "${START_SERVICE}" = "1" ]; then
   SERVICE_DID="$(probe_service_did)"
   write_env_var "PUBLIC_UPLOAD_SERVICE_DID" "${SERVICE_DID}"
   write_env_var "PUBLIC_REVOCATION_DID" "${SERVICE_DID}"
+
+  if [ -f "${BOOTSTRAP_PACKAGE_FILE}" ]; then
+    RUNTIME_SERVICE_ORIGIN=""
+    if [ -n "${PROXY_HOSTNAME}" ]; then
+      RUNTIME_SERVICE_ORIGIN="https://${PROXY_HOSTNAME}"
+    fi
+    python3 "${BOOTSTRAP_VALIDATOR}" \
+      --package-file "${BOOTSTRAP_PACKAGE_FILE}" \
+      --runtime-service-did "${SERVICE_DID}" \
+      --runtime-service-origin "${RUNTIME_SERVICE_ORIGIN}" \
+      --admin-did "${ADMIN_DID}" >/dev/null
+  fi
 fi

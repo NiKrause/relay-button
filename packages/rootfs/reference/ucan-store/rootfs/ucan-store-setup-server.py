@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
@@ -140,9 +141,16 @@ class Handler(BaseHTTPRequestHandler):
         webauthn_origin = str(payload.get("webauthn_origin") or "").strip()
         webauthn_origin_fallbacks = str(payload.get("webauthn_origin_fallbacks") or "").strip()
         no_start = bool(payload.get("no_start"))
+        bootstrap_package = payload.get("bootstrap_package")
 
         if not public_ipv4:
             self._send_json(400, {"status": "bad-request", "error": "public_ipv4 is required"})
+            return
+        if bootstrap_package not in (None, "") and not isinstance(bootstrap_package, dict):
+            self._send_json(
+                400,
+                {"status": "bad-request", "error": "bootstrap_package must be a JSON object when provided"},
+            )
             return
 
         args = [
@@ -150,6 +158,7 @@ class Handler(BaseHTTPRequestHandler):
             "--public-ipv4",
             public_ipv4,
         ]
+        bootstrap_package_file = None
         if public_ipv6:
             args.extend(["--public-ipv6", public_ipv6])
         if proxy_hostname:
@@ -160,6 +169,18 @@ class Handler(BaseHTTPRequestHandler):
             args.extend(["--webauthn-origin", webauthn_origin])
         if webauthn_origin_fallbacks:
             args.extend(["--webauthn-origin-fallbacks", webauthn_origin_fallbacks])
+        if isinstance(bootstrap_package, dict):
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                prefix="ucan-store-bootstrap-",
+                suffix=".json",
+                dir="/run",
+                delete=False,
+            ) as handle:
+                json.dump(bootstrap_package, handle)
+                bootstrap_package_file = handle.name
+            args.extend(["--bootstrap-package-file", bootstrap_package_file])
         if no_start:
             args.append("--no-start")
 
@@ -179,6 +200,12 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
             return
+        finally:
+            if bootstrap_package_file:
+                try:
+                    os.remove(bootstrap_package_file)
+                except FileNotFoundError:
+                    pass
 
         _clear_metadata_state()
         threading.Thread(target=_generate_metadata_files, daemon=True).start()

@@ -204,6 +204,18 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
       profile: 'ucan-store',
       name: 'ucan-store',
       adminDid: 'did:key:z6Mkadmin123',
+      ucanStoreBootstrapPackage: {
+        operatorAddress: '0x1234000000000000000000000000000000000000',
+        adminDid: 'did:key:z6Mkadmin123',
+        serviceDid: 'did:key:z6Mkservice123',
+        spaceDid: 'did:key:z6Mkspace123',
+        rootDelegationProof: 'uEgVjYW5wcm9vZg',
+        allowedCapabilities: ['space/blob/add', 'space/blob/list'],
+        defaultUserDelegationExpiration: 86400,
+        maxUserDelegationExpiration: 604800,
+        pwaOrigin: 'https://store.example.com',
+        serviceOrigin: 'https://upload.example.com',
+      },
       publishPortForwards: false,
       verifyReachability: false
     },
@@ -326,6 +338,14 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
   assert.equal(configurePayload.proxy_url, 'https://upload.example.com')
   assert.equal(configurePayload.webauthn_origin, 'https://upload.example.com')
   assert.equal(configurePayload.admin_did, 'did:key:z6Mkadmin123')
+  assert.equal(
+    configurePayload.bootstrap_package.serviceDid,
+    'did:key:z6Mkservice123'
+  )
+  assert.equal(
+    configurePayload.bootstrap_package.serviceOrigin,
+    'https://upload.example.com'
+  )
   assert.ok(calls.some((entry) => entry.includes('/health')))
   assert.ok(calls.some((entry) => entry.includes('/configure')))
   assert.ok(calls.some((entry) => entry.includes('/metadata')))
