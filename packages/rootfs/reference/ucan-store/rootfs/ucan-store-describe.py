@@ -102,6 +102,15 @@ def main() -> None:
 
     payload = {
         "service_did": service_did,
+        "service_identity": {
+            "did": service_did,
+            "configured_did": env_values.get("UCAN_STORE_SERVICE_DID", "").strip() or None,
+            "key_algorithm": env_values.get(
+                "UCAN_STORE_SERVICE_KEY_ALGORITHM",
+                "",
+            ).strip()
+            or None,
+        },
         "upload_service_url": upload_url or None,
         "upload_service_did": service_did,
         "revocation_url": revocation_url or None,

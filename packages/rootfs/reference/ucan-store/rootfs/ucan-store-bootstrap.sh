@@ -10,6 +10,8 @@ BOOTSTRAP_PACKAGE_FILE="${BOOTSTRAP_PACKAGE_FILE:-/etc/ucan-store/bootstrap-pack
 BOOTSTRAP_VERIFICATION_FILE="${BOOTSTRAP_VERIFICATION_FILE:-/etc/ucan-store/bootstrap-verification.json}"
 APP_BINARY="${APP_BINARY:-/usr/local/bin/ucan-store}"
 NODE_MIN_MAJOR="${NODE_MIN_MAJOR:-22}"
+UPLOAD_API_CONTEXT_TEMPLATE="${UPLOAD_API_CONTEXT_TEMPLATE:-/usr/local/share/ucan-store/ucan-store-upload-api-context.js}"
+UPLOAD_API_SERVICE_IDENTITY_TEMPLATE="${UPLOAD_API_SERVICE_IDENTITY_TEMPLATE:-/usr/local/share/ucan-store/ucan-store-upload-api-service-identity.js}"
 PHASE="${1:-all}"
 
 if [ ! -d "${INSTALL_DIR}" ]; then
@@ -65,7 +67,27 @@ run_phase_build() {
     exit 1
   fi
 
+  install_upload_api_context_override
+
   rm -rf "${DATA_DIR}/.npm" "${INSTALL_DIR}/web/node_modules/.cache"
+}
+
+install_upload_api_context_override() {
+  local helper_dir="${INSTALL_DIR}/web/node_modules/@storacha/upload-api/dist/test/helpers"
+  mkdir -p "${helper_dir}"
+
+  if [ ! -f "${UPLOAD_API_CONTEXT_TEMPLATE}" ]; then
+    echo "Missing upload-api context template: ${UPLOAD_API_CONTEXT_TEMPLATE}" >&2
+    exit 1
+  fi
+  if [ ! -f "${UPLOAD_API_SERVICE_IDENTITY_TEMPLATE}" ]; then
+    echo "Missing upload-api service identity template: ${UPLOAD_API_SERVICE_IDENTITY_TEMPLATE}" >&2
+    exit 1
+  fi
+
+  cp "${UPLOAD_API_CONTEXT_TEMPLATE}" "${helper_dir}/context.js"
+  cp "${UPLOAD_API_SERVICE_IDENTITY_TEMPLATE}" "${helper_dir}/ucan-store-service-identity.js"
+  chown "${SERVICE_USER}:${SERVICE_USER}" "${helper_dir}/context.js" "${helper_dir}/ucan-store-service-identity.js"
 }
 
 run_phase_finalize() {
@@ -87,6 +109,9 @@ EOF
   write_env_var "NODE_ENV" "production"
   write_env_var "STORACHA_LOCAL_PORT" "8787"
   write_env_var "UCAN_STORE_PROXY_PORT" "8788"
+  write_env_var "UCAN_STORE_SERVICE_KEY_ALGORITHM" "ed25519"
+  write_env_var "UCAN_STORE_SERVICE_SIGNER_FILE" "${DATA_DIR}/service-ed25519.key"
+  write_env_var "UCAN_STORE_SERVICE_DID" ""
   write_env_var "WEBAUTHN_ORIGIN" "http://localhost:5173"
   write_env_var "WEBAUTHN_ORIGIN_FALLBACKS" ""
   write_env_var "UCAN_STORE_ADMIN_DID" ""

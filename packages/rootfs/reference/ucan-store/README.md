@@ -10,6 +10,7 @@ Current scope:
 - documented browser/runtime configuration inputs used by the existing PWA
 - a prebaked qcow2 scaffold for the current local upload service runtime
 - guest-side setup/configure scripts that publish the service URLs and DID back to deployment tooling
+- stable guest-side service signer persistence with an Ed25519 default and hostname-aware DID selection
 - a guest-side request guard that narrows public UCAN invocations to the configured bootstrap envelope
 
 Known inputs from the current `ucan-upload-wall` sources:
@@ -31,7 +32,6 @@ What is not implemented yet in this shared profile:
 
 - a fixed public Helia/libp2p listener contract for direct IPFS fetches
 - long-lived admin/service delegation issuance on the guest
-- a stable custom `did:web` service identity derived from the deployed hostname
 - service-specific Aleph VM workflow glue for full bootstrap-package collection in `relay-button`
 
 Current bootstrap-package support in this shared profile:
@@ -55,6 +55,12 @@ Current bootstrap-package support in this shared profile:
   - requires a bootstrap package by default
   - re-validates the package before the service stays up
   - probes the live `did:web` document and rejects startup on DID/origin mismatches
+- stable service identity handling that:
+  - persists one Ed25519 signer on the VM under `/var/lib/ucan-store`
+  - reuses that signer across restarts instead of generating a fresh test key
+  - prefers an explicit `UCAN_STORE_SERVICE_DID` override when configured
+  - otherwise derives `did:web:<proxy-hostname>` once a public hostname is assigned
+  - otherwise falls back to the persisted signer `did:key`
 - cryptographic bootstrap proof verification that checks:
   - root delegation signature
   - root delegation issuer against `adminDid`

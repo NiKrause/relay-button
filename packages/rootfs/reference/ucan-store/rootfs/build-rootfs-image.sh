@@ -82,11 +82,14 @@ virt-customize \
   -a "${IMAGE}" \
   --mkdir "${ROOTFS_CONTRACT_INSTALL_DIR}" \
   --mkdir "${ROOTFS_CONTRACT_DATA_DIR}" \
+  --mkdir /usr/local/share/ucan-store \
   --copy-in "${APP_TAR}:/opt" \
   --copy-in "${SCRIPT_DIR}/ucan-store-bootstrap.sh:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan-store-configure.sh:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan-store-bootstrap-verify.mjs:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan-store-request-guard.mjs:/usr/local/sbin" \
+  --copy-in "${SCRIPT_DIR}/ucan-store-upload-api-context.js:/usr/local/share/ucan-store" \
+  --copy-in "${SCRIPT_DIR}/ucan-store-upload-api-service-identity.js:/usr/local/share/ucan-store" \
   --copy-in "${SCRIPT_DIR}/ucan-store-describe.py:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan-store-setup-server.py:/usr/local/sbin" \
   --copy-in "${SCRIPT_DIR}/ucan-store-service-start.sh:/usr/local/sbin" \

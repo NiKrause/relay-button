@@ -64,6 +64,25 @@ ${hostname} {
 EOF
 }
 
+derive_service_did_from_hostname() {
+  python3 - "${1:-}" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+raw = (sys.argv[1] or "").strip()
+if not raw:
+    raise SystemExit(0)
+
+parsed = urlsplit(raw if "://" in raw else f"https://{raw}")
+host = (parsed.hostname or "").strip().lower()
+if not host:
+    raise SystemExit(0)
+
+port = f"%3A{parsed.port}" if parsed.port else ""
+print(f"did:web:{host}{port}")
+PY
+}
+
 probe_service_did() {
   python3 - "${SERVICE_PORT}" <<'PY'
 import json
@@ -163,6 +182,7 @@ touch "${ENV_FILE}"
 write_env_var "PUBLIC_IPV4" "${PUBLIC_IPV4}"
 write_env_var "PUBLIC_IPV6" "${PUBLIC_IPV6}"
 write_env_var "PROXY_HOSTNAME" "${PROXY_HOSTNAME}"
+write_env_var "UCAN_STORE_SERVICE_KEY_ALGORITHM" "${UCAN_STORE_SERVICE_KEY_ALGORITHM:-ed25519}"
 write_env_var "UCAN_STORE_ADMIN_DID" "${ADMIN_DID}"
 write_env_var "UCAN_STORE_BOOTSTRAP_PACKAGE_FILE" "${BOOTSTRAP_PACKAGE_FILE}"
 write_env_var "UCAN_STORE_BOOTSTRAP_VERIFICATION_FILE" "${BOOTSTRAP_VERIFICATION_FILE}"
@@ -177,10 +197,13 @@ fi
 write_env_var "WEBAUTHN_ORIGIN_FALLBACKS" "${WEBAUTHN_ORIGIN_FALLBACKS}"
 
 if [ -n "${PROXY_HOSTNAME}" ]; then
+  write_env_var "UCAN_STORE_SERVICE_DID" "$(derive_service_did_from_hostname "${PROXY_HOSTNAME}")"
   write_caddyfile "${PROXY_HOSTNAME}"
   write_env_var "PUBLIC_UPLOAD_SERVICE_URL" "https://${PROXY_HOSTNAME}"
   write_env_var "PUBLIC_REVOCATION_URL" "https://${PROXY_HOSTNAME}"
   write_env_var "PUBLIC_RECEIPTS_URL" "https://${PROXY_HOSTNAME}/receipt/"
+else
+  write_env_var "UCAN_STORE_SERVICE_DID" ""
 fi
 
 touch "${READY_FILE}"
@@ -193,6 +216,7 @@ if [ "${START_SERVICE}" = "1" ]; then
   fi
 
   SERVICE_DID="$(probe_service_did)"
+  write_env_var "UCAN_STORE_SERVICE_DID" "${SERVICE_DID}"
   write_env_var "PUBLIC_UPLOAD_SERVICE_DID" "${SERVICE_DID}"
   write_env_var "PUBLIC_REVOCATION_DID" "${SERVICE_DID}"
 
