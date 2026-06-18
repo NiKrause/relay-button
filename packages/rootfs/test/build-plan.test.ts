@@ -96,3 +96,14 @@ test('orbitdb relay image builder includes the JS contract helper runtime', asyn
   assert.doesNotMatch(script, /read-rootfs-contract\.py/)
   assert.match(dockerfile, /\bnodejs\b/)
 })
+
+test('reference rootfs builders run virt-sparsify with a workspace tmpdir and no prompt', async () => {
+  for (const profile of ['orbitdb-relay', 'uc-go-peer']) {
+    const profileDir = referenceProfileContractPath(profile).replace(/contract\.json$/, 'rootfs')
+    const script = await readFile(`${profileDir}/build-rootfs-image.sh`, 'utf8')
+
+    assert.match(script, /ROOTFS_SPARSIFY_TMPDIR=/)
+    assert.match(script, /TMPDIR="\$\{ROOTFS_SPARSIFY_TMPDIR\}"/)
+    assert.match(script, /--check-tmpdir=continue/)
+  }
+})

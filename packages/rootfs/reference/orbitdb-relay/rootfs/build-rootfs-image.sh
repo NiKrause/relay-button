@@ -17,6 +17,16 @@ BASE_URL="${BASE_URL:-https://cloud.debian.org/images/cloud/bookworm/latest/debi
 BASE_IMAGE="${OUT_DIR}/debian-12-genericcloud-amd64.qcow2"
 IMAGE_SIZE="${IMAGE_SIZE:-${ROOTFS_IMAGE_SIZE:-20G}}"
 ROOTFS_SPARSIFY="${ROOTFS_SPARSIFY:-1}"
+ROOTFS_SPARSIFY_TMPDIR=""
+
+cleanup() {
+  if [ -n "${ROOTFS_SPARSIFY_TMPDIR}" ] && [ -d "${ROOTFS_SPARSIFY_TMPDIR}" ]; then
+    chmod -R u+w "${ROOTFS_SPARSIFY_TMPDIR}" 2>/dev/null || true
+    rm -rf "${ROOTFS_SPARSIFY_TMPDIR}"
+  fi
+}
+
+trap cleanup EXIT
 
 require() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -333,8 +343,10 @@ esac
 if [ "${ROOTFS_SPARSIFY}" = "1" ] && command -v virt-sparsify >/dev/null 2>&1; then
   SPARSE_IMAGE="${IMAGE%.qcow2}.sparse.qcow2"
   rm -f "${SPARSE_IMAGE}"
+  ROOTFS_SPARSIFY_TMPDIR="$(mktemp -d "${OUT_DIR}/virt-sparsify-tmp.XXXXXX")"
   echo "Sparsifying and compressing ${IMAGE}..."
-  virt-sparsify --compress "${IMAGE}" "${SPARSE_IMAGE}"
+  echo "Using ${ROOTFS_SPARSIFY_TMPDIR} for virt-sparsify scratch space"
+  TMPDIR="${ROOTFS_SPARSIFY_TMPDIR}" virt-sparsify --check-tmpdir=continue --compress "${IMAGE}" "${SPARSE_IMAGE}"
   mv "${SPARSE_IMAGE}" "${IMAGE}"
 fi
 
