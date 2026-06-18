@@ -165,6 +165,28 @@ jobs:
             squashfs-tools \
             tar
 
+      - name: Probe rootfs build toolchain
+        id: probe_rootfs_toolchain
+        shell: bash
+        run: |
+          if command -v docker >/dev/null 2>&1; then
+            echo "has_docker=true" >> "$GITHUB_OUTPUT"
+            if docker info >/dev/null 2>&1; then
+              echo "docker_daemon_running=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "docker_daemon_running=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "has_docker=false" >> "$GITHUB_OUTPUT"
+            echo "docker_daemon_running=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if command -v virt-customize >/dev/null 2>&1; then
+            echo "has_virt_customize=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_virt_customize=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install aleph client
         if: ${{ inputs.publish }}
         run: |
@@ -207,8 +229,9 @@ jobs:
           ALEPH_ROOTFS_CONTRACT_PATH: ${{ github.workspace }}/${{ inputs.project_checkout_path }}/${{ inputs.rootfs_contract_path }}
           ALEPH_ROOTFS_REFERENCE_ROOTFS_DIR: ${{ github.workspace }}/${{ inputs.tooling_checkout_path }}/packages/rootfs/reference/${{ inputs.profile }}/rootfs
           ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR: ${{ (inputs.profile == 'orbitdb-relay' || inputs.profile == 'orbitdb-relay-pinner') && format('{0}/{1}', github.workspace, inputs.project_checkout_path) || '' }}
-          ALEPH_ROOTFS_HAS_DOCKER: false
-          ALEPH_ROOTFS_HAS_VIRT_CUSTOMIZE: true
+          ALEPH_ROOTFS_HAS_DOCKER: ${{ steps.probe_rootfs_toolchain.outputs.has_docker }}
+          ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING: ${{ steps.probe_rootfs_toolchain.outputs.docker_daemon_running }}
+          ALEPH_ROOTFS_HAS_VIRT_CUSTOMIZE: ${{ steps.probe_rootfs_toolchain.outputs.has_virt_customize }}
           ALEPH_ROOTFS_DRIVER: ${{ inputs.rootfs_driver }}
           ALEPH_ROOTFS_VERSION: ${{ inputs.rootfs_version }}
           ALEPH_ROOTFS_SKIP_UPLOAD: ${{ inputs.publish && 'false' || 'true' }}
