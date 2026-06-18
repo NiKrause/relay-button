@@ -224,6 +224,7 @@ jobs:
         id: run_rootfs
         working-directory: ${{ inputs.tooling_checkout_path }}
         env:
+          ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
           ALEPH_VM_MODE: rootfs-publish
           ALEPH_ROOTFS_PROJECT_DIR: ${{ github.workspace }}/${{ inputs.project_checkout_path }}
           ALEPH_ROOTFS_CONTRACT_PATH: ${{ github.workspace }}/${{ inputs.project_checkout_path }}/${{ inputs.rootfs_contract_path }}
