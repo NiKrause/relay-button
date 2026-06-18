@@ -15,6 +15,8 @@ BASE_URL="${BASE_URL:-https://cloud.debian.org/images/cloud/bookworm/latest/debi
 BASE_IMAGE="${OUT_DIR}/debian-12-genericcloud-amd64.qcow2"
 IMAGE_SIZE="${IMAGE_SIZE:-${ROOTFS_IMAGE_SIZE:-20G}}"
 ROOTFS_SPARSIFY="${ROOTFS_SPARSIFY:-1}"
+HOST_UID="${HOST_UID:-}"
+HOST_GID="${HOST_GID:-}"
 
 require() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -333,3 +335,7 @@ if [ "${ROOTFS_SPARSIFY}" = "1" ] && command -v virt-sparsify >/dev/null 2>&1; t
 fi
 
 echo "Rootfs image ready at ${IMAGE}"
+
+if [ -n "${HOST_UID}" ] && [ -n "${HOST_GID}" ]; then
+  chown -R "${HOST_UID}:${HOST_GID}" "${OUT_DIR}"
+fi
