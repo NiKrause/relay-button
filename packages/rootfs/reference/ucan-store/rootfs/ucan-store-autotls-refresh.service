@@ -1,0 +1,12 @@
+[Unit]
+Description=Placeholder AutoTLS refresh hook for ucan-store
+After=ucan-store.service
+Wants=ucan-store.service
+ConditionPathExists=/etc/default/ucan-store.ready
+
+[Service]
+Type=oneshot
+ExecStart=/bin/true
+
+[Install]
+WantedBy=multi-user.target

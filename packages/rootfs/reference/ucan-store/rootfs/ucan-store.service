@@ -1,0 +1,19 @@
+[Unit]
+Description=ucan-store upload service
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/default/ucan-store.ready
+
+[Service]
+Type=simple
+User=ucan-store
+Group=ucan-store
+WorkingDirectory=/opt/ucan-store
+EnvironmentFile=-/etc/default/ucan-store
+ExecStart=/bin/sh -lc 'exec /usr/local/bin/ucan-store'
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

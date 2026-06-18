@@ -33,6 +33,34 @@ test('reference profile helpers resolve the copied uc-go-peer asset set', async 
   assert.match(referenceProfileRootfsDir('uc-go-peer'), /reference\/uc-go-peer\/rootfs\/?$/)
 })
 
+test('validateRootfsContract accepts the shared ucan-store reference contract', async () => {
+  const raw = await readFile(referenceProfileContractPath('ucan-store'), 'utf8')
+  const result = validateRootfsContract(JSON.parse(raw))
+  assert.equal(result.valid, true)
+  assert.equal(result.contract?.rootfs.binaryPath, '/usr/local/bin/ucan-store')
+  assert.deepEqual(result.contract?.ports, [
+    { port: 22, tcp: true, udp: false, purpose: 'SSH' },
+    {
+      port: 80,
+      tcp: true,
+      udp: false,
+      purpose: 'Temporary setup endpoint'
+    },
+    {
+      port: 443,
+      tcp: true,
+      udp: false,
+      purpose: 'HTTPS upload API, did:web discovery, revocation, and receipt proxy'
+    }
+  ])
+})
+
+test('reference profile helpers resolve the copied ucan-store asset set', async () => {
+  assert.match(referenceProfileRoot('ucan-store'), /reference\/ucan-store\/?$/)
+  assert.match(referenceProfileContractPath('ucan-store'), /reference\/ucan-store\/contract\.json$/)
+  assert.match(referenceProfileRootfsDir('ucan-store'), /reference\/ucan-store\/rootfs\/?$/)
+})
+
 test('validateRootfsContract rejects malformed contracts', () => {
   const result = validateRootfsContract({ schemaVersion: 1, id: 'broken', rootfs: {}, services: {}, ports: [], manifest: {} })
   assert.equal(result.valid, false)

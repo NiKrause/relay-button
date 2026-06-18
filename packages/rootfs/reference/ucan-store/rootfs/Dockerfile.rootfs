@@ -1,0 +1,23 @@
+FROM --platform=linux/amd64 debian:12
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LIBGUESTFS_BACKEND=direct
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    libguestfs-tools \
+    linux-image-amd64 \
+    python3 \
+    qemu-system-x86 \
+    qemu-utils \
+    tar \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace/shared-rootfs
+
+COPY . .
+
+RUN chmod 0755 ./build-rootfs.sh ./build-rootfs-image.sh ./read-rootfs-contract.py \
+  ./ucan-store-bootstrap.sh ./ucan-store-configure.sh ./ucan-store-describe.py ./ucan-store-setup-server.py

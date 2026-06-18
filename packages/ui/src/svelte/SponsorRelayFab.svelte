@@ -42,13 +42,38 @@ export let apiHost = undefined
     : ''
   const pollingStages = new Set(['waiting-for-aleph', 'deployment-confirmed', 'publishing-bootstrap', 'refreshing-instances'])
 
+  function deploymentProfile() {
+    return state.manifest?.profile === 'ucan-store' ? 'ucan-store' : 'relay'
+  }
+
+  function deploymentTitle() {
+    return deploymentProfile() === 'ucan-store' ? 'Sponsor Service' : 'Sponsor Relay'
+  }
+
+  function deploymentInstanceFallbackLabel() {
+    return deploymentProfile() === 'ucan-store' ? 'service' : 'relay'
+  }
+
+  function deploymentButtonLabel() {
+    return deploymentProfile() === 'ucan-store' ? 'Deploy Service' : 'Deploy Relay'
+  }
+
+  function bootstrapUiEnabled() {
+    return deploymentProfile() !== 'ucan-store'
+  }
+
   $: pollingActive = state.busy.refreshing || pollingStages.has(state.deploymentProgress.stage)
+  $: isServiceProfile = deploymentProfile() === 'ucan-store'
   $: pollingLabel = state.busy.refreshing
-    ? 'Checking relay state'
-    : (state.deploymentProgress.label || 'Polling relay state')
+    ? (isServiceProfile ? 'Checking deployment state' : 'Checking relay state')
+    : (state.deploymentProgress.label || (isServiceProfile ? 'Polling deployment state' : 'Polling relay state'))
   $: pollingDetail = state.busy.refreshing
-    ? (state.statusText || 'Refreshing relay sponsor data from Aleph and the selected CRN.')
-    : (state.deploymentProgress.detail || state.statusText || 'Waiting for the next confirmed relay state from Aleph.')
+    ? (state.statusText || (isServiceProfile
+      ? 'Refreshing service deployment data from Aleph and the selected CRN.'
+      : 'Refreshing relay deployment data from Aleph and the selected CRN.'))
+    : (state.deploymentProgress.detail || state.statusText || (isServiceProfile
+      ? 'Waiting for the next confirmed deployment state from Aleph.'
+      : 'Waiting for the next confirmed relay state from Aleph.'))
   $: confirmedRegistrationByInstanceHash = new Map(
     (state.bootstrapRegistrations ?? [])
       .filter((entry) => entry.confirmed && entry.instanceItemHash)
@@ -86,7 +111,7 @@ export let apiHost = undefined
             <span class="eyebrow-version">{versionLabel}</span>
           {/if}
         </p>
-        <h2>Sponsor Relay</h2>
+        <h2>{deploymentTitle()}</h2>
       </div>
       <button class="refresh" type="button" on:click={() => controller.refresh()} disabled={state.busy.refreshing}>
         {state.busy.refreshing ? 'Syncing' : 'Refresh'}
@@ -194,7 +219,7 @@ export let apiHost = undefined
     <div class="actions">
       {#if state.wallet.connected}
         <button class="primary" type="button" on:click={() => controller.deploy()} disabled={state.busy.deploying || state.rootfsHealth.tone !== 'ok'}>
-          {state.busy.deploying ? 'Deploying…' : 'Deploy Relay'}
+          {state.busy.deploying ? 'Deploying…' : deploymentButtonLabel()}
         </button>
       {:else}
         <button class="primary" type="button" on:click={() => controller.connectWallet()} disabled={state.busy.connectingWallet}>
@@ -225,7 +250,7 @@ export let apiHost = undefined
         {/if}
 
         {#each state.instances as entry}
-          <AccordionSection title={`${entry.instance.content?.metadata?.name ?? 'relay'} · ${shortHash(entry.instance.item_hash)}`} open={true}>
+          <AccordionSection title={`${entry.instance.content?.metadata?.name ?? deploymentInstanceFallbackLabel()} · ${shortHash(entry.instance.item_hash)}`} open={true}>
             {@const confirmedRegistration = confirmedRegistrationByInstanceHash.get(entry.instance.item_hash)}
             <div class="instance-topline">
               <div class="chip-row">
@@ -233,7 +258,7 @@ export let apiHost = undefined
                 {#if entry.details.crnUrl}
                   <span class="chip">{entry.details.crnUrl.replace(/^https?:\/\//, '')}</span>
                 {/if}
-                {#if confirmedRegistration}
+                {#if bootstrapUiEnabled() && confirmedRegistration}
                   <span class="chip chip-confirmed">
                     <span class="chip-dot-confirmed"></span>
                     Aleph bootstrap registered
@@ -280,7 +305,7 @@ export let apiHost = undefined
               <strong>{joinMappedPorts(entry.details.mappedPorts)}</strong>
             </div>
 
-            {#if confirmedRegistration}
+            {#if bootstrapUiEnabled() && confirmedRegistration}
               <div class="mono-block">
                 <span>Bootstrap Registration</span>
                 <strong>{shortHash(confirmedRegistration.messageHash ?? confirmedRegistration.content?.registrationId ?? 'confirmed', 14, 8)}</strong>
@@ -302,7 +327,7 @@ export let apiHost = undefined
           </AccordionSection>
         {/each}
 
-        {#if orphanRegistrations.length > 0}
+        {#if bootstrapUiEnabled() && orphanRegistrations.length > 0}
           <div class="orphan-box">
             <div class="orphan-head">
               <strong>Orphan bootstrap registrations</strong>

@@ -143,6 +143,43 @@ const POLLING_STAGES = new Set([
   "refreshing-instances",
 ]);
 
+function stateDeploymentProfile(
+  state: SponsorRelayState,
+): "ucan-store" | "relay" {
+  return state.manifest?.profile === "ucan-store" ? "ucan-store" : "relay";
+}
+
+function supportsBootstrapUi(state: SponsorRelayState): boolean {
+  return stateDeploymentProfile(state) !== "ucan-store";
+}
+
+function deploymentPanelTitle(state: SponsorRelayState): string {
+  return stateDeploymentProfile(state) === "ucan-store"
+    ? "Sponsor Service"
+    : "Sponsor Relay";
+}
+
+function deploymentLauncherLabel(
+  state: SponsorRelayState,
+  compactInlineLabel: boolean,
+  launcherMode: "floating" | "inline",
+): string {
+  if (launcherMode === "inline" && compactInlineLabel) {
+    return stateDeploymentProfile(state) === "ucan-store" ? "Service" : "Relay";
+  }
+  return deploymentPanelTitle(state);
+}
+
+function deploymentInstanceFallbackLabel(state: SponsorRelayState): string {
+  return stateDeploymentProfile(state) === "ucan-store" ? "service" : "relay";
+}
+
+function deploymentButtonLabel(state: SponsorRelayState): string {
+  return stateDeploymentProfile(state) === "ucan-store"
+    ? "Deploy Service"
+    : "Deploy Relay";
+}
+
 function isDeploymentProgressVisible(state: SponsorRelayState): boolean {
   const stage = state.deploymentProgress.stage;
   if (stage === "idle") {
@@ -168,11 +205,14 @@ function pollingIndicator(state: SponsorRelayState): {
   detail: string;
 } | null {
   if (state.busy.refreshing) {
+    const isService = stateDeploymentProfile(state) === "ucan-store";
     return {
-      label: "Checking relay state",
+      label: isService ? "Checking deployment state" : "Checking relay state",
       detail:
         state.statusText ||
-        "Refreshing relay sponsor data from Aleph and the selected CRN.",
+        (isService
+          ? "Refreshing service deployment data from Aleph and the selected CRN."
+          : "Refreshing relay deployment data from Aleph and the selected CRN."),
     };
   }
 
@@ -180,12 +220,17 @@ function pollingIndicator(state: SponsorRelayState): {
     return null;
   }
 
+  const isService = stateDeploymentProfile(state) === "ucan-store";
   return {
-    label: state.deploymentProgress.label || "Polling relay state",
+    label:
+      state.deploymentProgress.label ||
+      (isService ? "Polling deployment state" : "Polling relay state"),
     detail:
       state.deploymentProgress.detail ||
       state.statusText ||
-      "Waiting for the next confirmed relay state from Aleph.",
+      (isService
+        ? "Waiting for the next confirmed deployment state from Aleph."
+        : "Waiting for the next confirmed relay state from Aleph."),
   };
 }
 
@@ -254,7 +299,10 @@ function launcherIndicator(state: SponsorRelayState): {
   if (state.busy.refreshing) {
     return {
       label: "SYNC",
-      detail: "Refreshing relay state",
+      detail:
+        stateDeploymentProfile(state) === "ucan-store"
+          ? "Refreshing deployment state"
+          : "Refreshing relay state",
       tone: "info",
     };
   }
@@ -273,6 +321,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
   const versionLabel = resolvedVersion.startsWith("v") ? resolvedVersion : `v${resolvedVersion}`;
   const launcherMode = props.launcherMode ?? "floating";
   const indicator = launcherIndicator(state);
+  const bootstrapUiEnabled = supportsBootstrapUi(state);
   const confirmedRegistrationByInstanceHash = new Map(
     (state.bootstrapRegistrations ?? [])
       .filter((entry) => entry.confirmed && entry.instanceItemHash)
@@ -412,7 +461,12 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
           maxHeight: "calc(100vh - 12.5rem)",
         };
   const launcherLabel =
-    launcherMode === "inline" && compactInlineLabel ? "Relay" : "Sponsor Relay";
+    deploymentLauncherLabel(state, compactInlineLabel, launcherMode);
+  const deployCallToAction = state.wallet.connected
+    ? state.busy.deploying
+      ? "Deploying…"
+      : deploymentButtonLabel(state)
+    : "Connect MetaMask";
 
   return (
     <>
@@ -425,7 +479,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
         onMouseLeave={() => setHovered(false)}
         onFocus={() => setHovered(true)}
         onBlur={() => setHovered(false)}
-        title={indicator.detail ?? "Sponsor Relay"}
+        title={indicator.detail ?? deploymentPanelTitle(state)}
         style={{
           position: launcherMode === "floating" ? "fixed" : "relative",
           right: launcherMode === "floating" ? "1.4rem" : undefined,
@@ -583,7 +637,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                     fontFamily: '"Epilogue", sans-serif',
                   }}
                 >
-                  Sponsor Relay
+                  {deploymentPanelTitle(state)}
                 </h2>
               </div>
               <button
@@ -931,11 +985,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               }
               style={{ ...primaryButtonStyle, width: "100%", marginTop: "1rem" }}
             >
-              {state.wallet.connected
-                ? state.busy.deploying
-                  ? "Deploying…"
-                  : "Deploy Relay"
-                : "Connect MetaMask"}
+              {deployCallToAction}
             </button>
 
             {state.lastDeploymentHash ? (
@@ -962,10 +1012,11 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                             flexWrap: "wrap",
                           }}
                         >
-                          {(entry.instance.content?.metadata?.name ?? "relay") +
+                          {(entry.instance.content?.metadata?.name ??
+                            deploymentInstanceFallbackLabel(state)) +
                             " · " +
                             shortHash(entry.instance.item_hash)}
-                          {confirmedRegistration ? (
+                          {bootstrapUiEnabled && confirmedRegistration ? (
                             <span
                               style={{
                                 display: "inline-flex",
@@ -1003,7 +1054,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                         }}
                       >
                         <div>Status: {entry.details.messageStatus}</div>
-                        {confirmedRegistration ? (
+                        {bootstrapUiEnabled && confirmedRegistration ? (
                           <div>
                             Bootstrap registration:{" "}
                             {shortHash(
@@ -1046,7 +1097,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                     </details>
                   );
                 })}
-                {orphanRegistrations.length > 0 ? (
+                {bootstrapUiEnabled && orphanRegistrations.length > 0 ? (
                   <div
                     style={{
                       display: "grid",

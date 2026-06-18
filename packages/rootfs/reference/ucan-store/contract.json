@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "ucan-store",
+  "displayName": "UCAN Store Upload Service",
+  "source": {
+    "repository": "external",
+    "subdirectory": "."
+  },
+  "rootfs": {
+    "profile": "ucan-store",
+    "installMode": "prebaked",
+    "installDir": "/opt/ucan-store",
+    "binaryPath": "/usr/local/bin/ucan-store",
+    "dataDir": "/var/lib/ucan-store",
+    "envFile": "/etc/default/ucan-store"
+  },
+  "services": {
+    "bootstrap": "ucan-store-bootstrap.service",
+    "main": "ucan-store.service",
+    "autotlsRefresh": "ucan-store-autotls-refresh.service"
+  },
+  "ports": [
+    {
+      "port": 22,
+      "tcp": true,
+      "udp": false,
+      "purpose": "SSH"
+    },
+    {
+      "port": 80,
+      "tcp": true,
+      "udp": false,
+      "purpose": "Temporary setup endpoint"
+    },
+    {
+      "port": 443,
+      "tcp": true,
+      "udp": false,
+      "purpose": "HTTPS upload API, did:web discovery, revocation, and receipt proxy"
+    }
+  ],
+  "manifest": {
+    "copyTarget": "web/public/rootfs/ucan-store/latest.json",
+    "notes": "The ucan-store image prebakes the current upload-wall local upload service into the Aleph guest, keeps the upstream HTTP worker on internal port 8787, exposes a temporary guest setup endpoint on port 80, and proxies the public upload API, did:web document, revocation, and receipt routes through Caddy on port 443 once a proxy hostname is assigned. The browser consumer currently wires the service with VITE_UPLOAD_SERVICE_URL, VITE_UPLOAD_SERVICE_DID, VITE_REVOCATION_URL, VITE_REVOCATION_DID, and VITE_RECEIPTS_URL. Helia/IPFS peer exposure remains a later milestone and is not part of this base contract."
+  }
+}

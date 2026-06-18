@@ -1,0 +1,21 @@
+[Unit]
+Description=Temporary ucan-store setup endpoint
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!/etc/default/ucan-store.ready
+
+[Service]
+Environment=ENV_FILE=/etc/default/ucan-store
+Environment=READY_FILE=/etc/default/ucan-store.ready
+Environment=SERVICE_NAME=ucan-store.service
+Environment=BOOTSTRAP_SERVICE=ucan-store-bootstrap.service
+Environment=METADATA_FILE=/run/ucan-store-setup-metadata.json
+Environment=METADATA_ERROR_FILE=/run/ucan-store-setup-metadata.error
+ExecStart=/usr/bin/python3 /usr/local/sbin/ucan-store-setup-server.py
+StandardOutput=journal
+StandardError=journal
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target

@@ -107,3 +107,22 @@ test('reference rootfs builders run virt-sparsify with a workspace tmpdir and no
     assert.match(script, /--check-tmpdir=continue/)
   }
 })
+
+test('createRootfsBuildPlan uses profile-aware defaults for ucan-store', async () => {
+  const raw = await readFile(referenceProfileContractPath('ucan-store'), 'utf8')
+  const contract = parseRootfsContract(raw)
+  const plan = createRootfsBuildPlan(contract, {
+    projectDir: '/workspace/ucan-store',
+    gitShortSha: 'abc1234',
+    now: new Date('2026-05-16T00:00:00Z')
+  })
+
+  assert.equal(plan.alephDir, '/workspace/ucan-store')
+  assert.equal(plan.outDir, '/workspace/ucan-store/dist-rootfs')
+  assert.equal(plan.contractPath, '/workspace/ucan-store/root-profiles/ucan-store.json')
+  assert.equal(plan.rootfsVersion, 'ucan-store-git-20260516-abc1234')
+  assert.equal(plan.latestManifestPath, '/workspace/ucan-store/web/public/rootfs/ucan-store/latest.json')
+  assert.equal(plan.versionedManifestPath, '/workspace/ucan-store/web/public/rootfs/ucan-store/ucan-store-git-20260516-abc1234.json')
+  assert.equal(plan.imagePath, '/workspace/ucan-store/dist-rootfs/aleph-ucan-store.qcow2')
+  assert.equal(plan.binaryPath, '/workspace/ucan-store/dist-rootfs/ucan-store')
+})
