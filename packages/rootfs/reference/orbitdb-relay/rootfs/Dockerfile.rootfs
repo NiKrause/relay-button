@@ -10,6 +10,7 @@ RUN apt-get update \
     jq \
     libguestfs-tools \
     linux-image-amd64 \
+    nodejs \
     python3 \
     qemu-system-x86 \
     qemu-utils \
