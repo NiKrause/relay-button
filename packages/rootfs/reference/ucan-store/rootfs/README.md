@@ -26,6 +26,13 @@ Delegation issuance shape:
 - export format: `m...` multibase base64 UCAN CAR proof string
 - chaining: child delegations include the persisted bootstrap root delegation as proof
 
+Service discovery shape:
+
+- public manifest: `GET /.well-known/ucan-store.json`
+- alias: `GET /service-manifest.json`
+- purpose: expose service DID/origin, PWA origin, allowed capabilities, and
+  delegation issuance metadata for a generic domain-bound PWA
+
 The guest publishes metadata for the browser PWA after configuration, including:
 
 - `VITE_UPLOAD_SERVICE_URL`
@@ -47,6 +54,7 @@ Bootstrap package handling in the current guest scaffold:
 - guest metadata now also includes `bootstrap_proof_validation`
 - guest metadata now also includes `service_identity`
 - guest metadata now also includes `delegation_issuance`
+- guest metadata now also includes `service_manifest`
 - invalid package shape or runtime mismatches fail metadata publication
 - `ucan-store.service` now verifies the persisted package again at startup and
   refuses to keep the upload service running when the package is missing
@@ -59,6 +67,9 @@ Bootstrap package handling in the current guest scaffold:
   - `spaceDid`
   - `defaultUserDelegationExpiration`
   - `maxUserDelegationExpiration`
+- the request guard now also publishes a public runtime manifest that a generic
+  PWA can fetch via the service domain without relying on build-time-only
+  `VITE_UPLOAD_SERVICE_*` values
 - the guest now performs cryptographic verification of the bootstrap root
   delegation with the installed `ucanto` / Storacha packages before the
   service is allowed to stay up
@@ -69,5 +80,5 @@ Bootstrap package handling in the current guest scaffold:
   - the invocation proof tree includes the configured bootstrap root delegation
 
 The current guest still does not expose this issuance flow through
-`relay-button` yet, and it still does not publish runtime PWA discovery
-metadata for multi-tenant binding; those remain follow-up steps.
+`relay-button` yet, and it still does not provide signed multi-tenant manifest
+publication; those remain follow-up steps.

@@ -17,6 +17,12 @@ const DEFAULT_SERVICE_SIGNER_FILE =
   process.env.UCAN_STORE_SERVICE_SIGNER_FILE || '/var/lib/ucan-store/service-ed25519.key';
 const DEFAULT_SERVICE_DID =
   process.env.UCAN_STORE_SERVICE_DID || process.env.PUBLIC_UPLOAD_SERVICE_DID || '';
+const DEFAULT_UPLOAD_SERVICE_URL =
+  process.env.PUBLIC_UPLOAD_SERVICE_URL || '';
+const DEFAULT_REVOCATION_URL =
+  process.env.PUBLIC_REVOCATION_URL || '';
+const DEFAULT_RECEIPTS_URL =
+  process.env.PUBLIC_RECEIPTS_URL || '';
 
 function printHelp() {
   console.log(`Usage:
@@ -30,7 +36,10 @@ Environment:
   UCAN_STORE_REQUIRE_BOOTSTRAP_PACKAGE  Enforce bootstrap package presence (default: 1)
   UCAN_STORE_ADMIN_API_TOKEN       Bearer token for /admin/delegations
   UCAN_STORE_SERVICE_SIGNER_FILE   Persisted service signer path
-  UCAN_STORE_SERVICE_DID           Explicit service DID alias for delegated proofs`);
+  UCAN_STORE_SERVICE_DID           Explicit service DID alias for delegated proofs
+  PUBLIC_UPLOAD_SERVICE_URL        Public service origin for discovery manifest
+  PUBLIC_REVOCATION_URL            Public revocation endpoint for discovery manifest
+  PUBLIC_RECEIPTS_URL              Public receipts endpoint for discovery manifest`);
 }
 
 function normalizeString(value) {
@@ -399,6 +408,57 @@ async function createDelegationExport(config, bodyBuffer, req) {
   };
 }
 
+function buildServiceManifest(config) {
+  if (!config.policy) {
+    return {
+      status: 'unconfigured',
+      error: 'Bootstrap policy is unavailable.',
+    };
+  }
+
+  const serviceOrigin =
+    normalizeString(config.publicUploadServiceUrl) ||
+    normalizeString(config.policy.package.serviceOrigin) ||
+    null;
+  const revocationUrl =
+    normalizeString(config.publicRevocationUrl) ||
+    serviceOrigin ||
+    null;
+  const receiptsUrl =
+    normalizeString(config.publicReceiptsUrl) ||
+    (serviceOrigin ? `${serviceOrigin.replace(/\/$/, '')}/receipt/` : null);
+
+  return {
+    kind: 'ucan-store-service-manifest',
+    version: 1,
+    serviceDid: normalizeString(config.serviceDid) || null,
+    serviceOrigin,
+    didDocument: serviceOrigin ? `${serviceOrigin.replace(/\/$/, '')}/.well-known/did.json` : null,
+    pwaOrigin: normalizeString(config.policy.package.pwaOrigin) || null,
+    spaceDid: config.policy.spaceDid,
+    allowedCapabilities: [...(config.policy.allowedCapabilities ?? [])],
+    revocationUrl,
+    receiptsUrl,
+    bootstrapPolicy: {
+      defaultUserDelegationExpiration:
+        config.policy.package.defaultUserDelegationExpiration ?? null,
+      maxUserDelegationExpiration:
+        config.policy.package.maxUserDelegationExpiration ?? null,
+    },
+    delegationIssuance: {
+      enabled: Boolean(normalizeString(config.adminApiToken)),
+      endpoint: '/admin/delegations',
+      policyEndpoint: '/admin/delegations/policy',
+      proofFormat: 'ucan-car-multibase-base64',
+    },
+    discovery: {
+      manifestPath: '/.well-known/ucan-store.json',
+      aliases: ['/service-manifest.json'],
+      binding: 'domain-first',
+    },
+  };
+}
+
 async function loadBootstrapPolicy(args) {
   const raw = await fs.readFile(args.packageFile, 'utf8');
   const payload = JSON.parse(raw);
@@ -552,6 +612,9 @@ async function main() {
     adminApiToken: DEFAULT_ADMIN_API_TOKEN,
     serviceSignerFile: DEFAULT_SERVICE_SIGNER_FILE,
     serviceDid: DEFAULT_SERVICE_DID,
+    publicUploadServiceUrl: DEFAULT_UPLOAD_SERVICE_URL,
+    publicRevocationUrl: DEFAULT_REVOCATION_URL,
+    publicReceiptsUrl: DEFAULT_RECEIPTS_URL,
     policy: null,
   };
 
@@ -630,6 +693,17 @@ async function main() {
           endpoint: '/admin/delegations',
           proofFormat: 'ucan-car-multibase-base64',
         },
+      });
+      return;
+    }
+
+    if (
+      req.method === 'GET' &&
+      (req.url === '/.well-known/ucan-store.json' || req.url === '/service-manifest.json')
+    ) {
+      sendJson(res, 200, {
+        status: 'ok',
+        manifest: buildServiceManifest(config),
       });
       return;
     }

@@ -117,6 +117,11 @@ def main() -> None:
             "issue_endpoint": f"{upload_url}/admin/delegations" if upload_url else None,
             "proof_format": "ucan-car-multibase-base64",
         },
+        "service_manifest": {
+            "endpoint": f"{upload_url}/.well-known/ucan-store.json" if upload_url else None,
+            "alias": f"{upload_url}/service-manifest.json" if upload_url else None,
+            "binding": "domain-first",
+        },
         "upload_service_url": upload_url or None,
         "upload_service_did": service_did,
         "revocation_url": revocation_url or None,

@@ -13,6 +13,7 @@ Current scope:
 - stable guest-side service signer persistence with an Ed25519 default and hostname-aware DID selection
 - a guest-side request guard that narrows public UCAN invocations to the configured bootstrap envelope
 - a guest-side admin delegation issuance API that can mint importable child delegations from the service DID
+- a public service manifest endpoint for domain-first runtime discovery by a generic PWA
 
 Known inputs from the current `ucan-upload-wall` sources:
 
@@ -77,6 +78,11 @@ Current bootstrap-package support in this shared profile:
   - exports a CAR-backed `m...` proof string the current UI can import directly
   - enforces configured capability and expiration policy
   - can be protected with `UCAN_STORE_ADMIN_API_TOKEN`
+- public service discovery metadata that:
+  - is exposed at `/.well-known/ucan-store.json`
+  - has a `/service-manifest.json` alias
+  - surfaces service DID/origin, PWA origin, allowed capabilities, and
+    delegation issuance metadata for runtime binding
 
 This still does not emit protocol-native UCAN error receipts from the guard
 layer yet; rejected requests currently fail at HTTP level before they reach the
