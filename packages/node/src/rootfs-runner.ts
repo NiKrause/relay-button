@@ -97,7 +97,7 @@ async function detectRootfsToolchainAvailability(env: NodeJS.ProcessEnv): Promis
 
 async function deriveOrbitdbRelayVersion(
   sourceDir: string,
-  profileId: 'orbitdb-relay' | 'orbitdb-relay-pinner',
+  profileId: 'orbitdb-relay',
 ): Promise<string | undefined> {
   const packageJsonPath = path.join(sourceDir, 'package.json')
   try {
@@ -115,22 +115,20 @@ async function deriveOrbitdbRelayVersion(
 export async function parseRootfsRunnerInputs(env: NodeJS.ProcessEnv = process.env): Promise<ParsedRootfsRunnerInputs> {
   const contractPath = requiredEnv('ALEPH_ROOTFS_CONTRACT_PATH', env);
   const contract = await readRootfsContractFile(contractPath);
-  const orbitdbRelayPinnerDir = optionalEnv('ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR', undefined, env) || undefined
+  const orbitdbRelayDir = optionalEnv('ALEPH_ROOTFS_ORBITDB_RELAY_DIR', undefined, env) || undefined
   const explicitRootfsVersion = optionalEnv('ALEPH_ROOTFS_VERSION', undefined, env) || undefined
-  const isOrbitdbRelayProfile =
-    contract.id === 'orbitdb-relay' || contract.id === 'orbitdb-relay-pinner'
   const derivedOrbitdbVersion =
     !explicitRootfsVersion &&
-    isOrbitdbRelayProfile &&
-    orbitdbRelayPinnerDir
+    contract.id === 'orbitdb-relay' &&
+    orbitdbRelayDir
       ? await deriveOrbitdbRelayVersion(
-          orbitdbRelayPinnerDir,
-          contract.id as 'orbitdb-relay' | 'orbitdb-relay-pinner',
+          orbitdbRelayDir,
+          contract.id,
         )
       : undefined
   const buildPlan = createRootfsBuildPlan(contract, {
     projectDir: requiredEnv('ALEPH_ROOTFS_PROJECT_DIR', env),
-    orbitdbRelayPinnerDir,
+    orbitdbRelayDir,
     contractPath,
     alephDir: optionalEnv('ALEPH_ROOTFS_ALEPH_DIR', undefined, env) || undefined,
     outDir: optionalEnv('ALEPH_ROOTFS_OUT_DIR', undefined, env) || undefined,

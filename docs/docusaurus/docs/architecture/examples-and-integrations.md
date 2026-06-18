@@ -102,7 +102,7 @@ integration references.
 
 Likely candidates include:
 
-- `orbitdb-relay-pinner`
+- `orbitdb-relay`
 - `qauld`
 - Bitsocial daemon and related web client flows
 

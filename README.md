@@ -189,8 +189,8 @@ the external source checkout directly:
 
 ```bash
 export ALEPH_ROOTFS_PROJECT_DIR=/path/to/relay-deployer-pwa
-export ALEPH_ROOTFS_CONTRACT_PATH=/path/to/relay-button/packages/rootfs/reference/orbitdb-relay-pinner/contract.json
-export ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR=/path/to/orbitdb-relay-pinner
+export ALEPH_ROOTFS_CONTRACT_PATH=/path/to/relay-button/packages/rootfs/reference/orbitdb-relay/contract.json
+export ALEPH_ROOTFS_ORBITDB_RELAY_DIR=/path/to/orbitdb-relay
 
 pnpm relay-button rootfs-build
 pnpm relay-button rootfs-publish

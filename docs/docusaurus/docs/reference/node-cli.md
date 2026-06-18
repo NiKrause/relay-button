@@ -75,11 +75,11 @@ Direct item-hash example:
 cd /path/to/relay-button
 
 export ALEPH_VM_PRIVATE_KEY=0x...
-export ALEPH_VM_NAME=orbitdb-relay-pinner-01
+export ALEPH_VM_NAME=orbitdb-relay-01
 export ALEPH_VM_SSH_PUBLIC_KEY="$(cat ~/.ssh/id_ed25519.pub)"
 export ALEPH_VM_ROOTFS_ITEM_HASH=a83b2623e664f05671a7279003134f6fdb804527b17c97bbd571dc3c05d3b74f
-export ALEPH_VM_PROFILE=orbitdb-relay-pinner
-export ALEPH_VM_ROOTFS_VERSION=orbitdb-relay-pinner-v0.9.1
+export ALEPH_VM_PROFILE=orbitdb-relay
+export ALEPH_VM_ROOTFS_VERSION=orbitdb-relay-v0.9.1
 export ALEPH_VM_ROOTFS_SIZE_MIB=81920
 export ALEPH_VM_VCPUS=4
 export ALEPH_VM_MEMORY_MIB=8192
@@ -155,8 +155,8 @@ OrbitDB relay example:
 cd /path/to/relay-button
 
 export ALEPH_ROOTFS_PROJECT_DIR=/path/to/relay-deployer-pwa
-export ALEPH_ROOTFS_CONTRACT_PATH=/path/to/relay-button/packages/rootfs/reference/orbitdb-relay-pinner/contract.json
-export ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR=/path/to/orbitdb-relay-pinner
+export ALEPH_ROOTFS_CONTRACT_PATH=/path/to/relay-button/packages/rootfs/reference/orbitdb-relay/contract.json
+export ALEPH_ROOTFS_ORBITDB_RELAY_DIR=/path/to/orbitdb-relay
 
 pnpm relay-button rootfs-build
 pnpm relay-button rootfs-publish
@@ -175,8 +175,8 @@ Common optional environment:
 - `ALEPH_ROOTFS_SKIP_BUILD`
 - `ALEPH_ROOTFS_IPFS_ADD_URL`
 - `ALEPH_ROOTFS_ALEPH_API_HOST`
-- `ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR`
-  Required when the contract/profile is `orbitdb-relay-pinner`.
+- `ALEPH_ROOTFS_ORBITDB_RELAY_DIR`
+  Required when the contract/profile is `orbitdb-relay`.
 
 Retry tip:
 

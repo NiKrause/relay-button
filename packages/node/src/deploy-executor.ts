@@ -244,9 +244,7 @@ export async function executeDeployPlan(
   const bootstrapOwnerIdentity = plan.bootstrapOwnerPrivateKey
     ? await createPrivateKeyIdentity(plan.bootstrapOwnerPrivateKey)
     : null;
-  const isOrbitdbRelayProfile =
-    plan.profile === "orbitdb-relay" ||
-    plan.profile === "orbitdb-relay-pinner";
+  const isOrbitdbRelayProfile = plan.profile === "orbitdb-relay";
   const publisherDerivedRelayIdentity =
     (plan.profile === "uc-go-peer" || isOrbitdbRelayProfile) &&
     resolvedBootstrapPublisherPrivateKey

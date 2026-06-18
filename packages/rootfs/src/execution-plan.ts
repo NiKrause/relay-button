@@ -30,7 +30,7 @@ export interface RootfsExecutionPlanOptions {
   referenceRootfsDir?: string;
   projectMountPath?: string;
   rootfsMountPath?: string;
-  orbitdbRelayPinnerMountPath?: string;
+  orbitdbRelayMountPath?: string;
   dockerImageTag?: string;
 }
 
@@ -89,7 +89,7 @@ export function createDockerRootfsExecutionPlan(
   const referenceRootfsDir = resolveReferenceRootfsDir(plan.contract, options.referenceRootfsDir);
   const projectMountPath = options.projectMountPath ?? '/workspace/project';
   const rootfsMountPath = options.rootfsMountPath ?? '/workspace/shared-rootfs';
-  const orbitdbRelayPinnerMountPath = options.orbitdbRelayPinnerMountPath ?? '/workspace-orbitdb-relay-pinner';
+  const orbitdbRelayMountPath = options.orbitdbRelayMountPath ?? '/workspace-orbitdb-relay';
   const dockerImageTag = options.dockerImageTag ?? `${plan.contract.id}-rootfs-builder:local`;
 
   const containerProjectDir = projectMountPath;
@@ -117,9 +117,9 @@ export function createDockerRootfsExecutionPlan(
     volumeMounts.push('-v', `${plan.contractPath}:${containerContractPath}:ro`);
   }
 
-  if (plan.orbitdbRelayPinnerDir) {
-    runEnv.ORBITDB_RELAY_PINNER_DIR = orbitdbRelayPinnerMountPath;
-    volumeMounts.push('-v', `${plan.orbitdbRelayPinnerDir}:${orbitdbRelayPinnerMountPath}:ro`);
+  if (plan.orbitdbRelayDir) {
+    runEnv.ORBITDB_RELAY_DIR = orbitdbRelayMountPath;
+    volumeMounts.push('-v', `${plan.orbitdbRelayDir}:${orbitdbRelayMountPath}:ro`);
   }
 
   return {

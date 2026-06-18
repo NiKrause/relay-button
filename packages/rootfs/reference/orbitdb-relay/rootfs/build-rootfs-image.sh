@@ -8,7 +8,7 @@ ROOTFS_CONTRACT_FILE="${ROOTFS_CONTRACT_FILE:-}"
 ROOTFS_PROFILE="${ROOTFS_PROFILE:-}"
 ROOTFS_INSTALL_MODE="${ROOTFS_INSTALL_MODE:-}"
 PY_LIBP2P_DIR="${PY_LIBP2P_DIR:-${REPO_DIR}/py-libp2p}"
-ORBITDB_RELAY_PINNER_DIR="${ORBITDB_RELAY_PINNER_DIR:-}"
+ORBITDB_RELAY_DIR="${ORBITDB_RELAY_DIR:-}"
 UNIVERSAL_CONNECTIVITY_DIR="${UNIVERSAL_CONNECTIVITY_DIR:-}"
 OUT_DIR="${OUT_DIR:-${APP_DIR}/dist-rootfs}"
 HOST_UID="${HOST_UID:-}"
@@ -83,16 +83,16 @@ case "${ROOTFS_PROFILE}" in
     if [ -z "${ROOTFS_INSTALL_MODE}" ]; then
       ROOTFS_INSTALL_MODE="prebaked"
     fi
-    if [ -z "${ORBITDB_RELAY_PINNER_DIR}" ]; then
-      echo "ROOTFS_PROFILE=orbitdb-relay requires ORBITDB_RELAY_PINNER_DIR=/path/to/orbitdb-relay" >&2
+    if [ -z "${ORBITDB_RELAY_DIR}" ]; then
+      echo "ROOTFS_PROFILE=orbitdb-relay requires ORBITDB_RELAY_DIR=/path/to/orbitdb-relay" >&2
       exit 1
     fi
-    if [ ! -d "${ORBITDB_RELAY_PINNER_DIR}" ]; then
-      echo "Missing orbitdb-relay directory: ${ORBITDB_RELAY_PINNER_DIR}" >&2
+    if [ ! -d "${ORBITDB_RELAY_DIR}" ]; then
+      echo "Missing orbitdb-relay directory: ${ORBITDB_RELAY_DIR}" >&2
       exit 1
     fi
-    if [ ! -d "${ORBITDB_RELAY_PINNER_DIR}/dist" ]; then
-      echo "Missing orbitdb-relay dist directory: ${ORBITDB_RELAY_PINNER_DIR}/dist" >&2
+    if [ ! -d "${ORBITDB_RELAY_DIR}/dist" ]; then
+      echo "Missing orbitdb-relay dist directory: ${ORBITDB_RELAY_DIR}/dist" >&2
       echo "Build orbitdb-relay before creating this rootfs image." >&2
       exit 1
     fi
@@ -207,7 +207,7 @@ case "${ROOTFS_PROFILE}" in
     ;;
   orbitdb-relay)
     tar \
-      -C "${ORBITDB_RELAY_PINNER_DIR}" \
+      -C "${ORBITDB_RELAY_DIR}" \
       -cf "${APP_TAR}" \
       dist \
       deploy \

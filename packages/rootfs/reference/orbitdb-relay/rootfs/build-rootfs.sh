@@ -14,7 +14,7 @@ CHANNEL="${CHANNEL:-ALEPH-CLOUDSOLUTIONS}"
 SKIP_UPLOAD="${SKIP_UPLOAD:-0}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 IPFS_ADD_URL="${IPFS_ADD_URL:-https://ipfs.aleph.cloud/api/v0/add}"
-ORBITDB_RELAY_PINNER_DIR="${ORBITDB_RELAY_PINNER_DIR:-}"
+ORBITDB_RELAY_DIR="${ORBITDB_RELAY_DIR:-}"
 UNIVERSAL_CONNECTIVITY_DIR="${UNIVERSAL_CONNECTIVITY_DIR:-}"
 
 require() {
@@ -117,8 +117,8 @@ resolve_rootfs_version() {
     return
   fi
 
-  if [ "${ROOTFS_PROFILE}" = "orbitdb-relay" ] && [ -n "${ORBITDB_RELAY_PINNER_DIR}" ]; then
-    local orbitdb_package_json="${ORBITDB_RELAY_PINNER_DIR}/package.json"
+  if [ "${ROOTFS_PROFILE}" = "orbitdb-relay" ] && [ -n "${ORBITDB_RELAY_DIR}" ]; then
+    local orbitdb_package_json="${ORBITDB_RELAY_DIR}/package.json"
     if [ -f "${orbitdb_package_json}" ] && command -v node >/dev/null 2>&1; then
       local orbitdb_version
       orbitdb_version="$(
@@ -186,16 +186,16 @@ build_with_docker() {
   local uc_mount=()
   local uc_env=()
   if [ "${ROOTFS_PROFILE}" = "orbitdb-relay" ]; then
-    if [ -z "${ORBITDB_RELAY_PINNER_DIR}" ]; then
-      echo "ROOTFS_PROFILE=orbitdb-relay requires ORBITDB_RELAY_PINNER_DIR=/path/to/orbitdb-relay" >&2
+    if [ -z "${ORBITDB_RELAY_DIR}" ]; then
+      echo "ROOTFS_PROFILE=orbitdb-relay requires ORBITDB_RELAY_DIR=/path/to/orbitdb-relay" >&2
       exit 1
     fi
-    if [ ! -d "${ORBITDB_RELAY_PINNER_DIR}" ]; then
-      echo "Missing orbitdb-relay directory: ${ORBITDB_RELAY_PINNER_DIR}" >&2
+    if [ ! -d "${ORBITDB_RELAY_DIR}" ]; then
+      echo "Missing orbitdb-relay directory: ${ORBITDB_RELAY_DIR}" >&2
       exit 1
     fi
-    orbitdb_mount=(-v "${ORBITDB_RELAY_PINNER_DIR}:/workspace-orbitdb-relay:ro")
-    orbitdb_env=(-e ORBITDB_RELAY_PINNER_DIR=/workspace-orbitdb-relay)
+    orbitdb_mount=(-v "${ORBITDB_RELAY_DIR}:/workspace-orbitdb-relay:ro")
+    orbitdb_env=(-e ORBITDB_RELAY_DIR=/workspace-orbitdb-relay)
   fi
   if [ "${ROOTFS_PROFILE}" = "uc-rust-peer" ]; then
     if [ -z "${UNIVERSAL_CONNECTIVITY_DIR}" ]; then

@@ -75,7 +75,7 @@ test('parseRootfsRunnerInputs derives orbitdb relay rootfs versions from the cal
     ALEPH_ROOTFS_DRIVER: 'docker',
     ALEPH_ROOTFS_HAS_DOCKER: 'true',
     ALEPH_ROOTFS_DOCKER_DAEMON_RUNNING: 'true',
-    ALEPH_ROOTFS_ORBITDB_RELAY_PINNER_DIR: projectDir,
+    ALEPH_ROOTFS_ORBITDB_RELAY_DIR: projectDir,
   })
 
   assert.equal(parsed.buildPlan.rootfsVersion, 'orbitdb-relay-v0.9.2')

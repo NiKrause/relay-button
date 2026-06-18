@@ -6,7 +6,7 @@ export type RootfsBuildDriver = 'auto' | 'host' | 'docker'
 
 export interface RootfsBuildOptions {
   projectDir: string
-  orbitdbRelayPinnerDir?: string
+  orbitdbRelayDir?: string
   alephDir?: string
   outDir?: string
   contractPath?: string
@@ -34,7 +34,7 @@ export interface RootfsBuildPlan {
   contract: RootfsContract
   contractPath: string
   projectDir: string
-  orbitdbRelayPinnerDir?: string
+  orbitdbRelayDir?: string
   alephDir: string
   outDir: string
   driver: RootfsBuildDriver
@@ -100,8 +100,8 @@ function sourceSubdirectory(contract: RootfsContract): string | null {
 
 export function createRootfsBuildPlan(contract: RootfsContract, options: RootfsBuildOptions): RootfsBuildPlan {
   const projectDir = path.resolve(options.projectDir)
-  const orbitdbRelayPinnerDir = options.orbitdbRelayPinnerDir?.trim()
-    ? path.resolve(options.orbitdbRelayPinnerDir)
+  const orbitdbRelayDir = options.orbitdbRelayDir?.trim()
+    ? path.resolve(options.orbitdbRelayDir)
     : undefined
   const subdirectory = sourceSubdirectory(contract)
   const defaultAlephDir = subdirectory ? path.join(projectDir, subdirectory, 'aleph') : projectDir
@@ -131,7 +131,7 @@ export function createRootfsBuildPlan(contract: RootfsContract, options: RootfsB
     contract,
     contractPath,
     projectDir,
-    orbitdbRelayPinnerDir,
+    orbitdbRelayDir,
     alephDir,
     outDir,
     driver: options.driver ?? 'auto',
@@ -182,8 +182,8 @@ export function rootfsBuildShellEnv(plan: RootfsBuildPlan): Record<string, strin
     IPFS_GATEWAY_WAIT_DELAY_SECONDS: String(plan.ipfsGatewayWaitDelaySeconds)
   }
 
-  if (plan.orbitdbRelayPinnerDir) {
-    env.ORBITDB_RELAY_PINNER_DIR = plan.orbitdbRelayPinnerDir
+  if (plan.orbitdbRelayDir) {
+    env.ORBITDB_RELAY_DIR = plan.orbitdbRelayDir
   }
 
   return env

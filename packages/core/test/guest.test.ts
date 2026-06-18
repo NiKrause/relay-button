@@ -158,7 +158,7 @@ test("configureOrbitdbRelaySetup posts bootstrap key material to the guest", asy
     bootstrapPublisherLibp2pIdentityHex: "deadbeef",
     bootstrapOwnerPrivateKey: "0xowner",
     bootstrapOwnerAuthorizationBase64: "eyJhdXRoIjp0cnVlfQ==",
-    bootstrapRegistrationId: "relay:orbitdb-relay-pinner:demo",
+    bootstrapRegistrationId: "relay:orbitdb-relay:demo",
     noStart: true,
     fetch: async (_url, init) => {
       body = String(init?.body ?? "");
@@ -174,7 +174,7 @@ test("configureOrbitdbRelaySetup posts bootstrap key material to the guest", asy
   assert.match(body, /"bootstrap_publisher_libp2p_identity_hex":"deadbeef"/);
   assert.match(body, /"bootstrap_owner_private_key":"0xowner"/);
   assert.match(body, /"bootstrap_owner_authorization_b64":"eyJhdXRoIjp0cnVlfQ=="/);
-  assert.match(body, /"bootstrap_registration_id":"relay:orbitdb-relay-pinner:demo"/);
+  assert.match(body, /"bootstrap_registration_id":"relay:orbitdb-relay:demo"/);
   assert.match(body, /"no_start":true/);
 });
 

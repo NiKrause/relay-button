@@ -65,34 +65,12 @@ test('rootfsBuildShellEnv emits UC-compatible builder variables', async () => {
   assert.equal(env.ALEPH_MESSAGE_WAIT_DELAY_SECONDS, '5')
 })
 
-test('createRootfsBuildPlan uses profile-aware defaults for orbitdb relay pinner', async () => {
-  const raw = await readFile(referenceProfileContractPath('orbitdb-relay-pinner'), 'utf8')
-  const contract = parseRootfsContract(raw)
-  const plan = createRootfsBuildPlan(contract, {
-    projectDir: '/workspace/relay-deployer-pwa',
-    orbitdbRelayPinnerDir: '/workspace/orbitdb-relay-pinner',
-    gitShortSha: 'abc1234',
-    now: new Date('2026-05-16T00:00:00Z')
-  })
-
-  assert.equal(plan.alephDir, '/workspace/relay-deployer-pwa')
-  assert.equal(plan.outDir, '/workspace/relay-deployer-pwa/dist-rootfs')
-  assert.equal(plan.rootfsVersion, 'orbitdb-relay-pinner-git-20260516-abc1234')
-  assert.equal(plan.imagePath, '/workspace/relay-deployer-pwa/dist-rootfs/aleph-orbitdb-relay-pinner.qcow2')
-  assert.equal(plan.latestManifestPath, '/workspace/relay-deployer-pwa/public/rootfs-manifest.json')
-  assert.equal(plan.versionedManifestPath, '/workspace/relay-deployer-pwa/public/orbitdb-relay-pinner-git-20260516-abc1234.json')
-  assert.equal(plan.orbitdbRelayPinnerDir, '/workspace/orbitdb-relay-pinner')
-
-  const env = rootfsBuildShellEnv(plan)
-  assert.equal(env.ORBITDB_RELAY_PINNER_DIR, '/workspace/orbitdb-relay-pinner')
-})
-
 test('createRootfsBuildPlan uses profile-aware defaults for orbitdb relay', async () => {
   const raw = await readFile(referenceProfileContractPath('orbitdb-relay'), 'utf8')
   const contract = parseRootfsContract(raw)
   const plan = createRootfsBuildPlan(contract, {
     projectDir: '/workspace/relay-deployer-pwa',
-    orbitdbRelayPinnerDir: '/workspace/orbitdb-relay',
+    orbitdbRelayDir: '/workspace/orbitdb-relay',
     gitShortSha: 'abc1234',
     now: new Date('2026-05-16T00:00:00Z')
   })
@@ -103,8 +81,8 @@ test('createRootfsBuildPlan uses profile-aware defaults for orbitdb relay', asyn
   assert.equal(plan.imagePath, '/workspace/relay-deployer-pwa/dist-rootfs/aleph-orbitdb-relay.qcow2')
   assert.equal(plan.latestManifestPath, '/workspace/relay-deployer-pwa/public/rootfs-manifest.json')
   assert.equal(plan.versionedManifestPath, '/workspace/relay-deployer-pwa/public/orbitdb-relay-git-20260516-abc1234.json')
-  assert.equal(plan.orbitdbRelayPinnerDir, '/workspace/orbitdb-relay')
+  assert.equal(plan.orbitdbRelayDir, '/workspace/orbitdb-relay')
 
   const env = rootfsBuildShellEnv(plan)
-  assert.equal(env.ORBITDB_RELAY_PINNER_DIR, '/workspace/orbitdb-relay')
+  assert.equal(env.ORBITDB_RELAY_DIR, '/workspace/orbitdb-relay')
 })

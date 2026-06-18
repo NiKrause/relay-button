@@ -23,7 +23,7 @@ in real use:
 - `aleph-libp2p-relay`
   - browser/PWA integration through `relay-deployer-pwa`
 
-Other relay projects such as `orbitdb-relay-pinner`, `qauld`, or Bitsocial
+Other relay projects such as `orbitdb-relay`, `qauld`, or Bitsocial
 should be linked here once they adopt the same shared-tooling pattern.
 
 ## Reference Example Types
