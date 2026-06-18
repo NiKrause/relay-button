@@ -15,6 +15,7 @@ import {
   appendDeploymentTokenToSshPublicKey,
   buildPaymentQuote,
   createRelayBootstrapRegistrationId,
+  configureUcanStore,
   configureOrbitdbRelaySetup,
   createDeploymentToken,
   createInstanceContent,
@@ -25,6 +26,7 @@ import {
   ensureInstancePortForwards,
   fetchVmRuntime,
   fetchRelayMetadataForRuntime,
+  fetchUcGoPeerMetadata,
   filterDeployableCrns,
   forgetAlephMessages,
   listStaleVmBootstrapConfigAggregateMessageHashes,
@@ -75,7 +77,12 @@ import type {
 import type { RootfsManifest as SharedRootfsManifest } from "../../../shared-types/src/manifest.ts";
 import type { VmBootstrapConfigRecord } from "../../../shared-types/src/bootstrap-config.ts";
 
-type RelayProfile = "uc-go-peer" | "orbitdb-relay";
+type DeploymentProfile = "uc-go-peer" | "orbitdb-relay" | "ucan-store";
+type BootstrapRelayProfile = "uc-go-peer" | "orbitdb-relay";
+
+function deploymentNoun(profile: DeploymentProfile | null): "relay" | "service" {
+  return profile === "ucan-store" ? "service" : "relay";
+}
 
 function asJsonFetch(
   input: RequestInfo | URL,
@@ -88,7 +95,7 @@ function asJsonFetch(
   }))
 }
 
-function isConfirmedRelaySetupResult(value: unknown): value is { status: "configured" } {
+function isConfirmedGuestSetupResult(value: unknown): value is { status: "configured" } {
   return Boolean(
     value &&
       typeof value === "object" &&
@@ -285,14 +292,47 @@ async function resolveManifest(args: {
   return loadRootfsManifest(args.manifestUrl);
 }
 
-function relayProfileForManifest(
+function deploymentProfileForManifest(
   manifest: RootfsManifest | null | undefined,
-): RelayProfile | null {
+): DeploymentProfile | null {
   if (manifest?.profile === "uc-go-peer") return "uc-go-peer";
   if (manifest?.profile === "orbitdb-relay") {
     return manifest.profile;
   }
+  if (manifest?.profile === "ucan-store") return "ucan-store";
   return null;
+}
+
+function bootstrapRelayProfileForManifest(
+  manifest: RootfsManifest | null | undefined,
+): BootstrapRelayProfile | null {
+  const profile = deploymentProfileForManifest(manifest);
+  if (profile === "uc-go-peer" || profile === "orbitdb-relay") {
+    return profile;
+  }
+  return null;
+}
+
+function supportsBootstrapRegistrationsForManifest(
+  manifest: RootfsManifest | null | undefined,
+): boolean {
+  return bootstrapRelayProfileForManifest(manifest) != null;
+}
+
+function deploymentReadyLabel(
+  profile: DeploymentProfile | null,
+): string {
+  return profile === "ucan-store" ? "Service ready" : "Relay ready";
+}
+
+function deploymentReadyDetail(
+  profile: DeploymentProfile | null,
+  fallback: string,
+): string {
+  if (profile === "ucan-store") {
+    return "The upload service runtime is available and the deployment finished successfully.";
+  }
+  return fallback;
 }
 
 function registrationIdInstanceItemHash(
@@ -678,21 +718,170 @@ export class SponsorRelayController {
     runtime: Awaited<ReturnType<typeof waitForVmRuntime>>;
     deploymentToken?: string | null;
   }): Promise<void> {
-    const profile = relayProfileForManifest(this.state.manifest);
-    if (!profile) return;
+    const deploymentProfile = deploymentProfileForManifest(this.state.manifest);
+    const profile = bootstrapRelayProfileForManifest(this.state.manifest);
+    if (!profile && deploymentProfile !== "ucan-store") return;
 
-    if (!this.state.wallet.address) {
+    if (profile && !this.state.wallet.address) {
       throw new Error("A connected wallet is required to register relay bootstrap addresses.");
     }
-    if (!args.runtime.hostIpv4) {
-      throw new Error("Relay runtime did not expose a host IPv4 address.");
+    const runtimeHostIpv4 = args.runtime.hostIpv4;
+    if (!runtimeHostIpv4) {
+      throw new Error(
+        `${
+          deploymentProfile === "ucan-store" ? "Service" : "Relay"
+        } runtime did not expose a host IPv4 address.`,
+      );
     }
 
     let runtime = args.runtime;
     let mappedPorts = runtime.mappedPorts ?? {};
     const setupPort = mappedPorts["80"]?.host ?? null;
     if (!setupPort) {
-      throw new Error("Relay runtime did not expose the temporary setup endpoint.");
+      throw new Error(
+        `${
+          deploymentProfile === "ucan-store" ? "Service" : "Relay"
+        } runtime did not expose the temporary setup endpoint.`,
+      );
+    }
+
+    if (deploymentProfile === "ucan-store") {
+      const serviceHostIpv4 = runtimeHostIpv4;
+      const serviceProxyUrl = runtime.proxyUrl;
+      if (!serviceProxyUrl) {
+        throw new Error("Service runtime did not expose a proxy URL.");
+      }
+
+      this.emitProgress({
+        stage: "deployment-confirmed",
+        label: "Configuring service",
+        progress: 93,
+        status: "info",
+        itemHash: args.itemHash,
+        detail: "Waiting for the guest setup endpoint before applying the upload service configuration.",
+      });
+
+      const setupHealth = await waitForSetupEndpoint({
+        hostIpv4: serviceHostIpv4,
+        setupPort,
+        fetch: (url, init) => fetch(url, init),
+        attempts: 15,
+        delayMs: 4000,
+        httpTimeoutMs: 10000,
+        onAttempt: (result, attempt, attempts) => {
+          this.emitProgress({
+            stage: "deployment-confirmed",
+            label: "Waiting for guest setup",
+            progress: 93,
+            status: result.ok ? "success" : "info",
+            itemHash: args.itemHash,
+            detail: result.ok
+              ? `Setup endpoint ${attempt}/${attempts}: ready at http://${serviceHostIpv4}:${setupPort}/health.`
+              : `Setup endpoint ${attempt}/${attempts}: waiting for http://${serviceHostIpv4}:${setupPort}/health.`,
+          });
+        },
+      });
+      if (!setupHealth.ok) {
+        throw new Error(
+          `Service setup endpoint did not become reachable at http://${serviceHostIpv4}:${setupPort}/health.`,
+        );
+      }
+
+      this.emitProgress({
+        stage: "deployment-confirmed",
+        label: "Applying service config",
+        progress: 94,
+        status: "info",
+        itemHash: args.itemHash,
+        detail: "Publishing the public HTTPS origin into the guest upload service configuration.",
+      });
+
+      const configureResult = await configureUcanStore({
+        hostIpv4: serviceHostIpv4,
+        publicIpv6: runtime.ipv6,
+        setupPort,
+        proxyUrl: serviceProxyUrl,
+        webauthnOrigin: serviceProxyUrl,
+        fetch: (url, init) => fetch(url, init),
+        timeoutMs: 180000,
+      });
+      if (!isConfirmedGuestSetupResult(configureResult)) {
+        throw new Error(
+          `Service guest configuration could not be confirmed at http://${serviceHostIpv4}:${setupPort}/configure.`,
+        );
+      }
+
+      this.emitProgress({
+        stage: "deployment-confirmed",
+        label: "Waiting for service metadata",
+        progress: 95,
+        status: "info",
+        itemHash: args.itemHash,
+        detail:
+          "Waiting for the upload service metadata endpoint to report the public service DID and PWA environment.",
+      });
+
+      const serviceMetadata = await fetchUcGoPeerMetadata({
+        hostIpv4: serviceHostIpv4,
+        setupPort,
+        fetch: (url, init) => fetch(url, init),
+        attempts: 80,
+        delayMs: 3000,
+        timeoutMs: 240000,
+        isReady: ({ payload, ok }) => {
+          if (!ok || !payload || typeof payload !== "object") return false;
+          const metadata =
+            (payload as { metadata?: unknown }).metadata &&
+            typeof (payload as { metadata?: unknown }).metadata === "object"
+              ? ((payload as { metadata: Record<string, unknown> }).metadata)
+              : null;
+          const pwaEnv =
+            metadata?.pwa_env && typeof metadata.pwa_env === "object"
+              ? (metadata.pwa_env as Record<string, unknown>)
+              : null;
+          return Boolean(
+            typeof metadata?.upload_service_did === "string" &&
+              metadata.upload_service_did.length > 0 &&
+              typeof pwaEnv?.VITE_UPLOAD_SERVICE_URL === "string" &&
+              pwaEnv.VITE_UPLOAD_SERVICE_URL.length > 0,
+          );
+        },
+        onAttempt: ({ ready, attempt, attempts, requestUrl }) => {
+          this.emitProgress({
+            stage: "deployment-confirmed",
+            label: ready ? "Service metadata ready" : "Waiting for service metadata",
+            progress: 95,
+            status: ready ? "success" : "info",
+            itemHash: args.itemHash,
+            detail: ready
+              ? `Service metadata ${attempt}/${attempts}: public upload service wiring is ready.`
+              : `Service metadata ${attempt}/${attempts}: waiting for ${requestUrl}.`,
+          });
+        },
+      });
+
+      const metadata =
+        serviceMetadata && typeof serviceMetadata === "object"
+          ? ((serviceMetadata as { metadata?: unknown }).metadata ?? null)
+          : null;
+      if (
+        !metadata ||
+        typeof metadata !== "object" ||
+        typeof (metadata as { upload_service_did?: unknown }).upload_service_did !==
+          "string"
+      ) {
+        throw new Error(
+          "Service metadata did not include the public upload service DID.",
+        );
+      }
+
+      return;
+    }
+
+    if (!profile) return;
+    const walletAddress = this.state.wallet.address;
+    if (!walletAddress) {
+      throw new Error("A connected wallet is required to register relay bootstrap addresses.");
     }
 
     let bootstrapSignalRelayMetadata: {
@@ -712,7 +901,7 @@ export class SponsorRelayController {
       });
 
       const setupHealth = await waitForSetupEndpoint({
-        hostIpv4: args.runtime.hostIpv4,
+        hostIpv4: runtimeHostIpv4,
         setupPort,
         fetch: (url, init) => fetch(url, init),
         attempts: 15,
@@ -726,14 +915,14 @@ export class SponsorRelayController {
             status: result.ok ? "success" : "info",
             itemHash: args.itemHash,
             detail: result.ok
-              ? `Setup endpoint ${attempt}/${attempts}: ready at http://${args.runtime.hostIpv4}:${setupPort}/health.`
-              : `Setup endpoint ${attempt}/${attempts}: waiting for http://${args.runtime.hostIpv4}:${setupPort}/health.`,
+              ? `Setup endpoint ${attempt}/${attempts}: ready at http://${runtimeHostIpv4}:${setupPort}/health.`
+              : `Setup endpoint ${attempt}/${attempts}: waiting for http://${runtimeHostIpv4}:${setupPort}/health.`,
           });
         },
       });
       if (!setupHealth.ok) {
         throw new Error(
-          `Relay setup endpoint did not become reachable at http://${args.runtime.hostIpv4}:${setupPort}/health.`,
+          `Relay setup endpoint did not become reachable at http://${runtimeHostIpv4}:${setupPort}/health.`,
         );
       }
 
@@ -753,7 +942,7 @@ export class SponsorRelayController {
       }
 
       const configureResult = await configureOrbitdbRelaySetup({
-        hostIpv4: args.runtime.hostIpv4,
+        hostIpv4: runtimeHostIpv4,
         publicIpv6: args.runtime.ipv6,
         setupPort,
         tcpPort,
@@ -766,7 +955,7 @@ export class SponsorRelayController {
         fetch: (url, init) => fetch(url, init),
         timeoutMs: 180000,
       });
-      if (!isConfirmedRelaySetupResult(configureResult)) {
+      if (!isConfirmedGuestSetupResult(configureResult)) {
         throw new Error(
           `Relay guest configuration could not be confirmed at http://${args.runtime.hostIpv4}:${setupPort}/configure.`,
         );
@@ -854,7 +1043,7 @@ export class SponsorRelayController {
       const record: VmBootstrapConfigRecord = {
         deploymentToken: args.deploymentToken,
         profile,
-        ownerAddress: this.state.wallet.address,
+        ownerAddress: walletAddress,
         instanceItemHash: args.itemHash,
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
@@ -875,7 +1064,7 @@ export class SponsorRelayController {
       };
 
       const bootstrapConfigPublication = await publishVmBootstrapConfig({
-        sender: this.state.wallet.address,
+        sender: walletAddress,
         record,
         signer: personalSign,
         hasher: sha256Hex,
@@ -905,7 +1094,7 @@ export class SponsorRelayController {
 
       const bootstrapConfigSignal = await waitForVmBootstrapConfigSignal({
         deploymentToken: args.deploymentToken,
-        ownerAddress: this.state.wallet.address,
+        ownerAddress: walletAddress,
         instanceItemHash: args.itemHash,
         fetch: asJsonFetch,
         apiHost: this.client.apiHost,
@@ -1126,7 +1315,7 @@ export class SponsorRelayController {
       });
 
       const fallbackPublication = await publishRelayBootstrapRegistration({
-        sender: this.state.wallet.address,
+        sender: walletAddress,
         signer: personalSign,
         hasher: sha256Hex,
         fetch: asJsonFetch,
@@ -1147,7 +1336,7 @@ export class SponsorRelayController {
       });
 
       const fallbackVisibleRegistration = await waitForRelayBootstrapRegistration({
-        sender: this.state.wallet.address,
+        sender: walletAddress,
         registrationId,
         peerId,
         fetch: asJsonFetch,
@@ -1184,7 +1373,7 @@ export class SponsorRelayController {
     if (profile === "uc-go-peer" && args.deploymentToken) {
       let cleanupAggregateItemHash: string | null = null;
       await deleteVmBootstrapConfig({
-        sender: this.state.wallet.address,
+        sender: walletAddress,
         deploymentToken: args.deploymentToken,
         signer: personalSign,
         hasher: sha256Hex,
@@ -1401,19 +1590,37 @@ export class SponsorRelayController {
       return;
     }
 
+    const currentProfile = deploymentProfileForManifest(this.state.manifest);
     const hasConfirmedBootstrapRegistration = this.state.bootstrapRegistrations.some(
       (entry) => entry.instanceItemHash === itemHash && entry.confirmed,
     );
 
-    if (hasConfirmedBootstrapRegistration) {
+    if (currentProfile === "ucan-store") {
       this.emitProgress({
         stage: "completed",
-        label: "Relay ready",
+        label: deploymentReadyLabel(currentProfile),
         progress: 100,
         status: "success",
         itemHash,
-        detail:
+        detail: deploymentReadyDetail(
+          currentProfile,
+          "Runtime networking is available and the deployment finished successfully.",
+        ),
+      });
+      return;
+    }
+
+    if (hasConfirmedBootstrapRegistration) {
+      this.emitProgress({
+        stage: "completed",
+        label: deploymentReadyLabel(currentProfile),
+        progress: 100,
+        status: "success",
+        itemHash,
+        detail: deploymentReadyDetail(
+          currentProfile,
           "Runtime networking is available and the relay bootstrap registration is confirmed on Aleph.",
+        ),
       });
       return;
     }
@@ -1424,8 +1631,7 @@ export class SponsorRelayController {
       progress: 92,
       status: "info",
       itemHash,
-      detail:
-        "Deployment processed and runtime networking is available. Finishing relay setup and bootstrap verification.",
+      detail: `Deployment processed and runtime networking is available. Finishing ${deploymentNoun(currentProfile)} setup and verification.`,
     });
   }
 
@@ -1688,6 +1894,7 @@ export class SponsorRelayController {
   }
 
   async refresh(): Promise<void> {
+    const currentProfile = deploymentProfileForManifest(this.state.manifest);
     this.trace("refresh:start", {
       wallet: this.state.wallet.address,
       manifestUrl: this.state.manifestUrl,
@@ -1696,7 +1903,10 @@ export class SponsorRelayController {
     this.patch({
       busy: { refreshing: true },
       errorText: null,
-      statusText: "Refreshing relay sponsor data",
+      statusText:
+        currentProfile === "ucan-store"
+          ? "Refreshing service deployment data"
+          : "Refreshing relay deployment data",
     });
 
     try {
@@ -1709,6 +1919,9 @@ export class SponsorRelayController {
         manifestJson: this.state.manifestJson,
       }).catch((error) => manifestLoadErrorState(error));
       const manifest = manifestState.manifest;
+      const resolvedProfile = deploymentProfileForManifest(manifest);
+      const bootstrapEnabled =
+        supportsBootstrapRegistrationsForManifest(manifest);
 
       let balance = this.state.balance;
       let instances: CompactInstanceRecord[] = [];
@@ -1720,10 +1933,12 @@ export class SponsorRelayController {
           this.state.showInstances
             ? this.client.fetchInstances(this.state.wallet.address)
             : Promise.resolve([]),
-          fetchAlephBootstrapPosts({
-            apiHost: this.client.apiHost,
-            fetch,
-          }).catch(() => []),
+          bootstrapEnabled
+            ? fetchAlephBootstrapPosts({
+                apiHost: this.client.apiHost,
+                fetch,
+              }).catch(() => [])
+            : Promise.resolve([]),
         ]);
         balance = nextBalance;
         instances = await Promise.all(
@@ -1878,7 +2093,10 @@ export class SponsorRelayController {
         bootstrapRegistrations,
         orphanBootstrapRegistrations,
         busy: { refreshing: false },
-        statusText: "Relay sponsor data ready",
+        statusText:
+          resolvedProfile === "ucan-store"
+            ? "Service deployment data ready"
+            : "Relay deployment data ready",
       });
       this.trace("refresh:success", {
         manifestValid: manifestState.valid,
@@ -1967,7 +2185,7 @@ export class SponsorRelayController {
       for (const [candidateIndex, candidateCrn] of orderedCrns.entries()) {
         let attemptItemHash: string | null = null;
         let attemptDeploymentToken: string | null = null;
-        let attemptProfile: ReturnType<typeof relayProfileForManifest> = null;
+        let attemptProfile: ReturnType<typeof deploymentProfileForManifest> = null;
         const crnAttemptLabel = `CRN ${candidateIndex + 1}/${orderedCrns.length}`;
         const crnDisplayName = candidateCrn.name ?? candidateCrn.hash;
 
@@ -1980,7 +2198,7 @@ export class SponsorRelayController {
         });
 
         try {
-          const profile = relayProfileForManifest(this.state.manifest);
+          const profile = deploymentProfileForManifest(this.state.manifest);
           attemptProfile = profile;
           const sshPublicKey =
             profile === "uc-go-peer"
@@ -2241,12 +2459,14 @@ export class SponsorRelayController {
           this.lastCompletedDeploymentHash = result.itemHash;
           this.emitProgress({
             stage: "completed",
-            label: "Relay ready",
+            label: deploymentReadyLabel(attemptProfile),
             progress: 100,
             status: "success",
             itemHash: result.itemHash,
-            detail:
+            detail: deploymentReadyDetail(
+              attemptProfile,
               "Relay runtime, setup, metadata, and bootstrap registration are confirmed.",
+            ),
           });
           return;
         } catch (error) {
@@ -2282,7 +2502,8 @@ export class SponsorRelayController {
                   runtime: latestRuntime,
                   fetch: (url, init) => fetch(url, init),
                   preferSecureMetadata:
-                    attemptProfile === "uc-go-peer" && Boolean(latestRuntime.proxyUrl),
+                    attemptProfile === "uc-go-peer" &&
+                    Boolean(latestRuntime.proxyUrl),
                   attempts: 3,
                   delayMs: 1000,
                   timeoutMs: 15000,
@@ -2341,12 +2562,14 @@ export class SponsorRelayController {
                     this.lastCompletedDeploymentHash = attemptItemHash;
                     this.emitProgress({
                       stage: "completed",
-                      label: "Relay ready",
+                      label: deploymentReadyLabel(attemptProfile),
                       progress: 100,
                       status: "success",
                       itemHash: attemptItemHash,
-                      detail:
+                      detail: deploymentReadyDetail(
+                        attemptProfile,
                         "The relay completed startup after a transient UI polling error. Runtime and bootstrap registration are confirmed.",
+                      ),
                     });
                     return;
                   }
@@ -2379,12 +2602,14 @@ export class SponsorRelayController {
               this.lastCompletedDeploymentHash = attemptItemHash;
               this.emitProgress({
                 stage: "completed",
-                label: "Relay ready",
+                label: deploymentReadyLabel(attemptProfile),
                 progress: 100,
                 status: "success",
                 itemHash: attemptItemHash,
-                detail:
+                detail: deploymentReadyDetail(
+                  attemptProfile,
                   "The relay completed startup after a transient browser-side polling error. Runtime and bootstrap registration are confirmed.",
+                ),
               });
               return;
             }

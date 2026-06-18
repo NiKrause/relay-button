@@ -194,6 +194,144 @@ test('executeDeployPlan deploys, publishes port forwards, and waits for processi
   assert.ok(notifyIndex < runtimeIndex)
 })
 
+test('executeDeployPlan configures ucan-store guests without relay bootstrap publication', async () => {
+  const calls: string[] = []
+  const configureBodies: string[] = []
+
+  const result = await executeDeployPlan(
+    {
+      ...DEPLOY_PLAN,
+      profile: 'ucan-store',
+      name: 'ucan-store',
+      adminDid: 'did:key:z6Mkadmin123',
+      publishPortForwards: false,
+      verifyReachability: false
+    },
+    {
+      sender: '0x1234',
+      signer: async () => '0xsigned',
+      hasher: (() => {
+        let count = 0
+        return () => `hash-s${++count}`
+      })(),
+      sleep: async () => undefined,
+      tcpProbe: async () => ({ ok: true }),
+      fetch: async (url, init) => {
+        calls.push(`${String(init?.method ?? 'GET')} ${url}`)
+
+        if (String(url).includes('crns-list.aleph.sh')) {
+          return jsonResponse({
+            crns: [{ hash: 'crn-1', name: 'CRN One', address: 'https://crn.example.com', score: 10, country_code: 'DE' }]
+          })
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-s1') && !init?.method) {
+          return jsonResponse({ status: 'processed', details: { rootfs: DEPLOY_PLAN.rootfsItemHash } })
+        }
+
+        if (String(url).includes('scheduler.api.aleph.cloud')) {
+          return jsonResponse({
+            node: {
+              node_id: 'crn-1',
+              url: 'https://crn.example.com'
+            }
+          })
+        }
+
+        if (String(url).includes('api.2n6.me')) {
+          return jsonResponse({
+            url: 'https://upload.example.com',
+            active: true
+          })
+        }
+
+        if (String(url).includes('/v2/about/executions/list')) {
+          return jsonResponse({
+            'hash-s1': {
+              networking: {
+                host_ipv4: '203.0.113.17',
+                ipv6_ip: '2001:db8::17',
+                mapped_ports: {
+                  '80': { host: 30080, tcp: true, udp: false },
+                  '22': { host: 32022, tcp: true, udp: false },
+                  '443': { host: 32443, tcp: true, udp: false }
+                }
+              }
+            }
+          })
+        }
+
+        if (String(url).includes('/health')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/configure')) {
+          configureBodies.push(String(init?.body ?? ''))
+          return jsonResponse({ status: 'configured' })
+        }
+
+        if (String(url).includes('/metadata')) {
+          return jsonResponse({
+            status: 'ready',
+            metadata: {
+              upload_service_url: 'https://upload.example.com',
+              upload_service_did: 'did:web:upload.example.com',
+              revocation_url: 'https://upload.example.com/revocations',
+              revocation_did: 'did:web:upload.example.com:revocations',
+              receipts_url: 'https://upload.example.com/receipts',
+              pwa_env: {
+                VITE_UPLOAD_SERVICE_URL: 'https://upload.example.com',
+                VITE_UPLOAD_SERVICE_DID: 'did:web:upload.example.com',
+                VITE_REVOCATION_URL: 'https://upload.example.com/revocations',
+                VITE_REVOCATION_DID: 'did:web:upload.example.com:revocations',
+                VITE_RECEIPTS_URL: 'https://upload.example.com/receipts'
+              }
+            }
+          })
+        }
+
+        if (String(url).includes('/control/allocation/notify')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/api/v0/messages/') && !init?.method) {
+          return jsonResponse({ status: 'processed', message: { type: 'STORE' } })
+        }
+
+        return jsonResponse(
+          {
+            publication_status: { status: 'success' },
+            message_status: 'pending'
+          },
+          202
+        )
+      }
+    }
+  )
+
+  assert.equal(result.itemHash, 'hash-s1')
+  assert.equal(result.runtime?.hostIpv4, '203.0.113.17')
+  assert.equal(result.runtime?.setupHealth?.ok, true)
+  assert.equal(result.verification?.ok, true)
+  assert.equal(
+    result.configuration?.metadata?.upload_service_url,
+    'https://upload.example.com'
+  )
+  assert.equal(
+    result.configuration?.metadata?.upload_service_did,
+    'did:web:upload.example.com'
+  )
+  assert.equal(configureBodies.length, 1)
+  const configurePayload = JSON.parse(configureBodies[0] ?? '{}')
+  assert.equal(configurePayload.proxy_url, 'https://upload.example.com')
+  assert.equal(configurePayload.webauthn_origin, 'https://upload.example.com')
+  assert.equal(configurePayload.admin_did, 'did:key:z6Mkadmin123')
+  assert.ok(calls.some((entry) => entry.includes('/health')))
+  assert.ok(calls.some((entry) => entry.includes('/configure')))
+  assert.ok(calls.some((entry) => entry.includes('/metadata')))
+  assert.ok(!calls.some((entry) => entry.includes('relay-bootstrap')))
+})
+
 test('executeDeployPlan retries on a rejected first CRN and succeeds on the next candidate', async () => {
   let messageCount = 0
   const logs: string[] = []

@@ -4,6 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   cleanupFailedDeployment,
+  configureUcanStore,
   configureOrbitdbRelaySetup,
   configureUcGoPeer,
   createRelayBootstrapRegistrationId,
@@ -212,6 +213,18 @@ function buildManifest(
   );
 }
 
+function supportsRelayBootstrapProfile(profile: string): boolean {
+  return profile === "uc-go-peer" || profile === "orbitdb-relay";
+}
+
+function supportsGuestSetupProfile(profile: string): boolean {
+  return (
+    profile === "uc-go-peer" ||
+    profile === "orbitdb-relay" ||
+    profile === "ucan-store"
+  );
+}
+
 export async function executeDeployPlan(
   plan: DeployPlan,
   dependencies: DeployExecutorDependencies = {},
@@ -246,7 +259,7 @@ export async function executeDeployPlan(
     : null;
   const isOrbitdbRelayProfile = plan.profile === "orbitdb-relay";
   const publisherDerivedRelayIdentity =
-    (plan.profile === "uc-go-peer" || isOrbitdbRelayProfile) &&
+    supportsRelayBootstrapProfile(plan.profile) &&
     resolvedBootstrapPublisherPrivateKey
       ? deriveLibp2pSecp256k1IdentityFromEvmKey(
           resolvedBootstrapPublisherPrivateKey,
@@ -479,9 +492,9 @@ export async function executeDeployPlan(
     if (
       runtime.hostIpv4 &&
       plan.autoConfigure !== false &&
-      (plan.profile === "uc-go-peer" || isOrbitdbRelayProfile)
+      supportsGuestSetupProfile(plan.profile)
     ) {
-        const mappedPorts = runtime.mappedPorts ?? {};
+      const mappedPorts = runtime.mappedPorts ?? {};
       const setupPort = mappedPorts["80"]?.host ?? null;
       let proxyUrl = plan.enableCaddyProxy ? (runtime.proxyUrl ?? null) : null;
 
@@ -598,6 +611,28 @@ export async function executeDeployPlan(
             continue;
           }
         }
+        if (
+          plan.profile === "ucan-store" &&
+          !String(runtime.proxyUrl ?? proxyUrl ?? "").trim()
+        ) {
+          log(
+            `[deploy] ucan-store runtime is missing a proxy URL; cleaning up ${deployment.itemHash}`,
+          );
+          await cleanupFailedDeployment({
+            sender: identity.address,
+            instanceItemHash: deployment.itemHash,
+            reason: "ucan-store runtime missing proxy URL",
+            signer: identity.signer,
+            hasher,
+            fetch: fetchImpl,
+            channel: plan.channel,
+            apiHost: plan.apiHost,
+          });
+          lastError = new Error(
+            "ucan-store runtime did not expose a proxy URL for public service wiring in time.",
+          );
+          continue;
+        }
 
         log(`[deploy] calling guest /configure for ${deployment.itemHash}`);
         const registrationId = createRelayBootstrapRegistrationId(
@@ -610,7 +645,7 @@ export async function executeDeployPlan(
         const precomputedOwnerAuthorization =
           bootstrapOwnerIdentity != null &&
           publisherDerivedRelayIdentity != null &&
-          (plan.profile === "uc-go-peer" || isOrbitdbRelayProfile)
+          supportsRelayBootstrapProfile(plan.profile)
             ? await signRelayBootstrapAuthorization({
                 ownerAddress: bootstrapOwnerIdentity.address,
                 publisherAddress,
@@ -654,6 +689,17 @@ export async function executeDeployPlan(
                 fetch: fetchImpl,
                 timeoutMs: plan.configureTimeoutMs,
               })
+            : plan.profile === "ucan-store"
+              ? await configureUcanStore({
+                  hostIpv4: runtime.hostIpv4,
+                  publicIpv6: runtime.ipv6,
+                  setupPort,
+                  proxyUrl: runtime.proxyUrl ?? proxyUrl ?? null,
+                  webauthnOrigin: runtime.proxyUrl ?? proxyUrl ?? null,
+                  adminDid: plan.adminDid ?? null,
+                  fetch: fetchImpl,
+                  timeoutMs: plan.configureTimeoutMs,
+                })
             : await configureUcGoPeer({
                 hostIpv4: runtime.hostIpv4,
                 publicIpv6: runtime.ipv6,
@@ -707,6 +753,18 @@ export async function executeDeployPlan(
               typeof (payload as { metadata?: unknown }).metadata === "object"
                 ? ((payload as { metadata: Record<string, unknown> }).metadata)
                 : null;
+            if (plan.profile === "ucan-store") {
+              const pwaEnv =
+                metadata?.pwa_env && typeof metadata.pwa_env === "object"
+                  ? (metadata.pwa_env as Record<string, unknown>)
+                  : null;
+              return Boolean(
+                typeof metadata?.upload_service_did === "string" &&
+                  metadata.upload_service_did.length > 0 &&
+                  typeof pwaEnv?.VITE_UPLOAD_SERVICE_URL === "string" &&
+                  pwaEnv.VITE_UPLOAD_SERVICE_URL.length > 0,
+              );
+            }
             return Boolean(
               typeof metadata?.peer_id === "string" &&
                 Array.isArray(metadata?.probe_multiaddrs) &&
@@ -739,17 +797,33 @@ export async function executeDeployPlan(
             log(
               `[deploy] reachability verification ${attempt + 1}/${plan.verifyAttempts}`,
             );
-            latestVerification = await verifyUcGoPeerReachability({
-              hostIpv4: runtime.hostIpv4,
-              mappedPorts,
-              proxyUrl,
-              verifyProxyHttp: !plan.enableCaddyProxy,
-              skipInternalPorts: plan.enableCaddyProxy ? ["80"] : ["80", "443"],
-              tcpTimeoutMs: plan.tcpTimeoutMs,
-              httpTimeoutMs: plan.httpTimeoutMs,
-              fetch: fetchImpl,
-              tcpProbe,
-            });
+            latestVerification =
+              plan.profile === "ucan-store"
+                ? await verifyUcGoPeerReachability({
+                    hostIpv4: runtime.hostIpv4,
+                    mappedPorts,
+                    proxyUrl:
+                      runtime.webAccess?.active === true
+                        ? (runtime.proxyUrl ?? proxyUrl)
+                        : null,
+                    verifyProxyHttp: runtime.webAccess?.active === true,
+                    skipInternalPorts: ["80"],
+                    tcpTimeoutMs: plan.tcpTimeoutMs,
+                    httpTimeoutMs: plan.httpTimeoutMs,
+                    fetch: fetchImpl,
+                    tcpProbe,
+                  })
+                : await verifyUcGoPeerReachability({
+                    hostIpv4: runtime.hostIpv4,
+                    mappedPorts,
+                    proxyUrl,
+                    verifyProxyHttp: !plan.enableCaddyProxy,
+                    skipInternalPorts: plan.enableCaddyProxy ? ["80"] : ["80", "443"],
+                    tcpTimeoutMs: plan.tcpTimeoutMs,
+                    httpTimeoutMs: plan.httpTimeoutMs,
+                    fetch: fetchImpl,
+                    tcpProbe,
+                  });
             if (latestVerification?.ok) {
               log(`[deploy] reachability verification succeeded`);
               break;

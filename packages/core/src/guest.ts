@@ -373,6 +373,60 @@ export async function configureOrbitdbRelaySetup(args: {
   }
 }
 
+export async function configureUcanStore(args: {
+  hostIpv4: string;
+  setupPort: number;
+  publicIpv6?: string | null;
+  proxyUrl?: string | null;
+  webauthnOrigin?: string | null;
+  webauthnOriginFallbacks?: string | null;
+  adminDid?: string | null;
+  noStart?: boolean;
+  fetch: FetchLike;
+  timeoutMs?: number;
+}): Promise<unknown> {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    Number(args.timeoutMs ?? 180000),
+  );
+
+  const payload = {
+    public_ipv4: args.hostIpv4,
+    public_ipv6: args.publicIpv6 ?? undefined,
+    proxy_url: args.proxyUrl ?? undefined,
+    webauthn_origin: args.webauthnOrigin ?? undefined,
+    webauthn_origin_fallbacks: args.webauthnOriginFallbacks ?? undefined,
+    admin_did: args.adminDid ?? undefined,
+    no_start: args.noStart === true ? true : undefined,
+  };
+
+  try {
+    const response = await args.fetch(
+      `http://${args.hostIpv4}:${args.setupPort}/configure`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      },
+    );
+    const responsePayload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(
+        `Service setup request failed: ${response.status} ${typeof responsePayload === "string" ? responsePayload : JSON.stringify(responsePayload ?? {})}`,
+      );
+    }
+
+    return responsePayload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function fetchUcGoPeerMetadata(args: {
   hostIpv4: string;
   setupPort: number;
@@ -480,7 +534,7 @@ export async function fetchUcGoPeerMetadata(args: {
   }
 
   throw new Error(
-    `Relay metadata did not become ready after ${attempts} attempts: ${
+    `Guest metadata did not become ready after ${attempts} attempts: ${
       lastError
         ? lastError
         : typeof lastPayload === "string"

@@ -18,6 +18,7 @@ import {
 
 export interface DeployPlan {
   profile: string;
+  adminDid?: string;
   privateKey: string;
   bootstrapPublisherPrivateKey: string;
   bootstrapOwnerPrivateKey: string;
@@ -182,6 +183,7 @@ export function parseDeployPlan(
 
   return {
     profile: optionalEnv("ALEPH_VM_PROFILE", "uc-go-peer", env),
+    adminDid: optionalEnv("ALEPH_VM_ADMIN_DID", "", env).trim() || undefined,
     privateKey: requiredEnv("ALEPH_VM_PRIVATE_KEY", env),
     bootstrapPublisherPrivateKey: optionalEnv(
       "ALEPH_VM_BOOTSTRAP_PUBLISHER_PRIVATE_KEY",

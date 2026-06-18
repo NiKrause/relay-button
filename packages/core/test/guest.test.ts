@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  configureUcanStore,
   configureOrbitdbRelaySetup,
   configureUcGoPeer,
   fetchUcGoPeerMetadata,
@@ -175,6 +176,36 @@ test("configureOrbitdbRelaySetup posts bootstrap key material to the guest", asy
   assert.match(body, /"bootstrap_owner_private_key":"0xowner"/);
   assert.match(body, /"bootstrap_owner_authorization_b64":"eyJhdXRoIjp0cnVlfQ=="/);
   assert.match(body, /"bootstrap_registration_id":"relay:orbitdb-relay:demo"/);
+  assert.match(body, /"no_start":true/);
+});
+
+test("configureUcanStore posts the expected payload to the guest", async () => {
+  let body = "";
+  const result = await configureUcanStore({
+    hostIpv4: "203.0.113.9",
+    publicIpv6: "2001:db8::9",
+    setupPort: 28080,
+    proxyUrl: "https://upload.example.com",
+    webauthnOrigin: "https://upload.example.com",
+    webauthnOriginFallbacks: "https://alt-upload.example.com",
+    adminDid: "did:key:zAdmin",
+    noStart: true,
+    fetch: async (_url, init) => {
+      body = String(init?.body ?? "");
+      return jsonResponse({ status: "configured" });
+    },
+  });
+
+  assert.deepEqual(result, { status: "configured" });
+  assert.match(body, /"public_ipv4":"203\.0\.113\.9"/);
+  assert.match(body, /"public_ipv6":"2001:db8::9"/);
+  assert.match(body, /"proxy_url":"https:\/\/upload\.example\.com"/);
+  assert.match(body, /"webauthn_origin":"https:\/\/upload\.example\.com"/);
+  assert.match(
+    body,
+    /"webauthn_origin_fallbacks":"https:\/\/alt-upload\.example\.com"/,
+  );
+  assert.match(body, /"admin_did":"did:key:zAdmin"/);
   assert.match(body, /"no_start":true/);
 });
 

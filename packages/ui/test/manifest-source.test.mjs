@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { resolveManifestSource } from '../dist/shared/index.js'
+import { resolveManifestSource } from '../dist/shared/index.mjs'
 
 test('resolveManifestSource parses pasted manifest JSON', () => {
   const result = resolveManifestSource({

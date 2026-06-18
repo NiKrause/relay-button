@@ -3,7 +3,7 @@ import test from 'node:test'
 
 import {
   createSponsorRelayController,
-} from '../dist/shared/index.js'
+} from '../dist/shared/index.mjs'
 
 function jsonResponse(payload, status = 200) {
   return {
@@ -459,6 +459,219 @@ test('controller falls back to bootstrap signal metadata when 2n6 never becomes 
     globalThis.fetch = originalFetch
     globalThis.window = originalWindow
     globalThis.setTimeout = originalSetTimeout
+  }
+})
+
+test('controller configures the ucan-store guest without relay bootstrap publication', async () => {
+  const originalFetch = globalThis.fetch
+  const seenUrls = []
+  const configureBodies = []
+
+  globalThis.fetch = async (input, init) => {
+    const url = String(input)
+    seenUrls.push(`${init?.method ?? 'GET'} ${url}`)
+
+    if (url.includes('/health')) {
+      return jsonResponse({ ok: true })
+    }
+
+    if (url.includes('/configure')) {
+      configureBodies.push(String(init?.body ?? ''))
+      return jsonResponse({ status: 'configured' })
+    }
+
+    if (url.includes('/metadata')) {
+      return jsonResponse({
+        status: 'ready',
+        metadata: {
+          upload_service_url: 'https://upload.example.com',
+          upload_service_did: 'did:web:upload.example.com',
+          revocation_url: 'https://upload.example.com/revocations',
+          revocation_did: 'did:web:upload.example.com:revocations',
+          receipts_url: 'https://upload.example.com/receipts',
+          pwa_env: {
+            VITE_UPLOAD_SERVICE_URL: 'https://upload.example.com',
+            VITE_UPLOAD_SERVICE_DID: 'did:web:upload.example.com',
+            VITE_REVOCATION_URL: 'https://upload.example.com/revocations',
+            VITE_REVOCATION_DID: 'did:web:upload.example.com:revocations',
+            VITE_RECEIPTS_URL: 'https://upload.example.com/receipts',
+          },
+        },
+      })
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+
+  try {
+    const controller = createSponsorRelayController({
+      apiHost: 'https://api.aleph.im',
+    })
+
+    controller.patch({
+      manifest: {
+        profile: 'ucan-store',
+        version: 'test-v1',
+        rootfsItemHash: 'f'.repeat(64),
+        rootfsSizeMiB: 1024,
+        createdAt: '2026-06-18T00:00:00.000Z',
+      },
+    })
+
+    await controller.configureRelayBootstrapRegistration({
+      itemHash: 'c'.repeat(64),
+      deploymentToken: 'deploy-token-ucan-store',
+      runtime: {
+        allocation: null,
+        execution: null,
+        webAccess: null,
+        webAccessUrl: 'https://upload.example.com',
+        hostIpv4: '203.0.113.17',
+        ipv6: '2001:db8::17',
+        proxyUrl: 'https://upload.example.com',
+        mappedPorts: {
+          '80': { host: 30080, tcp: true, udp: false },
+          '443': { host: 32443, tcp: true, udp: false },
+        },
+        diagnostics: {
+          state: 'ready',
+          reason: null,
+          schedulerSource: 'manual',
+          executionSeen: true,
+          webAccessActive: true,
+          mappedPortCount: 2,
+          proxyUrl: 'https://upload.example.com',
+        },
+        sshCommand: null,
+        selectedCrn: null,
+        executionLookupBlocked: false,
+      }
+    })
+
+    assert.ok(seenUrls.some((entry) => entry.includes('/health')))
+    assert.ok(seenUrls.some((entry) => entry.includes('/configure')))
+    assert.ok(seenUrls.some((entry) => entry.includes('/metadata')))
+    assert.ok(!seenUrls.some((entry) => entry.includes('relay-bootstrap')))
+    assert.ok(!seenUrls.some((entry) => entry.includes('vm-bootstrap-config')))
+    assert.equal(configureBodies.length, 1)
+    const configurePayload = JSON.parse(configureBodies[0] ?? '{}')
+    assert.equal(configurePayload.proxy_url, 'https://upload.example.com')
+    assert.equal(configurePayload.webauthn_origin, 'https://upload.example.com')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('controller refresh skips bootstrap registration lookups for ucan-store manifests', async () => {
+  const originalFetch = globalThis.fetch
+  const seenUrls = []
+  const walletAddress = '0x1234000000000000000000000000000000000000'
+  const rootfsItemHash = 'd'.repeat(64)
+
+  globalThis.fetch = async (input, init) => {
+    const url = String(input)
+    seenUrls.push(`${init?.method ?? 'GET'} ${url}`)
+
+    if (url.includes('/api/v0/aggregates/') && url.includes('keys=pricing')) {
+      return jsonResponse({
+        data: {
+          pricing: {
+            instance: {
+              price: { compute_unit: 1 },
+              compute_unit: { vcpus: 1, memory_mib: 1024, disk_mib: 10240 },
+              tiers: [{ id: 'tiny', compute_units: 1 }],
+            },
+          },
+        },
+      })
+    }
+
+    if (url.includes('crns.json')) {
+      return jsonResponse({
+        crns: [
+          {
+            hash: 'crn-1',
+            name: 'CRN One',
+            address: 'https://crn.example.com',
+          },
+        ],
+      })
+    }
+
+    if (url.includes(`/api/v0/addresses/${walletAddress}/balance`)) {
+      return jsonResponse({
+        balance: 100,
+        locked_amount: 0,
+        credit_balance: 100,
+      })
+    }
+
+    if (url.includes('/api/v0/messages.json') && url.includes('msgTypes=INSTANCE')) {
+      return jsonResponse({ messages: [] })
+    }
+
+    if (url.includes(`/api/v0/messages/${rootfsItemHash}`)) {
+      return jsonResponse({
+        status: 'processed',
+        type: 'STORE',
+        messages: [
+          {
+            type: 'STORE',
+            content: { item_hash: 'bafytestrootfs' },
+          },
+        ],
+      })
+    }
+
+    if (url.includes('/ipfs/bafytestrootfs')) {
+      return {
+        ok: true,
+        status: 200,
+        url,
+        async json() {
+          return {}
+        },
+      }
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+
+  try {
+    const controller = createSponsorRelayController({
+      apiHost: 'https://api.aleph.im',
+      crnListUrl: 'https://crns-list.aleph.sh/crns.json',
+    })
+
+    controller.patch({
+      wallet: {
+        connected: true,
+        address: walletAddress,
+        chainId: '0x1',
+        isMetaMask: true,
+      },
+      manifestJson: JSON.stringify({
+        profile: 'ucan-store',
+        version: 'ucan-store-v0.1.0',
+        rootfsItemHash,
+        rootfsSizeMiB: 20480,
+        createdAt: '2026-06-18T00:00:00.000Z',
+        requiredPortForwards: [
+          { port: 80, tcp: true, udp: false, purpose: 'Temporary setup endpoint' },
+          { port: 443, tcp: true, udp: false, purpose: 'HTTPS upload API, did:web discovery, revocation, and receipt proxy' },
+        ],
+      }),
+    })
+
+    await controller.refresh()
+
+    assert.equal(controller.getState().statusText, 'Service deployment data ready')
+    assert.equal(
+      seenUrls.some((entry) => entry.includes('relay-bootstrap')),
+      false,
+    )
+  } finally {
+    globalThis.fetch = originalFetch
   }
 })
 
