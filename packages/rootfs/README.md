@@ -18,7 +18,7 @@ Current shared reference profiles live under:
 
 - `reference/uc-go-peer/contract.json`
 - `reference/uc-go-peer/rootfs/*`
-- `reference/orbitdb-relay-pinner/contract.json`
-- `reference/orbitdb-relay-pinner/rootfs/*`
+- `reference/orbitdb-relay/contract.json`
+- `reference/orbitdb-relay/rootfs/*`
 - `reference/ucan-store/contract.json`
 - `reference/ucan-store/rootfs/*`
