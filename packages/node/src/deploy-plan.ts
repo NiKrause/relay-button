@@ -33,6 +33,7 @@ export interface DeployPlan {
   rootfsItemHash: string;
   rootfsVersion: string;
   rootfsSizeMiB: number;
+  placementStrategy: DeploymentPlacementStrategy;
   crnHash: string;
   preferredCountryCode: string;
   geoCrnLimit: number;
@@ -60,6 +61,32 @@ export interface DeployPlan {
   verifyReachability: boolean;
   requiredPorts: RootfsRequiredPortForward[];
   publishPortForwards: boolean;
+}
+
+export type DeploymentPlacementStrategy = "scheduler" | "manual";
+
+function parsePlacementStrategy(
+  env: NodeJS.ProcessEnv = process.env,
+): DeploymentPlacementStrategy {
+  const raw = optionalEnv("ALEPH_VM_PLACEMENT_STRATEGY", "", env)
+    .trim()
+    .toLowerCase();
+  if (!raw) {
+    return optionalEnv("ALEPH_VM_CRN_HASH", "", env).trim()
+      ? "manual"
+      : "scheduler";
+  }
+
+  if (raw === "scheduler" || raw === "auto") {
+    return "scheduler";
+  }
+  if (raw === "manual" || raw === "crn" || raw === "crn-list") {
+    return "manual";
+  }
+
+  throw new Error(
+    "ALEPH_VM_PLACEMENT_STRATEGY must be scheduler, auto, manual, crn, or crn-list.",
+  );
 }
 
 function isValidRequiredPortForward(
@@ -244,6 +271,7 @@ export function parseDeployPlan(
     rootfsItemHash,
     rootfsVersion: optionalEnv("ALEPH_VM_ROOTFS_VERSION", "", env),
     rootfsSizeMiB: integerEnv("ALEPH_VM_ROOTFS_SIZE_MIB", 20480, env),
+    placementStrategy: parsePlacementStrategy(env),
     crnHash: optionalEnv("ALEPH_VM_CRN_HASH", "", env),
     preferredCountryCode: optionalEnv(
       "ALEPH_VM_PREFERRED_COUNTRY_CODE",

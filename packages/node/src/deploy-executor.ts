@@ -63,6 +63,20 @@ type AlephBalanceSnapshot = {
   locked_amount?: unknown;
 };
 
+type DeploymentPlacementCandidate =
+  | {
+      strategy: "scheduler";
+      label: string;
+      crn: null;
+      crns: CrnRecord[];
+    }
+  | {
+      strategy: "manual";
+      label: string;
+      crn: CrnRecord;
+      crns: CrnRecord[];
+    };
+
 function defaultHasher(payload: string): string {
   return createHash("sha256").update(payload).digest("hex");
 }
@@ -172,10 +186,21 @@ async function logBalancePreflight(args: {
   }
 }
 
-async function candidateCrnsForPlan(
+async function deploymentPlacementsForPlan(
   plan: DeployPlan,
   fetchImpl: typeof fetch,
-): Promise<CrnRecord[]> {
+): Promise<DeploymentPlacementCandidate[]> {
+  if (plan.placementStrategy === "scheduler" && !plan.crnHash) {
+    return [
+      {
+        strategy: "scheduler",
+        label: "Aleph scheduler",
+        crn: null,
+        crns: [],
+      },
+    ];
+  }
+
   const crns = await fetchCrns({
     url: plan.crnListUrl,
     fetch: fetchImpl,
@@ -183,16 +208,53 @@ async function candidateCrnsForPlan(
 
   if (plan.crnHash) {
     const explicit = crns.find((crn) => crn.hash === plan.crnHash);
-    return explicit ? [explicit] : [];
+    return explicit
+      ? [
+          {
+            strategy: "manual",
+            label: explicit.name ?? explicit.hash,
+            crn: explicit,
+            crns,
+          },
+        ]
+      : [];
   }
 
-  return (
+  const rankedCrns = (
     await rankCandidateCrns(crns, {
       fetch: fetchImpl,
       preferredCountryCode: plan.preferredCountryCode,
       geoLimit: plan.geoCrnLimit,
     })
   ).slice(0, Math.max(1, plan.maxCrnAttempts));
+
+  return rankedCrns.map((crn) => ({
+    strategy: "manual",
+    label: crn.name ?? crn.hash,
+    crn,
+    crns: rankedCrns,
+  }));
+}
+
+function selectedCrnForRuntime(args: {
+  runtime?: DeployOutputResult["runtime"] | null;
+  fallbackCrn?: CrnRecord | null;
+}): CrnRecord | null {
+  const runtimeSelectedCrn = args.runtime?.selectedCrn ?? null;
+  if (runtimeSelectedCrn) {
+    return runtimeSelectedCrn;
+  }
+
+  const allocation = args.runtime?.allocation ?? null;
+  if (allocation?.crnHash || allocation?.crnUrl) {
+    return {
+      hash: allocation.crnHash ?? "",
+      name: allocation.crnUrl ?? "Aleph scheduler",
+      address: allocation.crnUrl ?? undefined,
+    };
+  }
+
+  return args.fallbackCrn ?? null;
 }
 
 function buildManifest(
@@ -266,8 +328,8 @@ export async function executeDeployPlan(
         )
       : null;
 
-  const candidateCrns = await candidateCrnsForPlan(plan, fetchImpl);
-  if (candidateCrns.length === 0) {
+  const placementCandidates = await deploymentPlacementsForPlan(plan, fetchImpl);
+  if (placementCandidates.length === 0) {
     throw new Error("No compatible CRN was available for deployment.");
   }
 
@@ -279,17 +341,32 @@ export async function executeDeployPlan(
     fetch: fetchImpl,
     log,
   });
-  log(
-    `[deploy] candidate CRNs=${candidateCrns
-      .map((crn) => `${crn.name ?? crn.hash}:${crn.hash}`)
-      .join(", ")}`,
-  );
+  if (
+    placementCandidates.length === 1 &&
+    placementCandidates[0]?.strategy === "scheduler"
+  ) {
+    log("[deploy] placement=Aleph scheduler (no pinned CRN requirement)");
+  } else {
+    log(
+      `[deploy] placement=manual candidate CRNs=${placementCandidates
+        .map((candidate) => {
+          const crn = candidate.strategy === "manual" ? candidate.crn : null;
+          if (!crn) return candidate.label;
+          return `${crn.name ?? crn.hash}:${crn.hash}`;
+        })
+        .join(", ")}`,
+    );
+  }
 
   let lastError: Error | null = null;
 
-  for (const [candidateIndex, candidateCrn] of candidateCrns.entries()) {
+  for (const [candidateIndex, placement] of placementCandidates.entries()) {
+    const candidateCrn = placement.crn;
+    const placementLabel = placement.label;
     log(
-      `[deploy] attempting CRN ${candidateIndex + 1}/${candidateCrns.length}: ${candidateCrn.name ?? candidateCrn.hash} (${candidateCrn.hash})`,
+      placement.strategy === "scheduler"
+        ? `[deploy] attempting scheduler placement ${candidateIndex + 1}/${placementCandidates.length}`
+        : `[deploy] attempting CRN ${candidateIndex + 1}/${placementCandidates.length}: ${placementLabel} (${placement.crn.hash})`,
     );
     const content = createInstanceContent({
       address: identity.address,
@@ -301,7 +378,7 @@ export async function executeDeployPlan(
       memoryMiB: plan.memoryMiB,
       seconds: plan.seconds,
       rootfsVersion: plan.rootfsVersion || "custom-rootfs",
-      crnHash: candidateCrn.hash,
+      crnHash: candidateCrn?.hash,
       deployer: "relay-button",
     });
 
@@ -317,7 +394,7 @@ export async function executeDeployPlan(
     });
 
     log(
-      `[deploy] broadcasted INSTANCE message ${deployment.itemHash} on ${candidateCrn.name ?? candidateCrn.hash}`,
+      `[deploy] broadcasted INSTANCE message ${deployment.itemHash} via ${placementLabel}`,
     );
 
     const inspection = await waitForDeploymentResult(deployment.itemHash, {
@@ -345,19 +422,19 @@ export async function executeDeployPlan(
         );
       }
       log(
-        `[deploy] CRN ${candidateCrn.name ?? candidateCrn.hash} rejected deployment ${deployment.itemHash}: ${
+        `[deploy] placement ${placementLabel} rejected deployment ${deployment.itemHash}: ${
           inspection.rejectionReason ?? "no additional reason"
         }`,
       );
       lastError = new Error(
-        `Deployment on ${candidateCrn.name ?? candidateCrn.hash} was rejected: ${inspection.rejectionReason ?? "no additional rejection reason from Aleph"}.`,
+        `Deployment via ${placementLabel} was rejected: ${inspection.rejectionReason ?? "no additional rejection reason from Aleph"}.`,
       );
       continue;
     }
 
     if (inspection.status !== "processed") {
       log(
-        `[deploy] deployment ${deployment.itemHash} on ${candidateCrn.name ?? candidateCrn.hash} did not become processed; cleaning up`,
+        `[deploy] deployment ${deployment.itemHash} via ${placementLabel} did not become processed; cleaning up`,
       );
       await cleanupFailedDeployment({
         sender: identity.address,
@@ -370,7 +447,7 @@ export async function executeDeployPlan(
         apiHost: plan.apiHost,
       });
       lastError = new Error(
-        `Deployment message ${deployment.itemHash} on ${candidateCrn.name ?? candidateCrn.hash} stayed ${inspection.status} without becoming processed.`,
+        `Deployment message ${deployment.itemHash} via ${placementLabel} stayed ${inspection.status} without becoming processed.`,
       );
       continue;
     }
@@ -401,7 +478,7 @@ export async function executeDeployPlan(
       );
     }
 
-    if (candidateCrn.address) {
+    if (candidateCrn?.address) {
       log(`[deploy] notifying CRN allocation endpoint ${candidateCrn.address}`);
       await notifyCrnAllocationWithRetry({
         crnUrl: candidateCrn.address,
@@ -411,13 +488,13 @@ export async function executeDeployPlan(
     }
 
     log(
-      `[deploy] waiting for runtime networking on ${candidateCrn.name ?? candidateCrn.hash}`,
+      `[deploy] waiting for runtime networking via ${placementLabel}`,
     );
     let runtime = await waitForVmRuntime({
       itemHash: deployment.itemHash,
       fetch: fetchImpl,
-      crnHash: candidateCrn.hash,
-      crns: candidateCrns,
+      crnHash: candidateCrn?.hash,
+      crns: placement.crns,
       crnListUrl: plan.crnListUrl,
       requirePublicGuestIpv6ForProxy: plan.enableCaddyProxy === true,
       attempts: plan.runtimeAttempts,
@@ -444,10 +521,10 @@ export async function executeDeployPlan(
           setupHealth: null,
           mappedPorts: runtime.mappedPorts,
           diagnostics: runtime.diagnostics,
-          selectedCrn: runtime.selectedCrn ?? {
-            hash: candidateCrn.hash,
-            name: candidateCrn.name ?? "",
-          },
+          selectedCrn: selectedCrnForRuntime({
+            runtime,
+            fallbackCrn: candidateCrn,
+          }),
         }
       : {
           allocation: null,
@@ -458,17 +535,12 @@ export async function executeDeployPlan(
           setupHealth: null,
           mappedPorts: {},
           diagnostics: diagnosticsFromInspection(inspection, plan),
-          selectedCrn: {
-            hash: candidateCrn.hash,
-            name: candidateCrn.name ?? "",
-          },
+          selectedCrn: candidateCrn,
         };
 
     if (runtime?.diagnostics?.state !== "ready") {
       log(
-        `[deploy] processed deployment ${deployment.itemHash} never exposed usable runtime networking on ${
-          candidateCrn.name ?? candidateCrn.hash
-        }; cleaning up`,
+        `[deploy] processed deployment ${deployment.itemHash} never exposed usable runtime networking via ${placementLabel}; cleaning up`,
       );
       await cleanupFailedDeployment({
         sender: identity.address,
@@ -481,7 +553,7 @@ export async function executeDeployPlan(
         apiHost: plan.apiHost,
       });
       lastError = new Error(
-        `Deployment ${deployment.itemHash} on ${candidateCrn.name ?? candidateCrn.hash} was processed but did not expose runtime networking in time.${runtime?.diagnostics?.reason ? ` ${runtime.diagnostics.reason}` : ""}`,
+        `Deployment ${deployment.itemHash} via ${placementLabel} was processed but did not expose runtime networking in time.${runtime?.diagnostics?.reason ? ` ${runtime.diagnostics.reason}` : ""}`,
       );
       continue;
     }
@@ -515,8 +587,8 @@ export async function executeDeployPlan(
           latestRuntime = await fetchVmRuntime({
             itemHash: deployment.itemHash,
             fetch: fetchImpl,
-            crnHash: candidateCrn.hash,
-            crns: candidateCrns,
+            crnHash: candidateCrn?.hash,
+            crns: placement.crns,
             crnListUrl: plan.crnListUrl,
           }).catch(() => latestRuntime);
           log(
@@ -533,10 +605,10 @@ export async function executeDeployPlan(
         runtimeMetadata.sshCommand = runtime.sshCommand;
         runtimeMetadata.mappedPorts = runtime.mappedPorts;
         runtimeMetadata.diagnostics = runtime.diagnostics;
-        runtimeMetadata.selectedCrn = runtime.selectedCrn ?? {
-          hash: candidateCrn.hash,
-          name: candidateCrn.name ?? "",
-        };
+        runtimeMetadata.selectedCrn = selectedCrnForRuntime({
+          runtime,
+          fallbackCrn: candidateCrn,
+        });
         proxyUrl = runtime.webAccess?.active === true ? (runtime.proxyUrl ?? null) : null;
         if (!proxyUrl) {
           log(
@@ -935,7 +1007,7 @@ export async function executeDeployPlan(
                 publisherAddress,
                 publisherSigner:
                   bootstrapPublisherIdentity?.signer ?? undefined,
-                crns: candidateCrns,
+                crns: placement.crns,
                 crnListUrl: plan.crnListUrl,
                 current: {
                   itemHash: deployment.itemHash,
@@ -1023,7 +1095,10 @@ export async function executeDeployPlan(
       itemHash: deployment.itemHash,
       httpStatus: deployment.httpStatus,
       status: inspection.status,
-      selectedCrn: { hash: candidateCrn.hash, name: candidateCrn.name ?? "" },
+      selectedCrn: selectedCrnForRuntime({
+        runtime: runtimeMetadata,
+        fallbackCrn: candidateCrn,
+      }),
       portForwarding,
       runtime: runtimeMetadata,
       configuration,

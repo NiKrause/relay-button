@@ -19,6 +19,7 @@ const DEPLOY_PLAN: DeployPlan = {
   rootfsItemHash: 'a'.repeat(64),
   rootfsVersion: '2026.05.14',
   rootfsSizeMiB: 20480,
+  placementStrategy: 'manual',
   crnHash: 'crn-1',
   preferredCountryCode: 'DE',
   geoCrnLimit: 30,
@@ -192,6 +193,95 @@ test('executeDeployPlan deploys, publishes port forwards, and waits for processi
   assert.notEqual(notifyIndex, -1)
   assert.notEqual(runtimeIndex, -1)
   assert.ok(notifyIndex < runtimeIndex)
+})
+
+test('executeDeployPlan uses scheduler placement without pinning a CRN by default', async () => {
+  const calls: string[] = []
+  let instanceContent: Record<string, unknown> | null = null
+
+  const result = await executeDeployPlan(
+    {
+      ...DEPLOY_PLAN,
+      placementStrategy: 'scheduler',
+      crnHash: '',
+      publishPortForwards: false,
+      enableCaddyProxy: false,
+      autoConfigure: false,
+      verifyReachability: false
+    },
+    {
+      sender: '0x1234',
+      signer: async () => '0xsigned',
+      hasher: (() => {
+        let count = 0
+        return () => `hash-scheduler-${++count}`
+      })(),
+      sleep: async () => undefined,
+      tcpProbe: async () => ({ ok: true }),
+      fetch: async (url, init) => {
+        calls.push(`${String(init?.method ?? 'GET')} ${url}`)
+
+        if (String(url).includes('crns-list.aleph.sh')) {
+          throw new Error('scheduler placement should not preselect from the CRN list')
+        }
+
+        if (String(url).includes('/api/v0/addresses/0x1234/balance')) {
+          return jsonResponse({})
+        }
+
+        if (String(url).endsWith('/api/v0/messages') && init?.method === 'POST') {
+          const payload = JSON.parse(String(init.body)) as {
+            message?: { type?: string; item_content?: string }
+          }
+          if (payload.message?.type === 'INSTANCE') {
+            instanceContent = JSON.parse(payload.message.item_content ?? '{}')
+          }
+          return jsonResponse({
+            publication_status: { status: 'success' },
+            message_status: 'pending'
+          }, 202)
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-scheduler-1') && !init?.method) {
+          return jsonResponse({ status: 'processed', details: { rootfs: DEPLOY_PLAN.rootfsItemHash } })
+        }
+
+        if (String(url).includes('scheduler.api.aleph.cloud')) {
+          return jsonResponse({
+            node: {
+              node_id: 'scheduler-crn',
+              url: 'https://scheduler-crn.example.com'
+            }
+          })
+        }
+
+        if (String(url).includes('api.2n6.me')) {
+          return jsonResponse({ active: false })
+        }
+
+        if (String(url).includes('/v2/about/executions/list')) {
+          return jsonResponse({
+            'hash-scheduler-1': {
+              networking: {
+                host_ipv4: '203.0.113.8',
+                mapped_ports: {
+                  '22': { host: 32022, tcp: true, udp: false }
+                }
+              }
+            }
+          })
+        }
+
+        return jsonResponse({})
+      }
+    }
+  )
+
+  assert.equal(result.itemHash, 'hash-scheduler-1')
+  assert.equal(result.runtime?.allocation?.source, 'scheduler')
+  assert.equal(result.runtime?.selectedCrn?.hash, 'scheduler-crn')
+  assert.equal(instanceContent?.requirements, undefined)
+  assert.ok(!calls.some((entry) => entry.includes('crns-list.aleph.sh')))
 })
 
 test('executeDeployPlan configures ucan-store guests without relay bootstrap publication', async () => {
