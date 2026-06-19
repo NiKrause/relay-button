@@ -132,6 +132,33 @@ function diagnosticsFromInspection(
   };
 }
 
+const RETRYABLE_ROOTFS_DEPENDENCY_ERROR_CODES = new Set([300, 301]);
+
+function rootfsDependencyRetryLimit(plan: DeployPlan): number {
+  return Math.max(1, Math.min(3, plan.maxCrnAttempts));
+}
+
+function isRetryableRootfsDependencyRejection(
+  result: DeploymentInspectionResult,
+  rootfsRef: string,
+): boolean {
+  if (result.status !== "rejected") return false;
+  if (!RETRYABLE_ROOTFS_DEPENDENCY_ERROR_CODES.has(Number(result.errorCode))) {
+    return false;
+  }
+
+  const referencedByDetails =
+    result.details &&
+    typeof result.details === "object" &&
+    Array.isArray((result.details as { errors?: unknown }).errors) &&
+    (result.details as { errors?: unknown[] }).errors?.includes(rootfsRef);
+  const rootfsReference = result.references.find(
+    (reference) => reference.itemHash === rootfsRef,
+  );
+
+  return Boolean(referencedByDetails || rootfsReference);
+}
+
 function mergeVerificationState(args: {
   inspection: DeploymentInspectionResult;
   runtime?: DeployOutputResult["runtime"];
@@ -368,50 +395,84 @@ export async function executeDeployPlan(
         ? `[deploy] attempting scheduler placement ${candidateIndex + 1}/${placementCandidates.length}`
         : `[deploy] attempting CRN ${candidateIndex + 1}/${placementCandidates.length}: ${placementLabel} (${placement.crn.hash})`,
     );
-    const content = createInstanceContent({
-      address: identity.address,
-      name: plan.name,
-      sshPublicKey: plan.sshPublicKey,
-      rootfsItemHash: plan.rootfsItemHash,
-      rootfsSizeMiB: plan.rootfsSizeMiB,
-      vcpus: plan.vcpus,
-      memoryMiB: plan.memoryMiB,
-      seconds: plan.seconds,
-      rootfsVersion: plan.rootfsVersion || "custom-rootfs",
-      crnHash: candidateCrn?.hash,
-      deployer: "relay-button",
-    });
+    const placementAttemptLimit = rootfsDependencyRetryLimit(plan);
+    let deployment: Awaited<ReturnType<typeof deployInstance>> | null = null;
+    let inspection: DeploymentInspectionResult | null = null;
 
-    const deployment = await deployInstance({
-      sender: identity.address,
-      content,
-      hasher,
-      signer: identity.signer,
-      fetch: fetchImpl,
-      apiHost: plan.apiHost,
-      channel: plan.channel,
-      sync: true,
-    });
+    for (
+      let placementAttempt = 1;
+      placementAttempt <= placementAttemptLimit;
+      placementAttempt += 1
+    ) {
+      const content = createInstanceContent({
+        address: identity.address,
+        name: plan.name,
+        sshPublicKey: plan.sshPublicKey,
+        rootfsItemHash: plan.rootfsItemHash,
+        rootfsSizeMiB: plan.rootfsSizeMiB,
+        vcpus: plan.vcpus,
+        memoryMiB: plan.memoryMiB,
+        seconds: plan.seconds,
+        rootfsVersion: plan.rootfsVersion || "custom-rootfs",
+        crnHash: candidateCrn?.hash,
+        deployer: "relay-button",
+      });
 
-    log(
-      `[deploy] broadcasted INSTANCE message ${deployment.itemHash} via ${placementLabel}`,
-    );
+      deployment = await deployInstance({
+        sender: identity.address,
+        content,
+        hasher,
+        signer: identity.signer,
+        fetch: fetchImpl,
+        apiHost: plan.apiHost,
+        channel: plan.channel,
+        sync: true,
+      });
 
-    const inspection = await waitForDeploymentResult(deployment.itemHash, {
-      rootfsRef: plan.rootfsItemHash,
-      apiHost: plan.apiHost,
-      fetch: fetchImpl,
-      attempts: plan.waitAttempts,
-      delayMs: plan.waitDelayMs,
-      sleep: sleepImpl,
-      onAttempt: (result, attempt, attempts) => {
+      log(
+        `[deploy] broadcasted INSTANCE message ${deployment.itemHash} via ${placementLabel}`,
+      );
+
+      inspection = await waitForDeploymentResult(deployment.itemHash, {
+        rootfsRef: plan.rootfsItemHash,
+        apiHost: plan.apiHost,
+        fetch: fetchImpl,
+        attempts: plan.waitAttempts,
+        delayMs: plan.waitDelayMs,
+        sleep: sleepImpl,
+        onAttempt: (result, attempt, attempts) => {
+          log(
+            `[deploy] Aleph processing ${attempt}/${attempts} for ${deployment?.itemHash}: status=${result.status}${
+              result.rejectionReason ? ` reason=${result.rejectionReason}` : ""
+            }`,
+          );
+        },
+      });
+
+      if (
+        placementAttempt < placementAttemptLimit &&
+        isRetryableRootfsDependencyRejection(inspection, plan.rootfsItemHash)
+      ) {
+        if (inspection.details) {
+          log(
+            `[deploy] raw rejection details for ${deployment.itemHash}: ${JSON.stringify(
+              inspection.details,
+            )}`,
+          );
+        }
         log(
-          `[deploy] Aleph processing ${attempt}/${attempts} for ${deployment.itemHash}: status=${result.status}${
-            result.rejectionReason ? ` reason=${result.rejectionReason}` : ""
-          }`,
+          `[deploy] ${placementLabel} rejected ${deployment.itemHash} because the rootfs STORE is not visible to the VM processor yet; retrying instance broadcast ${placementAttempt + 1}/${placementAttemptLimit}`,
         );
-      },
-    });
+        await sleepImpl(plan.waitDelayMs);
+        continue;
+      }
+
+      break;
+    }
+
+    if (!deployment || !inspection) {
+      throw new Error(`Deployment via ${placementLabel} did not start.`);
+    }
 
     if (inspection.status === "rejected") {
       if (inspection.details) {

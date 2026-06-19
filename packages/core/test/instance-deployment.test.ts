@@ -242,7 +242,7 @@ test('createDeploymentIntent hashes a deterministic deployment intent from unsig
     vcpus: 1,
     memoryMiB: 1024,
     crnHash: 'crnHash',
-    channel: 'TEST',
+    channel: 'ALEPH-CLOUDSOLUTIONS',
     expiresAt: 456,
     maxCost: '14250'
   })

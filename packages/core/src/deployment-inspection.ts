@@ -167,15 +167,33 @@ export async function waitForDeploymentResult(
   const delayMs = Math.max(0, Number(options.delayMs ?? 2000))
   const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)))
 
-  let lastResult = await inspectDeploymentResult(itemHash, options)
-  options.onAttempt?.(lastResult, 1, attempts)
-  for (let attempt = 1; attempt < attempts; attempt += 1) {
+  let lastResult: DeploymentInspectionResult = {
+    status: 'unknown',
+    errorCode: null,
+    details: null,
+    rejectionReason: null,
+    references: []
+  }
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      lastResult = await inspectDeploymentResult(itemHash, options)
+    } catch (error) {
+      if (!isTransientMessageLookupError(error)) {
+        throw error
+      }
+      lastResult = {
+        ...lastResult,
+        rejectionReason: error instanceof Error ? error.message : String(error)
+      }
+    }
+    options.onAttempt?.(lastResult, attempt, attempts)
     if (lastResult.status === 'processed' || lastResult.status === 'rejected') {
       return lastResult
     }
-    await sleep(delayMs)
-    lastResult = await inspectDeploymentResult(itemHash, options)
-    options.onAttempt?.(lastResult, attempt + 1, attempts)
+    if (attempt < attempts) {
+      await sleep(delayMs)
+    }
   }
 
   return lastResult

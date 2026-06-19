@@ -49,6 +49,12 @@ import {
   DEFAULT_INSTANCE_NAME,
   DEFAULT_MANIFEST_URL,
   DEFAULT_TIER_ID,
+  DEFAULT_UCAN_STORE_ALLOWED_CAPABILITIES,
+  DEFAULT_UCAN_STORE_MAX_DELEGATION_EXPIRATION_SECONDS,
+  DEFAULT_UCAN_STORE_PWA_ORIGIN,
+  DEFAULT_UCAN_STORE_SERVICE_DID,
+  DEFAULT_UCAN_STORE_SERVICE_ORIGIN,
+  DEFAULT_UCAN_STORE_USER_DELEGATION_EXPIRATION_SECONDS,
   DEPLOYMENT_PENDING_WARNING_MS,
   IDLE_DEPLOYMENT_PROGRESS,
   MANIFEST_SOURCE_REFRESH_DEBOUNCE_MS,
@@ -117,16 +123,23 @@ function defaultUcanStoreBootstrapInput(
 ): SponsorRelayUcanStoreBootstrapInput {
   return {
     adminDid: props.ucanStoreBootstrap?.adminDid ?? "",
-    serviceDid: props.ucanStoreBootstrap?.serviceDid ?? "",
+    serviceDid:
+      props.ucanStoreBootstrap?.serviceDid ?? DEFAULT_UCAN_STORE_SERVICE_DID,
     spaceDid: props.ucanStoreBootstrap?.spaceDid ?? "",
     rootDelegationProof: props.ucanStoreBootstrap?.rootDelegationProof ?? "",
-    allowedCapabilities: props.ucanStoreBootstrap?.allowedCapabilities ?? "",
+    allowedCapabilities:
+      props.ucanStoreBootstrap?.allowedCapabilities ??
+      DEFAULT_UCAN_STORE_ALLOWED_CAPABILITIES.join("\n"),
     defaultUserDelegationExpiration:
-      props.ucanStoreBootstrap?.defaultUserDelegationExpiration ?? "",
+      props.ucanStoreBootstrap?.defaultUserDelegationExpiration ??
+      DEFAULT_UCAN_STORE_USER_DELEGATION_EXPIRATION_SECONDS,
     maxUserDelegationExpiration:
-      props.ucanStoreBootstrap?.maxUserDelegationExpiration ?? "",
-    pwaOrigin: props.ucanStoreBootstrap?.pwaOrigin ?? "",
-    serviceOrigin: props.ucanStoreBootstrap?.serviceOrigin ?? "",
+      props.ucanStoreBootstrap?.maxUserDelegationExpiration ??
+      DEFAULT_UCAN_STORE_MAX_DELEGATION_EXPIRATION_SECONDS,
+    pwaOrigin: props.ucanStoreBootstrap?.pwaOrigin ?? DEFAULT_UCAN_STORE_PWA_ORIGIN,
+    serviceOrigin:
+      props.ucanStoreBootstrap?.serviceOrigin ??
+      DEFAULT_UCAN_STORE_SERVICE_ORIGIN,
   };
 }
 

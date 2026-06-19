@@ -228,7 +228,7 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
       }
       assert.equal(init?.method, 'POST')
       assert.equal(message.type, 'STORE')
-      assert.equal(message.channel, 'TEST')
+      assert.equal(message.channel, 'ALEPH-CLOUDSOLUTIONS')
       assert.match(String(message.signature ?? body.signature ?? ''), /^0x[0-9a-fA-F]+$/)
       const itemContent = JSON.parse(String(message.item_content ?? '{}')) as {
         item_type?: string

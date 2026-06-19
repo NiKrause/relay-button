@@ -4,6 +4,21 @@ import type { DeploymentProgressEvent } from "../../../shared-types/src/deployme
 export const DEFAULT_INSTANCE_NAME = "sponsor-relay";
 export const DEFAULT_MANIFEST_URL = "./rootfs-manifest.json";
 export const DEFAULT_TIER_ID = "tier-1";
+export const DEFAULT_UCAN_STORE_PWA_ORIGIN = "https://ucan.nicokrause.com";
+export const DEFAULT_UCAN_STORE_SERVICE_ORIGIN = "https://ucan-api.nicokrause.com";
+export const DEFAULT_UCAN_STORE_SERVICE_DID = "did:web:ucan-api.nicokrause.com";
+export const DEFAULT_UCAN_STORE_ALLOWED_CAPABILITIES = [
+  "space/blob/add",
+  "space/blob/list",
+  "space/index/add",
+  "space/index/list",
+  "filecoin/offer",
+  "upload/add",
+  "upload/list",
+  "store/add",
+];
+export const DEFAULT_UCAN_STORE_USER_DELEGATION_EXPIRATION_SECONDS = "31536000";
+export const DEFAULT_UCAN_STORE_MAX_DELEGATION_EXPIRATION_SECONDS = "315360000";
 export const ROOTFS_MISSING_STATE: SponsorRelayRootfsHealth = {
   tone: "idle",
   label: "manifest missing",

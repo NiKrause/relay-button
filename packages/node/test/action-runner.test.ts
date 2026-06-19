@@ -144,6 +144,75 @@ test('runActionMode executes the shared deploy executor when required env is pre
   assert.match(writes.join(''), /liveHash/)
 })
 
+test('runActionMode derives ucan-store bootstrap JSON before parsing the deploy plan', async () => {
+  const { env, outputFile, summaryFile } = await createActionEnv('shared-aleph-action-ucan-derived-')
+
+  await runActionMode(
+    {
+      ...env,
+      ALEPH_VM_MODE: 'deploy',
+      ALEPH_VM_PROFILE: 'ucan-store',
+      ALEPH_VM_PRIVATE_KEY: '0xabc',
+      ALEPH_VM_NAME: 'ucan-store',
+      ALEPH_VM_SSH_PUBLIC_KEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest key@example',
+      ALEPH_VM_ROOTFS_ITEM_HASH: 'c'.repeat(64),
+      ALEPH_VM_UCAN_STORE_BOOTSTRAP_MODE: 'derive-from-aleph-private-key',
+      ALEPH_VM_UCAN_STORE_SERVICE_DID: 'did:web:ucan-api.nicokrause.com',
+      ALEPH_VM_UCAN_STORE_SERVICE_ORIGIN: 'https://ucan-api.nicokrause.com',
+      ALEPH_VM_UCAN_STORE_PWA_ORIGIN: 'https://ucan.nicokrause.com'
+    },
+    {
+      deriveUcanStoreBootstrapPackage: async () => ({
+        operatorAddress: '0x1234000000000000000000000000000000000000',
+        adminDid: 'did:key:zDerivedAdmin',
+        serviceDid: 'did:web:ucan-api.nicokrause.com',
+        spaceDid: 'did:key:zDerivedAdmin',
+        rootDelegationProof: 'mZGVyaXZlZA==',
+        allowedCapabilities: ['space/blob/add', 'upload/add'],
+        defaultUserDelegationExpiration: 31536000,
+        maxUserDelegationExpiration: 315360000,
+        pwaOrigin: 'https://ucan.nicokrause.com',
+        serviceOrigin: 'https://ucan-api.nicokrause.com'
+      }),
+      deployExecutor: async (plan) => {
+        assert.equal(plan.adminDid, 'did:key:zDerivedAdmin')
+        assert.deepEqual(plan.ucanStoreBootstrapPackage, {
+          operatorAddress: '0x1234000000000000000000000000000000000000',
+          adminDid: 'did:key:zDerivedAdmin',
+          serviceDid: 'did:web:ucan-api.nicokrause.com',
+          spaceDid: 'did:key:zDerivedAdmin',
+          rootDelegationProof: 'mZGVyaXZlZA==',
+          allowedCapabilities: ['space/blob/add', 'upload/add'],
+          defaultUserDelegationExpiration: 31536000,
+          maxUserDelegationExpiration: 315360000,
+          pwaOrigin: 'https://ucan.nicokrause.com',
+          serviceOrigin: 'https://ucan-api.nicokrause.com'
+        })
+        return {
+          sender: '0x1234',
+          itemHash: 'ucanDerivedHash',
+          status: 'processed',
+          verification: { ok: true },
+          runtime: {
+            diagnostics: {
+              state: 'aleph-processed',
+              timedOut: false,
+              reason: 'Deployment message processed by Aleph.'
+            }
+          }
+        }
+      }
+    }
+  )
+
+  const outputs = await readFile(outputFile, 'utf8')
+  const summary = await readFile(summaryFile, 'utf8')
+  assert.match(outputs, /ucan_store_bootstrap_admin_did=did:key:zDerivedAdmin/)
+  assert.match(outputs, /ucan_store_bootstrap_space_did=did:key:zDerivedAdmin/)
+  assert.match(outputs, /instance_item_hash=ucanDerivedHash/)
+  assert.match(summary, /ucan-store Bootstrap/)
+})
+
 test('runActionMode emits retention outputs in retain-successful-deployments mode', async () => {
   const { env, outputFile, summaryFile } = await createActionEnv('shared-aleph-action-retention-')
   const writes: string[] = []

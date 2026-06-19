@@ -150,3 +150,43 @@ test('waitForDeploymentResult polls until a deployment is processed', async () =
   assert.equal(callCount, 2)
   assert.deepEqual(sleeps, [25])
 })
+
+test('waitForDeploymentResult retries transient message lookup failures', async () => {
+  let callCount = 0
+  const statuses: string[] = []
+
+  const result = await waitForDeploymentResult('deployHash', {
+    attempts: 3,
+    delayMs: 25,
+    sleep: async () => {},
+    onAttempt: (attemptResult) => {
+      statuses.push(attemptResult.status)
+    },
+    fetch: async () => {
+      callCount += 1
+      if (callCount === 1) {
+        return {
+          ok: false,
+          status: 503,
+          async json() {
+            return {}
+          }
+        }
+      }
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            status: 'processed',
+            type: 'INSTANCE'
+          }
+        }
+      }
+    }
+  })
+
+  assert.equal(result.status, 'processed')
+  assert.equal(callCount, 2)
+  assert.deepEqual(statuses, ['unknown', 'processed'])
+})

@@ -284,6 +284,111 @@ test('executeDeployPlan uses scheduler placement without pinning a CRN by defaul
   assert.ok(!calls.some((entry) => entry.includes('crns-list.aleph.sh')))
 })
 
+test('executeDeployPlan rebroadcasts when Aleph rejects scheduler placement before the rootfs STORE is visible', async () => {
+  let messageCount = 0
+  let sleepCount = 0
+  const logs: string[] = []
+
+  const result = await executeDeployPlan(
+    {
+      ...DEPLOY_PLAN,
+      placementStrategy: 'scheduler',
+      crnHash: '',
+      maxCrnAttempts: 3,
+      publishPortForwards: false,
+      enableCaddyProxy: false,
+      autoConfigure: false,
+      verifyReachability: false
+    },
+    {
+      sender: '0x1234',
+      log: (message) => {
+        logs.push(message)
+      },
+      signer: async () => '0xsigned',
+      hasher: (() => {
+        let count = 0
+        return () => `hash-race-${++count}`
+      })(),
+      sleep: async () => {
+        sleepCount += 1
+      },
+      tcpProbe: async () => ({ ok: true }),
+      fetch: async (url, init) => {
+        if (String(url).includes('crns-list.aleph.sh')) {
+          throw new Error('scheduler placement should not preselect from the CRN list')
+        }
+
+        if (String(url).includes('/api/v0/addresses/0x1234/balance')) {
+          return jsonResponse({})
+        }
+
+        if (String(url).endsWith('/api/v0/messages') && init?.method === 'POST') {
+          messageCount += 1
+          return jsonResponse({
+            publication_status: { status: 'success' },
+            message_status: 'pending'
+          }, 202)
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-race-1') && !init?.method) {
+          return jsonResponse({
+            status: 'rejected',
+            error_code: 301,
+            details: {
+              errors: [DEPLOY_PLAN.rootfsItemHash]
+            }
+          })
+        }
+
+        if (String(url).includes(`/api/v0/messages/${DEPLOY_PLAN.rootfsItemHash}`) && !init?.method) {
+          return jsonResponse({
+            status: 'processed',
+            type: 'STORE'
+          })
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-race-2') && !init?.method) {
+          return jsonResponse({ status: 'processed', details: { rootfs: DEPLOY_PLAN.rootfsItemHash } })
+        }
+
+        if (String(url).includes('scheduler.api.aleph.cloud')) {
+          return jsonResponse({
+            node: {
+              node_id: 'scheduler-crn',
+              url: 'https://scheduler-crn.example.com'
+            }
+          })
+        }
+
+        if (String(url).includes('api.2n6.me')) {
+          return jsonResponse({ active: false })
+        }
+
+        if (String(url).includes('/v2/about/executions/list')) {
+          return jsonResponse({
+            'hash-race-2': {
+              networking: {
+                host_ipv4: '203.0.113.8',
+                mapped_ports: {
+                  '22': { host: 32022, tcp: true, udp: false }
+                }
+              }
+            }
+          })
+        }
+
+        return jsonResponse({})
+      }
+    }
+  )
+
+  assert.equal(result.itemHash, 'hash-race-2')
+  assert.equal(messageCount, 2)
+  assert.equal(sleepCount, 1)
+  assert.ok(logs.some((entry) => entry.includes('rootfs STORE is not visible to the VM processor yet')))
+})
+
 test('executeDeployPlan configures ucan-store guests without relay bootstrap publication', async () => {
   const calls: string[] = []
   const configureBodies: string[] = []

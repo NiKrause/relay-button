@@ -16,6 +16,24 @@ function jsonResponse(payload, status = 200) {
   }
 }
 
+test('controller pre-fills safe ucan-store bootstrap defaults', () => {
+  const controller = createSponsorRelayController()
+  const bootstrap = controller.getState().ucanStoreBootstrap
+
+  assert.equal(bootstrap.serviceDid, 'did:web:ucan-api.nicokrause.com')
+  assert.equal(bootstrap.pwaOrigin, 'https://ucan.nicokrause.com')
+  assert.equal(bootstrap.serviceOrigin, 'https://ucan-api.nicokrause.com')
+  assert.equal(bootstrap.defaultUserDelegationExpiration, '31536000')
+  assert.equal(bootstrap.maxUserDelegationExpiration, '315360000')
+  assert.match(bootstrap.allowedCapabilities, /space\/blob\/add/)
+  assert.match(bootstrap.allowedCapabilities, /space\/index\/add/)
+  assert.match(bootstrap.allowedCapabilities, /upload\/add/)
+  assert.match(bootstrap.allowedCapabilities, /store\/add/)
+  assert.equal(bootstrap.adminDid, '')
+  assert.equal(bootstrap.spaceDid, '')
+  assert.equal(bootstrap.rootDelegationProof, '')
+})
+
 test('controller waits for active 2n6 web access before publishing guest proxyUrl', async () => {
   const originalFetch = globalThis.fetch
   const originalWindow = globalThis.window

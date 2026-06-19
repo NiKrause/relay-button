@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 
 import type { PortMapping } from "@le-space/shared-types";
 import {
+  DEFAULT_ALEPH_CHANNEL,
   createRelayBootstrapRegistrationId,
   listGeocodedCrns,
   publishRelayBootstrapRegistration,
@@ -24,6 +25,10 @@ import {
 import { executeDeployPlan } from "./deploy-executor.ts";
 import { parseDeployPlan, resolveDeployPlanRootfs } from "./deploy-plan.ts";
 import { createPrivateKeyIdentity, type PrivateKeyIdentity } from "./signer.ts";
+import {
+  deriveUcanStoreBootstrapPackageFromEnv,
+  shouldDeriveUcanStoreBootstrapPackage,
+} from "./ucan-store-bootstrap.ts";
 
 function parseOptionalJson<T>(raw: string | undefined): T | null {
   if (!raw || !raw.trim()) return null;
@@ -109,6 +114,7 @@ export async function runActionMode(
     stdout?: (text: string) => void;
     listGeocodedCrns?: typeof listGeocodedCrns;
     deployExecutor?: typeof executeDeployPlan;
+    deriveUcanStoreBootstrapPackage?: typeof deriveUcanStoreBootstrapPackageFromEnv;
     retainSuccessfulDeployments?: typeof retainSuccessfulDeployments;
     publishRelayBootstrapRegistration?: typeof publishRelayBootstrapRegistration;
     createPrivateKeyIdentity?: (
@@ -169,7 +175,7 @@ export async function runActionMode(
       signer: identity.signer,
       hasher: async (content) => defaultHasher(content),
       fetch: globalThis.fetch.bind(globalThis),
-      channel: optionalEnv("ALEPH_VM_CHANNEL", "TEST", env),
+      channel: optionalEnv("ALEPH_VM_CHANNEL", DEFAULT_ALEPH_CHANNEL, env),
       apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api.aleph.im", env),
     });
 
@@ -366,6 +372,37 @@ export async function runActionMode(
   let deployResult: DeployOutputResult | null = providedDeployResult;
   if (!deployResult) {
     try {
+      if (shouldDeriveUcanStoreBootstrapPackage(env)) {
+        const bootstrapPackage = await (
+          hooks.deriveUcanStoreBootstrapPackage ??
+          deriveUcanStoreBootstrapPackageFromEnv
+        )(env);
+        env.ALEPH_VM_UCAN_STORE_BOOTSTRAP_JSON =
+          JSON.stringify(bootstrapPackage);
+        env.ALEPH_VM_ADMIN_DID =
+          env.ALEPH_VM_ADMIN_DID?.trim() || bootstrapPackage.adminDid;
+        await appendGithubOutput(
+          "ucan_store_bootstrap_admin_did",
+          bootstrapPackage.adminDid,
+          env,
+        );
+        await appendGithubOutput(
+          "ucan_store_bootstrap_space_did",
+          bootstrapPackage.spaceDid,
+          env,
+        );
+        await appendGithubSummary(
+          [
+            "### ucan-store Bootstrap",
+            "",
+            "- Mode: `derive-from-aleph-private-key`",
+            `- Admin DID: \`${bootstrapPackage.adminDid}\``,
+            `- Space DID: \`${bootstrapPackage.spaceDid}\``,
+            `- Service DID: \`${bootstrapPackage.serviceDid ?? "runtime-derived"}\``,
+          ],
+          env,
+        );
+      }
       const deployPlan = parseDeployPlan(env);
       const resolvedDeployPlan = await resolveDeployPlanRootfs(
         deployPlan,

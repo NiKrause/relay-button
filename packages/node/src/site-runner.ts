@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { readFile, readdir } from "node:fs/promises"
 import { isAbsolute, join, relative, resolve } from "node:path"
 
-import { broadcastAlephMessage, forgetAlephMessages, normalizeBroadcastStatus, publishAggregateKey, signAlephMessage } from "../../core/src/index.ts"
+import { broadcastAlephMessage, DEFAULT_ALEPH_CHANNEL, forgetAlephMessages, normalizeBroadcastStatus, publishAggregateKey, signAlephMessage } from "../../core/src/index.ts"
 import { inspectMessageResult, isTransientMessageLookupError } from "../../core/src/deployment-inspection.ts"
 
 import { optionalEnv, requiredEnv } from "./env.ts"
@@ -315,7 +315,7 @@ async function retainRecentSiteStores(args: {
 
   const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
   const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env)
-  const channel = optionalEnv('ALEPH_SITE_CHANNEL', 'TEST', env)
+  const channel = optionalEnv('ALEPH_SITE_CHANNEL', DEFAULT_ALEPH_CHANNEL, env)
   const identity = await createPrivateKeyIdentity(privateKey)
   const records = await fetchScopedSiteStoreRecords({
     sender: identity.address,
@@ -350,7 +350,7 @@ async function retainRecentSiteStores(args: {
 
 async function pinIpfsCidOnAleph(cidV0: string, env: NodeJS.ProcessEnv = process.env): Promise<string> {
   const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
-  const channel = optionalEnv('ALEPH_SITE_CHANNEL', 'TEST', env)
+  const channel = optionalEnv('ALEPH_SITE_CHANNEL', DEFAULT_ALEPH_CHANNEL, env)
   const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env)
   const ref = optionalEnv('ALEPH_SITE_REF', '', env).trim() || undefined
   const identity = await createPrivateKeyIdentity(privateKey)

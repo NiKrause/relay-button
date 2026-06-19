@@ -1,6 +1,6 @@
 {
   "name": "@le-space/node",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Node and GitHub Actions adapters for shared Aleph tooling.",
   "license": "MIT",
   "private": true,
@@ -23,12 +23,14 @@
     "@libp2p/webrtc": "^5.2.10",
     "@libp2p/websockets": "^9.2.9",
     "@multiformats/multiaddr": "^12.5.1",
+    "@ucanto/core": "npm:@le-space/ucanto-core@^10.5.1",
+    "@ucanto/principal": "npm:@le-space/ucanto-principal@^9.1.2",
     "ethers": "^6.15.0",
     "libp2p": "^2.8.3",
     "undici": "^6.22.0"
   },
   "scripts": {
-    "build": "node --check ./src/index.ts && node --check ./src/env.ts && node --check ./src/github-outputs.ts && node --check ./src/signer.ts && node --check ./src/deploy-outputs.ts && node --check ./src/deploy-plan.ts && node --check ./src/deploy-executor.ts && node --check ./src/action-runner.ts && node --check ./src/rootfs-runner.ts && node --check ./src/relay-probe.ts && node --check ./src/site-runner.ts",
+    "build": "node --check ./src/index.ts && node --check ./src/env.ts && node --check ./src/github-outputs.ts && node --check ./src/signer.ts && node --check ./src/deploy-outputs.ts && node --check ./src/deploy-plan.ts && node --check ./src/deploy-executor.ts && node --check ./src/action-runner.ts && node --check ./src/rootfs-runner.ts && node --check ./src/relay-probe.ts && node --check ./src/site-runner.ts && node --check ./src/ucan-store-bootstrap.ts",
     "build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json",
     "test": "node --test ./test/**/*.test.ts",
     "lint": "echo \"node lint placeholder\""

@@ -66,7 +66,7 @@ inputs:
   channel:
     description: Aleph channel
     required: false
-    default: TEST
+    default: ALEPH-CLOUDSOLUTIONS
   wait_attempts:
     description: Poll attempts while waiting for Aleph to process the deployment
     required: false
@@ -147,6 +147,46 @@ inputs:
     description: JSON array of required internal port-forward declarations
     required: false
     default: '[]'
+  ucan_store_bootstrap_mode:
+    description: Optional ucan-store bootstrap mode. Use derive-from-aleph-private-key to derive admin/root proof from aleph_private_key.
+    required: false
+    default: ''
+  ucan_store_service_did:
+    description: ucan-store service DID used when deriving the bootstrap package.
+    required: false
+    default: ''
+  ucan_store_service_origin:
+    description: Public ucan-store service origin used when deriving the bootstrap package.
+    required: false
+    default: ''
+  ucan_store_pwa_origin:
+    description: Public ucan-store PWA origin used when deriving the bootstrap package.
+    required: false
+    default: ''
+  ucan_store_allowed_capabilities:
+    description: Comma- or newline-separated ucan-store capabilities used when deriving the bootstrap package.
+    required: false
+    default: ''
+  ucan_store_default_user_delegation_expiration:
+    description: Default user delegation expiration in seconds for derived ucan-store bootstrap packages.
+    required: false
+    default: ''
+  ucan_store_max_delegation_expiration:
+    description: Max user delegation expiration in seconds for derived ucan-store bootstrap packages.
+    required: false
+    default: ''
+  ucan_store_derivation_context:
+    description: Optional domain-separation context for ucan-store bootstrap derivation.
+    required: false
+    default: ''
+  ucan_store_derivation_salt:
+    description: Optional domain-separation salt for ucan-store bootstrap derivation.
+    required: false
+    default: ''
+  ucan_store_space_did_mode:
+    description: ucan-store space DID derivation mode, admin or derived.
+    required: false
+    default: admin
 
 outputs:
   deployer_address:
@@ -282,5 +322,15 @@ runs:
         ALEPH_VM_VERIFY_REACHABILITY: ${{ inputs.verify_reachability }}
         ALEPH_VM_PUBLISH_PORT_FORWARDS: ${{ inputs.publish_port_forwards }}
         ALEPH_VM_REQUIRED_PORTS_JSON: ${{ inputs.required_ports_json }}
+        ALEPH_VM_UCAN_STORE_BOOTSTRAP_MODE: ${{ inputs.ucan_store_bootstrap_mode }}
+        ALEPH_VM_UCAN_STORE_SERVICE_DID: ${{ inputs.ucan_store_service_did }}
+        ALEPH_VM_UCAN_STORE_SERVICE_ORIGIN: ${{ inputs.ucan_store_service_origin }}
+        ALEPH_VM_UCAN_STORE_PWA_ORIGIN: ${{ inputs.ucan_store_pwa_origin }}
+        ALEPH_VM_UCAN_STORE_ALLOWED_CAPABILITIES: ${{ inputs.ucan_store_allowed_capabilities }}
+        ALEPH_VM_UCAN_STORE_DEFAULT_USER_DELEGATION_EXPIRATION: ${{ inputs.ucan_store_default_user_delegation_expiration }}
+        ALEPH_VM_UCAN_STORE_MAX_DELEGATION_EXPIRATION: ${{ inputs.ucan_store_max_delegation_expiration }}
+        ALEPH_VM_UCAN_STORE_DERIVATION_CONTEXT: ${{ inputs.ucan_store_derivation_context }}
+        ALEPH_VM_UCAN_STORE_DERIVATION_SALT: ${{ inputs.ucan_store_derivation_salt }}
+        ALEPH_VM_UCAN_STORE_SPACE_DID_MODE: ${{ inputs.ucan_store_space_did_mode }}
       run: |
         node "${{ github.action_path }}/../../../packages/node/src/action-runner.ts"
