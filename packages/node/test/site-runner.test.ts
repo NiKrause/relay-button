@@ -271,6 +271,58 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
   assert.equal(calls.filter((call) => call.url === 'https://api.aleph.im/api/v0/messages').length, 1)
 })
 
+test('runSitePublishMode continues when accepted STORE message stays pending', async () => {
+  const { dir, outputFile, summaryFile } = await createOutputEnv('site-publish-pending-')
+  const siteDir = join(dir, 'dist')
+  await mkdir(siteDir, { recursive: true })
+  await writeFile(join(siteDir, 'index.html'), '<!doctype html><title>blog</title>')
+
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    if (url.startsWith('https://ipfs-2.aleph.im/api/v0/add')) {
+      return new Response(JSON.stringify({ Name: '', Hash: 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url === 'https://api.aleph.im/api/v0/messages') {
+      assert.equal(init?.method, 'POST')
+      return new Response(JSON.stringify({ item_hash: 'store-pending' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url === 'https://api.aleph.im/api/v0/messages/store-pending') {
+      return new Response(JSON.stringify({ status: 'pending' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    throw new Error(`Unexpected fetch call: ${url}`)
+  }) as typeof fetch
+
+  try {
+    await runSitePublishMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_SITE_PROJECT_DIR: dir,
+      ALEPH_SITE_DIRECTORY: siteDir,
+      ALEPH_SITE_IPFS_GATEWAY: 'https://ipfs-2.aleph.im',
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+      ALEPH_SITE_PIN: 'true',
+      ALEPH_SITE_ALEPH_MESSAGE_WAIT_ATTEMPTS: '1',
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  const outputs = await readFile(outputFile, 'utf8')
+  const summary = await readFile(summaryFile, 'utf8')
+  assert.match(outputs, /item_hash=store-pending/)
+  assert.match(summary, /Aleph item hash: `store-pending`/)
+})
+
 test('runSitePublishMode forgets older STORE messages for the same ALEPH_SITE_REF only', async () => {
   const { dir, outputFile, summaryFile } = await createOutputEnv('site-publish-retention-')
   const siteDir = join(dir, 'dist')

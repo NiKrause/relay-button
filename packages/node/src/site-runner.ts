@@ -30,7 +30,7 @@ export function parseLastJsonObject(text: string): Record<string, unknown> {
   throw new Error(`Could not parse JSON object from output: ${text}`)
 }
 
-async function waitForAlephMessage(itemHash: string, env: NodeJS.ProcessEnv = process.env): Promise<void> {
+async function waitForAlephMessage(itemHash: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
   const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env)
   const attempts = Number(optionalEnv('ALEPH_SITE_ALEPH_MESSAGE_WAIT_ATTEMPTS', '60', env))
   const delayMs = Number(optionalEnv('ALEPH_SITE_ALEPH_MESSAGE_WAIT_DELAY_MS', '5000', env))
@@ -42,7 +42,7 @@ async function waitForAlephMessage(itemHash: string, env: NodeJS.ProcessEnv = pr
         fetch: fetch,
         label: 'Aleph STORE message',
       })
-      if (result.status === 'processed') return
+      if (result.status === 'processed') return true
       if (result.status === 'rejected') {
         throw new Error(result.rejectionReason ?? `Aleph STORE message ${itemHash} was rejected.`)
       }
@@ -56,7 +56,7 @@ async function waitForAlephMessage(itemHash: string, env: NodeJS.ProcessEnv = pr
     }
   }
 
-  throw new Error(`Aleph STORE message ${itemHash} did not become processed in time.`)
+  return false
 }
 
 interface SitePublishResult {
@@ -411,8 +411,12 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
   if (pin) {
     itemHash = await pinIpfsCidOnAleph(cidV0, env)
     await appendGithubOutput('item_hash', itemHash, env)
-    await waitForAlephMessage(itemHash, env)
-    await retainRecentSiteStores({ currentItemHash: itemHash, env })
+    const processed = await waitForAlephMessage(itemHash, env)
+    if (processed) {
+      await retainRecentSiteStores({ currentItemHash: itemHash, env })
+    } else {
+      console.warn(`Aleph STORE message ${itemHash} stayed pending after the wait window; continuing with the accepted item hash.`)
+    }
   }
 
   await appendGithubSummary([
