@@ -261,6 +261,12 @@ outputs:
   geocoded_crn_count:
     description: Geocoded CRN count when running in list-crns mode
     value: ${{ steps.run_action.outputs.geocoded_crn_count }}
+  ucan_store_bootstrap_admin_did:
+    description: Admin DID generated when ucan-store bootstrap derivation is enabled
+    value: ${{ steps.run_action.outputs.ucan_store_bootstrap_admin_did }}
+  ucan_store_bootstrap_space_did:
+    description: Space DID generated when ucan-store bootstrap derivation is enabled
+    value: ${{ steps.run_action.outputs.ucan_store_bootstrap_space_did }}
 
 runs:
   using: composite
