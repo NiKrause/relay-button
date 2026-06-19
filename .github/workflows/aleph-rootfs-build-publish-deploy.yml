@@ -154,7 +154,6 @@ jobs:
       - name: Build caller project artifacts required by the rootfs profile
         if: >-
           ${{
-            inputs.profile == 'orbitdb-relay-pinner' ||
             inputs.profile == 'orbitdb-relay'
           }}
         working-directory: ${{ inputs.project_checkout_path }}

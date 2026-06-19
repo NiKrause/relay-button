@@ -15,7 +15,7 @@ on:
       - "packages/core/src/retention.ts"
       - "packages/core/src/runtime.ts"
       - "packages/ui/src/shared/controller.ts"
-      - "packages/rootfs/reference/orbitdb-relay-pinner/rootfs/build-rootfs.sh"
+      - "packages/rootfs/reference/orbitdb-relay/rootfs/build-rootfs.sh"
 
 permissions:
   contents: read

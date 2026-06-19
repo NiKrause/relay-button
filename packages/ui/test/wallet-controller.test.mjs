@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { toChecksumAddress } from '../dist/shared/index.mjs'
+import { toChecksumAddress } from '../dist/shared/index.js'
 
 test('toChecksumAddress normalizes a lowercase EVM address', () => {
   assert.equal(

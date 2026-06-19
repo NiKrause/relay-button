@@ -3,7 +3,7 @@ import test from 'node:test'
 
 import {
   createSponsorRelayController,
-} from '../dist/shared/index.mjs'
+} from '../dist/shared/index.js'
 
 function jsonResponse(payload, status = 200) {
   return {
