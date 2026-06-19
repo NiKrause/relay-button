@@ -130,9 +130,6 @@ importers:
       '@ucanto/principal':
         specifier: npm:@le-space/ucanto-principal@^9.1.2
         version: '@le-space/ucanto-principal@9.1.2'
-      '@ucanto/transport':
-        specifier: npm:@le-space/ucanto-transport@^9.3.1
-        version: '@le-space/ucanto-transport@9.3.1'
       ethers:
         specifier: ^6.15.0
         version: 6.16.0
@@ -1868,9 +1865,6 @@ packages:
 
   '@le-space/ucanto-principal@9.1.2':
     resolution: {integrity: sha512-vWRXFPLKQwfC7CXhgrl3p11cOgEWHcgQyosR4EztgKfHmKAbYOn2y7VQpr4pEtJHw/iB92EJSyJBGYecTmF/2g==}
-
-  '@le-space/ucanto-transport@9.3.1':
-    resolution: {integrity: sha512-bqPoafUo/12B04pgYZ9fKsQpLCfvmgUT2v0JqLYP2CPTMeKdWYGNw1NXcodbIgQNXLWTeclel7sSdSVkTAPC5Q==}
 
   '@leichtgewicht/ip-codec@2.0.5':
     resolution: {integrity: sha512-Vo+PSpZG2/fmgmiNzYK9qWRh8h/CHrwD0mo1h1DzL4yzHNSfWYujGTYsWGreD000gcgmZ7K4Ys6Tx9TxtsKdDw==}
@@ -10352,11 +10346,6 @@ snapshots:
       '@noble/hashes': 1.8.0
       multiformats: 13.4.2
       one-webcrypto: 1.0.3
-
-  '@le-space/ucanto-transport@9.3.1':
-    dependencies:
-      '@le-space/ucanto-core': 10.5.1
-      '@le-space/ucanto-interface': 11.1.1
 
   '@leichtgewicht/ip-codec@2.0.5': {}
 
