@@ -191,6 +191,10 @@ inputs:
     description: ucan-store space DID derivation mode, admin or derived.
     required: false
     default: admin
+  ucan_store_admin_api_token:
+    description: Optional bearer token that enables the ucan-store admin delegation issuance API.
+    required: false
+    default: ''
 
 outputs:
   deployer_address:
@@ -360,5 +364,6 @@ runs:
         ALEPH_VM_UCAN_STORE_DERIVATION_CONTEXT: ${{ inputs.ucan_store_derivation_context }}
         ALEPH_VM_UCAN_STORE_DERIVATION_SALT: ${{ inputs.ucan_store_derivation_salt }}
         ALEPH_VM_UCAN_STORE_SPACE_DID_MODE: ${{ inputs.ucan_store_space_did_mode }}
+        ALEPH_VM_UCAN_STORE_ADMIN_API_TOKEN: ${{ inputs.ucan_store_admin_api_token }}
       run: |
         node "${{ github.action_path }}/../../../packages/node/src/action-runner.ts"

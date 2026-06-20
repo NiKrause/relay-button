@@ -134,6 +134,7 @@ test("parseDeployPlan accepts a canonical ucan-store bootstrap package", () => {
     ALEPH_VM_SSH_PUBLIC_KEY:
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest key@example",
     ALEPH_VM_ROOTFS_ITEM_HASH: "c".repeat(64),
+    ALEPH_VM_UCAN_STORE_ADMIN_API_TOKEN: "admin-secret",
     ALEPH_VM_UCAN_STORE_BOOTSTRAP_JSON: JSON.stringify({
       operatorAddress: "0x1234000000000000000000000000000000000000",
       adminDid: "did:key:zAdmin",
@@ -150,6 +151,7 @@ test("parseDeployPlan accepts a canonical ucan-store bootstrap package", () => {
 
   assert.equal(plan.profile, "ucan-store");
   assert.equal(plan.adminDid, "did:key:zAdmin");
+  assert.equal(plan.ucanStoreAdminApiToken, "admin-secret");
   assert.deepEqual(plan.ucanStoreBootstrapPackage, {
     operatorAddress: "0x1234000000000000000000000000000000000000",
     adminDid: "did:key:zAdmin",

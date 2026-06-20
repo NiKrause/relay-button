@@ -140,6 +140,7 @@ class Handler(BaseHTTPRequestHandler):
         service_did = str(payload.get("service_did") or "").strip()
         service_origin = str(payload.get("service_origin") or "").strip()
         admin_did = str(payload.get("admin_did") or "").strip()
+        admin_api_token = str(payload.get("admin_api_token") or "").strip()
         webauthn_origin = str(payload.get("webauthn_origin") or "").strip()
         webauthn_origin_fallbacks = str(payload.get("webauthn_origin_fallbacks") or "").strip()
         no_start = bool(payload.get("no_start"))
@@ -171,6 +172,8 @@ class Handler(BaseHTTPRequestHandler):
             args.extend(["--service-origin", service_origin])
         if admin_did:
             args.extend(["--admin-did", admin_did])
+        if admin_api_token:
+            args.extend(["--admin-api-token", admin_api_token])
         if webauthn_origin:
             args.extend(["--webauthn-origin", webauthn_origin])
         if webauthn_origin_fallbacks:

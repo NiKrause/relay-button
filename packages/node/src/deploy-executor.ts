@@ -848,6 +848,7 @@ export async function executeDeployPlan(
                   serviceOrigin:
                     plan.ucanStoreBootstrapPackage?.serviceOrigin ?? null,
                   adminDid: plan.adminDid ?? null,
+                  adminApiToken: plan.ucanStoreAdminApiToken ?? null,
                   bootstrapPackage: plan.ucanStoreBootstrapPackage ?? null,
                   fetch: fetchImpl,
                   timeoutMs: plan.configureTimeoutMs,

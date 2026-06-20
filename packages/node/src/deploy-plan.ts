@@ -21,6 +21,7 @@ import {
 export interface DeployPlan {
   profile: string;
   adminDid?: string;
+  ucanStoreAdminApiToken?: string;
   ucanStoreBootstrapPackage?: UcanStoreBootstrapPackage;
   privateKey: string;
   bootstrapPublisherPrivateKey: string;
@@ -247,6 +248,9 @@ export function parseDeployPlan(
     adminDid:
       optionalEnv("ALEPH_VM_ADMIN_DID", "", env).trim() ||
       ucanStoreBootstrapPackage?.adminDid ||
+      undefined,
+    ucanStoreAdminApiToken:
+      optionalEnv("ALEPH_VM_UCAN_STORE_ADMIN_API_TOKEN", "", env).trim() ||
       undefined,
     ucanStoreBootstrapPackage,
     privateKey: requiredEnv("ALEPH_VM_PRIVATE_KEY", env),

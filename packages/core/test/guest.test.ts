@@ -191,6 +191,7 @@ test("configureUcanStore posts the expected payload to the guest", async () => {
     webauthnOrigin: "https://upload.example.com",
     webauthnOriginFallbacks: "https://alt-upload.example.com",
     adminDid: "did:key:zAdmin",
+    adminApiToken: "admin-secret",
     bootstrapPackage: {
       operatorAddress: "0x1234000000000000000000000000000000000000",
       adminDid: "did:key:zAdmin",
@@ -222,6 +223,7 @@ test("configureUcanStore posts the expected payload to the guest", async () => {
     /"webauthn_origin_fallbacks":"https:\/\/alt-upload\.example\.com"/,
   );
   assert.match(body, /"admin_did":"did:key:zAdmin"/);
+  assert.match(body, /"admin_api_token":"admin-secret"/);
   assert.match(body, /"bootstrap_package":\{/);
   assert.match(body, /"serviceDid":"did:key:zService"/);
   assert.match(body, /"rootDelegationProof":"uEgVjYW5wcm9vZg"/);
