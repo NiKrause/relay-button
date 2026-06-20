@@ -280,8 +280,6 @@ runs:
       uses: actions/setup-node@v6
       with:
         node-version: 24.x
-        cache: pnpm
-        cache-dependency-path: ${{ github.action_path }}/../../../pnpm-lock.yaml
 
     - name: Install shared action runtime dependencies
       shell: bash
