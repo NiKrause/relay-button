@@ -63,6 +63,7 @@ export async function waitForRelayBootstrapRegistration(args: {
   postType?: string;
   attempts?: number;
   delayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
   onAttempt?: (
     match: RelayBootstrapVisibilityResult | null,
     attempt: number,
@@ -75,6 +76,7 @@ export async function waitForRelayBootstrapRegistration(args: {
   const expectedRegistrationId = args.registrationId?.trim() || null;
   const expectedPeerId = args.peerId?.trim() || null;
   const postType = args.postType ?? DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE;
+  const sleepImpl = args.sleep ?? sleep;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const posts = await fetchAlephBootstrapPosts({
@@ -117,7 +119,7 @@ export async function waitForRelayBootstrapRegistration(args: {
     args.onAttempt?.(null, attempt + 1, attempts);
 
     if (attempt < attempts - 1) {
-      await sleep(delayMs);
+      await sleepImpl(delayMs);
     }
   }
 
