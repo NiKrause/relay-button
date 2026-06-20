@@ -92,10 +92,15 @@ export async function broadcastAlephMessage(
     apiHost?: string
     sync?: boolean
     fetch: JsonFetchLike
+    attempts?: number
+    retryDelayMs?: number
+    sleep?: (ms: number) => Promise<void>
   }
 ): Promise<{ response: AlephBroadcastResponse; httpStatus: number }> {
   const requestBody = { sync: options.sync ?? false, message }
-  const maxAttempts = 3
+  const maxAttempts = Math.max(1, Number(options.attempts ?? 3))
+  const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? 0))
+  const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)))
 
   for (let index = 0; index < maxAttempts; index += 1) {
     const result = await postBroadcastPayload(requestBody, {
@@ -112,6 +117,9 @@ export async function broadcastAlephMessage(
       isRetryableBroadcastFailure({ status: result.httpStatus }, result.response)
     if (!canRetry) {
       throw new Error(`Broadcast failed: ${result.httpStatus} ${JSON.stringify(result.response ?? {})}`)
+    }
+    if (retryDelayMs > 0) {
+      await sleep(retryDelayMs)
     }
   }
 

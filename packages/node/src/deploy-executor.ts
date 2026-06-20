@@ -427,6 +427,9 @@ export async function executeDeployPlan(
         apiHost: plan.apiHost,
         channel: plan.channel,
         sync: true,
+        broadcastAttempts: 5,
+        broadcastRetryDelayMs: Math.max(1000, plan.waitDelayMs),
+        broadcastSleep: sleepImpl,
       });
 
       log(

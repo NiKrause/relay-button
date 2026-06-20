@@ -278,6 +278,9 @@ export async function deployInstance(args: {
   channel?: string
   sync?: boolean
   now?: number
+  broadcastAttempts?: number
+  broadcastRetryDelayMs?: number
+  broadcastSleep?: (ms: number) => Promise<void>
   onProgress?: DeploymentProgressListener
 }): Promise<DeploymentResult> {
   args.onProgress?.({
@@ -327,7 +330,10 @@ export async function deployInstance(args: {
   const { response, httpStatus } = await broadcastAlephMessage(message, {
     apiHost: args.apiHost,
     sync: args.sync,
-    fetch: args.fetch
+    fetch: args.fetch,
+    attempts: args.broadcastAttempts,
+    retryDelayMs: args.broadcastRetryDelayMs,
+    sleep: args.broadcastSleep
   })
 
   const status =

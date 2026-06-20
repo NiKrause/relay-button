@@ -117,6 +117,48 @@ test('broadcastAlephMessage retries retryable failures with the same envelope', 
   assert.equal(result.response.message_status, 'processed')
 })
 
+test('broadcastAlephMessage waits between configured retryable failures', async () => {
+  const delays: number[] = []
+  let attempts = 0
+  const result = await broadcastAlephMessage(
+    {
+      ...unsignedMessage,
+      signature: '0x1234'
+    },
+    {
+      attempts: 3,
+      retryDelayMs: 250,
+      sleep: async (ms) => {
+        delays.push(ms)
+      },
+      fetch: async () => {
+        attempts += 1
+        if (attempts < 3) {
+          return {
+            ok: false,
+            status: 503,
+            async json() {
+              return {}
+            }
+          }
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { message_status: 'processed' }
+          }
+        }
+      }
+    }
+  )
+
+  assert.deepEqual(delays, [250, 250])
+  assert.equal(result.httpStatus, 200)
+  assert.equal(result.response.message_status, 'processed')
+})
+
 test('broadcastAlephMessage throws when failure is not retryable', async () => {
   await assert.rejects(
     () =>

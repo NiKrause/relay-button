@@ -286,3 +286,50 @@ test('deployInstance composes hashing, signing, and broadcast into a deployment 
     'deployment-confirmed'
   ])
 })
+
+test('deployInstance can retry transient Aleph broadcast failures with backoff', async () => {
+  const delays: number[] = []
+  let attempts = 0
+  const result = await deployInstance({
+    sender: '0xabc',
+    content: createInstanceContent({
+      address: '0xabc',
+      name: 'uc-go-peer',
+      sshPublicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG9A7L1fCP0f3dYxFJ0P0XrJ1hV6X4kRrS0vQd2c8mS0 user@example',
+      rootfsItemHash: '380b99e0577fb7771f1b3c0a369f4abff9094e9205b0b466783453299ef9f4f2',
+      rootfsSizeMiB: 20480,
+      vcpus: 1,
+      memoryMiB: 1024
+    }),
+    hasher: async () => 'instanceHash',
+    signer: async () => 'signed1234',
+    broadcastAttempts: 5,
+    broadcastRetryDelayMs: 500,
+    broadcastSleep: async (ms) => {
+      delays.push(ms)
+    },
+    fetch: async () => {
+      attempts += 1
+      if (attempts < 3) {
+        return {
+          ok: false,
+          status: 503,
+          async json() {
+            return {}
+          }
+        }
+      }
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { message_status: 'processed' }
+        }
+      }
+    }
+  })
+
+  assert.equal(result.itemHash, 'instanceHash')
+  assert.equal(result.status, 'processed')
+  assert.deepEqual(delays, [500, 500])
+})
