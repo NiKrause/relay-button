@@ -16,6 +16,7 @@ SERVICE_GROUP="${SERVICE_GROUP:-ucan-store}"
 PUBLIC_IPV4=""
 PUBLIC_IPV6=""
 PROXY_HOSTNAME=""
+SERVICE_HOSTNAME=""
 SERVICE_DID=""
 SERVICE_ORIGIN=""
 WEBAUTHN_ORIGIN=""
@@ -72,17 +73,65 @@ PY
 }
 
 write_caddyfile() {
-  local hostname="$1"
+  local hostnames=()
+  local hostname
+  local known
+  for hostname in "$@"; do
+    if [ -z "${hostname}" ]; then
+      continue
+    fi
+    known="0"
+    if [ "${#hostnames[@]}" -gt 0 ]; then
+      for existing in "${hostnames[@]}"; do
+        if [ "${existing}" = "${hostname}" ]; then
+          known="1"
+          break
+        fi
+      done
+    fi
+    if [ "${known}" = "0" ]; then
+      hostnames+=("${hostname}")
+    fi
+  done
+
+  if [ "${#hostnames[@]}" -eq 0 ]; then
+    return 0
+  fi
+
+  local site_label
+  local index
+  site_label="${hostnames[0]}"
+  for ((index = 1; index < ${#hostnames[@]}; index++)); do
+    site_label+=", ${hostnames[${index}]}"
+  done
   mkdir -p "$(dirname "${CADDYFILE}")"
   cat > "${CADDYFILE}" <<EOF
 {
   auto_https disable_redirects
 }
 
-${hostname} {
+${site_label} {
   reverse_proxy 127.0.0.1:${PROXY_PORT}
 }
 EOF
+}
+
+derive_hostname_from_origin() {
+  python3 - "${1:-}" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+raw = (sys.argv[1] or "").strip()
+if not raw:
+    raise SystemExit(0)
+
+parsed = urlsplit(raw)
+host = (parsed.hostname or "").strip().lower()
+if not host:
+    raise SystemExit(0)
+
+print(host)
+PY
 }
 
 derive_service_did_from_hostname() {
@@ -250,8 +299,10 @@ fi
 if [ -z "${SERVICE_ORIGIN}" ] && [ -n "${PROXY_HOSTNAME}" ]; then
   SERVICE_ORIGIN="https://${PROXY_HOSTNAME}"
 fi
+SERVICE_HOSTNAME="$(derive_hostname_from_origin "${SERVICE_ORIGIN}")"
 
 write_env_var "UCAN_STORE_SERVICE_DID" "${SERVICE_DID}"
+write_env_var "UCAN_STORE_SERVICE_HOSTNAME" "${SERVICE_HOSTNAME}"
 
 if [ -n "${SERVICE_ORIGIN}" ]; then
   write_env_var "PUBLIC_UPLOAD_SERVICE_URL" "${SERVICE_ORIGIN}"
@@ -260,7 +311,7 @@ if [ -n "${SERVICE_ORIGIN}" ]; then
 fi
 
 if [ -n "${PROXY_HOSTNAME}" ]; then
-  write_caddyfile "${PROXY_HOSTNAME}"
+  write_caddyfile "${PROXY_HOSTNAME}" "${SERVICE_HOSTNAME}"
 fi
 
 touch "${READY_FILE}"

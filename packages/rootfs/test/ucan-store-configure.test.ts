@@ -322,6 +322,58 @@ test("ucan-store-configure preserves explicit custom service identity without pr
   assert.equal(await readFile(readyFile, "utf8"), "");
 });
 
+test("ucan-store-configure serves proxy and custom service hostnames through Caddy", async (t) => {
+  const tempDir = await makeTempDir("ucan-store-configure-dual-caddy-");
+  t.after(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  const binDir = path.join(tempDir, "bin");
+  await mkdir(binDir, { recursive: true });
+
+  const envFile = path.join(tempDir, "ucan-store.env");
+  const readyFile = path.join(tempDir, "ucan-store.ready");
+  const caddyFile = path.join(tempDir, "Caddyfile");
+  const systemctlLog = path.join(tempDir, "systemctl.log");
+
+  await writeMockSystemctl(binDir, systemctlLog);
+
+  const result = await runConfigure(
+    [
+      "--public-ipv4",
+      "203.0.113.20",
+      "--proxy-hostname",
+      "chaos-giggle-dawn-brief.2n6.me",
+      "--service-did",
+      "did:web:ucan-api.nicokrause.com",
+      "--service-origin",
+      "https://ucan-api.nicokrause.com/",
+      "--admin-did",
+      "did:key:z6Mkadmin123",
+      "--no-start",
+    ],
+    {
+      ENV_FILE: envFile,
+      READY_FILE: readyFile,
+      CADDYFILE: caddyFile,
+      PATH: `${binDir}:${process.env.PATH ?? ""}`,
+    },
+  );
+
+  assert.equal(result.code, 0, result.stderr || result.stdout);
+  const rawEnv = await readFile(envFile, "utf8");
+  assert.equal(envValue(rawEnv, "PROXY_HOSTNAME"), "chaos-giggle-dawn-brief.2n6.me");
+  assert.equal(envValue(rawEnv, "UCAN_STORE_SERVICE_HOSTNAME"), "ucan-api.nicokrause.com");
+  assert.equal(envValue(rawEnv, "UCAN_STORE_SERVICE_DID"), "did:web:ucan-api.nicokrause.com");
+  assert.equal(envValue(rawEnv, "PUBLIC_UPLOAD_SERVICE_URL"), "https://ucan-api.nicokrause.com");
+
+  const caddy = await readFile(caddyFile, "utf8");
+  assert.match(caddy, /chaos-giggle-dawn-brief\.2n6\.me, ucan-api\.nicokrause\.com/u);
+  assert.match(caddy, /reverse_proxy 127\.0\.0\.1:8788/u);
+  await assert.rejects(readFile(systemctlLog, "utf8"));
+  assert.equal(await readFile(readyFile, "utf8"), "");
+});
+
 test("ucan-store-configure re-verifies bootstrap inputs against runtime DID and origin after start", async (t) => {
   const tempDir = await makeTempDir("ucan-store-configure-runtime-");
   t.after(async () => {
