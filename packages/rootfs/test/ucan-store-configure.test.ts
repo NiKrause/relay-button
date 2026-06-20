@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { once } from "node:events";
@@ -187,6 +187,7 @@ test("ucan-store-configure installs bootstrap inputs and writes public env witho
       BOOTSTRAP_CRYPTO_VERIFIER: verifierScript,
       BOOTSTRAP_VERIFICATION_FILE: bootstrapVerificationFile,
       CADDYFILE: caddyFile,
+      SERVICE_GROUP: "ucan-store-test-missing-group",
       PATH: `${binDir}:${process.env.PATH ?? ""}`,
     },
   );
@@ -202,6 +203,8 @@ test("ucan-store-configure installs bootstrap inputs and writes public env witho
 
   const installedBootstrap = await readFile(bootstrapPackageFile, "utf8");
   assert.match(installedBootstrap, /"serviceDid": "did:web:upload\.example\.com"/u);
+  const bootstrapMode = (await stat(bootstrapPackageFile)).mode & 0o777;
+  assert.equal(bootstrapMode, 0o644);
   const verificationSummary = await readFile(bootstrapVerificationFile, "utf8");
   assert.match(verificationSummary, /"status": "ok"/u);
   const caddy = await readFile(caddyFile, "utf8");

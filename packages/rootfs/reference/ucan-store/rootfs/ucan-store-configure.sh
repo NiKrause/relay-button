@@ -12,6 +12,7 @@ CADDY_SERVICE="${CADDY_SERVICE:-caddy.service}"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 SERVICE_PORT="${SERVICE_PORT:-8787}"
 PROXY_PORT="${PROXY_PORT:-8788}"
+SERVICE_GROUP="${SERVICE_GROUP:-ucan-store}"
 PUBLIC_IPV4=""
 PUBLIC_IPV6=""
 PROXY_HOSTNAME=""
@@ -142,7 +143,11 @@ install_bootstrap_package() {
     --admin-did "${ADMIN_DID}" \
     --summary-file "${BOOTSTRAP_VERIFICATION_FILE}" >/dev/null
   cp "${source_file}" "${BOOTSTRAP_PACKAGE_FILE}"
-  chmod 0640 "${BOOTSTRAP_PACKAGE_FILE}"
+  if chgrp "${SERVICE_GROUP}" "${BOOTSTRAP_PACKAGE_FILE}" 2>/dev/null; then
+    chmod 0640 "${BOOTSTRAP_PACKAGE_FILE}"
+  else
+    chmod 0644 "${BOOTSTRAP_PACKAGE_FILE}"
+  fi
   chmod 0644 "${BOOTSTRAP_VERIFICATION_FILE}"
 }
 
