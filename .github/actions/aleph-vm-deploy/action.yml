@@ -17,6 +17,10 @@ inputs:
     description: Aleph API host
     required: false
     default: https://api2.aleph.im
+  api_hosts:
+    description: Optional comma-, space-, or newline-separated Aleph API hosts to try in order during deploy mode. Overrides api_host when set.
+    required: false
+    default: ''
   crn_list_url:
     description: Aleph CRN list endpoint
     required: false
@@ -320,6 +324,7 @@ runs:
         ALEPH_VM_PROFILE: ${{ inputs.profile }}
         ALEPH_VM_PRIVATE_KEY: ${{ inputs.aleph_private_key }}
         ALEPH_VM_API_HOST: ${{ inputs.api_host }}
+        ALEPH_VM_API_HOSTS: ${{ inputs.api_hosts }}
         ALEPH_VM_CRN_LIST_URL: ${{ inputs.crn_list_url }}
         ALEPH_VM_NAME: ${{ inputs.name }}
         ALEPH_VM_SSH_PUBLIC_KEY: ${{ inputs.ssh_public_key }}

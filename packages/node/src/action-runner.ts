@@ -23,6 +23,7 @@ import {
 } from "./github-outputs.ts";
 import { executeDeployPlan } from "./deploy-executor.ts";
 import { parseDeployPlan, resolveDeployPlanRootfs } from "./deploy-plan.ts";
+import type { DeployPlan } from "./deploy-plan.ts";
 import { createPrivateKeyIdentity, type PrivateKeyIdentity } from "./signer.ts";
 import {
   deriveUcanStoreBootstrapPackageFromEnv,
@@ -36,6 +37,78 @@ function parseOptionalJson<T>(raw: string | undefined): T | null {
 
 function defaultHasher(content: string): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+function normalizeApiHost(host: string): string {
+  return host.trim().replace(/\/+$/u, "");
+}
+
+function uniqueNonEmptyValues(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of values) {
+    const value = normalizeApiHost(raw);
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+}
+
+function parseApiHostCandidates(
+  plan: DeployPlan,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const rawHosts = optionalEnv("ALEPH_VM_API_HOSTS", "", env).trim();
+  if (!rawHosts) {
+    return [normalizeApiHost(plan.apiHost)];
+  }
+
+  const explicitHosts = rawHosts.split(/[\s,]+/u);
+  const hosts = uniqueNonEmptyValues(explicitHosts);
+  if (hosts.length === 0) {
+    throw new Error("ALEPH_VM_API_HOSTS did not contain any API host URLs.");
+  }
+  return hosts;
+}
+
+async function executeDeployPlanWithApiHostFallback(args: {
+  plan: DeployPlan;
+  env: NodeJS.ProcessEnv;
+  deployExecutor: typeof executeDeployPlan;
+}): Promise<DeployOutputResult> {
+  const apiHosts = parseApiHostCandidates(args.plan, args.env);
+  let lastError: unknown = null;
+
+  for (const [index, apiHost] of apiHosts.entries()) {
+    try {
+      if (apiHosts.length > 1) {
+        actionLog(
+          "notice",
+          `Aleph deploy API host attempt ${index + 1}/${apiHosts.length}: ${apiHost}`,
+        );
+      }
+      return await args.deployExecutor({
+        ...args.plan,
+        apiHost,
+      });
+    } catch (error) {
+      lastError = error;
+      if (index < apiHosts.length - 1) {
+        const message = error instanceof Error ? error.message : String(error);
+        actionLog(
+          "warning",
+          `Aleph deploy API host ${apiHost} failed; retrying with ${apiHosts[index + 1]}. ${message}`,
+        );
+      }
+    }
+  }
+
+  const suffix =
+    lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(
+    `Aleph deploy failed through all configured API hosts (${apiHosts.join(", ")}). Last error: ${suffix}`,
+  );
 }
 
 export function buildScaffoldDeployResult(
@@ -407,9 +480,11 @@ export async function runActionMode(
         deployPlan,
         globalThis.fetch.bind(globalThis),
       );
-      deployResult = await (hooks.deployExecutor ?? executeDeployPlan)(
-        resolvedDeployPlan,
-      );
+      deployResult = await executeDeployPlanWithApiHostFallback({
+        plan: resolvedDeployPlan,
+        env,
+        deployExecutor: hooks.deployExecutor ?? executeDeployPlan,
+      });
     } catch (error) {
       if (
         error instanceof Error &&

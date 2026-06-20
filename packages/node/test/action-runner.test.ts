@@ -144,6 +144,52 @@ test('runActionMode executes the shared deploy executor when required env is pre
   assert.match(writes.join(''), /liveHash/)
 })
 
+test('runActionMode retries deploy mode across configured Aleph API hosts', async () => {
+  const { env, outputFile } = await createActionEnv('shared-aleph-action-api-hosts-')
+  const attemptedHosts: string[] = []
+
+  await runActionMode(
+    {
+      ...env,
+      ALEPH_VM_MODE: 'deploy',
+      ALEPH_VM_PRIVATE_KEY: '0xabc',
+      ALEPH_VM_NAME: 'uc-go-peer',
+      ALEPH_VM_SSH_PUBLIC_KEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest key@example',
+      ALEPH_VM_ROOTFS_ITEM_HASH: 'a'.repeat(64),
+      ALEPH_VM_API_HOST: 'https://api2.aleph.im',
+      ALEPH_VM_API_HOSTS: 'https://api2.aleph.im, https://api3.aleph.im'
+    },
+    {
+      deployExecutor: async (plan) => {
+        attemptedHosts.push(plan.apiHost)
+        if (plan.apiHost === 'https://api2.aleph.im') {
+          throw new Error('api2 transient failure')
+        }
+        return {
+          sender: '0x1234',
+          itemHash: 'fallbackHash',
+          status: 'processed',
+          verification: { ok: true },
+          runtime: {
+            diagnostics: {
+              state: 'aleph-processed',
+              timedOut: false,
+              reason: 'Deployment message processed by Aleph.'
+            }
+          }
+        }
+      }
+    }
+  )
+
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.deepEqual(attemptedHosts, [
+    'https://api2.aleph.im',
+    'https://api3.aleph.im'
+  ])
+  assert.match(outputs, /instance_item_hash=fallbackHash/)
+})
+
 test('runActionMode derives ucan-store bootstrap JSON before parsing the deploy plan', async () => {
   const { env, outputFile, summaryFile } = await createActionEnv('shared-aleph-action-ucan-derived-')
 

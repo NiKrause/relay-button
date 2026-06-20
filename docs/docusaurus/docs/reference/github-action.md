@@ -31,6 +31,7 @@ Deployment identity and signing:
 - `profile`
 - `aleph_private_key`
 - `api_host`
+- `api_hosts`
 - `name`
 - `channel`
 
@@ -75,6 +76,24 @@ Guest access and lifecycle:
 ```
 
 Do not pass raw port numbers such as `[22,80]`.
+
+Aleph API host fallback:
+
+- `api_host` configures the single Aleph API gateway used by default.
+- `api_hosts` optionally configures a comma-, space-, or newline-separated list
+  of Aleph API gateways to try in order during `deploy` mode.
+- When `api_hosts` is set, it overrides `api_host` for the deployment attempt
+  sequence. Each fallback attempt rebroadcasts the same deployment plan through
+  the next API host.
+
+Example:
+
+```yaml
+api_hosts: >-
+  https://api.aleph.im,
+  https://api2.aleph.im,
+  https://api3.aleph.im
+```
 
 Polling and timeout controls:
 
