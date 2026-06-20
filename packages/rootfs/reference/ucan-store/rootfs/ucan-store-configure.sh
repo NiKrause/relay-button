@@ -15,6 +15,8 @@ PROXY_PORT="${PROXY_PORT:-8788}"
 PUBLIC_IPV4=""
 PUBLIC_IPV6=""
 PROXY_HOSTNAME=""
+SERVICE_DID=""
+SERVICE_ORIGIN=""
 WEBAUTHN_ORIGIN=""
 WEBAUTHN_ORIGIN_FALLBACKS=""
 ADMIN_DID=""
@@ -29,6 +31,8 @@ Usage:
     --public-ipv4 <ip> \
     [--public-ipv6 <ipv6>] \
     [--proxy-hostname <hostname>] \
+    [--service-did <did>] \
+    [--service-origin <origin>] \
     [--webauthn-origin <origin>] \
     [--webauthn-origin-fallbacks <csv>] \
     [--admin-did <did>] \
@@ -156,6 +160,14 @@ while [ "$#" -gt 0 ]; do
       PROXY_HOSTNAME="${2:-}"
       shift 2
       ;;
+    --service-did)
+      SERVICE_DID="${2:-}"
+      shift 2
+      ;;
+    --service-origin)
+      SERVICE_ORIGIN="${2:-}"
+      shift 2
+      ;;
     --webauthn-origin)
       WEBAUTHN_ORIGIN="${2:-}"
       shift 2
@@ -196,6 +208,7 @@ if [ -z "${PUBLIC_IPV4}" ]; then
   usage >&2
   exit 1
 fi
+SERVICE_ORIGIN="${SERVICE_ORIGIN%/}"
 
 touch "${ENV_FILE}"
 
@@ -217,14 +230,24 @@ if [ -n "${WEBAUTHN_ORIGIN}" ]; then
 fi
 write_env_var "WEBAUTHN_ORIGIN_FALLBACKS" "${WEBAUTHN_ORIGIN_FALLBACKS}"
 
+if [ -z "${SERVICE_DID}" ] && [ -n "${PROXY_HOSTNAME}" ]; then
+  SERVICE_DID="$(derive_service_did_from_hostname "${PROXY_HOSTNAME}")"
+fi
+
+if [ -z "${SERVICE_ORIGIN}" ] && [ -n "${PROXY_HOSTNAME}" ]; then
+  SERVICE_ORIGIN="https://${PROXY_HOSTNAME}"
+fi
+
+write_env_var "UCAN_STORE_SERVICE_DID" "${SERVICE_DID}"
+
+if [ -n "${SERVICE_ORIGIN}" ]; then
+  write_env_var "PUBLIC_UPLOAD_SERVICE_URL" "${SERVICE_ORIGIN}"
+  write_env_var "PUBLIC_REVOCATION_URL" "${SERVICE_ORIGIN}"
+  write_env_var "PUBLIC_RECEIPTS_URL" "${SERVICE_ORIGIN}/receipt/"
+fi
+
 if [ -n "${PROXY_HOSTNAME}" ]; then
-  write_env_var "UCAN_STORE_SERVICE_DID" "$(derive_service_did_from_hostname "${PROXY_HOSTNAME}")"
   write_caddyfile "${PROXY_HOSTNAME}"
-  write_env_var "PUBLIC_UPLOAD_SERVICE_URL" "https://${PROXY_HOSTNAME}"
-  write_env_var "PUBLIC_REVOCATION_URL" "https://${PROXY_HOSTNAME}"
-  write_env_var "PUBLIC_RECEIPTS_URL" "https://${PROXY_HOSTNAME}/receipt/"
-else
-  write_env_var "UCAN_STORE_SERVICE_DID" ""
 fi
 
 touch "${READY_FILE}"
@@ -236,25 +259,24 @@ if [ "${START_SERVICE}" = "1" ]; then
     systemctl restart "${CADDY_SERVICE}"
   fi
 
-  SERVICE_DID="$(probe_service_did)"
-  write_env_var "UCAN_STORE_SERVICE_DID" "${SERVICE_DID}"
+  PROBED_SERVICE_DID="$(probe_service_did)"
+  if [ -z "${SERVICE_DID}" ]; then
+    SERVICE_DID="${PROBED_SERVICE_DID}"
+    write_env_var "UCAN_STORE_SERVICE_DID" "${SERVICE_DID}"
+  fi
   write_env_var "PUBLIC_UPLOAD_SERVICE_DID" "${SERVICE_DID}"
   write_env_var "PUBLIC_REVOCATION_DID" "${SERVICE_DID}"
 
   if [ -f "${BOOTSTRAP_PACKAGE_FILE}" ]; then
-    RUNTIME_SERVICE_ORIGIN=""
-    if [ -n "${PROXY_HOSTNAME}" ]; then
-      RUNTIME_SERVICE_ORIGIN="https://${PROXY_HOSTNAME}"
-    fi
     python3 "${BOOTSTRAP_VALIDATOR}" \
       --package-file "${BOOTSTRAP_PACKAGE_FILE}" \
       --runtime-service-did "${SERVICE_DID}" \
-      --runtime-service-origin "${RUNTIME_SERVICE_ORIGIN}" \
+      --runtime-service-origin "${SERVICE_ORIGIN}" \
       --admin-did "${ADMIN_DID}" >/dev/null
     node "${BOOTSTRAP_CRYPTO_VERIFIER}" \
       --package-file "${BOOTSTRAP_PACKAGE_FILE}" \
       --runtime-service-did "${SERVICE_DID}" \
-      --runtime-service-origin "${RUNTIME_SERVICE_ORIGIN}" \
+      --runtime-service-origin "${SERVICE_ORIGIN}" \
       --admin-did "${ADMIN_DID}" \
       --summary-file "${BOOTSTRAP_VERIFICATION_FILE}" >/dev/null
   fi

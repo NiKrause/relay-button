@@ -186,6 +186,8 @@ test("configureUcanStore posts the expected payload to the guest", async () => {
     publicIpv6: "2001:db8::9",
     setupPort: 28080,
     proxyUrl: "https://upload.example.com",
+    serviceDid: "did:web:upload.example.com",
+    serviceOrigin: "https://upload.example.com",
     webauthnOrigin: "https://upload.example.com",
     webauthnOriginFallbacks: "https://alt-upload.example.com",
     adminDid: "did:key:zAdmin",
@@ -212,6 +214,8 @@ test("configureUcanStore posts the expected payload to the guest", async () => {
   assert.match(body, /"public_ipv4":"203\.0\.113\.9"/);
   assert.match(body, /"public_ipv6":"2001:db8::9"/);
   assert.match(body, /"proxy_url":"https:\/\/upload\.example\.com"/);
+  assert.match(body, /"service_did":"did:web:upload\.example\.com"/);
+  assert.match(body, /"service_origin":"https:\/\/upload\.example\.com"/);
   assert.match(body, /"webauthn_origin":"https:\/\/upload\.example\.com"/);
   assert.match(
     body,

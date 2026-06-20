@@ -532,6 +532,8 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
   const configurePayload = JSON.parse(configureBodies[0] ?? '{}')
   assert.equal(configurePayload.proxy_url, 'https://upload.example.com')
   assert.equal(configurePayload.webauthn_origin, 'https://upload.example.com')
+  assert.equal(configurePayload.service_did, 'did:key:z6Mkservice123')
+  assert.equal(configurePayload.service_origin, 'https://upload.example.com')
   assert.equal(configurePayload.admin_did, 'did:key:z6Mkadmin123')
   assert.equal(
     configurePayload.bootstrap_package.serviceDid,

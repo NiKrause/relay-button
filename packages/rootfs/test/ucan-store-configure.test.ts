@@ -224,6 +224,99 @@ test("ucan-store-configure installs bootstrap inputs and writes public env witho
   assert.equal(await readFile(readyFile, "utf8"), "");
 });
 
+test("ucan-store-configure preserves explicit custom service identity without proxy hostname", async (t) => {
+  const tempDir = await makeTempDir("ucan-store-configure-explicit-service-");
+  t.after(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  const binDir = path.join(tempDir, "bin");
+  await mkdir(binDir, { recursive: true });
+
+  const envFile = path.join(tempDir, "ucan-store.env");
+  const readyFile = path.join(tempDir, "ucan-store.ready");
+  const caddyFile = path.join(tempDir, "Caddyfile");
+  const bootstrapInputFile = path.join(tempDir, "bootstrap-input.json");
+  const bootstrapPackageFile = path.join(tempDir, "bootstrap-package.json");
+  const bootstrapVerificationFile = path.join(tempDir, "bootstrap-verification.json");
+  const validatorLog = path.join(tempDir, "validator.log");
+  const verifierLog = path.join(tempDir, "verifier.log");
+  const systemctlLog = path.join(tempDir, "systemctl.log");
+  const validatorScript = path.join(tempDir, "validator.py");
+  const verifierScript = path.join(tempDir, "verifier.mjs");
+
+  await writeMockSystemctl(binDir, systemctlLog);
+  await writeMockValidator(validatorScript, validatorLog);
+  await writeMockVerifier(verifierScript, verifierLog);
+
+  await writeFile(
+    bootstrapInputFile,
+    JSON.stringify(
+      {
+        adminDid: "did:key:z6Mkadmin123",
+        serviceDid: "did:web:ucan-api.nicokrause.com",
+        serviceOrigin: "https://ucan-api.nicokrause.com",
+        spaceDid: "did:key:z6Mkspace123",
+        rootDelegationProof: "mproof-placeholder",
+        allowedCapabilities: ["store/add", "upload/add"],
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = await runConfigure(
+    [
+      "--public-ipv4",
+      "203.0.113.20",
+      "--service-did",
+      "did:web:ucan-api.nicokrause.com",
+      "--service-origin",
+      "https://ucan-api.nicokrause.com/",
+      "--admin-did",
+      "did:key:z6Mkadmin123",
+      "--bootstrap-package-file",
+      bootstrapInputFile,
+      "--no-start",
+    ],
+    {
+      ENV_FILE: envFile,
+      READY_FILE: readyFile,
+      BOOTSTRAP_PACKAGE_FILE: bootstrapPackageFile,
+      BOOTSTRAP_VALIDATOR: validatorScript,
+      BOOTSTRAP_CRYPTO_VERIFIER: verifierScript,
+      BOOTSTRAP_VERIFICATION_FILE: bootstrapVerificationFile,
+      CADDYFILE: caddyFile,
+      PATH: `${binDir}:${process.env.PATH ?? ""}`,
+    },
+  );
+
+  assert.equal(result.code, 0, result.stderr || result.stdout);
+  const rawEnv = await readFile(envFile, "utf8");
+  assert.equal(envValue(rawEnv, "PROXY_HOSTNAME"), "");
+  assert.equal(envValue(rawEnv, "UCAN_STORE_SERVICE_DID"), "did:web:ucan-api.nicokrause.com");
+  assert.equal(envValue(rawEnv, "PUBLIC_UPLOAD_SERVICE_URL"), "https://ucan-api.nicokrause.com");
+  assert.equal(envValue(rawEnv, "PUBLIC_REVOCATION_URL"), "https://ucan-api.nicokrause.com");
+  assert.equal(envValue(rawEnv, "PUBLIC_RECEIPTS_URL"), "https://ucan-api.nicokrause.com/receipt/");
+
+  const validatorCalls = await readJsonLines(validatorLog);
+  const verifierCalls = await readJsonLines(verifierLog);
+  assert.deepEqual(validatorCalls, [["--package-file", bootstrapInputFile]]);
+  assert.deepEqual(verifierCalls, [[
+    "--package-file",
+    bootstrapInputFile,
+    "--admin-did",
+    "did:key:z6Mkadmin123",
+    "--summary-file",
+    bootstrapVerificationFile,
+  ]]);
+
+  await assert.rejects(readFile(caddyFile, "utf8"));
+  await assert.rejects(readFile(systemctlLog, "utf8"));
+  assert.equal(await readFile(readyFile, "utf8"), "");
+});
+
 test("ucan-store-configure re-verifies bootstrap inputs against runtime DID and origin after start", async (t) => {
   const tempDir = await makeTempDir("ucan-store-configure-runtime-");
   t.after(async () => {

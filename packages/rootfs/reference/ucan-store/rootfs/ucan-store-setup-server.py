@@ -137,6 +137,8 @@ class Handler(BaseHTTPRequestHandler):
             proxy_candidate if "://" in proxy_candidate else f"https://{proxy_candidate}"
         ) if proxy_candidate else None
         proxy_hostname = parsed_proxy.hostname if parsed_proxy and parsed_proxy.hostname else proxy_candidate
+        service_did = str(payload.get("service_did") or "").strip()
+        service_origin = str(payload.get("service_origin") or "").strip()
         admin_did = str(payload.get("admin_did") or "").strip()
         webauthn_origin = str(payload.get("webauthn_origin") or "").strip()
         webauthn_origin_fallbacks = str(payload.get("webauthn_origin_fallbacks") or "").strip()
@@ -163,6 +165,10 @@ class Handler(BaseHTTPRequestHandler):
             args.extend(["--public-ipv6", public_ipv6])
         if proxy_hostname:
             args.extend(["--proxy-hostname", proxy_hostname])
+        if service_did:
+            args.extend(["--service-did", service_did])
+        if service_origin:
+            args.extend(["--service-origin", service_origin])
         if admin_did:
             args.extend(["--admin-did", admin_did])
         if webauthn_origin:
