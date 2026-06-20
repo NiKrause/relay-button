@@ -343,7 +343,7 @@ test("ucan-store-configure serves proxy and custom service hostnames through Cad
       "--public-ipv4",
       "203.0.113.20",
       "--proxy-hostname",
-      "chaos-giggle-dawn-brief.2n6.me",
+      "reserved-proxy.example.2n6.me",
       "--service-did",
       "did:web:ucan-api.nicokrause.com",
       "--service-origin",
@@ -362,13 +362,13 @@ test("ucan-store-configure serves proxy and custom service hostnames through Cad
 
   assert.equal(result.code, 0, result.stderr || result.stdout);
   const rawEnv = await readFile(envFile, "utf8");
-  assert.equal(envValue(rawEnv, "PROXY_HOSTNAME"), "chaos-giggle-dawn-brief.2n6.me");
+  assert.equal(envValue(rawEnv, "PROXY_HOSTNAME"), "reserved-proxy.example.2n6.me");
   assert.equal(envValue(rawEnv, "UCAN_STORE_SERVICE_HOSTNAME"), "ucan-api.nicokrause.com");
   assert.equal(envValue(rawEnv, "UCAN_STORE_SERVICE_DID"), "did:web:ucan-api.nicokrause.com");
   assert.equal(envValue(rawEnv, "PUBLIC_UPLOAD_SERVICE_URL"), "https://ucan-api.nicokrause.com");
 
   const caddy = await readFile(caddyFile, "utf8");
-  assert.match(caddy, /chaos-giggle-dawn-brief\.2n6\.me, ucan-api\.nicokrause\.com/u);
+  assert.match(caddy, /reserved-proxy\.example\.2n6\.me, ucan-api\.nicokrause\.com/u);
   assert.match(caddy, /reverse_proxy 127\.0\.0\.1:8788/u);
   await assert.rejects(readFile(systemctlLog, "utf8"));
   assert.equal(await readFile(readyFile, "utf8"), "");
