@@ -6,7 +6,6 @@ import type {
 import { validateUcanStoreBootstrapPackage } from "@le-space/shared-types";
 
 import {
-  DEFAULT_ALEPH_CHANNEL,
   validateRootfsManifest,
   type FetchLike,
 } from "../../core/src/index.ts";
@@ -284,7 +283,7 @@ export function parseDeployPlan(
     vcpus: integerEnv("ALEPH_VM_VCPUS", 1, env),
     memoryMiB: integerEnv("ALEPH_VM_MEMORY_MIB", 1024, env),
     seconds: integerEnv("ALEPH_VM_SECONDS", 30, env),
-    channel: optionalEnv("ALEPH_VM_CHANNEL", DEFAULT_ALEPH_CHANNEL, env),
+    channel: optionalEnv("ALEPH_VM_CHANNEL", "TEST", env),
     waitAttempts: integerEnv("ALEPH_VM_WAIT_ATTEMPTS", 60, env),
     waitDelayMs: integerEnv("ALEPH_VM_WAIT_DELAY_MS", 5000, env),
     runtimeAttempts: integerEnv("ALEPH_VM_RUNTIME_ATTEMPTS", 40, env),

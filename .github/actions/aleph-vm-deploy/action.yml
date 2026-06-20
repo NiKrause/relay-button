@@ -66,7 +66,7 @@ inputs:
   channel:
     description: Aleph channel
     required: false
-    default: ALEPH-CLOUDSOLUTIONS
+    default: TEST
   wait_attempts:
     description: Poll attempts while waiting for Aleph to process the deployment
     required: false

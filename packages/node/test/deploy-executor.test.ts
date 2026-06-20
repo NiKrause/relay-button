@@ -1306,7 +1306,7 @@ test('executeDeployPlan pre-seeds orbitdb relay identity from bootstrap publishe
   assert.equal(result.configuration?.metadata?.peer_id, expectedRelayIdentity.peerId)
 })
 
-test('executeDeployPlan waits for 2n6 proxy activation before configuring guest Caddy', async () => {
+test('executeDeployPlan configures relay Caddy when a reserved 2n6 proxy URL is not marked active yet', async () => {
   const configureBodies: string[] = []
   let twoN6Lookups = 0
   const bootstrapPublisherPrivateKey =
@@ -1357,7 +1357,7 @@ test('executeDeployPlan waits for 2n6 proxy activation before configuring guest 
           twoN6Lookups += 1
           return jsonResponse({
             url: 'https://relay.example.com',
-            active: twoN6Lookups >= 2
+            active: false
           })
         }
 
@@ -1417,7 +1417,7 @@ test('executeDeployPlan waits for 2n6 proxy activation before configuring guest 
     }
   )
 
-  assert.ok(twoN6Lookups >= 2)
+  assert.ok(twoN6Lookups >= 1)
   assert.equal(configureBodies.length, 1)
   assert.equal(
     JSON.parse(configureBodies[0]).proxy_url,

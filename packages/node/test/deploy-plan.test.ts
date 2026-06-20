@@ -22,7 +22,7 @@ test("parseDeployPlan reads required deploy env and defaults", () => {
   assert.equal(plan.apiHost, "https://api.aleph.im");
   assert.equal(plan.crnListUrl, "https://crns-list.aleph.sh/crns.json");
   assert.equal(plan.rootfsSizeMiB, 20480);
-  assert.equal(plan.channel, "ALEPH-CLOUDSOLUTIONS");
+  assert.equal(plan.channel, "TEST");
   assert.equal(plan.placementStrategy, "scheduler");
   assert.equal(plan.preferredCountryCode, "DE");
   assert.equal(plan.geoCrnLimit, 30);

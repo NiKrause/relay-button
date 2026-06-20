@@ -1,6 +1,6 @@
 {
   "name": "@le-space/node",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Node and GitHub Actions adapters for shared Aleph tooling.",
   "license": "MIT",
   "private": true,

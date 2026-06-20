@@ -673,10 +673,10 @@ export async function executeDeployPlan(
           runtime,
           fallbackCrn: candidateCrn,
         });
-        proxyUrl = runtime.webAccess?.active === true ? (runtime.proxyUrl ?? null) : null;
-        if (!proxyUrl) {
+        proxyUrl = runtime.proxyUrl ?? proxyUrl;
+        if (runtime.webAccess?.active !== true) {
           log(
-            `[deploy] proxy URL still inactive for ${deployment.itemHash}; configuring relay without Caddy for now`,
+            `[deploy] proxy URL still inactive for ${deployment.itemHash}; configuring guest Caddy with reserved proxy URL and verifying it directly`,
           );
         }
       }

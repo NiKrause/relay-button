@@ -3,7 +3,6 @@ import { pathToFileURL } from "node:url";
 
 import type { PortMapping } from "@le-space/shared-types";
 import {
-  DEFAULT_ALEPH_CHANNEL,
   createRelayBootstrapRegistrationId,
   listGeocodedCrns,
   publishRelayBootstrapRegistration,
@@ -175,7 +174,7 @@ export async function runActionMode(
       signer: identity.signer,
       hasher: async (content) => defaultHasher(content),
       fetch: globalThis.fetch.bind(globalThis),
-      channel: optionalEnv("ALEPH_VM_CHANNEL", DEFAULT_ALEPH_CHANNEL, env),
+      channel: optionalEnv("ALEPH_VM_CHANNEL", "TEST", env),
       apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api.aleph.im", env),
     });
 
