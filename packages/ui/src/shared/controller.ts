@@ -990,6 +990,8 @@ export class SponsorRelayController {
         setupPort,
         proxyUrl: serviceProxyUrl,
         webauthnOrigin: serviceProxyUrl,
+        serviceDid: bootstrapValidation.bootstrapPackage.serviceDid,
+        serviceOrigin: bootstrapValidation.bootstrapPackage.serviceOrigin,
         adminDid: bootstrapValidation.bootstrapPackage.adminDid,
         bootstrapPackage: bootstrapValidation.bootstrapPackage,
         fetch: (url, init) => fetch(url, init),

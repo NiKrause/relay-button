@@ -549,7 +549,7 @@ test('controller configures the ucan-store guest without relay bootstrap publica
         defaultUserDelegationExpiration: '86400',
         maxUserDelegationExpiration: '604800',
         pwaOrigin: 'https://store.example.com',
-        serviceOrigin: '',
+        serviceOrigin: 'https://ucan-api.example.com',
       },
     })
 
@@ -559,11 +559,15 @@ test('controller configures the ucan-store guest without relay bootstrap publica
       runtime: {
         allocation: null,
         execution: null,
-        webAccess: null,
-        webAccessUrl: 'https://upload.example.com',
+        webAccess: {
+          active: false,
+          subdomain: 'reserved-proxy.example.2n6.me',
+          url: 'https://reserved-proxy.example.2n6.me',
+        },
+        webAccessUrl: 'https://reserved-proxy.example.2n6.me',
         hostIpv4: '203.0.113.17',
         ipv6: '2001:db8::17',
-        proxyUrl: 'https://upload.example.com',
+        proxyUrl: 'https://reserved-proxy.example.2n6.me',
         mappedPorts: {
           '80': { host: 30080, tcp: true, udp: false },
           '443': { host: 32443, tcp: true, udp: false },
@@ -573,9 +577,9 @@ test('controller configures the ucan-store guest without relay bootstrap publica
           reason: null,
           schedulerSource: 'manual',
           executionSeen: true,
-          webAccessActive: true,
+          webAccessActive: false,
           mappedPortCount: 2,
-          proxyUrl: 'https://upload.example.com',
+          proxyUrl: 'https://reserved-proxy.example.2n6.me',
         },
         sshCommand: null,
         selectedCrn: null,
@@ -590,15 +594,16 @@ test('controller configures the ucan-store guest without relay bootstrap publica
     assert.ok(!seenUrls.some((entry) => entry.includes('vm-bootstrap-config')))
     assert.equal(configureBodies.length, 1)
     const configurePayload = JSON.parse(configureBodies[0] ?? '{}')
-    assert.equal(configurePayload.proxy_url, 'https://upload.example.com')
-    assert.equal(configurePayload.webauthn_origin, 'https://upload.example.com')
+    assert.equal(configurePayload.proxy_url, 'https://reserved-proxy.example.2n6.me')
+    assert.equal(configurePayload.webauthn_origin, 'https://reserved-proxy.example.2n6.me')
+    assert.equal(configurePayload.service_origin, 'https://ucan-api.example.com')
     assert.equal(
       configurePayload.bootstrap_package.operatorAddress,
       '0x1234000000000000000000000000000000000000'
     )
     assert.equal(
       configurePayload.bootstrap_package.serviceOrigin,
-      'https://upload.example.com'
+      'https://ucan-api.example.com'
     )
     assert.deepEqual(configurePayload.bootstrap_package.allowedCapabilities, [
       'space/blob/add',
