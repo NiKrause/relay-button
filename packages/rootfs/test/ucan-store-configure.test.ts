@@ -207,6 +207,8 @@ test("ucan-store-configure installs bootstrap inputs and writes public env witho
   assert.equal(bootstrapMode, 0o644);
   const verificationSummary = await readFile(bootstrapVerificationFile, "utf8");
   assert.match(verificationSummary, /"status": "ok"/u);
+  const verificationMode = (await stat(bootstrapVerificationFile)).mode & 0o777;
+  assert.equal(verificationMode, 0o666);
   const caddy = await readFile(caddyFile, "utf8");
   assert.match(caddy, /upload\.example\.com/u);
   assert.match(caddy, /reverse_proxy 127\.0\.0\.1:8788/u);
@@ -441,6 +443,8 @@ test("ucan-store-configure re-verifies bootstrap inputs against runtime DID and 
     "--summary-file",
     bootstrapVerificationFile,
   ]);
+  const verificationMode = (await stat(bootstrapVerificationFile)).mode & 0o777;
+  assert.equal(verificationMode, 0o666);
 
   const systemctlCalls = await readFile(systemctlLog, "utf8");
   assert.match(systemctlCalls, /^daemon-reload$/mu);

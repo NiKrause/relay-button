@@ -148,7 +148,15 @@ install_bootstrap_package() {
   else
     chmod 0644 "${BOOTSTRAP_PACKAGE_FILE}"
   fi
-  chmod 0644 "${BOOTSTRAP_VERIFICATION_FILE}"
+  install_bootstrap_verification_permissions
+}
+
+install_bootstrap_verification_permissions() {
+  if chgrp "${SERVICE_GROUP}" "${BOOTSTRAP_VERIFICATION_FILE}" 2>/dev/null; then
+    chmod 0664 "${BOOTSTRAP_VERIFICATION_FILE}"
+  else
+    chmod 0666 "${BOOTSTRAP_VERIFICATION_FILE}"
+  fi
 }
 
 while [ "$#" -gt 0 ]; do
@@ -284,5 +292,6 @@ if [ "${START_SERVICE}" = "1" ]; then
       --runtime-service-origin "${SERVICE_ORIGIN}" \
       --admin-did "${ADMIN_DID}" \
       --summary-file "${BOOTSTRAP_VERIFICATION_FILE}" >/dev/null
+    install_bootstrap_verification_permissions
   fi
 fi
