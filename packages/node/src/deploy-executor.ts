@@ -1066,6 +1066,7 @@ export async function executeDeployPlan(
               channel: plan.channel,
               attempts: 12,
               delayMs: 2500,
+              sleep: sleepImpl,
             });
             if (!visibleRegistration) {
               throw new Error(
