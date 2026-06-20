@@ -13,7 +13,7 @@ export interface DomainAggregateEntry {
   type: DomainTargetKind;
   programType: DomainTargetKind;
   options?: Record<string, unknown> | null;
-  updated_at?: string;
+  updated_at?: number;
 }
 
 export function normalizeDomainName(domain: string): string {
@@ -37,7 +37,7 @@ export async function attachAlephDomain(args: {
   fetch: JsonFetchLike;
   apiHost?: string;
   options?: Record<string, unknown> | null;
-  updatedAt?: string;
+  updatedAt?: number;
 }) {
   const domain = normalizeDomainName(args.domain);
   if (!domain) {

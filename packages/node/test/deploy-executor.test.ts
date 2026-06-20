@@ -598,7 +598,7 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
       programType: 'instance',
     }
   )
-  assert.equal(typeof domainContent.content?.['upload.example.com']?.updated_at, 'string')
+  assert.equal(typeof domainContent.content?.['upload.example.com']?.updated_at, 'number')
 })
 
 test('executeDeployPlan retries on a rejected first CRN and succeeds on the next candidate', async () => {

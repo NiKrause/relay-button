@@ -1183,7 +1183,7 @@ export async function executeDeployPlan(
         hasher,
         fetch: fetchImpl,
         apiHost: plan.apiHost,
-        updatedAt: new Date().toISOString(),
+        updatedAt: Date.now() / 1000,
       });
       instanceDomain = {
         domain: attachedDomain.domain,
