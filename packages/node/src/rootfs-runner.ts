@@ -42,6 +42,34 @@ interface RootfsUploadRuntimeOptions {
   connectTimeoutMs: number;
 }
 
+function uniqueNonEmptyValues(values: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const value of values) {
+    const normalized = value.trim()
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    result.push(normalized)
+  }
+  return result
+}
+
+function parseRootfsAlephApiHosts(
+  buildPlan: RootfsBuildPlan,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const rawHosts =
+    optionalEnv('ALEPH_ROOTFS_ALEPH_API_HOSTS', '', env).trim() ||
+    optionalEnv('ALEPH_VM_API_HOSTS', '', env).trim()
+  if (!rawHosts) return [buildPlan.alephApiHost]
+
+  const hosts = uniqueNonEmptyValues(rawHosts.split(/[\s,]+/u))
+  if (hosts.length === 0) {
+    throw new Error('ALEPH_ROOTFS_ALEPH_API_HOSTS did not contain any API host URLs.')
+  }
+  return hosts
+}
+
 async function commandExists(command: string, pathValue: string): Promise<boolean> {
   for (const segment of pathValue.split(path.delimiter)) {
     const candidate = segment ? path.join(segment, command) : command
@@ -382,7 +410,11 @@ async function waitForIpfsCidAvailable(buildPlan: RootfsBuildPlan, cid: string):
   throw new Error(`CID ${cid} did not become retrievable from ${buildPlan.ipfsGatewayUrl} after ${buildPlan.ipfsGatewayWaitAttempts} attempts.`)
 }
 
-async function pinRootfsCidOnAleph(buildPlan: RootfsBuildPlan, cid: string, env: NodeJS.ProcessEnv = process.env): Promise<string> {
+async function pinRootfsCidOnAleph(
+  buildPlan: RootfsBuildPlan,
+  cid: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ itemHash: string; apiHost: string }> {
   const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
   const identity = await createPrivateKeyIdentity(privateKey)
   const now = Date.now() / 1000
@@ -406,16 +438,44 @@ async function pinRootfsCidOnAleph(buildPlan: RootfsBuildPlan, cid: string, env:
     channel: buildPlan.channel,
   }
   const message = await signAlephMessage(unsignedMessage, identity.signer)
-  const { response, httpStatus } = await broadcastAlephMessage(message, {
-    apiHost: buildPlan.alephApiHost,
-    sync: true,
-    fetch,
-  })
-  const status = normalizeBroadcastStatus(httpStatus, response?.message_status)
-  if (status === 'rejected') {
-    throw new Error(`Aleph STORE pin was rejected: ${JSON.stringify(response?.details ?? response ?? {})}`)
+  const apiHosts = parseRootfsAlephApiHosts(buildPlan, env)
+  let lastError: unknown = null
+
+  for (const [index, apiHost] of apiHosts.entries()) {
+    try {
+      if (apiHosts.length > 1) {
+        console.warn(`Aleph rootfs STORE API host attempt ${index + 1}/${apiHosts.length}: ${apiHost}`)
+      }
+      const { response, httpStatus } = await broadcastAlephMessage(message, {
+        apiHost,
+        sync: true,
+        fetch,
+        attempts: 3,
+        retryDelayMs: 1000,
+      })
+      const status = normalizeBroadcastStatus(httpStatus, response?.message_status)
+      if (status === 'rejected') {
+        throw new Error(`Aleph STORE pin was rejected: ${JSON.stringify(response?.details ?? response ?? {})}`)
+      }
+      return {
+        itemHash: typeof response?.item_hash === 'string' ? response.item_hash : message.item_hash,
+        apiHost,
+      }
+    } catch (error) {
+      lastError = error
+      if (index < apiHosts.length - 1) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.warn(
+          `Aleph rootfs STORE API host ${apiHost} failed; retrying with ${apiHosts[index + 1]}. ${message}`,
+        )
+      }
+    }
   }
-  return typeof response?.item_hash === 'string' ? response.item_hash : message.item_hash
+
+  const suffix = lastError instanceof Error ? lastError.message : String(lastError)
+  throw new Error(
+    `Aleph rootfs STORE publish failed through all configured API hosts (${apiHosts.join(', ')}). Last error: ${suffix}`,
+  )
 }
 
 async function waitForAlephMessageProcessed(buildPlan: RootfsBuildPlan, itemHash: string): Promise<void> {
@@ -537,13 +597,14 @@ export async function runRootfsMode(
         ? await hooks.uploadRootfsImageToIpfs(originalPlan)
         : await uploadRootfsImageToIpfs(originalPlan, env)
       await waitForIpfsCidAvailable(originalPlan, upload.cid)
-      const itemHash = await pinRootfsCidOnAleph(originalPlan, upload.cid, env)
-      await waitForAlephMessageProcessed(originalPlan, itemHash)
+      const pinned = await pinRootfsCidOnAleph(originalPlan, upload.cid, env)
+      const waitPlan = { ...originalPlan, alephApiHost: pinned.apiHost }
+      await waitForAlephMessageProcessed(waitPlan, pinned.itemHash)
 
       const artifacts = publicationArtifacts(originalPlan)
       await mkdir(originalPlan.outDir, { recursive: true })
       await writeFile(artifacts.ipfsAddResponsePath, upload.responseText.endsWith('\n') ? upload.responseText : `${upload.responseText}\n`)
-      storeMessageContent = JSON.stringify({ item_hash: itemHash })
+      storeMessageContent = JSON.stringify({ item_hash: pinned.itemHash })
       await writeFile(artifacts.storeMessagePath, `${storeMessageContent}\n`)
       await writeFile(artifacts.storeMessageStderrPath, '')
       ipfsAddResponseContent = upload.responseText

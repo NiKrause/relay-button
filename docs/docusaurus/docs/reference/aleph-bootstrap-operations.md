@@ -424,8 +424,11 @@ This test:
 After a live test run, the post can be queried without a wallet:
 
 ```bash
-curl -s "https://api2.aleph.im/api/v0/posts.json?channels=simple-todo&refs=YOUR_REF&types=relay-bootstrap&pagination=10&page=1"
+curl -s "https://api2.aleph.im/api/v0/posts.json?channels=simple-todo&refs=YOUR_REF&types=relay-bootstrap-v2&pagination=10&page=1"
 ```
+
+Use `types=relay-bootstrap` to inspect legacy full-shape records during the
+v1/v2 migration window.
 
 or by message hash:
 

@@ -2,6 +2,8 @@ import {
   createRelayBootstrapPost,
   fetchAlephBootstrapPosts,
   DEFAULT_ALEPH_API_HOST,
+  DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE,
+  DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE,
   signRelayBootstrapAuthorization,
   signRelayBootstrapProof,
   selectCurrentRelayBootstrapPosts,
@@ -72,13 +74,14 @@ export async function waitForRelayBootstrapRegistration(args: {
   const expectedSender = args.sender?.trim().toLowerCase() || null;
   const expectedRegistrationId = args.registrationId?.trim() || null;
   const expectedPeerId = args.peerId?.trim() || null;
+  const postType = args.postType ?? DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const posts = await fetchAlephBootstrapPosts({
       apiHost: args.apiHost ?? DEFAULT_ALEPH_API_HOST,
       channel: args.channel,
       ref: args.ref,
-      postType: args.postType,
+      postType,
       fetch: args.fetch as typeof fetch,
     });
     const currentPosts = selectCurrentRelayBootstrapPosts(posts);
@@ -134,6 +137,7 @@ export async function publishRelayBootstrapRegistration(args: {
   channel?: string;
   ref?: string;
   postType?: string;
+  compactMultiaddrLimit?: number;
   profile?: string;
   version?: string;
   ownerAddress?: string;
@@ -152,6 +156,8 @@ export async function publishRelayBootstrapRegistration(args: {
 }): Promise<RelayBootstrapPublicationResult> {
   const publisherAddress = args.publisherAddress ?? args.sender;
   const ownerAddress = args.ownerAddress;
+  const postType = args.postType ?? DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE;
+  const compact = postType === DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE;
   let ownerAuthorization = args.ownerAuthorization;
   let relayProof = args.relayProof;
 
@@ -180,6 +186,8 @@ export async function publishRelayBootstrapRegistration(args: {
       profile: args.profile,
       version: args.version,
       updatedAt: args.now ?? Date.now(),
+      compact,
+      compactMultiaddrLimit: args.compactMultiaddrLimit,
       signer: args.publisherSigner,
     });
   }
@@ -192,13 +200,15 @@ export async function publishRelayBootstrapRegistration(args: {
     registrationId: args.registrationId,
     channel: args.channel,
     ref: args.ref,
-    postType: args.postType,
+    postType,
     profile: args.profile,
     version: args.version,
     ownerAddress,
     publisherAddress,
     authorization: ownerAuthorization,
     relayProof,
+    compact,
+    compactMultiaddrLimit: args.compactMultiaddrLimit,
     now: args.now,
     hasher: args.hasher,
   });
@@ -229,24 +239,41 @@ export async function publishRelayBootstrapRegistration(args: {
   let forgottenHashes: string[] = [];
   let forgetResult: Awaited<ReturnType<typeof forgetAlephMessages>> | undefined;
   if (args.forgetPrevious && args.registrationId) {
-    const previousPosts = await fetchAlephBootstrapPosts({
-      apiHost: args.apiHost ?? DEFAULT_ALEPH_API_HOST,
-      channel: args.channel,
-      ref: args.ref,
-      postType: args.postType,
-      fetch: args.fetch as typeof fetch,
-    });
-
-    forgottenHashes = previousPosts
-      .filter(
-        (post) =>
-          post.address?.toLowerCase() === args.sender.toLowerCase() &&
-          post.content?.registrationId === args.registrationId &&
-          (post.itemHash ?? post.hash) != null &&
-          (post.itemHash ?? post.hash) !== unsigned.item_hash,
+    const previousPostTypes = compact
+      ? [postType, DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE]
+      : [postType];
+    const previousPosts = (
+      await Promise.all(
+        previousPostTypes.map((previousPostType) =>
+          fetchAlephBootstrapPosts({
+            apiHost: args.apiHost ?? DEFAULT_ALEPH_API_HOST,
+            channel: args.channel,
+            ref: args.ref,
+            postType: previousPostType,
+            fetch: args.fetch as typeof fetch,
+          }),
+        ),
       )
-      .map((post) => post.itemHash ?? post.hash ?? "")
-      .filter(Boolean);
+    ).flat();
+
+    const forgottenHashSet = new Set(
+      previousPosts
+        .filter((post) => {
+          const hash = post.itemHash ?? post.hash;
+          if (!hash || hash === unsigned.item_hash) return false;
+          if (post.address?.toLowerCase() !== args.sender.toLowerCase()) {
+            return false;
+          }
+          const content = post.content;
+          if (!content) return false;
+          if (content.registrationId === args.registrationId) return true;
+          if (content.peerId !== args.peerId) return false;
+          return !args.profile || content.profile === args.profile;
+        })
+        .map((post) => post.itemHash ?? post.hash ?? "")
+        .filter(Boolean),
+    );
+    forgottenHashes = [...forgottenHashSet];
 
     if (forgottenHashes.length > 0) {
       forgetResult = await forgetAlephMessages({
@@ -271,7 +298,8 @@ export async function publishRelayBootstrapRegistration(args: {
     response,
     httpStatus,
     publishedMultiaddrs: content.content?.multiaddrs ?? [],
-    publishedBrowserMultiaddrs: content.content?.browserMultiaddrs ?? [],
+    publishedBrowserMultiaddrs:
+      content.content?.browserMultiaddrs ?? content.content?.multiaddrs ?? [],
     forgottenHashes,
     forgetResult,
   };

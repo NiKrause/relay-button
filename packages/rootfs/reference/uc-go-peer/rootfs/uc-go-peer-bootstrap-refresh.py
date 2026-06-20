@@ -25,10 +25,13 @@ DESCRIBE_SCRIPT = os.environ.get("DESCRIBE_SCRIPT", "/usr/local/sbin/uc-go-peer-
 DEFAULT_API_HOST = os.environ.get("ALEPH_BOOTSTRAP_API_HOST", "https://api.aleph.im")
 DEFAULT_CHANNEL = os.environ.get("ALEPH_BOOTSTRAP_CHANNEL", "simple-todo")
 DEFAULT_REF = os.environ.get("ALEPH_BOOTSTRAP_REF", "simple-todo-bootstrap")
-DEFAULT_POST_TYPE = os.environ.get("ALEPH_BOOTSTRAP_POST_TYPE", "relay-bootstrap")
+COMPACT_POST_TYPE = "relay-bootstrap-v2"
+LEGACY_POST_TYPE = "relay-bootstrap"
+DEFAULT_POST_TYPE = os.environ.get("ALEPH_BOOTSTRAP_POST_TYPE", COMPACT_POST_TYPE)
 DEFAULT_PROFILE = os.environ.get("ALEPH_BOOTSTRAP_PROFILE", "uc-go-peer")
 MAX_PREVIOUS_PAGES = int(os.environ.get("ALEPH_BOOTSTRAP_MAX_PREVIOUS_PAGES", "5"))
 PAGINATION = int(os.environ.get("ALEPH_BOOTSTRAP_PAGINATION", "50"))
+COMPACT_MULTIADDR_LIMIT = int(os.environ.get("ALEPH_BOOTSTRAP_COMPACT_MULTIADDR_LIMIT", "3"))
 
 
 def parse_env_file(path: str) -> dict[str, str]:
@@ -108,6 +111,28 @@ def filter_public_multiaddrs(values: list[str], browser_only: bool = False) -> l
             continue
         filtered.append(candidate)
     return dedupe(filtered)
+
+
+def browser_multiaddr_preference(addr: str) -> int:
+    normalized = addr.lower()
+    if "/tcp/443/tls/ws/" in normalized:
+        return 0
+    if "/tls/ws/" in normalized:
+        return 1
+    if "/webtransport/" in normalized:
+        return 2
+    if "/webrtc-direct/" in normalized:
+        return 3
+    if "/ws" in normalized:
+        return 4
+    return 5
+
+
+def select_compact_multiaddrs(values: list[str]) -> list[str]:
+    public_browser_addrs = filter_public_multiaddrs(values, browser_only=True)
+    return sorted(public_browser_addrs, key=browser_multiaddr_preference)[
+        : max(1, COMPACT_MULTIADDR_LIMIT)
+    ]
 
 
 def json_dumps(payload: object) -> str:
@@ -413,10 +438,8 @@ def parse_post_record(entry: object) -> dict[str, object] | None:
         except json.JSONDecodeError:
             item_content = None
 
-    if not isinstance(item_content, dict):
-        return None
-
-    content = item_content.get("content")
+    content_source = item_content if isinstance(item_content, dict) else entry
+    content = content_source.get("content")
     if not isinstance(content, dict):
         return None
 
@@ -424,6 +447,8 @@ def parse_post_record(entry: object) -> dict[str, object] | None:
         "item_hash": item_hash,
         "sender": sender,
         "registration_id": content.get("registrationId"),
+        "peer_id": content.get("peerId"),
+        "profile": content.get("profile"),
     }
 
 
@@ -431,42 +456,48 @@ def fetch_previous_hashes(
     api_host: str,
     channel: str,
     ref: str,
-    post_type: str,
+    post_types: list[str],
     sender: str,
     registration_id: str | None,
+    peer_id: str,
+    profile: str | None,
     current_item_hash: str,
 ) -> list[str]:
-    if not registration_id:
-        return []
-
     found: list[str] = []
-    for page in range(1, MAX_PREVIOUS_PAGES + 1):
-        url = (
-            f"{api_host.rstrip('/')}/api/v0/posts.json?"
-            f"channels={urllib.parse.quote(channel)}&"
-            f"refs={urllib.parse.quote(ref)}&"
-            f"types={urllib.parse.quote(post_type)}&"
-            f"pagination={PAGINATION}&page={page}"
-        )
-        payload = get_json(url)
-        posts = payload.get("posts")
-        if not isinstance(posts, list):
-            break
+    for post_type in post_types:
+        for page in range(1, MAX_PREVIOUS_PAGES + 1):
+            url = (
+                f"{api_host.rstrip('/')}/api/v0/posts.json?"
+                f"channels={urllib.parse.quote(channel)}&"
+                f"refs={urllib.parse.quote(ref)}&"
+                f"types={urllib.parse.quote(post_type)}&"
+                f"pagination={PAGINATION}&page={page}"
+            )
+            payload = get_json(url)
+            posts = payload.get("posts")
+            if not isinstance(posts, list):
+                break
 
-        for entry in posts:
-            parsed = parse_post_record(entry)
-            if parsed is None:
-                continue
-            if str(parsed["sender"]).lower() != sender.lower():
-                continue
-            if parsed["registration_id"] != registration_id:
-                continue
-            if parsed["item_hash"] == current_item_hash:
-                continue
-            found.append(str(parsed["item_hash"]))
+            for entry in posts:
+                parsed = parse_post_record(entry)
+                if parsed is None:
+                    continue
+                if str(parsed["sender"]).lower() != sender.lower():
+                    continue
+                if parsed["item_hash"] == current_item_hash:
+                    continue
+                same_registration = (
+                    registration_id is not None
+                    and parsed["registration_id"] == registration_id
+                )
+                same_peer = parsed["peer_id"] == peer_id and (
+                    not profile or parsed["profile"] == profile
+                )
+                if same_registration or same_peer:
+                    found.append(str(parsed["item_hash"]))
 
-        if len(posts) < PAGINATION:
-            break
+            if len(posts) < PAGINATION:
+                break
 
     return dedupe(found)
 
@@ -522,9 +553,6 @@ def main() -> None:
     browser_multiaddrs = filter_public_multiaddrs(
         metadata.get("browser_bootstrap_multiaddrs") or [], browser_only=True
     )
-    if not multiaddrs:
-        print(json_dumps({"status": "skipped", "reason": "no public multiaddrs"}))
-        return
 
     publisher_address = address_from_private_key(publisher_private_key)
     now_ms = int(time.time() * 1000)
@@ -535,6 +563,17 @@ def main() -> None:
     ref = env_values.get("ALEPH_BOOTSTRAP_REF", DEFAULT_REF).strip() or DEFAULT_REF
     post_type = env_values.get("ALEPH_BOOTSTRAP_POST_TYPE", DEFAULT_POST_TYPE).strip() or DEFAULT_POST_TYPE
     api_host = env_values.get("ALEPH_BOOTSTRAP_API_HOST", DEFAULT_API_HOST).strip() or DEFAULT_API_HOST
+    compact = post_type == COMPACT_POST_TYPE
+    published_multiaddrs = (
+        select_compact_multiaddrs(browser_multiaddrs or multiaddrs)
+        if compact
+        else multiaddrs
+    )
+    published_browser_multiaddrs = [] if compact else browser_multiaddrs
+    if not published_multiaddrs:
+        reason = "no public browser multiaddrs" if compact else "no public multiaddrs"
+        print(json_dumps({"status": "skipped", "reason": reason}))
+        return
 
     owner_authorization = load_owner_authorization(
         env_values,
@@ -549,8 +588,8 @@ def main() -> None:
 
     proof_payload = relay_proof_payload(
         peer_id,
-        multiaddrs,
-        browser_multiaddrs,
+        published_multiaddrs,
+        published_browser_multiaddrs,
         registration_id,
         profile,
         version,
@@ -564,8 +603,8 @@ def main() -> None:
     post_content = build_post_content(
         publisher_address,
         peer_id,
-        multiaddrs,
-        browser_multiaddrs,
+        published_multiaddrs,
+        published_browser_multiaddrs,
         registration_id,
         profile,
         version,
@@ -588,9 +627,11 @@ def main() -> None:
         api_host,
         channel,
         ref,
-        post_type,
+        [post_type, LEGACY_POST_TYPE] if compact else [post_type],
         publisher_address,
         registration_id,
+        peer_id,
+        profile,
         str(unsigned_message["item_hash"]),
     )
     forget_response = broadcast_forget(
@@ -605,8 +646,8 @@ def main() -> None:
                 "itemHash": unsigned_message["item_hash"],
                 "sender": publisher_address,
                 "peerId": peer_id,
-                "publishedMultiaddrs": multiaddrs,
-                "publishedBrowserMultiaddrs": browser_multiaddrs,
+                "publishedMultiaddrs": published_multiaddrs,
+                "publishedBrowserMultiaddrs": published_browser_multiaddrs or published_multiaddrs,
                 "forgottenHashes": previous_hashes,
                 "ownerAuthorizationPresent": owner_authorization is not None,
                 "forgetResponse": forget_response[1] if forget_response else None,

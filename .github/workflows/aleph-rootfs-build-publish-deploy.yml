@@ -32,6 +32,11 @@ on:
         required: false
         default: auto
         type: string
+      vm_api_hosts:
+        description: Comma-separated Aleph API hosts to try for rootfs STORE publication and VM deployment
+        required: false
+        default: https://api.aleph.im,https://api2.aleph.im,https://api3.aleph.im
+        type: string
       project_checkout_path:
         description: Checkout path for the caller repository
         required: false
@@ -200,6 +205,7 @@ jobs:
               format('{0}/{1}', github.workspace, inputs.project_checkout_path) ||
               ''
             }}
+          ALEPH_ROOTFS_ALEPH_API_HOSTS: ${{ inputs.vm_api_hosts }}
           ALEPH_ROOTFS_DRIVER: ${{ inputs.rootfs_driver }}
           ALEPH_ROOTFS_VERSION: ${{ inputs.rootfs_version }}
           ALEPH_ROOTFS_SKIP_UPLOAD: ${{ inputs.publish && 'false' || 'true' }}

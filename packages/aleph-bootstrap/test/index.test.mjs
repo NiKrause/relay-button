@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import { privateKeyToAccount } from "viem/accounts";
 
 import {
+  DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE,
   buildRelayBootstrapPostContent,
   createRelayBootstrapPost,
   dedupeMultiaddrs,
   discoverAlephBootstrapMultiaddrs,
   filterPublicMultiaddrs,
+  relayBootstrapMultiaddrsHash,
   relayBootstrapTrustMode,
+  selectCompactRelayBootstrapMultiaddrs,
   signRelayBootstrapAuthorization,
   signRelayBootstrapProof,
   selectCurrentRelayBootstrapPosts,
@@ -68,6 +71,31 @@ test("buildRelayBootstrapPostContent keeps public addrs and browser subset", () 
     "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
   ]);
   assert.equal(content.content.updatedAt, 1234);
+});
+
+test("buildRelayBootstrapPostContent can emit compact v2 browser records", () => {
+  const browserAddrs = [
+    "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/p2p/12D3KooWPublic",
+    "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
+    "/dns6/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
+    "/dns4/relay.example.com/tcp/9095/tls/ws/p2p/12D3KooWPublic",
+  ];
+  const content = buildRelayBootstrapPostContent({
+    sender: "0xabc",
+    peerId: "12D3KooWPublic",
+    postType: DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE,
+    multiaddrs: ["/ip4/203.0.113.10/tcp/9095/p2p/12D3KooWPublic"],
+    browserMultiaddrs: browserAddrs,
+    now: 1234,
+  });
+
+  assert.equal(content.type, DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE);
+  assert.deepEqual(content.content.multiaddrs, browserAddrs.slice(1, 4));
+  assert.equal(content.content.browserMultiaddrs, undefined);
+  assert.deepEqual(selectCompactRelayBootstrapMultiaddrs(browserAddrs, 2), [
+    "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
+    "/dns6/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
+  ]);
 });
 
 test("buildRelayBootstrapPostContent can carry dual-key authorization metadata", () => {
@@ -361,6 +389,49 @@ test("discoverAlephBootstrapMultiaddrs scans later pages when page 1 has no usab
   ]);
 });
 
+test("discoverAlephBootstrapMultiaddrs falls back from compact v2 to legacy posts", async () => {
+  const now = Date.now();
+  const requestedTypes = [];
+  const fetch = async (url) => {
+    const parsed = new URL(url);
+    const postType = parsed.searchParams.get("types");
+    requestedTypes.push(postType);
+
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        if (postType === DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE) {
+          return { posts: [] };
+        }
+        return {
+          posts: [
+            {
+              hash: "hash-legacy",
+              type: "relay-bootstrap",
+              ref: "simple-todo-bootstrap",
+              content: {
+                peerId: "12D3KooWLegacy",
+                updatedAt: now,
+                multiaddrs: ["/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy"],
+              },
+            },
+          ],
+        };
+      },
+    };
+  };
+
+  const addrs = await discoverAlephBootstrapMultiaddrs({ fetch });
+  assert.deepEqual(requestedTypes, [
+    DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE,
+    "relay-bootstrap",
+  ]);
+  assert.deepEqual(addrs, [
+    "/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy",
+  ]);
+});
+
 test("selectCurrentRelayBootstrapPosts keeps only the newest record per sender identity", () => {
   const now = Date.now();
   const posts = selectCurrentRelayBootstrapPosts([
@@ -547,6 +618,71 @@ test("dual-key authorization and relay proof can be signed and verified", async 
 
   assert.equal(verified.ok, true);
   assert.deepEqual(verified.errors, []);
+});
+
+test("compact relay proofs verify against signed multiaddr hashes", async () => {
+  const owner = privateKeyToAccount(
+    "0x7777777777777777777777777777777777777777777777777777777777777777",
+  );
+  const publisher = privateKeyToAccount(
+    "0x6666666666666666666666666666666666666666666666666666666666666666",
+  );
+  const signer = async (address, payload) => {
+    const account =
+      address.toLowerCase() === owner.address.toLowerCase() ? owner : publisher;
+    return account.signMessage({ message: payload });
+  };
+  const addrs = [
+    "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+    "/dns6/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+  ];
+  const authorization = await signRelayBootstrapAuthorization({
+    ownerAddress: owner.address,
+    publisherAddress: publisher.address,
+    peerId: "12D3KooWProof",
+    registrationId: "relay:proof",
+    profile: "orbitdb-relay",
+    version: "0.4.0",
+    issuedAt: 100,
+    signer,
+  });
+  const proof = await signRelayBootstrapProof({
+    publisherAddress: publisher.address,
+    peerId: "12D3KooWProof",
+    multiaddrs: ["/ip4/203.0.113.10/tcp/9095/p2p/12D3KooWProof"],
+    browserMultiaddrs: addrs,
+    registrationId: "relay:proof",
+    profile: "orbitdb-relay",
+    version: "0.4.0",
+    updatedAt: 200,
+    compact: true,
+    signer,
+  });
+
+  assert.equal(proof.payload.multiaddrs, undefined);
+  assert.equal(proof.payload.browserMultiaddrs, undefined);
+  assert.equal(proof.payload.multiaddrsHash, relayBootstrapMultiaddrsHash(addrs));
+
+  const verified = await verifyRelayBootstrapProof(proof, {
+    expectedPublisherAddress: publisher.address,
+    expectedPeerId: "12D3KooWProof",
+  });
+  assert.equal(verified.ok, true);
+
+  const contentVerified = await verifyRelayBootstrapDualKeyContent({
+    peerId: "12D3KooWProof",
+    multiaddrs: addrs,
+    registrationId: "relay:proof",
+    profile: "orbitdb-relay",
+    version: "0.4.0",
+    ownerAddress: owner.address,
+    publisherAddress: publisher.address,
+    authorization,
+    relayProof: proof,
+    updatedAt: 200,
+  });
+  assert.equal(contentVerified.ok, true);
+  assert.deepEqual(contentVerified.errors, []);
 });
 
 test("dual-key verification fails when relay proof publisher does not match", async () => {

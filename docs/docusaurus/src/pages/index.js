@@ -35,7 +35,7 @@ export default function Home() {
         <div className="container">
           <h1 className="hero__title">Relay Button</h1>
           <p className="hero__subtitle">
-            A shared foundation for relay deployment, rootfs automation, GitHub Actions,
+            A foundation for relay and node deployment, Aleph Cloud rootfs automation, GitHub Actions,
             and future browser-driven deployment flows.
           </p>
           <p style={{ marginTop: '0.75rem', fontWeight: 600 }}>
@@ -52,10 +52,10 @@ export default function Home() {
           <section className="shared-cli">
             <div className="shared-cli__copy">
               <p className="shared-cli__eyebrow">Command line</p>
-              <h2>Run the shared VM and RootFS flows locally</h2>
+              <h2>Run the VM and RootFS flows locally</h2>
               <p>
                 The root <code>package.json</code> exposes the <code>relay-button</code> and{' '}
-                <code>shared-aleph</code> CLI entrypoints, so the homepage now surfaces the same
+                <code>relay-button</code> CLI entrypoints, so the homepage now surfaces the same
                 VM deploy and RootFS publish commands available in the workspace scripts.
               </p>
               <p>

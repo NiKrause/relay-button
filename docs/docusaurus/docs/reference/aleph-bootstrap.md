@@ -27,7 +27,8 @@ the earliest `simple-todo` integration:
 
 - channel: `simple-todo`
 - ref: `simple-todo-bootstrap`
-- post type: `relay-bootstrap`
+- compact post type: `relay-bootstrap-v2`
+- legacy post type: `relay-bootstrap`
 
 These defaults are exported for compatibility, but every value can be
 overridden when a consumer needs an app-specific namespace or stronger
@@ -42,7 +43,13 @@ through:
 - the shared GitHub Action VM deploy path
 - the Sponsor Relay browser UI path
 
-The registration payload stores:
+New registrations prefer the compact `relay-bootstrap-v2` shape. It stores the
+browser-ready bootstrap list directly in `multiaddrs`, caps it to the best
+public browser-dialable candidates, and omits the old duplicate
+`browserMultiaddrs` array. Legacy `relay-bootstrap` records are still supported
+and keep the full diagnostic shape.
+
+The legacy registration payload stores:
 
 - `peerId`
 - `multiaddrs`
@@ -54,6 +61,9 @@ The registration payload stores:
 
 Only public multiaddrs are published. Loopback, RFC1918, link-local, and
 localhost-style addresses are filtered out before the Aleph `POST` is signed.
+For compact v2 records, browser transports are preferred in this order:
+`/tcp/443/tls/ws`, other `/tls/ws`, WebTransport, WebRTC direct, then other
+websocket addresses.
 
 ### Sponsor Relay Registration Lifecycle
 
@@ -71,7 +81,8 @@ than a single direct bootstrap publish:
    contains `peerId` and public multiaddrs
 6. otherwise the browser polls relay metadata, preferring the secure
    `https://relay-name.2n6.me/bootstrap/metadata` endpoint when available
-7. the browser waits for the guest to publish its own `relay-bootstrap` `POST`
+7. the browser waits for the guest to publish its own `relay-bootstrap-v2`
+   `POST`
    on Aleph
 8. if that guest registration is delayed, the browser publishes a fallback
    bootstrap record from the owner wallet using the same `registrationId`
@@ -222,11 +233,14 @@ const list = await discoverAlephBootstrapMultiaddrs()
 By default, discovery:
 
 - queries `https://api2.aleph.im/api/v0/posts.json`
-- loads the shared `relay-bootstrap` posts
+- loads compact `relay-bootstrap-v2` posts first, then falls back to legacy
+  `relay-bootstrap` posts when v2 has no usable addresses
 - skips entries older than 7 days
 - keeps only the newest fresh record per relay identity
+- sorts fetched records by recency client-side, even though Aleph currently
+  returns page 1 newest-first for this query
 - deduplicates the returned multiaddrs
-- prefers `browserMultiaddrs` when available
+- prefers `browserMultiaddrs` for legacy records when available
 - verifies dual-key records when they are present
 
 Important caveat:
@@ -309,7 +323,7 @@ ALEPH_BOOTSTRAP_TEST_PRIVATE_KEY=0xyourkey pnpm test:aleph-bootstrap:live
 
 The live check:
 
-- publishes dummy public multiaddrs into Aleph as a `relay-bootstrap` `POST`
+- publishes dummy public multiaddrs into Aleph as a `relay-bootstrap-v2` `POST`
 - republishes the same relay identity with refreshed public multiaddrs
 - requests `FORGET` for the older bootstrap record
 - polls `posts.json` until the refreshed post is visible

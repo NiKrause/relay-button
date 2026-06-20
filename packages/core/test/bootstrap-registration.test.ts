@@ -40,7 +40,7 @@ test('publishRelayBootstrapRegistration signs and broadcasts filtered public boo
   assert.equal(result.status, 'published')
   assert.equal(result.itemHash, 'hash1234')
   assert.deepEqual(result.publishedMultiaddrs, [
-    '/ip4/203.0.113.10/tcp/9095/p2p/12D3KooWPublic'
+    '/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic'
   ])
   assert.deepEqual(result.publishedBrowserMultiaddrs, [
     '/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic'
@@ -63,16 +63,15 @@ test('publishRelayBootstrapRegistration signs and broadcasts filtered public boo
   assert.equal(body.message?.signature, '0xsigned1234')
 
   const itemContent = JSON.parse(String(body.message?.item_content)) as {
+    type: string
     content: {
       multiaddrs: string[]
       browserMultiaddrs?: string[]
     }
   }
+  assert.equal(itemContent.type, 'relay-bootstrap-v2')
   assert.deepEqual(itemContent.content.multiaddrs, result.publishedMultiaddrs)
-  assert.deepEqual(
-    itemContent.content.browserMultiaddrs,
-    result.publishedBrowserMultiaddrs
-  )
+  assert.equal(itemContent.content.browserMultiaddrs, undefined)
 })
 
 test('publishRelayBootstrapRegistration skips publication when no public addrs remain', async () => {
@@ -117,6 +116,7 @@ test('publishRelayBootstrapRegistration can forget older records for the same re
     registrationId: 'relay:uc-go-peer:demo',
     forgetPrevious: true,
     multiaddrs: ['/ip4/203.0.113.10/tcp/9095/p2p/12D3KooWPublic'],
+    browserMultiaddrs: ['/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic'],
     fetch: async (url, init) => {
       calls.push({ url, init })
       if (String(url).includes('/api/v0/posts.json')) {
