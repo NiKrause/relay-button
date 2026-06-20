@@ -67,6 +67,10 @@ inputs:
     description: Aleph channel
     required: false
     default: TEST
+  instance_custom_domain:
+    description: Optional Aleph custom domain to attach to the deployed VM instance, for example ucan-api.example.com.
+    required: false
+    default: ''
   wait_attempts:
     description: Poll attempts while waiting for Aleph to process the deployment
     required: false
@@ -204,6 +208,24 @@ outputs:
   port_forward_status:
     description: Aleph status of the required port-forward aggregate publication
     value: ${{ steps.run_action.outputs.port_forward_status }}
+  instance_custom_domain:
+    description: Aleph custom domain attached to the VM instance when configured
+    value: ${{ steps.run_action.outputs.instance_custom_domain }}
+  instance_custom_domain_url:
+    description: HTTPS URL for the Aleph VM instance custom domain when configured
+    value: ${{ steps.run_action.outputs.instance_custom_domain_url }}
+  instance_custom_domain_item_hash:
+    description: Aleph INSTANCE item hash attached to the custom domain
+    value: ${{ steps.run_action.outputs.instance_custom_domain_item_hash }}
+  instance_custom_domain_aggregate_item_hash:
+    description: Aleph AGGREGATE item hash used to attach the custom domain
+    value: ${{ steps.run_action.outputs.instance_custom_domain_aggregate_item_hash }}
+  instance_custom_domain_status:
+    description: Aleph status of the custom-domain aggregate publication
+    value: ${{ steps.run_action.outputs.instance_custom_domain_status }}
+  instance_custom_domain_json:
+    description: JSON object summarizing the VM instance custom-domain attachment
+    value: ${{ steps.run_action.outputs.instance_custom_domain_json }}
   crn_hash:
     description: Selected CRN hash
     value: ${{ steps.run_action.outputs.crn_hash }}
@@ -307,6 +329,7 @@ runs:
         ALEPH_VM_MEMORY_MIB: ${{ inputs.memory_mib }}
         ALEPH_VM_SECONDS: ${{ inputs.seconds }}
         ALEPH_VM_CHANNEL: ${{ inputs.channel }}
+        ALEPH_VM_INSTANCE_CUSTOM_DOMAIN: ${{ inputs.instance_custom_domain }}
         ALEPH_VM_WAIT_ATTEMPTS: ${{ inputs.wait_attempts }}
         ALEPH_VM_WAIT_DELAY_MS: ${{ inputs.wait_delay_ms }}
         ALEPH_VM_RUNTIME_ATTEMPTS: ${{ inputs.runtime_attempts }}

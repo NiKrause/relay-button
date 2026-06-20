@@ -41,6 +41,7 @@ import type { DeployPlan } from "./deploy-plan.ts";
 import { deriveBootstrapPublisherPrivateKey } from "./bootstrap-publisher.ts";
 import { createPrivateKeyIdentity } from "./signer.ts";
 import { deriveLibp2pSecp256k1IdentityFromEvmKey } from "./relay-identity.ts";
+import { attachAlephDomain } from "./domain-link.ts";
 
 export interface DeployExecutorDependencies {
   fetch?: typeof fetch;
@@ -525,6 +526,7 @@ export async function executeDeployPlan(
     }
 
     let portForwarding: DeployOutputResult["portForwarding"] = null;
+    let instanceDomain: DeployOutputResult["instanceDomain"] = null;
     if (plan.publishPortForwards && plan.requiredPorts.length > 0) {
       log(
         `[deploy] publishing required port-forward aggregate for ${deployment.itemHash}`,
@@ -1167,6 +1169,34 @@ export async function executeDeployPlan(
         runtime: runtimeMetadata,
       });
 
+    if (plan.instanceCustomDomain) {
+      log(
+        `[deploy] linking Aleph instance custom domain ${plan.instanceCustomDomain} to ${deployment.itemHash}`,
+      );
+      const attachedDomain = await attachAlephDomain({
+        sender: identity.address,
+        domain: plan.instanceCustomDomain,
+        itemHash: deployment.itemHash,
+        kind: "instance",
+        signer: identity.signer,
+        hasher,
+        fetch: fetchImpl,
+        apiHost: plan.apiHost,
+        updatedAt: new Date().toISOString(),
+      });
+      instanceDomain = {
+        domain: attachedDomain.domain,
+        url: `https://${attachedDomain.domain}`,
+        itemHash: attachedDomain.itemHash,
+        aggregateItemHash: attachedDomain.aggregateItemHash,
+        aggregateStatus: attachedDomain.aggregateStatus,
+        httpStatus: attachedDomain.httpStatus,
+      };
+      log(
+        `[deploy] linked Aleph instance custom domain ${attachedDomain.domain}: status=${attachedDomain.aggregateStatus} aggregate=${attachedDomain.aggregateItemHash}`,
+      );
+    }
+
     return {
       sender: identity.address,
       itemHash: deployment.itemHash,
@@ -1177,6 +1207,7 @@ export async function executeDeployPlan(
         fallbackCrn: candidateCrn,
       }),
       portForwarding,
+      instanceDomain,
       runtime: runtimeMetadata,
       configuration,
       verification,

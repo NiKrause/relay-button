@@ -32,6 +32,14 @@ test('emitDeployOutputs writes action outputs and summary content', async () => 
         aggregateItemHash: 'aggregateHash',
         aggregateStatus: 'processed'
       },
+      instanceDomain: {
+        domain: 'ucan-api.example.com',
+        url: 'https://ucan-api.example.com',
+        itemHash: 'instanceHash',
+        aggregateItemHash: 'domainAggregateHash',
+        aggregateStatus: 'processed',
+        httpStatus: 200
+      },
       runtime: {
         allocation: {
           crnUrl: 'https://crn.example.com'
@@ -73,9 +81,13 @@ test('emitDeployOutputs writes action outputs and summary content', async () => 
 
   assert.match(outputs, /instance_item_hash=instanceHash/)
   assert.match(outputs, /port_forward_aggregate_item_hash=aggregateHash/)
+  assert.match(outputs, /instance_custom_domain=ucan-api\.example\.com/)
+  assert.match(outputs, /instance_custom_domain_url=https:\/\/ucan-api\.example\.com/)
+  assert.match(outputs, /instance_custom_domain_aggregate_item_hash=domainAggregateHash/)
   assert.match(outputs, /relay_peer_id=12D3KooW/)
   assert.match(summary, /Aleph VM deployment/)
   assert.match(summary, /CRN One/)
+  assert.match(summary, /ucan-api\.example\.com/)
   assert.equal(typeof result.runtimeJson, 'string')
   assert.equal(typeof result.verificationJson, 'string')
 })

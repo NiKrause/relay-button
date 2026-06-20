@@ -40,6 +40,14 @@ export interface DeployOutputResult {
     aggregateItemHash?: string
     aggregateStatus?: string
   } | null
+  instanceDomain?: {
+    domain?: string
+    url?: string
+    itemHash?: string
+    aggregateItemHash?: string
+    aggregateStatus?: string
+    httpStatus?: number
+  } | null
   runtime?: {
     allocation?: InstanceAllocation | null
     hostIpv4?: string | null
@@ -72,6 +80,7 @@ export async function emitDeployOutputs(
   const runtimeJson = JSON.stringify(runtime ?? {})
   const mappedPortsJson = JSON.stringify(runtime?.mappedPorts ?? {})
   const portForwardingJson = JSON.stringify(deployResult?.portForwarding ?? {})
+  const instanceDomainJson = JSON.stringify(deployResult?.instanceDomain ?? {})
   const configurationJson = JSON.stringify(deployResult?.configuration ?? {})
   const verificationJson = JSON.stringify(deployResult?.verification ?? {})
   const probeMultiaddrsJson = JSON.stringify(deployResult?.configuration?.metadata?.probe_multiaddrs ?? [])
@@ -87,6 +96,12 @@ export async function emitDeployOutputs(
   await appendGithubOutput('instance_http_status', deployResult?.httpStatus ?? '', env)
   await appendGithubOutput('port_forward_aggregate_item_hash', deployResult?.portForwarding?.aggregateItemHash ?? '', env)
   await appendGithubOutput('port_forward_status', deployResult?.portForwarding?.aggregateStatus ?? '', env)
+  await appendGithubOutput('instance_custom_domain', deployResult?.instanceDomain?.domain ?? '', env)
+  await appendGithubOutput('instance_custom_domain_url', deployResult?.instanceDomain?.url ?? '', env)
+  await appendGithubOutput('instance_custom_domain_item_hash', deployResult?.instanceDomain?.itemHash ?? '', env)
+  await appendGithubOutput('instance_custom_domain_aggregate_item_hash', deployResult?.instanceDomain?.aggregateItemHash ?? '', env)
+  await appendGithubOutput('instance_custom_domain_status', deployResult?.instanceDomain?.aggregateStatus ?? '', env)
+  await appendGithubOutput('instance_custom_domain_json', instanceDomainJson, env)
   await appendGithubOutput('crn_hash', selectedCrn?.hash ?? '', env)
   await appendGithubOutput('crn_name', selectedCrn?.name ?? '', env)
   await appendGithubOutput('crn_url', runtime?.allocation?.crnUrl ?? '', env)
@@ -111,6 +126,8 @@ export async function emitDeployOutputs(
     `- Instance item hash: \`${deployResult?.itemHash ?? 'unknown'}\``,
     `- Deployment status: \`${deploymentStatus || 'unknown'}\``,
     `- Port-forward aggregate status: \`${deployResult?.portForwarding?.aggregateStatus ?? 'unknown'}\``,
+    `- Instance custom domain: \`${deployResult?.instanceDomain?.domain ?? 'none'}\``,
+    `- Instance custom domain aggregate: \`${deployResult?.instanceDomain?.aggregateItemHash ?? 'none'}\``,
     `- CRN: \`${selectedCrn?.name ?? selectedCrn?.hash ?? 'unknown'}\``,
     `- CRN URL: \`${runtime?.allocation?.crnUrl ?? 'unknown'}\``,
     `- Host IPv4: \`${runtime?.hostIpv4 ?? 'unknown'}\``,

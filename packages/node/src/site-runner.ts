@@ -3,13 +3,14 @@ import { createHash } from "node:crypto"
 import { readFile, readdir } from "node:fs/promises"
 import { isAbsolute, join, relative, resolve } from "node:path"
 
-import { broadcastAlephMessage, DEFAULT_ALEPH_CHANNEL, forgetAlephMessages, normalizeBroadcastStatus, publishAggregateKey, signAlephMessage } from "../../core/src/index.ts"
+import { broadcastAlephMessage, DEFAULT_ALEPH_CHANNEL, forgetAlephMessages, normalizeBroadcastStatus, signAlephMessage } from "../../core/src/index.ts"
 import { inspectMessageResult, isTransientMessageLookupError } from "../../core/src/deployment-inspection.ts"
 
 import { optionalEnv, requiredEnv } from "./env.ts"
 import { appendGithubOutput, appendGithubSummary } from "./github-outputs.ts"
 import type { RelayProbeResult } from "./relay-probe.ts"
 import { createPrivateKeyIdentity } from "./signer.ts"
+import { attachAlephDomain, detachAlephDomain } from "./domain-link.ts"
 
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 const BASE32_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567'
@@ -70,15 +71,6 @@ interface AlephStoreContent {
   item_type: 'ipfs'
   item_hash: string
   ref?: string
-}
-
-interface DomainAggregateEntry {
-  message_id: string
-  type: 'ipfs'
-  programType: 'ipfs'
-  options?: {
-    catch_all_path: string
-  } | null
 }
 
 function encodeVarint(value: number): Uint8Array {
@@ -437,51 +429,38 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): P
   const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env)
   const identity = await createPrivateKeyIdentity(privateKey)
 
-  const detachPublication = await publishAggregateKey({
+  await detachAlephDomain({
     sender: identity.address,
-    key: 'domains',
-    content: { [domain]: null },
+    domain,
     signer: identity.signer,
     hasher: async (payload) => defaultHasher(payload),
     fetch,
-    channel: 'ALEPH-CLOUDSOLUTIONS',
     apiHost,
   })
-  if (detachPublication.status === 'rejected') {
-    throw new Error(`Aleph domain detach ${domain} was rejected: ${JSON.stringify(detachPublication.response ?? {})}`)
-  }
 
-  const attachEntry: DomainAggregateEntry = {
-    message_id: itemHash,
-    type: 'ipfs',
-    programType: 'ipfs',
+  const attachPublication = await attachAlephDomain({
+    sender: identity.address,
+    domain,
+    itemHash,
+    kind: 'ipfs',
     options: catchAllPath.startsWith('/') ? { catch_all_path: catchAllPath } : null,
-  }
-  const attachPublication = await publishAggregateKey({
-    sender: identity.address,
-    key: 'domains',
-    content: { [domain]: attachEntry },
     signer: identity.signer,
     hasher: async (payload) => defaultHasher(payload),
     fetch,
-    channel: 'ALEPH-CLOUDSOLUTIONS',
     apiHost,
   })
-  if (attachPublication.status === 'rejected') {
-    throw new Error(`Aleph domain attach ${domain} was rejected: ${JSON.stringify(attachPublication.response ?? {})}`)
-  }
 
-  await appendGithubOutput('domain', domain, env)
+  await appendGithubOutput('domain', attachPublication.domain, env)
   await appendGithubOutput('item_hash', itemHash, env)
-  await appendGithubOutput('url', `https://${domain}`, env)
-  await appendGithubOutput('domain_message_hash', attachPublication.itemHash, env)
+  await appendGithubOutput('url', `https://${attachPublication.domain}`, env)
+  await appendGithubOutput('domain_message_hash', attachPublication.aggregateItemHash, env)
 
   await appendGithubSummary([
     '## Aleph Site Runner',
     '',
-    `- Linked domain: \`${domain}\``,
+    `- Linked domain: \`${attachPublication.domain}\``,
     `- Aleph item hash: \`${itemHash}\``,
-    `- Domain aggregate hash: \`${attachPublication.itemHash}\``,
+    `- Domain aggregate hash: \`${attachPublication.aggregateItemHash}\``,
     `- Catch-all path: \`${catchAllPath}\``,
   ], env)
 }

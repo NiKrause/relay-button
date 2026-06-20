@@ -28,6 +28,7 @@ const DEPLOY_PLAN: DeployPlan = {
   memoryMiB: 1024,
   seconds: 30,
   channel: 'TEST',
+  instanceCustomDomain: '',
   waitAttempts: 2,
   waitDelayMs: 1,
   runtimeAttempts: 2,
@@ -392,6 +393,7 @@ test('executeDeployPlan rebroadcasts when Aleph rejects scheduler placement befo
 test('executeDeployPlan configures ucan-store guests without relay bootstrap publication', async () => {
   const calls: string[] = []
   const configureBodies: string[] = []
+  const postedMessages: string[] = []
   let sleepCount = 0
 
   const result = await executeDeployPlan(
@@ -412,6 +414,7 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
         pwaOrigin: 'https://store.example.com',
         serviceOrigin: 'https://upload.example.com',
       },
+      instanceCustomDomain: 'https://upload.example.com',
       publishPortForwards: false,
       verifyReachability: false
     },
@@ -508,6 +511,17 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
           return jsonResponse({ status: 'processed', message: { type: 'STORE' } })
         }
 
+        if (String(url).endsWith('/api/v0/messages') && init?.method === 'POST') {
+          postedMessages.push(String(init.body ?? ''))
+          return jsonResponse(
+            {
+              publication_status: { status: 'success' },
+              message_status: 'pending'
+            },
+            202
+          )
+        }
+
         return jsonResponse(
           {
             publication_status: { status: 'success' },
@@ -523,6 +537,11 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
   assert.equal(result.runtime?.hostIpv4, '203.0.113.17')
   assert.equal(result.runtime?.setupHealth?.ok, true)
   assert.equal(result.verification?.ok, true)
+  assert.equal(result.instanceDomain?.domain, 'upload.example.com')
+  assert.equal(result.instanceDomain?.url, 'https://upload.example.com')
+  assert.equal(result.instanceDomain?.itemHash, 'hash-s1')
+  assert.equal(result.instanceDomain?.aggregateItemHash, 'hash-s2')
+  assert.equal(result.instanceDomain?.aggregateStatus, 'pending')
   assert.equal(
     result.configuration?.metadata?.upload_service_url,
     'https://upload.example.com'
@@ -551,6 +570,35 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
   assert.ok(calls.some((entry) => entry.includes('/metadata')))
   assert.ok(!calls.some((entry) => entry.includes('relay-bootstrap')))
   assert.equal(sleepCount, 0)
+
+  const domainAggregate = postedMessages
+    .map((body) => JSON.parse(body) as { message?: { type?: string; item_content?: string } })
+    .find((body) => {
+      if (body.message?.type !== 'AGGREGATE') return false
+      const itemContent = JSON.parse(body.message.item_content ?? '{}') as {
+        content?: Record<string, unknown>
+      }
+      return Boolean(itemContent.content?.['upload.example.com'])
+    })
+  assert.ok(domainAggregate)
+  const domainContent = JSON.parse(
+    domainAggregate.message?.item_content ?? '{}'
+  ) as {
+    content?: Record<string, Record<string, unknown>>
+  }
+  assert.deepEqual(
+    {
+      message_id: domainContent.content?.['upload.example.com']?.message_id,
+      type: domainContent.content?.['upload.example.com']?.type,
+      programType: domainContent.content?.['upload.example.com']?.programType,
+    },
+    {
+      message_id: 'hash-s1',
+      type: 'instance',
+      programType: 'instance',
+    }
+  )
+  assert.equal(typeof domainContent.content?.['upload.example.com']?.updated_at, 'string')
 })
 
 test('executeDeployPlan retries on a rejected first CRN and succeeds on the next candidate', async () => {

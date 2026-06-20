@@ -42,6 +42,7 @@ export interface DeployPlan {
   memoryMiB: number;
   seconds: number;
   channel: string;
+  instanceCustomDomain: string;
   waitAttempts: number;
   waitDelayMs: number;
   runtimeAttempts: number;
@@ -284,6 +285,11 @@ export function parseDeployPlan(
     memoryMiB: integerEnv("ALEPH_VM_MEMORY_MIB", 1024, env),
     seconds: integerEnv("ALEPH_VM_SECONDS", 30, env),
     channel: optionalEnv("ALEPH_VM_CHANNEL", "TEST", env),
+    instanceCustomDomain: optionalEnv(
+      "ALEPH_VM_INSTANCE_CUSTOM_DOMAIN",
+      "",
+      env,
+    ).trim(),
     waitAttempts: integerEnv("ALEPH_VM_WAIT_ATTEMPTS", 60, env),
     waitDelayMs: integerEnv("ALEPH_VM_WAIT_DELAY_MS", 5000, env),
     runtimeAttempts: integerEnv("ALEPH_VM_RUNTIME_ATTEMPTS", 40, env),
