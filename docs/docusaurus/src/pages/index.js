@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import Link from '@docusaurus/Link'
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
+import CodeBlock from '@theme/CodeBlock'
 import Layout from '@theme/Layout'
 
 const cards = [
@@ -48,6 +49,34 @@ export default function Home() {
               Action reference
             </Link>
           </div>
+          <section className="shared-cli">
+            <div className="shared-cli__copy">
+              <p className="shared-cli__eyebrow">Command line</p>
+              <h2>Run the shared VM and RootFS flows locally</h2>
+              <p>
+                The root <code>package.json</code> exposes the <code>relay-button</code> and{' '}
+                <code>shared-aleph</code> CLI entrypoints, so the homepage now surfaces the same
+                VM deploy and RootFS publish commands available in the workspace scripts.
+              </p>
+              <p>
+                Start with <code>deploy</code> for Aleph VM instances, <code>rootfs-publish</code>{' '}
+                for qcow2/rootfs publication, and <code>list-crns</code> when you want to inspect
+                candidate CRNs first.
+              </p>
+              <Link className="button button--secondary" to="/docs/reference/node-cli">
+                Full Node CLI reference
+              </Link>
+            </div>
+            <div className="shared-cli__code">
+              <CodeBlock language="bash">{`pnpm relay-button help
+pnpm relay-button deploy
+pnpm relay-button rootfs-publish
+pnpm exec relay-button list-crns | jq`}</CodeBlock>
+              <p className="shared-cli__note">
+                Compatibility alias: <code>pnpm exec shared-aleph list-crns | jq</code>
+              </p>
+            </div>
+          </section>
           <section className="shared-grid">
             {cards.map((card) => (
               <Link key={card.title} className={clsx('shared-card')} to={card.to}>

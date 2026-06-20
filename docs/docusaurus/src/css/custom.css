@@ -62,6 +62,58 @@
   margin-top: 2rem;
 }
 
+.shared-cli {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin-top: 2rem;
+  align-items: stretch;
+}
+
+.shared-cli__copy,
+.shared-cli__code {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(15, 118, 110, 0.12);
+  border-radius: 1.2rem;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
+  padding: 1.4rem;
+}
+
+[data-theme='dark'] .shared-cli__copy,
+[data-theme='dark'] .shared-cli__code {
+  background: rgba(15, 23, 42, 0.6);
+  border-color: rgba(94, 234, 212, 0.12);
+  box-shadow: none;
+}
+
+.shared-cli__eyebrow {
+  color: var(--ifm-color-primary);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+
+.shared-cli__copy h2 {
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  margin-bottom: 0.75rem;
+}
+
+.shared-cli__copy p:last-of-type {
+  margin-bottom: 1.25rem;
+}
+
+.shared-cli__code pre {
+  margin-bottom: 0.75rem;
+}
+
+.shared-cli__note {
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.95rem;
+  margin-bottom: 0;
+}
+
 .shared-card {
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(15, 118, 110, 0.12);

@@ -12,10 +12,21 @@ It is meant as a visual map for the parts that are easiest to lose track of:
 1. who owns bootstrap publication at runtime
 2. when CRN allocation and runtime checks happen
 3. how the workflow, guest, and browser hand off responsibility
+4. which profiles still use relay bootstrap posts versus direct service metadata
 
-## Browser To Guest Bootstrap Ownership
+The current code now has three distinct handoff patterns:
 
-The current target behavior is guest-owned runtime bootstrap publication.
+- `uc-go-peer`
+  Browser-orchestrated Aleph aggregate handoff plus guest-owned bootstrap publication.
+- `orbitdb-relay`
+  Direct guest `/configure` with preseeded publisher identity and owner authorization.
+- `ucan-store`
+  Bootstrap-package-driven service wiring with runtime metadata, not relay bootstrap posts.
+
+## `uc-go-peer`: Browser To Guest Bootstrap Ownership
+
+The current target behavior is still guest-owned runtime bootstrap publication,
+but the browser handoff is now more explicit than the original flow.
 
 The browser still orchestrates the deployment and waits for confirmation, but
 the `uc-go-peer` handoff is now a multi-phase flow:
@@ -35,33 +46,45 @@ sequenceDiagram
   participant Wallet as Owner wallet
   participant Aleph as Aleph API
   participant CRN as Scheduler / CRN
-  participant VM as Guest VM
-  participant Relay as uc-go-peer / orbitdb-relay
+  participant VM as uc-go-peer guest
+  participant Setup as setup server + guest publisher
   participant Registry as Aleph bootstrap POST registry
   participant App as js-peer / browser libp2p app
 
+  Note right of Browser: Orchestrates deployment from the UI, polls runtime state,<br/>and owns the fallback publication path.
+  Note right of Wallet: Signs INSTANCE payloads, aggregate handoff updates,<br/>fallback bootstrap records, and cleanup FORGET messages.
+  Note right of Aleph: Stores INSTANCE messages, vm-bootstrap-config aggregates,<br/>runtime lookup data, and 2n6 web access state.
+  Note right of CRN: Hosts the VM execution and exposes mapped host ports<br/>after allocation notification settles.
+  Note right of VM: Runs the prebaked uc-go-peer image and reads the<br/>owner-published bootstrap config from Aleph.
+  Note right of Setup: Applies runtime config, starts the relay,<br/>publishes config status, and publishes guest bootstrap records.
+  Note right of Registry: Aleph POST registry used by browsers to discover<br/>current relay multiaddrs by registrationId and peerId.
+  Note right of App: Consumer libp2p app that dials the freshest<br/>browser-safe relay addresses.
+
   Browser->>Aleph: load manifest, pricing, balance, CRNs
-  Browser->>Wallet: sign deploy intent and Aleph INSTANCE payload
+  Browser->>Wallet: sign deploy intent and INSTANCE payload
   Browser->>Aleph: broadcast INSTANCE message
   Aleph-->>Browser: pending / processed deployment status
   Browser->>CRN: notify selected CRN allocation
-  Browser->>Aleph: poll deployment result and runtime details
-  Aleph-->>Browser: processed + mapped ports + host IP / proxy URL + guest IPv6
+  Browser->>Aleph: wait for runtime details and mapped ports
+  Aleph-->>Browser: host IPv4 + mapped ports + proxy URL + guest IPv6
 
   alt proxy-backed HTTPS is possible
     Browser->>Aleph: wait for active 2n6 route
     Aleph-->>Browser: https://relay-name.2n6.me active
-    Browser->>Aleph: publish vm-bootstrap-config aggregate with active proxyUrl
+    Browser->>Wallet: sign vm-bootstrap-config aggregate update
+    Browser->>Aleph: publish vm-bootstrap-config with proxyUrl + mappedPorts
   else proxy route stays inactive after waiting
-    Browser->>Aleph: publish vm-bootstrap-config aggregate without proxyUrl
+    Browser->>Wallet: sign vm-bootstrap-config aggregate update
+    Browser->>Aleph: publish vm-bootstrap-config without proxyUrl
+    Note over Browser,VM: Guest setup continues without Caddy-backed HTTPS.<br/>Secure browser routing can be enabled later when the proxy becomes active.
   else guest IPv6 is not public
     Note over Browser,Aleph: A non-public guest IPv6 is treated as unusable for proxy-backed HTTPS.<br/>The browser cleans up that attempt and retries another CRN instead of continuing.
   end
 
   VM->>Aleph: read vm-bootstrap-config aggregate
-  VM->>Relay: start relay with persisted identity and runtime config
-  Relay-->>VM: peerId + public multiaddrs + browser-safe multiaddrs
-  VM->>Aleph: publish vm-bootstrap-config-status signal
+  Setup->>VM: write runtime ports, optional proxy hostname, registrationId
+  VM->>Setup: start relay and generate metadata
+  Setup->>Aleph: publish vm-bootstrap-config-status signal
 
   alt signal already contains relay metadata
     Browser->>Aleph: accept peerId + public multiaddrs from config signal
@@ -70,7 +93,7 @@ sequenceDiagram
     Note over Browser,VM: Prefer https://relay-name.2n6.me/bootstrap/metadata when active.<br/>Otherwise fall back to the temporary setup endpoint.
   end
 
-  VM->>Registry: publish relay-bootstrap POST with guest publisher identity
+  Setup->>Registry: publish relay-bootstrap POST with guest publisher identity
   Browser->>Registry: wait for guest registration by registrationId + peerId
 
   alt guest registration is delayed
@@ -79,10 +102,11 @@ sequenceDiagram
     Note over Browser,Registry: This safety path keeps browser discovery usable even when the guest<br/>registration arrives late.
   end
 
-  Browser->>Aleph: remove temporary vm-bootstrap-config aggregate
+  Browser->>Aleph: remove temporary vm-bootstrap-config aggregate entry
+  Browser->>Aleph: forget stale vm-bootstrap-config aggregate history older than 6h
   App->>Registry: discover freshest bootstrap records at startup
   Registry-->>App: browserMultiaddrs / public relay multiaddrs
-  App->>Relay: dial relay using discovered runtime addresses
+  App->>VM: dial relay using discovered runtime addresses
 ```
 
 ### What This Means
@@ -92,123 +116,171 @@ sequenceDiagram
 - Discovery clients should trust the newest guest-visible bootstrap state, not
   workflow-baked constants.
 
-## Workflow, CRN, And VM Deployment Sequence
+## `orbitdb-relay`: Direct Guest Configure With Preseeded Identity
 
-This is the high-level sequence for the UC workflow when a run is started with
-`publish=true` and `deploy_vm=true`.
+The shared deploy runner now front-loads more of the bootstrap material for
+`orbitdb-relay` than the earlier flow did.
 
-Unlike the browser `uc-go-peer` path, the workflow path still drives guest
-configuration through the temporary mapped setup port. It then converges on the
-same final bootstrap registration and Aleph visibility checks.
+Two implementation changes matter most here:
+
+1. the deploy executor now derives or accepts a dedicated bootstrap publisher key
+2. the first `/configure` call already carries the owner authorization, so the
+   older second configure pass is only a fallback path now
+
+This direct guest-configure path also keeps the new runtime checks for rootfs
+visibility retries, CRN fallback, and proxy activation before guest setup.
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Operator as Workflow operator / dispatcher
-  participant Entry as build-aleph-go-peer-rootfs.yml
-  participant Reusable as uc-go-peer-rootfs-reusable.yml
-  participant RootfsRunner as @le-space/node runRootfsMode
-  participant SiteRunner as @le-space/node runSiteMode
-  participant Aleph as Aleph API + IPFS pin / STORE
-  participant DeployAction as aleph-vm-deploy action
-  participant Scheduler as Scheduler / CRN selection
-  participant Guest as Guest configure + relay services
-  participant Probe as relay-probe runner
-  participant Retention as retain-successful-deployments
+  participant Operator as CLI / GitHub Action operator
+  participant Deploy as @le-space/node executeDeployPlan
+  participant Aleph as Aleph API
+  participant CRN as Scheduler / selected CRN
+  participant Guest as orbitdb-relay setup endpoint
+  participant Relay as orbitdb-relay service + refresh timer
+  participant Registry as Aleph bootstrap POST registry
 
-  Operator->>Entry: workflow_dispatch(publish, deploy_vm, sizing, CRN prefs)
-  Entry->>Reusable: call reusable workflow with normalized inputs
+  Note right of Operator: Starts the CLI or action flow with rootfs,<br/>sizing, key, and CRN preference inputs.
+  Note right of Deploy: Shared Node executor that signs deployment messages,<br/>selects CRNs, configures the guest, and publishes bootstrap records.
+  Note right of Aleph: Accepts INSTANCE, AGGREGATE, POST, and FORGET messages;<br/>also exposes deployment processing and 2n6 state.
+  Note right of CRN: Selected compute node that exposes the VM execution map<br/>and mapped ports used by the setup endpoint.
+  Note right of Guest: Temporary HTTP setup service on port 80.<br/>It writes env files, Caddy config, and relay identity material.
+  Note right of Relay: Long-running orbitdb-relay service plus refresh timer<br/>that republishes current relay metadata after startup.
+  Note right of Registry: Bootstrap POST registry containing relay proof,<br/>owner authorization, and current public multiaddrs.
 
-  Reusable->>RootfsRunner: rootfs-publish mode
-  Note over Reusable,RootfsRunner: build binary, assemble rootfs image,<br/>emit manifest, optionally skip upload when publish=false.
-  RootfsRunner->>Aleph: upload qcow2 to IPFS and wait for STORE message
-  Aleph-->>RootfsRunner: rootfs CID + Aleph item hash + manifest outputs
-  RootfsRunner-->>Reusable: rootfs_version, rootfs_cid, rootfs_item_hash
+  Operator->>Deploy: deploy published orbitdb-relay rootfs
+  Deploy->>Aleph: broadcast INSTANCE
+  Aleph-->>Deploy: processed deployment message
+  Deploy->>Aleph: publish required port-forward aggregate
+  Deploy->>CRN: notify selected CRN allocation
+  Deploy->>Aleph: wait for host IPv4, mapped ports, proxy URL, guest IPv6
 
-  opt publish=true
-    Reusable->>SiteRunner: site-publish mode for js-peer
-    SiteRunner->>Aleph: publish static site and optional Aleph pin
-    Aleph-->>SiteRunner: site item hash + site URL
-    SiteRunner-->>Reusable: site URL + manifest URLs
+  alt proxy URL reserved but still inactive
+    Deploy->>Aleph: retry proxy activation checks before guest configure
   end
 
-  opt publish=true and main domain configured
-    Reusable->>SiteRunner: site-domain-link mode
-    SiteRunner->>Aleph: link production domain to published site
-    Aleph-->>SiteRunner: domain attachment confirmed
+  alt runtime never exposes usable networking
+    Deploy->>Aleph: forget failed instance attempt
+    Deploy->>CRN: retry another compatible CRN
+  else runtime is usable
+    Deploy->>Guest: wait for temporary /health on mapped port 80
+    Deploy->>Deploy: derive publisher EVM key and libp2p relay identity
+    Deploy->>Deploy: precompute owner authorization for registrationId
+    Note over Deploy,Guest: The owner authorization now rides in the first /configure call.<br/>The older no_start follow-up is only a fallback path.
+    Deploy->>Guest: POST /configure with TCP/WS/metrics ports, proxy hostname, publisher key, libp2p identity, owner authorization
+    Guest->>Relay: write runtime env, seed RELAY_PRIV_KEY, enable Caddy / AutoTLS, start relay
+    Relay-->>Guest: peerId + public multiaddrs
+    Deploy->>Guest: poll /metadata until peerId + public multiaddrs are ready
+    Deploy->>Guest: run reachability verification
+    Guest-->>Deploy: transports reachable
+    Deploy->>Deploy: verify guest peerId matches preseeded publisher identity
+    Deploy->>Registry: publish relay-bootstrap POST with relay proof + owner authorization
+    Deploy->>Registry: wait for visible current registration
+    Deploy->>Registry: reconcile owner registrations and forget stale records
+    Relay->>Registry: bootstrap refresh timer republishes current metadata later
+  end
+```
+
+## `ucan-store`: Bootstrap Package And Public Service Wiring
+
+`ucan-store` now follows a different deployment contract from the relay
+profiles:
+
+- no relay bootstrap registry publication
+- optional bootstrap package derivation from the Aleph private key
+- service DID/origin validation inside the guest before the service is allowed
+  to stay up
+- runtime discovery through guest metadata and `/.well-known/ucan-store.json`
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Operator as CLI / GitHub Action / Sponsor Relay UI
+  participant Action as action-runner + deploy executor
+  participant Aleph as Aleph API
+  participant CRN as Scheduler / selected CRN
+  participant Guest as ucan-store setup endpoint
+  participant Service as upload API worker
+  participant Guard as request guard + service manifest
+  participant PWA as upload wall / generic PWA
+
+  Note right of Operator: Starts deployment from CI, CLI, or UI and supplies<br/>service domain, admin DID, and bootstrap package inputs.
+  Note right of Action: Derives optional UCAN bootstrap package data,<br/>deploys the VM, configures the guest, and emits metadata outputs.
+  Note right of Aleph: Stores the VM INSTANCE and optional domain aggregate;<br/>no relay-bootstrap POST is expected for this profile.
+  Note right of CRN: Hosts the upload service VM and exposes mapped setup,<br/>SSH, and HTTPS ports.
+  Note right of Guest: Temporary setup endpoint that validates input,<br/>persists bootstrap material, writes env, and starts services.
+  Note right of Service: Local ucan-store upload API worker on 127.0.0.1:8787<br/>with a persisted service signer.
+  Note right of Guard: Local policy proxy on 127.0.0.1:8788.<br/>It narrows UCAN invocations and serves public discovery metadata.
+  Note right of PWA: Runtime consumer that binds itself from the service<br/>manifest instead of relay bootstrap registry records.
+
+  alt bootstrap mode is derive-from-aleph-private-key
+    Action->>Action: derive admin DID, space DID, and root delegation proof from ALEPH_VM_PRIVATE_KEY
   end
 
-  opt deploy_vm=true
-    Reusable->>DeployAction: deploy VM from published rootfs
-    DeployAction->>Scheduler: rank/select CRN by hash or geo preference
-    Scheduler-->>DeployAction: preferred CRN candidate set
-    DeployAction->>Aleph: broadcast INSTANCE deployment message
-    Aleph-->>DeployAction: pending / processed message status
-    DeployAction->>Scheduler: notify selected CRN allocation
-    DeployAction->>Aleph: poll deployment status until runtime details exist
-    Aleph-->>DeployAction: runtime networking, mapped ports, proxy URL, guest IPv6
+  Operator->>Action: deploy published ucan-store rootfs
+  Action->>Aleph: broadcast INSTANCE
+  Aleph-->>Action: processed deployment message
+  Action->>CRN: notify selected CRN allocation
+  Action->>Aleph: wait for host IPv4, mapped ports, and proxy URL
 
-    alt proxy URL reserved but not active yet
-      DeployAction->>Aleph: wait for proxy activation attempts
-      Aleph-->>DeployAction: active 2n6 route or still inactive
-    end
-
-    alt guest IPv6 is not globally routable for proxy-backed HTTPS
-      DeployAction->>Aleph: clean up failed attempt
-      DeployAction->>Scheduler: retry next compatible CRN
-    else runtime is usable
-      DeployAction->>Guest: wait for temporary /health and call /configure
-      Guest-->>DeployAction: configuration accepted
-      DeployAction->>Guest: poll /metadata until peerId + public multiaddrs are ready
-      Guest-->>DeployAction: metadata ready
-      DeployAction->>Guest: optional reachability verification
-      Guest-->>DeployAction: reachable transports confirmed
-      DeployAction->>Aleph: publish relay-bootstrap POST
-      DeployAction->>Aleph: wait for bootstrap registration visibility
-      DeployAction->>Aleph: forget/replace older records for the same registrationId
-    end
-
-    DeployAction-->>Reusable: VM outputs, verification JSON, runtime address sets
-
-    Reusable->>Probe: relay-probe mode
-    Probe->>Guest: probe required and best-effort transport families
-    Probe-->>Reusable: protocol probe JSON + success/failure summary
+  alt bootstrap package already fixes serviceOrigin
+    Note over Action,Guest: Configure can proceed with the reserved proxy URL.<br/>The service does not need to wait for a fully active 2n6 route first.
+  else serviceOrigin must come from the public hostname
+    Action->>Aleph: retry proxy activation checks before guest configure
   end
 
-  opt publish=true and deploy_vm=true and retention enabled
-    Reusable->>Retention: retain-successful-deployments mode
-    Retention->>Aleph: forget stale deployment/site/rootfs records beyond keep count
-    Aleph-->>Retention: retention result JSON
+  Action->>Guest: wait for temporary /health on mapped port 80
+  Action->>Guest: POST /configure with proxyUrl, webauthnOrigin, adminDid, serviceDid/serviceOrigin, bootstrap_package
+  Guest->>Guest: persist bootstrap package, write env, write Caddy config
+  Guest->>Service: start local upload API worker
+  Guest->>Service: probe did.json and revalidate runtime DID/origin against the bootstrap package
+  Guest->>Guard: start request guard after validation succeeds
+  Action->>Guest: poll /metadata until upload_service_did + VITE_UPLOAD_SERVICE_URL are ready
+  Guest-->>Action: metadata includes bootstrap validation, proof validation, service manifest, PWA env
+
+  opt instance custom domain configured
+    Action->>Aleph: link instance domain to the VM
   end
 
-  Reusable-->>Entry: export rootfs, site, VM, probe, and retention outputs
-  Entry-->>Operator: workflow summary with manifest URLs, VM details, and probe results
+  Note over Action,Aleph: No relay-bootstrap POST is published for ucan-store.
+  PWA->>Guard: fetch /.well-known/ucan-store.json or /service-manifest.json
+  Guard-->>PWA: runtime service DID/origin + delegation issuance policy
 ```
 
 ## Implementation Anchors
 
 These diagrams are derived from the current implementation in:
 
-- `universal-connectivity/.github/workflows/build-aleph-go-peer-rootfs.yml`
-- `universal-connectivity/.github/workflows/uc-go-peer-rootfs-reusable.yml`
-- `universal-connectivity/go-peer/aleph/README.md`
 - `relay-button/packages/node/src/deploy-executor.ts`
+- `relay-button/packages/node/src/action-runner.ts`
+- `relay-button/packages/node/src/ucan-store-bootstrap.ts`
 - `relay-button/packages/ui/src/shared/controller.ts`
+- `relay-button/packages/core/src/guest.ts`
 - `relay-button/packages/core/src/bootstrap-registration.ts`
 - `relay-button/packages/core/src/bootstrap-config.ts`
+- `relay-button/packages/rootfs/reference/uc-go-peer/rootfs/uc-go-peer-bootstrap-refresh.py`
+- `relay-button/packages/rootfs/reference/orbitdb-relay/rootfs/orbitdb-relay-bootstrap-refresh.py`
+- `relay-button/packages/rootfs/reference/ucan-store/rootfs/ucan-store-configure.sh`
+- `relay-button/packages/rootfs/reference/ucan-store/rootfs/ucan-store-service-start.sh`
+- `relay-button/packages/rootfs/reference/ucan-store/rootfs/ucan-store-describe.py`
 
 ## Practical Reading Guide
 
 If you are debugging a broken rollout, read the system in this order:
 
 1. rootfs publish and manifest outputs
-2. site publish and final manifest URL selection
-3. VM deploy and CRN allocation notification
-4. runtime suitability checks for proxy-backed HTTPS, including public guest IPv6
-5. guest configure handoff and relay metadata confirmation
-6. guest bootstrap registration visibility on Aleph
-7. browser fallback publication, if any
-8. browser discovery and relay dial from the published registry state
+2. VM deploy and CRN allocation notification
+3. runtime suitability checks for proxy-backed HTTPS, including public guest IPv6
+4. guest configure handoff:
+   `uc-go-peer` uses `vm-bootstrap-config`, `orbitdb-relay` uses direct `/configure`, `ucan-store` uses a bootstrap package
+5. guest metadata confirmation:
+   relay multiaddrs for `uc-go-peer` / `orbitdb-relay`, service DID and PWA env for `ucan-store`
+6. relay bootstrap registration visibility on Aleph:
+   required for `uc-go-peer` and `orbitdb-relay`, intentionally skipped for `ucan-store`
+7. browser fallback publication and handoff cleanup, when the `uc-go-peer` guest registration is delayed
+8. final discovery path:
+   relay bootstrap registry for the relay profiles, `/.well-known/ucan-store.json` for `ucan-store`
 
 ## Delete And Orphan Cleanup
 
@@ -222,6 +294,11 @@ sequenceDiagram
   participant Wallet as Owner wallet
   participant Aleph as Aleph API
   participant Registry as Aleph bootstrap POST registry
+
+  Note right of Browser: Finds linked or orphaned bootstrap records and keeps<br/>the UI state aligned after deletion.
+  Note right of Wallet: Signs FORGET messages for VM instances and bootstrap records.
+  Note right of Aleph: Processes FORGET messages for instances and aggregate history.
+  Note right of Registry: Stores relay-bootstrap POST records that can be<br/>linked to a VM or orphaned after VM cleanup.
 
   alt deleting a live instance
     Browser->>Wallet: sign FORGET for instance + linked registration hashes
