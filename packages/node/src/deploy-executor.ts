@@ -314,6 +314,14 @@ function supportsGuestSetupProfile(profile: string): boolean {
   );
 }
 
+function shouldWaitForProxyActivationBeforeConfigure(plan: DeployPlan): boolean {
+  if (plan.profile !== "ucan-store") {
+    return true;
+  }
+
+  return !plan.ucanStoreBootstrapPackage?.serviceOrigin;
+}
+
 export async function executeDeployPlan(
   plan: DeployPlan,
   dependencies: DeployExecutorDependencies = {},
@@ -637,7 +645,8 @@ export async function executeDeployPlan(
       if (
         plan.enableCaddyProxy &&
         proxyUrl &&
-        runtime.webAccess?.active !== true
+        runtime.webAccess?.active !== true &&
+        shouldWaitForProxyActivationBeforeConfigure(plan)
       ) {
         log(
           `[deploy] proxy URL reserved but not active yet for ${deployment.itemHash}; waiting before guest configure`,

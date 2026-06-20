@@ -392,6 +392,7 @@ test('executeDeployPlan rebroadcasts when Aleph rejects scheduler placement befo
 test('executeDeployPlan configures ucan-store guests without relay bootstrap publication', async () => {
   const calls: string[] = []
   const configureBodies: string[] = []
+  let sleepCount = 0
 
   const result = await executeDeployPlan(
     {
@@ -421,7 +422,9 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
         let count = 0
         return () => `hash-s${++count}`
       })(),
-      sleep: async () => undefined,
+      sleep: async () => {
+        sleepCount += 1
+      },
       tcpProbe: async () => ({ ok: true }),
       fetch: async (url, init) => {
         calls.push(`${String(init?.method ?? 'GET')} ${url}`)
@@ -447,8 +450,8 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
 
         if (String(url).includes('api.2n6.me')) {
           return jsonResponse({
-            url: 'https://upload.example.com',
-            active: true
+            url: 'https://reserved-proxy.example.2n6.me',
+            active: false
           })
         }
 
@@ -530,8 +533,8 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
   )
   assert.equal(configureBodies.length, 1)
   const configurePayload = JSON.parse(configureBodies[0] ?? '{}')
-  assert.equal(configurePayload.proxy_url, 'https://upload.example.com')
-  assert.equal(configurePayload.webauthn_origin, 'https://upload.example.com')
+  assert.equal(configurePayload.proxy_url, 'https://reserved-proxy.example.2n6.me')
+  assert.equal(configurePayload.webauthn_origin, 'https://reserved-proxy.example.2n6.me')
   assert.equal(configurePayload.service_did, 'did:key:z6Mkservice123')
   assert.equal(configurePayload.service_origin, 'https://upload.example.com')
   assert.equal(configurePayload.admin_did, 'did:key:z6Mkadmin123')
@@ -547,6 +550,7 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
   assert.ok(calls.some((entry) => entry.includes('/configure')))
   assert.ok(calls.some((entry) => entry.includes('/metadata')))
   assert.ok(!calls.some((entry) => entry.includes('relay-bootstrap')))
+  assert.equal(sleepCount, 0)
 })
 
 test('executeDeployPlan retries on a rejected first CRN and succeeds on the next candidate', async () => {
