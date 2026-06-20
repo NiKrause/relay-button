@@ -49,9 +49,7 @@ export async function attachAlephDomain(args: {
     type: args.kind,
     programType: args.kind,
   };
-  if (args.options !== undefined) {
-    attachEntry.options = args.options;
-  }
+  attachEntry.options = args.options ?? null;
   if (args.updatedAt) {
     attachEntry.updated_at = args.updatedAt;
   }
