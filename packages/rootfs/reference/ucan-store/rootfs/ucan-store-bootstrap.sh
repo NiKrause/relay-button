@@ -131,6 +131,9 @@ EOF
   write_env_var "PUBLIC_RECEIPTS_URL" ""
 
   rm -f "${BOOTSTRAP_PACKAGE_FILE}" "${BOOTSTRAP_VERIFICATION_FILE}"
+
+  # Caddy is started explicitly after /configure writes the deployment hostname.
+  systemctl disable caddy.service >/dev/null 2>&1 || true
 }
 
 case "${PHASE}" in
