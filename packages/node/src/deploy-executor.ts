@@ -849,6 +849,7 @@ export async function executeDeployPlan(
                     plan.ucanStoreBootstrapPackage?.serviceDid ?? null,
                   serviceOrigin:
                     plan.ucanStoreBootstrapPackage?.serviceOrigin ?? null,
+                  publicStorageOrigin: runtime.proxyUrl ?? proxyUrl ?? null,
                   adminDid: plan.adminDid ?? null,
                   adminApiToken: plan.ucanStoreAdminApiToken ?? null,
                   bootstrapPackage: plan.ucanStoreBootstrapPackage ?? null,

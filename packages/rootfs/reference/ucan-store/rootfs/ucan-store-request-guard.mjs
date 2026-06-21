@@ -23,6 +23,7 @@ const DEFAULT_REVOCATION_URL =
   process.env.PUBLIC_REVOCATION_URL || '';
 const DEFAULT_RECEIPTS_URL =
   process.env.PUBLIC_RECEIPTS_URL || '';
+const PROTOCOL_CAPABILITIES = new Set(['ucan/conclude', 'filecoin/offer']);
 
 function printHelp() {
   console.log(`Usage:
@@ -142,6 +143,10 @@ function capabilityCovers(provided, required) {
     return required.startsWith(prefix);
   }
   return false;
+}
+
+function isProtocolCapability(capability) {
+  return PROTOCOL_CAPABILITIES.has(capability);
 }
 
 function isTruthy(value) {
@@ -511,8 +516,8 @@ async function proxyRequest(req, res, config, bodyBuffer = null) {
     res.setHeader(key, value);
   }
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Amz-Checksum-Sha256');
   const arrayBuffer = await response.arrayBuffer();
   res.end(Buffer.from(arrayBuffer));
 }
@@ -523,8 +528,8 @@ function sendJson(res, status, payload) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Length', String(body.length));
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Amz-Checksum-Sha256');
   res.end(body);
 }
 
@@ -549,6 +554,14 @@ async function enforceRequestPolicy(bodyBuffer, req, config) {
     });
 
     for (const invocation of message.invocations ?? []) {
+      const capabilities = invocation.capabilities ?? [];
+      const isProtocolInvocation =
+        capabilities.length > 0 &&
+        capabilities.every((capability) => isProtocolCapability(normalizeString(capability?.can)));
+      if (isProtocolInvocation) {
+        continue;
+      }
+
       const proofCids = collectProofCids(invocation.proofs ?? []);
       if (config.policy.rootDelegationCid && !proofCids.has(config.policy.rootDelegationCid)) {
         return {
@@ -558,9 +571,12 @@ async function enforceRequestPolicy(bodyBuffer, req, config) {
         };
       }
 
-      for (const capability of invocation.capabilities ?? []) {
+      for (const capability of capabilities) {
         const withValue = normalizeString(capability?.with);
         const canValue = normalizeString(capability?.can);
+        if (isProtocolCapability(canValue)) {
+          continue;
+        }
         if (!withValue || !canValue) {
           return {
             ok: false,
@@ -639,8 +655,8 @@ async function main() {
     if (req.method === 'OPTIONS') {
       res.statusCode = 204;
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Amz-Checksum-Sha256');
       res.end();
       return;
     }

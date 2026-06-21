@@ -197,6 +197,8 @@ test("ucan-store-configure installs bootstrap inputs and writes public env witho
   assert.equal(envValue(rawEnv, "PUBLIC_UPLOAD_SERVICE_URL"), "https://upload.example.com");
   assert.equal(envValue(rawEnv, "PUBLIC_REVOCATION_URL"), "https://upload.example.com");
   assert.equal(envValue(rawEnv, "PUBLIC_RECEIPTS_URL"), "https://upload.example.com/receipt/");
+  assert.equal(envValue(rawEnv, "UCAN_STORE_SERVICE_ORIGIN"), "https://upload.example.com");
+  assert.equal(envValue(rawEnv, "UCAN_STORE_PUBLIC_STORAGE_ORIGIN"), "https://upload.example.com");
   assert.equal(envValue(rawEnv, "UCAN_STORE_SERVICE_DID"), "did:web:upload.example.com");
   assert.equal(envValue(rawEnv, "UCAN_STORE_ADMIN_DID"), "did:key:z6Mkadmin123");
   assert.equal(envValue(rawEnv, "UCAN_STORE_ADMIN_API_TOKEN"), "super-secret");
@@ -279,6 +281,8 @@ test("ucan-store-configure preserves explicit custom service identity without pr
       "did:web:ucan-api.nicokrause.com",
       "--service-origin",
       "https://ucan-api.nicokrause.com/",
+      "--public-storage-origin",
+      "https://reserved-proxy.example.2n6.me/",
       "--admin-did",
       "did:key:z6Mkadmin123",
       "--bootstrap-package-file",
@@ -304,6 +308,8 @@ test("ucan-store-configure preserves explicit custom service identity without pr
   assert.equal(envValue(rawEnv, "PUBLIC_UPLOAD_SERVICE_URL"), "https://ucan-api.nicokrause.com");
   assert.equal(envValue(rawEnv, "PUBLIC_REVOCATION_URL"), "https://ucan-api.nicokrause.com");
   assert.equal(envValue(rawEnv, "PUBLIC_RECEIPTS_URL"), "https://ucan-api.nicokrause.com/receipt/");
+  assert.equal(envValue(rawEnv, "UCAN_STORE_SERVICE_ORIGIN"), "https://ucan-api.nicokrause.com");
+  assert.equal(envValue(rawEnv, "UCAN_STORE_PUBLIC_STORAGE_ORIGIN"), "https://reserved-proxy.example.2n6.me");
 
   const validatorCalls = await readJsonLines(validatorLog);
   const verifierCalls = await readJsonLines(verifierLog);
@@ -366,6 +372,8 @@ test("ucan-store-configure serves proxy and custom service hostnames through Cad
   assert.equal(envValue(rawEnv, "UCAN_STORE_SERVICE_HOSTNAME"), "ucan-api.nicokrause.com");
   assert.equal(envValue(rawEnv, "UCAN_STORE_SERVICE_DID"), "did:web:ucan-api.nicokrause.com");
   assert.equal(envValue(rawEnv, "PUBLIC_UPLOAD_SERVICE_URL"), "https://ucan-api.nicokrause.com");
+  assert.equal(envValue(rawEnv, "UCAN_STORE_SERVICE_ORIGIN"), "https://ucan-api.nicokrause.com");
+  assert.equal(envValue(rawEnv, "UCAN_STORE_PUBLIC_STORAGE_ORIGIN"), "https://ucan-api.nicokrause.com");
 
   const caddy = await readFile(caddyFile, "utf8");
   assert.match(caddy, /reserved-proxy\.example\.2n6\.me, ucan-api\.nicokrause\.com/u);

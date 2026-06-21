@@ -139,6 +139,7 @@ class Handler(BaseHTTPRequestHandler):
         proxy_hostname = parsed_proxy.hostname if parsed_proxy and parsed_proxy.hostname else proxy_candidate
         service_did = str(payload.get("service_did") or "").strip()
         service_origin = str(payload.get("service_origin") or "").strip()
+        public_storage_origin = str(payload.get("public_storage_origin") or "").strip()
         admin_did = str(payload.get("admin_did") or "").strip()
         admin_api_token = str(payload.get("admin_api_token") or "").strip()
         webauthn_origin = str(payload.get("webauthn_origin") or "").strip()
@@ -170,6 +171,8 @@ class Handler(BaseHTTPRequestHandler):
             args.extend(["--service-did", service_did])
         if service_origin:
             args.extend(["--service-origin", service_origin])
+        if public_storage_origin:
+            args.extend(["--public-storage-origin", public_storage_origin])
         if admin_did:
             args.extend(["--admin-did", admin_did])
         if admin_api_token:

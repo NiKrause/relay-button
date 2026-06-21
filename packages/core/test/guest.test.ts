@@ -188,6 +188,7 @@ test("configureUcanStore posts the expected payload to the guest", async () => {
     proxyUrl: "https://upload.example.com",
     serviceDid: "did:web:upload.example.com",
     serviceOrigin: "https://upload.example.com",
+    publicStorageOrigin: "https://reserved-proxy.example.2n6.me",
     webauthnOrigin: "https://upload.example.com",
     webauthnOriginFallbacks: "https://alt-upload.example.com",
     adminDid: "did:key:zAdmin",
@@ -217,6 +218,10 @@ test("configureUcanStore posts the expected payload to the guest", async () => {
   assert.match(body, /"proxy_url":"https:\/\/upload\.example\.com"/);
   assert.match(body, /"service_did":"did:web:upload\.example\.com"/);
   assert.match(body, /"service_origin":"https:\/\/upload\.example\.com"/);
+  assert.match(
+    body,
+    /"public_storage_origin":"https:\/\/reserved-proxy\.example\.2n6\.me"/,
+  );
   assert.match(body, /"webauthn_origin":"https:\/\/upload\.example\.com"/);
   assert.match(
     body,
