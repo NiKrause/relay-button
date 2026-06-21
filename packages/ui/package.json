@@ -9,7 +9,7 @@
   "dependencies": {
     "@le-space/browser": "workspace:*",
     "@le-space/core": "workspace:*",
-    "viem": "^2.38.5"
+    "viem": "^2.53.1"
   },
   "peerDependencies": {
     "react": ">=18",
