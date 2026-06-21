@@ -32,6 +32,9 @@ DEFAULT_PROFILE = os.environ.get("ALEPH_BOOTSTRAP_PROFILE", "uc-go-peer")
 MAX_PREVIOUS_PAGES = int(os.environ.get("ALEPH_BOOTSTRAP_MAX_PREVIOUS_PAGES", "5"))
 PAGINATION = int(os.environ.get("ALEPH_BOOTSTRAP_PAGINATION", "50"))
 COMPACT_MULTIADDR_LIMIT = int(os.environ.get("ALEPH_BOOTSTRAP_COMPACT_MULTIADDR_LIMIT", "3"))
+STALE_RECORD_MAX_AGE_SECONDS = int(
+    os.environ.get("ALEPH_BOOTSTRAP_STALE_RECORD_MAX_AGE_SECONDS", str(6 * 60 * 60))
+)
 
 
 def parse_env_file(path: str) -> dict[str, str]:
@@ -446,10 +449,28 @@ def parse_post_record(entry: object) -> dict[str, object] | None:
     return {
         "item_hash": item_hash,
         "sender": sender,
+        "publisher_address": content.get("publisherAddress"),
         "registration_id": content.get("registrationId"),
         "peer_id": content.get("peerId"),
         "profile": content.get("profile"),
+        "updated_at": content.get("updatedAt"),
     }
+
+
+def normalize_address(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def timestamp_ms(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return int(stripped)
+    return None
 
 
 def fetch_previous_hashes(
@@ -458,11 +479,11 @@ def fetch_previous_hashes(
     ref: str,
     post_types: list[str],
     sender: str,
-    registration_id: str | None,
-    peer_id: str,
-    profile: str | None,
     current_item_hash: str,
+    now_ms: int,
 ) -> list[str]:
+    stale_cutoff_ms = now_ms - (STALE_RECORD_MAX_AGE_SECONDS * 1000)
+    normalized_sender = normalize_address(sender)
     found: list[str] = []
     for post_type in post_types:
         for page in range(1, MAX_PREVIOUS_PAGES + 1):
@@ -482,18 +503,16 @@ def fetch_previous_hashes(
                 parsed = parse_post_record(entry)
                 if parsed is None:
                     continue
-                if str(parsed["sender"]).lower() != sender.lower():
+                same_publisher = normalized_sender in {
+                    normalize_address(parsed["sender"]),
+                    normalize_address(parsed["publisher_address"]),
+                }
+                if not same_publisher:
                     continue
                 if parsed["item_hash"] == current_item_hash:
                     continue
-                same_registration = (
-                    registration_id is not None
-                    and parsed["registration_id"] == registration_id
-                )
-                same_peer = parsed["peer_id"] == peer_id and (
-                    not profile or parsed["profile"] == profile
-                )
-                if same_registration or same_peer:
+                updated_at = timestamp_ms(parsed["updated_at"])
+                if updated_at is not None and updated_at < stale_cutoff_ms:
                     found.append(str(parsed["item_hash"]))
 
             if len(posts) < PAGINATION:
@@ -629,10 +648,8 @@ def main() -> None:
         ref,
         [post_type, LEGACY_POST_TYPE] if compact else [post_type],
         publisher_address,
-        registration_id,
-        peer_id,
-        profile,
         str(unsigned_message["item_hash"]),
+        now_ms,
     )
     forget_response = broadcast_forget(
         api_host, publisher_address, publisher_private_key, previous_hashes, channel
@@ -649,6 +666,7 @@ def main() -> None:
                 "publishedMultiaddrs": published_multiaddrs,
                 "publishedBrowserMultiaddrs": published_browser_multiaddrs or published_multiaddrs,
                 "forgottenHashes": previous_hashes,
+                "forgetStaleOlderThanSeconds": STALE_RECORD_MAX_AGE_SECONDS,
                 "ownerAuthorizationPresent": owner_authorization is not None,
                 "forgetResponse": forget_response[1] if forget_response else None,
                 "response": response,
