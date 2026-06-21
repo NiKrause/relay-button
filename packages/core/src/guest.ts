@@ -381,6 +381,7 @@ export async function configureUcanStore(args: {
   proxyUrl?: string | null;
   serviceDid?: string | null;
   serviceOrigin?: string | null;
+  publicStorageOrigin?: string | null;
   webauthnOrigin?: string | null;
   webauthnOriginFallbacks?: string | null;
   adminDid?: string | null;
@@ -402,6 +403,7 @@ export async function configureUcanStore(args: {
     proxy_url: args.proxyUrl ?? undefined,
     service_did: args.serviceDid ?? undefined,
     service_origin: args.serviceOrigin ?? undefined,
+    public_storage_origin: args.publicStorageOrigin ?? undefined,
     webauthn_origin: args.webauthnOrigin ?? undefined,
     webauthn_origin_fallbacks: args.webauthnOriginFallbacks ?? undefined,
     admin_did: args.adminDid ?? undefined,

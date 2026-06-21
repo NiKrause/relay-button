@@ -556,6 +556,7 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
   assert.equal(configurePayload.webauthn_origin, 'https://reserved-proxy.example.2n6.me')
   assert.equal(configurePayload.service_did, 'did:key:z6Mkservice123')
   assert.equal(configurePayload.service_origin, 'https://upload.example.com')
+  assert.equal(configurePayload.public_storage_origin, 'https://reserved-proxy.example.2n6.me')
   assert.equal(configurePayload.admin_did, 'did:key:z6Mkadmin123')
   assert.equal(
     configurePayload.bootstrap_package.serviceDid,

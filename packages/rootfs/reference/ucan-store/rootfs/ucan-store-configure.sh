@@ -19,6 +19,7 @@ PROXY_HOSTNAME=""
 SERVICE_HOSTNAME=""
 SERVICE_DID=""
 SERVICE_ORIGIN=""
+PUBLIC_STORAGE_ORIGIN=""
 WEBAUTHN_ORIGIN=""
 WEBAUTHN_ORIGIN_FALLBACKS=""
 ADMIN_DID=""
@@ -35,6 +36,7 @@ Usage:
     [--proxy-hostname <hostname>] \
     [--service-did <did>] \
     [--service-origin <origin>] \
+    [--public-storage-origin <origin>] \
     [--webauthn-origin <origin>] \
     [--webauthn-origin-fallbacks <csv>] \
     [--admin-did <did>] \
@@ -230,6 +232,10 @@ while [ "$#" -gt 0 ]; do
       SERVICE_ORIGIN="${2:-}"
       shift 2
       ;;
+    --public-storage-origin)
+      PUBLIC_STORAGE_ORIGIN="${2:-}"
+      shift 2
+      ;;
     --webauthn-origin)
       WEBAUTHN_ORIGIN="${2:-}"
       shift 2
@@ -271,6 +277,7 @@ if [ -z "${PUBLIC_IPV4}" ]; then
   exit 1
 fi
 SERVICE_ORIGIN="${SERVICE_ORIGIN%/}"
+PUBLIC_STORAGE_ORIGIN="${PUBLIC_STORAGE_ORIGIN%/}"
 
 touch "${ENV_FILE}"
 
@@ -305,6 +312,11 @@ write_env_var "UCAN_STORE_SERVICE_DID" "${SERVICE_DID}"
 write_env_var "UCAN_STORE_SERVICE_HOSTNAME" "${SERVICE_HOSTNAME}"
 
 if [ -n "${SERVICE_ORIGIN}" ]; then
+  if [ -z "${PUBLIC_STORAGE_ORIGIN}" ]; then
+    PUBLIC_STORAGE_ORIGIN="${SERVICE_ORIGIN}"
+  fi
+  write_env_var "UCAN_STORE_SERVICE_ORIGIN" "${SERVICE_ORIGIN}"
+  write_env_var "UCAN_STORE_PUBLIC_STORAGE_ORIGIN" "${PUBLIC_STORAGE_ORIGIN}"
   write_env_var "PUBLIC_UPLOAD_SERVICE_URL" "${SERVICE_ORIGIN}"
   write_env_var "PUBLIC_REVOCATION_URL" "${SERVICE_ORIGIN}"
   write_env_var "PUBLIC_RECEIPTS_URL" "${SERVICE_ORIGIN}/receipt/"
