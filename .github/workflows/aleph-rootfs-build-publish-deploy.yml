@@ -13,10 +13,20 @@ on:
         default: false
         type: boolean
       deploy_vm:
-        description: Reserved for future shared VM deployment wiring
+        description: Deploy a VM from the published rootfs and summarize deployment details
         required: false
         default: false
         type: boolean
+      enable_caddy_proxy:
+        description: Configure the guest with proxy-backed Caddy HTTPS/WSS when deploying a VM
+        required: false
+        default: true
+        type: boolean
+      rootfs_item_hash:
+        description: Existing Aleph STORE item hash to deploy instead of the newly published rootfs
+        required: false
+        default: ''
+        type: string
       rootfs_version:
         description: Optional explicit version override for the generated rootfs manifest
         required: false
@@ -36,6 +46,101 @@ on:
         description: Comma-separated Aleph API hosts to try for rootfs STORE publication and VM deployment
         required: false
         default: https://api.aleph.im,https://api2.aleph.im,https://api3.aleph.im
+        type: string
+      vm_name:
+        description: Aleph VM instance name. Defaults to the profile name when empty.
+        required: false
+        default: ''
+        type: string
+      vm_ssh_public_key:
+        description: Optional SSH public key override for the deployed VM
+        required: false
+        default: ''
+        type: string
+      vm_crn_hash:
+        description: Optional target CRN hash for the VM deployment
+        required: false
+        default: ''
+        type: string
+      vm_placement_strategy:
+        description: scheduler or manual CRN selection strategy
+        required: false
+        default: scheduler
+        type: string
+      vm_vcpus:
+        description: Requested vCPU count for the VM
+        required: false
+        default: '1'
+        type: string
+      vm_memory_mib:
+        description: Requested memory in MiB for the VM
+        required: false
+        default: '1024'
+        type: string
+      vm_rootfs_size_mib:
+        description: Rootfs disk size in MiB for the deployed VM
+        required: false
+        default: '20480'
+        type: string
+      vm_preferred_country_code:
+        description: Preferred two-letter country code for automatic CRN selection
+        required: false
+        default: DE
+        type: string
+      vm_geo_crn_limit:
+        description: Maximum number of top-ranked CRNs to geolocate when preferring a country
+        required: false
+        default: '30'
+        type: string
+      vm_max_crn_attempts:
+        description: Maximum number of distinct CRNs to try when Aleph rejects a deployment
+        required: false
+        default: '5'
+        type: string
+      vm_channel:
+        description: Aleph channel for VM deployment and retention records
+        required: false
+        default: TEST
+        type: string
+      vm_seconds:
+        description: Aleph runtime seconds value
+        required: false
+        default: '30'
+        type: string
+      required_ports_json:
+        description: JSON array of required internal port-forward declarations. Defaults to the rootfs contract ports.
+        required: false
+        default: ''
+        type: string
+      relay_probe_required_families_json:
+        description: JSON array of relay protocol families that must probe successfully
+        required: false
+        default: '[]'
+        type: string
+      relay_probe_best_effort_families_json:
+        description: JSON array of relay protocol families to probe without failing the run
+        required: false
+        default: '[]'
+        type: string
+      relay_probe_proxy_wss_host_matchers_json:
+        description: JSON array of host/path snippets that identify proxy WSS multiaddrs
+        required: false
+        default: '[]'
+        type: string
+      probe_timeout_ms:
+        description: Per-address protocol probe timeout in milliseconds
+        required: false
+        default: '20000'
+        type: string
+      probe_settle_ms:
+        description: Delay after successful dial before protocol probe ping/settle checks
+        required: false
+        default: '1500'
+        type: string
+      retain_successful_deployments:
+        description: Keep only the latest N successful published+deployed records. Use 0 to skip retention.
+        required: false
+        default: '0'
         type: string
       project_checkout_path:
         description: Checkout path for the caller repository
@@ -59,6 +164,8 @@ on:
         type: string
     secrets:
       ALEPH_PRIVATE_KEY:
+        required: false
+      VM_SSH_PUBLIC_KEY:
         required: false
     outputs:
       rootfs_version:
@@ -103,6 +210,51 @@ on:
       rootfs_manifest_artifact_api_zip_url:
         description: GitHub API ZIP URL for the uploaded rootfs manifest bundle
         value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_artifact_api_zip_url }}
+      vm_instance_item_hash:
+        description: Aleph INSTANCE item hash for the deployed VM
+        value: ${{ jobs.build-rootfs.outputs.vm_instance_item_hash }}
+      vm_status:
+        description: Final Aleph deployment status
+        value: ${{ jobs.build-rootfs.outputs.vm_status }}
+      vm_host_ipv4:
+        description: Public host IPv4 reported for the VM
+        value: ${{ jobs.build-rootfs.outputs.vm_host_ipv4 }}
+      vm_ipv6:
+        description: IPv6 reported for the VM
+        value: ${{ jobs.build-rootfs.outputs.vm_ipv6 }}
+      vm_web_proxy_url:
+        description: Web proxy URL for the VM
+        value: ${{ jobs.build-rootfs.outputs.vm_web_proxy_url }}
+      vm_ssh_command:
+        description: Ready-to-use SSH command for the VM
+        value: ${{ jobs.build-rootfs.outputs.vm_ssh_command }}
+      vm_mapped_ports_json:
+        description: JSON object of published port mappings
+        value: ${{ jobs.build-rootfs.outputs.vm_mapped_ports_json }}
+      vm_verification_ok:
+        description: Whether mapped TCP/proxy reachability checks passed
+        value: ${{ jobs.build-rootfs.outputs.vm_verification_ok }}
+      vm_verification_json:
+        description: JSON object with post-configure reachability checks
+        value: ${{ jobs.build-rootfs.outputs.vm_verification_json }}
+      vm_relay_peer_id:
+        description: Relay peer ID extracted after guest configuration
+        value: ${{ jobs.build-rootfs.outputs.vm_relay_peer_id }}
+      vm_probe_multiaddrs_json:
+        description: JSON array of relay multiaddrs to probe after deployment
+        value: ${{ jobs.build-rootfs.outputs.vm_probe_multiaddrs_json }}
+      vm_browser_bootstrap_multiaddrs_json:
+        description: JSON array of browser-dialable relay bootstrap multiaddrs
+        value: ${{ jobs.build-rootfs.outputs.vm_browser_bootstrap_multiaddrs_json }}
+      vm_protocol_probe_ok:
+        description: Whether required relay protocol probes passed
+        value: ${{ jobs.build-rootfs.outputs.vm_protocol_probe_ok }}
+      vm_protocol_probe_json:
+        description: Newline-delimited JSON relay protocol probe results
+        value: ${{ jobs.build-rootfs.outputs.vm_protocol_probe_json }}
+      retention_result_json:
+        description: JSON summary of successful deployment retention cleanup
+        value: ${{ jobs.build-rootfs.outputs.retention_result_json }}
 
 permissions:
   actions: read
@@ -126,6 +278,21 @@ jobs:
       rootfs_manifest_gateway_url: ${{ steps.publish_manifest.outputs.rootfs_manifest_gateway_url }}
       rootfs_manifest_artifact_url: ${{ steps.resolve_artifact.outputs.rootfs_manifest_artifact_url }}
       rootfs_manifest_artifact_api_zip_url: ${{ steps.resolve_artifact.outputs.rootfs_manifest_artifact_api_zip_url }}
+      vm_instance_item_hash: ${{ steps.deploy_vm.outputs.instance_item_hash }}
+      vm_status: ${{ steps.deploy_vm.outputs.instance_status }}
+      vm_host_ipv4: ${{ steps.deploy_vm.outputs.host_ipv4 }}
+      vm_ipv6: ${{ steps.deploy_vm.outputs.ipv6 }}
+      vm_web_proxy_url: ${{ steps.deploy_vm.outputs.web_proxy_url }}
+      vm_ssh_command: ${{ steps.deploy_vm.outputs.ssh_command }}
+      vm_mapped_ports_json: ${{ steps.deploy_vm.outputs.mapped_ports_json }}
+      vm_verification_ok: ${{ steps.deploy_vm.outputs.verification_ok }}
+      vm_verification_json: ${{ steps.deploy_vm.outputs.verification_json }}
+      vm_relay_peer_id: ${{ steps.deploy_vm.outputs.relay_peer_id }}
+      vm_probe_multiaddrs_json: ${{ steps.deploy_vm.outputs.probe_multiaddrs_json }}
+      vm_browser_bootstrap_multiaddrs_json: ${{ steps.deploy_vm.outputs.browser_bootstrap_multiaddrs_json }}
+      vm_protocol_probe_ok: ${{ steps.protocol_probe.outputs.ok }}
+      vm_protocol_probe_json: ${{ steps.protocol_probe.outputs.json }}
+      retention_result_json: ${{ steps.retention.outputs.retention_result_json }}
 
     steps:
       - name: Checkout caller repository
@@ -166,14 +333,44 @@ jobs:
           pnpm install --frozen-lockfile --prefer-offline
           pnpm run build
 
+      - name: Resolve rootfs contract settings
+        id: rootfs_contract
+        env:
+          CONTRACT_PATH: ${{ github.workspace }}/${{ inputs.project_checkout_path }}/${{ inputs.rootfs_contract_path }}
+          REQUIRED_PORTS_JSON_INPUT: ${{ inputs.required_ports_json }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          from pathlib import Path
+
+          explicit_ports = os.environ.get("REQUIRED_PORTS_JSON_INPUT", "").strip()
+          if explicit_ports:
+              ports = json.loads(explicit_ports)
+          else:
+              contract = json.loads(Path(os.environ["CONTRACT_PATH"]).read_text())
+              ports = contract.get("ports", [])
+          if not isinstance(ports, list):
+              raise SystemExit("Rootfs required ports must resolve to a JSON array.")
+          print(f"required_ports_json={json.dumps(ports, separators=(',', ':'))}")
+          PY
+
       - name: Validate shared workflow inputs
         run: |
-          if [[ "${{ inputs.deploy_vm }}" == "true" ]]; then
-            echo "deploy_vm=true is not wired into the shared reusable workflow yet. Use the shared deploy action separately for now." >&2
+          if [[ "${{ inputs.deploy_vm }}" == "true" && "${{ inputs.tooling_checkout_path }}" != "shared-aleph-tooling" ]]; then
+            echo "deploy_vm=true requires tooling_checkout_path=shared-aleph-tooling because local composite action paths are static in GitHub Actions." >&2
             exit 1
           fi
           if [[ "${{ inputs.publish }}" == "true" && -z "${{ secrets.ALEPH_PRIVATE_KEY }}" ]]; then
             echo "publish=true requires the ALEPH_PRIVATE_KEY secret." >&2
+            exit 1
+          fi
+          if [[ "${{ inputs.deploy_vm }}" == "true" && -z "${{ secrets.ALEPH_PRIVATE_KEY }}" ]]; then
+            echo "deploy_vm=true requires the ALEPH_PRIVATE_KEY secret." >&2
+            exit 1
+          fi
+          if [[ "${{ inputs.deploy_vm }}" == "true" && "${{ inputs.publish }}" != "true" && -z "${{ inputs.rootfs_item_hash }}" ]]; then
+            echo "deploy_vm=true requires publish=true or an explicit rootfs_item_hash." >&2
             exit 1
           fi
 
@@ -365,4 +562,157 @@ jobs:
             fi
             echo
             echo "The manifest JSON is currently stored as a GitHub Actions artifact, not pinned to IPFS."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy VM from published rootfs
+        if: ${{ inputs.deploy_vm }}
+        id: deploy_vm
+        uses: ./shared-aleph-tooling/.github/actions/aleph-vm-deploy
+        with:
+          aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          profile: ${{ inputs.profile }}
+          name: ${{ inputs.vm_name != '' && inputs.vm_name || inputs.profile }}
+          ssh_public_key: ${{ inputs.vm_ssh_public_key != '' && inputs.vm_ssh_public_key || secrets.VM_SSH_PUBLIC_KEY }}
+          rootfs_item_hash: ${{ inputs.rootfs_item_hash != '' && inputs.rootfs_item_hash || steps.run_rootfs.outputs.rootfs_item_hash }}
+          rootfs_version: ${{ inputs.rootfs_version != '' && inputs.rootfs_version || steps.run_rootfs.outputs.rootfs_version }}
+          rootfs_size_mib: ${{ inputs.vm_rootfs_size_mib }}
+          api_hosts: ${{ inputs.vm_api_hosts }}
+          placement_strategy: ${{ inputs.vm_placement_strategy }}
+          crn_hash: ${{ inputs.vm_crn_hash }}
+          vcpus: ${{ inputs.vm_vcpus }}
+          memory_mib: ${{ inputs.vm_memory_mib }}
+          seconds: ${{ inputs.vm_seconds }}
+          preferred_country_code: ${{ inputs.vm_preferred_country_code }}
+          geo_crn_limit: ${{ inputs.vm_geo_crn_limit }}
+          max_crn_attempts: ${{ inputs.vm_max_crn_attempts }}
+          channel: ${{ inputs.vm_channel }}
+          enable_caddy_proxy: ${{ inputs.enable_caddy_proxy && 'true' || 'false' }}
+          auto_configure: 'true'
+          verify_reachability: 'true'
+          publish_port_forwards: 'true'
+          required_ports_json: ${{ steps.rootfs_contract.outputs.required_ports_json }}
+
+      - name: Probe deployed relay protocols
+        if: >-
+          ${{
+            inputs.deploy_vm &&
+            (
+              inputs.relay_probe_required_families_json != '[]' ||
+              inputs.relay_probe_best_effort_families_json != '[]'
+            )
+          }}
+        id: protocol_probe
+        working-directory: shared-aleph-tooling
+        env:
+          ALEPH_VM_MODE: relay-probe
+          ALEPH_RELAY_PROBE_REQUIRED_FAMILIES_JSON: ${{ inputs.relay_probe_required_families_json }}
+          ALEPH_RELAY_PROBE_BEST_EFFORT_FAMILIES_JSON: ${{ inputs.relay_probe_best_effort_families_json }}
+          ALEPH_RELAY_PROBE_PROXY_WSS_HOST_MATCHERS_JSON: ${{ inputs.relay_probe_proxy_wss_host_matchers_json }}
+          PROBE_TIMEOUT_MS: ${{ inputs.probe_timeout_ms }}
+          PROBE_SETTLE_MS: ${{ inputs.probe_settle_ms }}
+          PROBE_MULTIADDRS_JSON: ${{ steps.deploy_vm.outputs.probe_multiaddrs_json }}
+          BROWSER_BOOTSTRAP_MULTIADDRS_JSON: ${{ steps.deploy_vm.outputs.browser_bootstrap_multiaddrs_json }}
+        run: node --input-type=module -e "import('./packages/node/src/site-runner.ts').then((m) => m.runSiteMode())"
+
+      - name: Retain latest successful deployments
+        if: >-
+          ${{
+            inputs.deploy_vm &&
+            inputs.publish &&
+            fromJSON(inputs.retain_successful_deployments) > 0
+          }}
+        id: retention
+        working-directory: shared-aleph-tooling
+        env:
+          ALEPH_VM_MODE: retain-successful-deployments
+          ALEPH_VM_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          ALEPH_VM_API_HOST: https://api.aleph.im
+          ALEPH_VM_CHANNEL: ${{ inputs.vm_channel }}
+          ALEPH_VM_RETENTION_KEEP_COUNT: ${{ inputs.retain_successful_deployments }}
+          ALEPH_VM_RETENTION_EXTRA_FORGET_HASHES_JSON: '[]'
+          ALEPH_VM_RETENTION_CURRENT_RECORD_JSON: >-
+            {"instance_item_hash":"${{ steps.deploy_vm.outputs.instance_item_hash }}","rootfs_item_hash":"${{ inputs.rootfs_item_hash != '' && inputs.rootfs_item_hash || steps.run_rootfs.outputs.rootfs_item_hash }}","rootfs_cid":"${{ steps.run_rootfs.outputs.rootfs_cid }}","site_item_hash":"","site_url":"","relay_peer_id":"${{ steps.deploy_vm.outputs.relay_peer_id }}","rootfs_version":"${{ inputs.rootfs_version != '' && inputs.rootfs_version || steps.run_rootfs.outputs.rootfs_version }}","vm_name":"${{ inputs.vm_name != '' && inputs.vm_name || inputs.profile }}","deployed_at":"${{ github.run_id }}-${{ github.run_attempt }}"}
+        run: node ./packages/node/src/action-runner.ts
+
+      - name: Summarize rootfs deployment
+        if: ${{ always() }}
+        env:
+          VM_VERIFICATION_JSON: ${{ steps.deploy_vm.outputs.verification_json }}
+          VM_BROWSER_BOOTSTRAP_MULTIADDRS_JSON: ${{ steps.deploy_vm.outputs.browser_bootstrap_multiaddrs_json }}
+          VM_PROTOCOL_PROBE_JSON: ${{ steps.protocol_probe.outputs.json }}
+          RETENTION_RESULT_JSON: ${{ steps.retention.outputs.retention_result_json }}
+        run: |
+          {
+            echo "## ${{ inputs.profile }} rootfs deployment"
+            echo
+            echo "- Builder path: \`@le-space/node -> rootfs-publish/deploy/relay-probe/retain-successful-deployments\`"
+            echo "- Shared tooling source: \`${{ inputs.tooling_repository }}@${{ inputs.tooling_ref }}\`"
+            echo "- Rootfs profile: \`${{ inputs.profile }}\`"
+            echo "- Derived version: \`${{ steps.run_rootfs.outputs.rootfs_version }}\`"
+            echo "- Publish to Aleph: \`${{ inputs.publish }}\`"
+            echo "- Deploy VM after publish: \`${{ inputs.deploy_vm }}\`"
+            echo "- Enable proxy-backed Caddy/WSS: \`${{ inputs.enable_caddy_proxy }}\`"
+            echo "- Keep successful deployments: \`${{ inputs.retain_successful_deployments }}\`"
+            echo "- Rootfs CID: \`${{ steps.run_rootfs.outputs.rootfs_cid }}\`"
+            echo "- Rootfs Aleph item hash: \`${{ steps.run_rootfs.outputs.rootfs_item_hash }}\`"
+            echo "- Manifest IPFS CID: \`${{ steps.publish_manifest.outputs.rootfs_manifest_cid }}\`"
+            echo "- Manifest gateway URL: ${{ steps.publish_manifest.outputs.rootfs_manifest_gateway_url }}"
+            echo "- Manifest artifact page: ${{ steps.resolve_artifact.outputs.rootfs_manifest_artifact_url }}"
+            if [[ "${{ inputs.deploy_vm }}" != "true" ]]; then
+              echo
+              echo "### VM Deployment"
+              echo
+              echo "- VM deployment: skipped"
+            fi
+            if [[ -n "${{ steps.deploy_vm.outputs.instance_item_hash }}" ]]; then
+              echo
+              echo "### VM Deployment"
+              echo
+              echo "- VM item hash: \`${{ steps.deploy_vm.outputs.instance_item_hash }}\`"
+              echo "- VM status: \`${{ steps.deploy_vm.outputs.instance_status }}\`"
+              echo "- VM host IPv4: \`${{ steps.deploy_vm.outputs.host_ipv4 }}\`"
+              echo "- VM IPv6: \`${{ steps.deploy_vm.outputs.ipv6 }}\`"
+              echo "- VM proxy URL: \`${{ steps.deploy_vm.outputs.web_proxy_url }}\`"
+              echo "- VM relay peer ID: \`${{ steps.deploy_vm.outputs.relay_peer_id }}\`"
+              echo "- VM SSH command: \`${{ steps.deploy_vm.outputs.ssh_command }}\`"
+              echo "- VM verification ok: \`${{ steps.deploy_vm.outputs.verification_ok }}\`"
+              echo "- VM protocol probe ok: \`${{ steps.protocol_probe.outputs.ok }}\`"
+              echo
+              echo '```json'
+              printf '%s\n' "${VM_VERIFICATION_JSON}"
+              echo '```'
+              if [[ -n "${VM_BROWSER_BOOTSTRAP_MULTIADDRS_JSON}" ]]; then
+                echo
+                echo "#### Browser Bootstrap Multiaddrs"
+                echo
+                echo '```json'
+                printf '%s\n' "${VM_BROWSER_BOOTSTRAP_MULTIADDRS_JSON}"
+                echo '```'
+              fi
+              if [[ -n "${VM_PROTOCOL_PROBE_JSON}" ]]; then
+                echo
+                echo "#### Relay Protocol Probe"
+                echo
+                echo '```json'
+                printf '%s\n' "${VM_PROTOCOL_PROBE_JSON}"
+                echo '```'
+              fi
+              if [[ -n "${RETENTION_RESULT_JSON}" ]]; then
+                echo
+                echo "#### Retention Cleanup"
+                echo
+                echo '```json'
+                printf '%s\n' "${RETENTION_RESULT_JSON}"
+                echo '```'
+              fi
+            fi
+            if [[ -f "${{ steps.run_rootfs.outputs.rootfs_manifest_path }}" ]]; then
+              echo
+              echo "### Manifest"
+              echo
+              echo '```json'
+              cat "${{ steps.run_rootfs.outputs.rootfs_manifest_path }}"
+              echo
+              echo '```'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

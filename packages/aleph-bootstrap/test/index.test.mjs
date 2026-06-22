@@ -79,6 +79,9 @@ test("buildRelayBootstrapPostContent can emit compact v2 browser records", () =>
     "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
     "/dns6/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
     "/dns4/relay.example.com/tcp/9095/tls/ws/p2p/12D3KooWPublic",
+    "/dns6/relay.example.com/tcp/9095/tls/ws/p2p/12D3KooWPublic",
+    "/ip4/203.0.113.10/udp/9096/webrtc-direct/p2p/12D3KooWPublic",
+    "/ip6/2001:db8::10/udp/9096/webrtc-direct/p2p/12D3KooWPublic",
   ];
   const content = buildRelayBootstrapPostContent({
     sender: "0xabc",
@@ -90,11 +93,21 @@ test("buildRelayBootstrapPostContent can emit compact v2 browser records", () =>
   });
 
   assert.equal(content.type, DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE);
-  assert.deepEqual(content.content.multiaddrs, browserAddrs.slice(1, 4));
+  assert.deepEqual(content.content.multiaddrs, [
+    "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
+    "/dns6/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
+    "/dns4/relay.example.com/tcp/9095/tls/ws/p2p/12D3KooWPublic",
+    "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/p2p/12D3KooWPublic",
+    "/ip4/203.0.113.10/udp/9096/webrtc-direct/p2p/12D3KooWPublic",
+    "/ip6/2001:db8::10/udp/9096/webrtc-direct/p2p/12D3KooWPublic",
+  ]);
   assert.equal(content.content.browserMultiaddrs, undefined);
   assert.deepEqual(selectCompactRelayBootstrapMultiaddrs(browserAddrs, 2), [
     "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
     "/dns6/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
+    "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/p2p/12D3KooWPublic",
+    "/ip4/203.0.113.10/udp/9096/webrtc-direct/p2p/12D3KooWPublic",
+    "/ip6/2001:db8::10/udp/9096/webrtc-direct/p2p/12D3KooWPublic",
   ]);
 });
 

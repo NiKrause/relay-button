@@ -133,11 +133,32 @@ def browser_multiaddr_preference(addr: str) -> int:
     return 5
 
 
+def browser_multiaddr_transport(addr: str) -> str:
+    normalized = addr.lower()
+    if "/webtransport/" in normalized:
+        return "webtransport"
+    if "/webrtc-direct/" in normalized:
+        return "webrtc"
+    if "/ws" in normalized or "/wss" in normalized:
+        return "websocket"
+    return "other"
+
+
 def select_compact_multiaddrs(values: list[str]) -> list[str]:
     public_browser_addrs = filter_public_multiaddrs(values, browser_only=True)
-    return sorted(public_browser_addrs, key=browser_multiaddr_preference)[
-        : max(1, COMPACT_MULTIADDR_LIMIT)
-    ]
+    per_transport_limit = max(1, COMPACT_MULTIADDR_LIMIT)
+    selected_by_transport: dict[str, int] = {}
+    result: list[str] = []
+
+    for addr in sorted(public_browser_addrs, key=browser_multiaddr_preference):
+        transport = browser_multiaddr_transport(addr)
+        selected = selected_by_transport.get(transport, 0)
+        if selected >= per_transport_limit:
+            continue
+        selected_by_transport[transport] = selected + 1
+        result.append(addr)
+
+    return result
 
 
 def json_dumps(payload: object) -> str:

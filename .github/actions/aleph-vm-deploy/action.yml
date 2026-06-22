@@ -47,6 +47,10 @@ inputs:
     description: Target CRN hash for the credit deployment
     required: false
     default: ''
+  placement_strategy:
+    description: Placement mode when no CRN hash is supplied; use scheduler for Aleph scheduler placement or manual for CRN retry iteration
+    required: false
+    default: scheduler
   preferred_country_code:
     description: Preferred two-letter country code for automatic CRN selection
     required: false
@@ -332,6 +336,7 @@ runs:
         ALEPH_VM_ROOTFS_VERSION: ${{ inputs.rootfs_version }}
         ALEPH_VM_ROOTFS_SIZE_MIB: ${{ inputs.rootfs_size_mib }}
         ALEPH_VM_CRN_HASH: ${{ inputs.crn_hash }}
+        ALEPH_VM_PLACEMENT_STRATEGY: ${{ inputs.placement_strategy }}
         ALEPH_VM_PREFERRED_COUNTRY_CODE: ${{ inputs.preferred_country_code }}
         ALEPH_VM_MAX_CRN_ATTEMPTS: ${{ inputs.max_crn_attempts }}
         ALEPH_VM_VCPUS: ${{ inputs.vcpus }}

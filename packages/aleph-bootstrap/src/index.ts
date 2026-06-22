@@ -190,13 +190,25 @@ function browserMultiaddrPreference(addr: string): number {
   return 5;
 }
 
+function browserMultiaddrTransport(addr: string): string {
+  const normalized = addr.toLowerCase();
+  if (normalized.includes("/webtransport/")) return "webtransport";
+  if (normalized.includes("/webrtc-direct/")) return "webrtc";
+  if (normalized.includes("/ws") || normalized.includes("/wss")) return "websocket";
+  return "other";
+}
+
 export function selectCompactRelayBootstrapMultiaddrs(
   addrs: readonly string[],
   limit = DEFAULT_BOOTSTRAP_COMPACT_MULTIADDR_LIMIT,
 ): string[] {
   const entries = filterPublicMultiaddrs(addrs, {
     browserDialableOnly: true,
-  }).map((addr, index) => ({ addr, index }));
+  }).map((addr, index) => ({
+    addr,
+    index,
+    transport: browserMultiaddrTransport(addr),
+  }));
 
   entries.sort((left, right) => {
     const preference =
@@ -204,9 +216,19 @@ export function selectCompactRelayBootstrapMultiaddrs(
     return preference !== 0 ? preference : left.index - right.index;
   });
 
-  return entries
-    .map((entry) => entry.addr)
-    .slice(0, Math.max(1, Math.floor(limit)));
+  const perTransportLimit = Math.max(1, Math.floor(limit));
+  const selectedByTransport = new Map<string, number>();
+  const result: string[] = [];
+
+  for (const entry of entries) {
+    const selected = selectedByTransport.get(entry.transport) ?? 0;
+    if (selected >= perTransportLimit) continue;
+
+    selectedByTransport.set(entry.transport, selected + 1);
+    result.push(entry.addr);
+  }
+
+  return result;
 }
 
 async function recoverAddressForSignature(
