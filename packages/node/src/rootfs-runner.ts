@@ -457,10 +457,12 @@ async function pinRootfsCidOnAleph(
       if (status === 'rejected') {
         throw new Error(`Aleph STORE pin was rejected: ${JSON.stringify(response?.details ?? response ?? {})}`)
       }
-      return {
+      const pinned = {
         itemHash: typeof response?.item_hash === 'string' ? response.item_hash : message.item_hash,
         apiHost,
       }
+      await waitForAlephMessageProcessed({ ...buildPlan, alephApiHost: apiHost }, pinned.itemHash)
+      return pinned
     } catch (error) {
       lastError = error
       if (index < apiHosts.length - 1) {
@@ -598,8 +600,6 @@ export async function runRootfsMode(
         : await uploadRootfsImageToIpfs(originalPlan, env)
       await waitForIpfsCidAvailable(originalPlan, upload.cid)
       const pinned = await pinRootfsCidOnAleph(originalPlan, upload.cid, env)
-      const waitPlan = { ...originalPlan, alephApiHost: pinned.apiHost }
-      await waitForAlephMessageProcessed(waitPlan, pinned.itemHash)
 
       const artifacts = publicationArtifacts(originalPlan)
       await mkdir(originalPlan.outDir, { recursive: true })

@@ -50,12 +50,12 @@ on:
       ipfs_add_urls:
         description: Comma-separated IPFS add endpoints to try for manifest publication
         required: false
-        default: https://ipfs.aleph.cloud/api/v0/add,https://ipfs-2.aleph.im/api/v0/add
+        default: https://ipfs-2.aleph.im/api/v0/add,https://ipfs.aleph.cloud/api/v0/add
         type: string
       ipfs_gateway_urls:
         description: Comma-separated IPFS gateway base URLs to try when verifying uploaded manifests
         required: false
-        default: https://ipfs.aleph.cloud/ipfs,https://ipfs-2.aleph.im/ipfs
+        default: https://ipfs-2.aleph.im/ipfs,https://ipfs.aleph.cloud/ipfs
         type: string
       vm_name:
         description: Aleph VM instance name. Defaults to the profile name when empty.
