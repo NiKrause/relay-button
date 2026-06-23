@@ -7,6 +7,7 @@ export function useSponsorRelayController(props: SponsorRelayProps) {
     () => createSponsorRelayController(props),
     [
       props.apiHost,
+      props.apiHosts,
       props.crnListUrl,
       props.debug,
       props.instanceName,

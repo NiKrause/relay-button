@@ -18,6 +18,7 @@ export let openByDefault = false
 export let launcherMode = 'floating'
 export let version = ''
 export let apiHost = undefined
+export let apiHosts = undefined
   export let crnListUrl = undefined
   export let schedulerApiHost = undefined
   export let twoN6ApiHost = undefined
@@ -32,6 +33,7 @@ export let apiHost = undefined
   openByDefault,
   launcherMode,
   apiHost,
+  apiHosts,
     crnListUrl,
     schedulerApiHost,
     twoN6ApiHost

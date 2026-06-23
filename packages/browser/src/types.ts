@@ -292,6 +292,7 @@ export interface BroadcastResult {
 
 export interface AlephBrowserClient {
   apiHost: string
+  apiHosts: string[]
   crnListUrl: string
   schedulerApiHost: string
   fetchBalance(address: string): Promise<BalanceResponse>

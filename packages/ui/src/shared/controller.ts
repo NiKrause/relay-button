@@ -800,6 +800,7 @@ export class SponsorRelayController {
     this.debugEnabled = isDebugEnabled(props);
     this.client = createAlephBrowserClient({
       apiHost: props.apiHost,
+      apiHosts: props.apiHosts,
       crnListUrl: props.crnListUrl,
       schedulerApiHost: props.schedulerApiHost,
       twoN6ApiHost: props.twoN6ApiHost,

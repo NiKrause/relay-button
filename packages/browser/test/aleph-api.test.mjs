@@ -542,7 +542,7 @@ test('inspectDeploymentResult resolves related references and rejection reason',
     globalThis.fetch = async (input) => {
       const url = String(input)
 
-      if (url.startsWith(`https://api.aleph.im/api/v0/messages/${'a'.repeat(64)}`)) {
+      if (url.startsWith(`https://api3.aleph.im/api/v0/messages/${'a'.repeat(64)}`)) {
         return new Response(
           JSON.stringify({
             status: 'rejected',
@@ -553,7 +553,7 @@ test('inspectDeploymentResult resolves related references and rejection reason',
         )
       }
 
-      if (url.startsWith(`https://api.aleph.im/api/v0/messages/${'b'.repeat(64)}`)) {
+      if (url.startsWith(`https://api3.aleph.im/api/v0/messages/${'b'.repeat(64)}`)) {
         return new Response(
           JSON.stringify({
             status: 'pending',
@@ -631,6 +631,43 @@ test('waitForDeploymentResult polls until the message reaches a terminal state',
   }
 })
 
+
+test('createAlephBrowserClient retries Aleph API reads across apiHosts', async () => {
+  const originalFetch = globalThis.fetch
+
+  try {
+    const urls = []
+    globalThis.fetch = async (input) => {
+      urls.push(String(input))
+      if (String(input).startsWith('https://api.aleph.im/')) {
+        return new Response(JSON.stringify({ error: 'unavailable' }), { status: 503 })
+      }
+      return new Response(
+        JSON.stringify({
+          address: '0xabc',
+          balance: '1',
+          locked_amount: '0',
+          credit_balance: 2
+        }),
+        { status: 200 }
+      )
+    }
+
+    const client = createAlephBrowserClient({
+      apiHosts: 'https://api.aleph.im, https://api3.aleph.im'
+    })
+
+    const balance = await client.fetchBalance('0xabc')
+
+    assert.equal(balance.address, '0xabc')
+    assert.deepEqual(client.apiHosts, ['https://api.aleph.im', 'https://api3.aleph.im'])
+    assert.match(urls[0], /https:\/\/api\.aleph\.im\/api\/v0\/addresses\/0xabc\/balance/)
+    assert.match(urls[1], /https:\/\/api3\.aleph\.im\/api\/v0\/addresses\/0xabc\/balance/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('createAlephBrowserClient binds apiHost and crnListUrl defaults into reusable methods', async () => {
   const originalFetch = globalThis.fetch
 
@@ -665,6 +702,7 @@ test('createAlephBrowserClient binds apiHost and crnListUrl defaults into reusab
     await client.fetchSchedulerAllocation('a'.repeat(64))
 
     assert.equal(client.apiHost, 'https://api.example')
+    assert.deepEqual(client.apiHosts, ['https://api.example'])
     assert.equal(client.crnListUrl, 'https://crns.example/list.json')
     assert.equal(client.schedulerApiHost, 'https://scheduler.api.aleph.cloud')
     assert.match(urls[0], /https:\/\/api\.example\/api\/v0\/addresses\/0xabc\/balance/)

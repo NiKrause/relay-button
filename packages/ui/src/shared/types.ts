@@ -37,6 +37,7 @@ export interface SponsorRelayProps {
   launcherMode?: 'floating' | 'inline'
   version?: string
   apiHost?: string
+  apiHosts?: string | readonly string[]
   crnListUrl?: string
   schedulerApiHost?: string
   twoN6ApiHost?: string

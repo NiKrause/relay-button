@@ -17,7 +17,7 @@ UX.
 
 The preferred public entrypoint is a typed browser client factory:
 
-- `createAlephBrowserClient({ apiHost?, crnListUrl? })`
+- `createAlephBrowserClient({ apiHost?, apiHosts?, crnListUrl? })`
 
 That client should remain small and stable. It currently owns:
 
