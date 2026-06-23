@@ -1,6 +1,6 @@
 {
   "name": "@le-space/rootfs",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "Shared rootfs contract parsing, reference profile assets, and build helpers.",
   "license": "MIT",
   "type": "module",
