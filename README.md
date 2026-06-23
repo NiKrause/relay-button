@@ -1,4 +1,4 @@
-# relay-button
+# The relay-button
 
 Relay Button is reusable Aleph Cloud deployment tooling for projects that need to:
 
