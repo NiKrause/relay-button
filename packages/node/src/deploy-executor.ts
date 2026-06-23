@@ -316,13 +316,15 @@ function supportsGuestSetupProfile(profile: string): boolean {
 }
 
 function shouldWaitForProxyActivationBeforeConfigure(plan: DeployPlan): boolean {
-  if (plan.profile === "uc-go-peer" || plan.profile === "orbitdb-relay") {
+  if (
+    plan.profile === "uc-go-peer" ||
+    plan.profile === "orbitdb-relay" ||
+    plan.profile === "ucan-store"
+  ) {
     return false;
   }
 
-  if (plan.profile !== "ucan-store") return true;
-
-  return !plan.ucanStoreBootstrapPackage?.serviceOrigin;
+  return true;
 }
 
 export async function executeDeployPlan(

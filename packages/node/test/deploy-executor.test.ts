@@ -602,6 +602,139 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
   assert.equal(typeof domainContent.content?.['upload.example.com']?.updated_at, 'number')
 })
 
+test('executeDeployPlan configures ucan-store Caddy before reserved proxy activation', async () => {
+  const configureBodies: string[] = []
+  const logs: string[] = []
+  let sleepCount = 0
+  let twoN6Lookups = 0
+
+  const result = await executeDeployPlan(
+    {
+      ...DEPLOY_PLAN,
+      profile: 'ucan-store',
+      name: 'ucan-store',
+      adminDid: 'did:key:z6Mkadmin123',
+      ucanStoreBootstrapPackage: {
+        operatorAddress: '0x1234000000000000000000000000000000000000',
+        adminDid: 'did:key:z6Mkadmin123',
+        serviceDid: 'did:key:z6Mkservice123',
+        spaceDid: 'did:key:z6Mkspace123',
+        rootDelegationProof: 'uEgVjYW5wcm9vZg',
+        allowedCapabilities: ['space/blob/add', 'space/blob/list'],
+        defaultUserDelegationExpiration: 86400,
+        maxUserDelegationExpiration: 604800,
+        pwaOrigin: 'https://store.example.com',
+        serviceOrigin: '',
+      },
+      publishPortForwards: false,
+      verifyReachability: false
+    },
+    {
+      sender: '0x1234',
+      log: (message) => {
+        logs.push(message)
+      },
+      signer: async () => '0xsigned',
+      hasher: (() => {
+        let count = 0
+        return () => `hash-u${++count}`
+      })(),
+      sleep: async () => {
+        sleepCount += 1
+      },
+      tcpProbe: async () => ({ ok: true }),
+      fetch: async (url, init) => {
+        if (String(url).includes('crns-list.aleph.sh')) {
+          return jsonResponse({
+            crns: [{ hash: 'crn-1', name: 'CRN One', address: 'https://crn.example.com', score: 10, country_code: 'DE' }]
+          })
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-u1') && !init?.method) {
+          return jsonResponse({ status: 'processed', details: { rootfs: DEPLOY_PLAN.rootfsItemHash } })
+        }
+
+        if (String(url).includes('scheduler.api.aleph.cloud')) {
+          return jsonResponse({
+            node: {
+              node_id: 'crn-1',
+              url: 'https://crn.example.com'
+            }
+          })
+        }
+
+        if (String(url).includes('api.2n6.me')) {
+          twoN6Lookups += 1
+          return jsonResponse({
+            url: 'https://reserved-proxy.example.2n6.me',
+            active: false
+          })
+        }
+
+        if (String(url).includes('/v2/about/executions/list')) {
+          return jsonResponse({
+            'hash-u1': {
+              networking: {
+                host_ipv4: '203.0.113.27',
+                ipv6_ip: '2001:db8::27',
+                mapped_ports: {
+                  '80': { host: 30080, tcp: true, udp: false },
+                  '22': { host: 32022, tcp: true, udp: false },
+                  '443': { host: 32443, tcp: true, udp: false }
+                }
+              }
+            }
+          })
+        }
+
+        if (String(url).includes('/health')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/configure')) {
+          configureBodies.push(String(init?.body ?? ''))
+          return jsonResponse({ status: 'configured' })
+        }
+
+        if (String(url).includes('/metadata')) {
+          return jsonResponse({
+            status: 'ready',
+            metadata: {
+              upload_service_url: 'https://reserved-proxy.example.2n6.me',
+              upload_service_did: 'did:web:reserved-proxy.example.2n6.me',
+              pwa_env: {
+                VITE_UPLOAD_SERVICE_URL: 'https://reserved-proxy.example.2n6.me'
+              }
+            }
+          })
+        }
+
+        if (String(url).includes('/control/allocation/notify')) {
+          return jsonResponse({ ok: true })
+        }
+
+        return jsonResponse(
+          {
+            publication_status: { status: 'success' },
+            message_status: 'pending'
+          },
+          202
+        )
+      }
+    }
+  )
+
+  assert.equal(result.itemHash, 'hash-u1')
+  assert.equal(configureBodies.length, 1)
+  assert.equal(twoN6Lookups, 1)
+  assert.equal(sleepCount, 0)
+  assert.ok(!logs.some((entry) => entry.includes('waiting before guest configure')))
+  assert.equal(
+    JSON.parse(configureBodies[0] ?? '{}').proxy_url,
+    'https://reserved-proxy.example.2n6.me'
+  )
+})
+
 test('executeDeployPlan retries on a rejected first CRN and succeeds on the next candidate', async () => {
   let messageCount = 0
   const logs: string[] = []
