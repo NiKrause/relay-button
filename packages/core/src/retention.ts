@@ -147,6 +147,8 @@ export async function publishAggregateKey(args: {
   fetch: JsonFetchLike
   channel?: string
   apiHost?: string
+  broadcastAttempts?: number
+  broadcastRetryDelayMs?: number
   now?: number
 }) {
   const aggregateContent: AlephAggregateContent<Record<string, unknown>> = {
@@ -167,7 +169,9 @@ export async function publishAggregateKey(args: {
   const { response, httpStatus } = await broadcastAlephMessage(message, {
     apiHost: args.apiHost,
     sync: true,
-    fetch: args.fetch
+    fetch: args.fetch,
+    attempts: args.broadcastAttempts,
+    retryDelayMs: args.broadcastRetryDelayMs
   })
 
   return {

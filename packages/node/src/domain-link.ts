@@ -36,6 +36,8 @@ export async function attachAlephDomain(args: {
   hasher: MessageHasher;
   fetch: JsonFetchLike;
   apiHost?: string;
+  broadcastAttempts?: number;
+  broadcastRetryDelayMs?: number;
   options?: Record<string, unknown> | null;
   updatedAt?: number;
 }) {
@@ -63,6 +65,8 @@ export async function attachAlephDomain(args: {
     fetch: args.fetch,
     channel: ALEPH_DOMAIN_CHANNEL,
     apiHost: args.apiHost,
+    broadcastAttempts: args.broadcastAttempts,
+    broadcastRetryDelayMs: args.broadcastRetryDelayMs,
   });
 
   if (attachPublication.status === "rejected") {
@@ -89,6 +93,8 @@ export async function detachAlephDomain(args: {
   hasher: MessageHasher;
   fetch: JsonFetchLike;
   apiHost?: string;
+  broadcastAttempts?: number;
+  broadcastRetryDelayMs?: number;
 }) {
   const domain = normalizeDomainName(args.domain);
   if (!domain) {
@@ -104,6 +110,8 @@ export async function detachAlephDomain(args: {
     fetch: args.fetch,
     channel: ALEPH_DOMAIN_CHANNEL,
     apiHost: args.apiHost,
+    broadcastAttempts: args.broadcastAttempts,
+    broadcastRetryDelayMs: args.broadcastRetryDelayMs,
   });
 
   if (detachPublication.status === "rejected") {

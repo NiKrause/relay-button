@@ -96,6 +96,47 @@ test('runDomainLinkMode detaches and attaches the production domain', async () =
   assert.match(attachMessage, /"relay\.example\.com":\{"message_id":"abcd1234","type":"ipfs","programType":"ipfs","options":\{"catch_all_path":"\/index\.html"\}\}/)
 })
 
+test('runDomainLinkMode falls back once and keeps the working Aleph API host', async () => {
+  const { outputFile, summaryFile } = await createOutputEnv('site-domain-api-fallback-')
+  const originalFetch = globalThis.fetch
+  const calls: string[] = []
+  globalThis.fetch = (async (input) => {
+    const url = String(input)
+    calls.push(url)
+    if (url === 'https://api.aleph.im/api/v0/messages') {
+      return new Response(JSON.stringify({ publication_status: { status: 'error' } }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url === 'https://api2.aleph.im/api/v0/messages') {
+      return new Response(JSON.stringify({ item_hash: `msg-${calls.length}`, message_status: 'processed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    throw new Error(`Unexpected fetch call: ${url}`)
+  }) as typeof fetch
+
+  try {
+    await runDomainLinkMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+      ALEPH_SITE_DOMAIN: 'relay.example.com',
+      ALEPH_SITE_ITEM_HASH: 'abcd1234',
+      ALEPH_SITE_ALEPH_API_HOSTS: 'https://api.aleph.im, https://api2.aleph.im',
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, /domain=relay.example.com/)
+  assert.equal(calls.filter((url) => url === 'https://api.aleph.im/api/v0/messages').length, 1)
+  assert.equal(calls.filter((url) => url === 'https://api2.aleph.im/api/v0/messages').length, 2)
+})
+
 test('cidV0ToV1 converts dag-pb CIDv0 values to lowercase base32 CIDv1', () => {
   assert.equal(
     cidV0ToV1('QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n'),
@@ -269,6 +310,69 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
   const outputs = await readFile(outputFile, 'utf8')
   assert.match(outputs, /item_hash=store123/)
   assert.equal(calls.filter((call) => call.url === 'https://api.aleph.im/api/v0/messages').length, 1)
+})
+
+test('runSitePublishMode falls back to one Aleph API host and reuses it for wait', async () => {
+  const { dir, outputFile, summaryFile } = await createOutputEnv('site-publish-api-fallback-')
+  const siteDir = join(dir, 'dist')
+  await mkdir(siteDir, { recursive: true })
+  await writeFile(join(siteDir, 'index.html'), '<!doctype html><title>blog</title>')
+
+  const originalFetch = globalThis.fetch
+  const calls: string[] = []
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    calls.push(url)
+    if (url.startsWith('https://ipfs-2.aleph.im/api/v0/add')) {
+      return new Response(JSON.stringify({ Name: '', Hash: 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url === 'https://api.aleph.im/api/v0/messages') {
+      assert.equal(init?.method, 'POST')
+      return new Response(JSON.stringify({ publication_status: { status: 'error' } }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url === 'https://api2.aleph.im/api/v0/messages') {
+      assert.equal(init?.method, 'POST')
+      return new Response(JSON.stringify({ item_hash: 'store-api2' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url === 'https://api2.aleph.im/api/v0/messages/store-api2') {
+      return new Response(JSON.stringify({ status: 'processed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    throw new Error(`Unexpected fetch call: ${url}`)
+  }) as typeof fetch
+
+  try {
+    await runSitePublishMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_SITE_PROJECT_DIR: dir,
+      ALEPH_SITE_DIRECTORY: siteDir,
+      ALEPH_SITE_IPFS_GATEWAY: 'https://ipfs-2.aleph.im',
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+      ALEPH_SITE_PIN: 'true',
+      ALEPH_SITE_ALEPH_API_HOSTS: 'https://api.aleph.im, https://api2.aleph.im, https://api3.aleph.im',
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, /item_hash=store-api2/)
+  assert.equal(calls.filter((url) => url === 'https://api.aleph.im/api/v0/messages').length, 1)
+  assert.equal(calls.filter((url) => url === 'https://api2.aleph.im/api/v0/messages').length, 1)
+  assert.equal(calls.filter((url) => url === 'https://api2.aleph.im/api/v0/messages/store-api2').length, 1)
+  assert.ok(!calls.some((url) => url.startsWith('https://api3.aleph.im/')))
 })
 
 test('runSitePublishMode continues when accepted STORE message stays pending', async () => {

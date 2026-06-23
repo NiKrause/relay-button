@@ -16,6 +16,79 @@ const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvw
 const BASE32_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567'
 const DAG_PB_CODEC = 0x70
 
+function normalizeUrl(value: string): string {
+  return value.trim().replace(/\/+$/u, '')
+}
+
+function uniqueNonEmptyValues(values: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const raw of values) {
+    const value = normalizeUrl(raw)
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    result.push(value)
+  }
+  return result
+}
+
+function parseCsvOrWhitespaceList(raw: string): string[] {
+  return raw.split(/[\s,]+/u)
+}
+
+function siteAlephApiHosts(env: NodeJS.ProcessEnv = process.env): string[] {
+  const rawHosts =
+    optionalEnv('ALEPH_SITE_ALEPH_API_HOSTS', '', env).trim() ||
+    optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env).trim()
+  const hosts = uniqueNonEmptyValues(parseCsvOrWhitespaceList(rawHosts))
+  if (hosts.length === 0) {
+    throw new Error('ALEPH_SITE_ALEPH_API_HOSTS did not contain any API host URLs.')
+  }
+  return hosts
+}
+
+function siteIpfsGateways(env: NodeJS.ProcessEnv = process.env): string[] {
+  const rawGateways =
+    optionalEnv('ALEPH_SITE_IPFS_GATEWAYS', '', env).trim() ||
+    optionalEnv('ALEPH_SITE_IPFS_GATEWAY', 'https://ipfs-2.aleph.im', env).trim()
+  const gateways = uniqueNonEmptyValues(parseCsvOrWhitespaceList(rawGateways))
+  if (gateways.length === 0) {
+    throw new Error('ALEPH_SITE_IPFS_GATEWAYS did not contain any IPFS gateway URLs.')
+  }
+  return gateways
+}
+
+async function withAlephApiHostFallback<T>(args: {
+  label: string
+  env?: NodeJS.ProcessEnv
+  run: (apiHost: string) => Promise<T>
+}): Promise<{ result: T; apiHost: string }> {
+  const apiHosts = siteAlephApiHosts(args.env)
+  let lastError: unknown = null
+
+  for (const [index, apiHost] of apiHosts.entries()) {
+    try {
+      if (apiHosts.length > 1) {
+        console.warn(`Aleph ${args.label} API host attempt ${index + 1}/${apiHosts.length}: ${apiHost}`)
+      }
+      return { result: await args.run(apiHost), apiHost }
+    } catch (error) {
+      lastError = error
+      if (index < apiHosts.length - 1) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.warn(
+          `Aleph ${args.label} API host ${apiHost} failed; retrying with ${apiHosts[index + 1]}. ${message}`,
+        )
+      }
+    }
+  }
+
+  const suffix = lastError instanceof Error ? lastError.message : String(lastError)
+  throw new Error(
+    `Aleph ${args.label} failed through all configured API hosts (${apiHosts.join(', ')}). Last error: ${suffix}`,
+  )
+}
+
 export function parseLastJsonObject(text: string): Record<string, unknown> {
   const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0)
   for (let index = lines.length - 1; index >= 0; index -= 1) {
@@ -31,8 +104,7 @@ export function parseLastJsonObject(text: string): Record<string, unknown> {
   throw new Error(`Could not parse JSON object from output: ${text}`)
 }
 
-async function waitForAlephMessage(itemHash: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
-  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env)
+async function waitForAlephMessage(itemHash: string, apiHost: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
   const attempts = Number(optionalEnv('ALEPH_SITE_ALEPH_MESSAGE_WAIT_ATTEMPTS', '60', env))
   const delayMs = Number(optionalEnv('ALEPH_SITE_ALEPH_MESSAGE_WAIT_DELAY_MS', '5000', env))
 
@@ -206,6 +278,36 @@ export async function uploadStaticSiteDirectory(directory: string, gateway: stri
   }
 }
 
+async function uploadStaticSiteDirectoryWithGatewayFallback(
+  directory: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ publish: SitePublishResult; gateway: string }> {
+  const gateways = siteIpfsGateways(env)
+  let lastError: unknown = null
+
+  for (const [index, gateway] of gateways.entries()) {
+    try {
+      if (gateways.length > 1) {
+        console.warn(`Aleph site IPFS gateway attempt ${index + 1}/${gateways.length}: ${gateway}`)
+      }
+      return { publish: await uploadStaticSiteDirectory(directory, gateway), gateway }
+    } catch (error) {
+      lastError = error
+      if (index < gateways.length - 1) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.warn(
+          `Aleph site IPFS gateway ${gateway} failed; retrying with ${gateways[index + 1]}. ${message}`,
+        )
+      }
+    }
+  }
+
+  const suffix = lastError instanceof Error ? lastError.message : String(lastError)
+  throw new Error(
+    `Aleph site IPFS upload failed through all configured gateways (${gateways.join(', ')}). Last error: ${suffix}`,
+  )
+}
+
 interface AlephMessageListEntry {
   item_hash?: unknown
   time?: unknown
@@ -294,6 +396,7 @@ async function fetchScopedSiteStoreRecords(args: {
 
 async function retainRecentSiteStores(args: {
   currentItemHash: string
+  apiHost: string
   env?: NodeJS.ProcessEnv
 }): Promise<void> {
   const env = args.env ?? process.env
@@ -306,13 +409,12 @@ async function retainRecentSiteStores(args: {
   }
 
   const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
-  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env)
   const channel = optionalEnv('ALEPH_SITE_CHANNEL', DEFAULT_ALEPH_CHANNEL, env)
   const identity = await createPrivateKeyIdentity(privateKey)
   const records = await fetchScopedSiteStoreRecords({
     sender: identity.address,
     ref,
-    apiHost,
+    apiHost: args.apiHost,
   })
 
   const overflowHashes = records
@@ -331,7 +433,7 @@ async function retainRecentSiteStores(args: {
     hasher: async (payload) => defaultHasher(payload),
     fetch,
     channel,
-    apiHost,
+    apiHost: args.apiHost,
     sync: true,
   })
 
@@ -340,10 +442,9 @@ async function retainRecentSiteStores(args: {
   }
 }
 
-async function pinIpfsCidOnAleph(cidV0: string, env: NodeJS.ProcessEnv = process.env): Promise<string> {
+async function pinIpfsCidOnAleph(cidV0: string, env: NodeJS.ProcessEnv = process.env): Promise<{ itemHash: string; apiHost: string }> {
   const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
   const channel = optionalEnv('ALEPH_SITE_CHANNEL', DEFAULT_ALEPH_CHANNEL, env)
-  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env)
   const ref = optionalEnv('ALEPH_SITE_REF', '', env).trim() || undefined
   const identity = await createPrivateKeyIdentity(privateKey)
   const now = Date.now() / 1000
@@ -366,20 +467,28 @@ async function pinIpfsCidOnAleph(cidV0: string, env: NodeJS.ProcessEnv = process
     channel,
   }
   const message = await signAlephMessage(unsignedMessage, identity.signer)
-  const { response, httpStatus } = await broadcastAlephMessage(message, {
-    apiHost,
-    sync: true,
-    fetch,
+  const { result } = await withAlephApiHostFallback({
+    label: 'site STORE pin',
+    env,
+    run: async (apiHost) => {
+      const { response, httpStatus } = await broadcastAlephMessage(message, {
+        apiHost,
+        sync: true,
+        fetch,
+        attempts: 1,
+      })
+      const status = normalizeBroadcastStatus(httpStatus, response?.message_status)
+      if (status === 'rejected') {
+        throw new Error(`Aleph STORE pin was rejected: ${JSON.stringify(response?.details ?? response ?? {})}`)
+      }
+      const itemHash = typeof response?.item_hash === 'string' ? response.item_hash : message.item_hash
+      if (!itemHash) {
+        throw new Error(`Aleph pin response did not include item_hash: ${JSON.stringify(response ?? {})}`)
+      }
+      return { itemHash, apiHost }
+    },
   })
-  const status = normalizeBroadcastStatus(httpStatus, response?.message_status)
-  if (status === 'rejected') {
-    throw new Error(`Aleph STORE pin was rejected: ${JSON.stringify(response?.details ?? response ?? {})}`)
-  }
-  const itemHash = typeof response?.item_hash === 'string' ? response.item_hash : message.item_hash
-  if (!itemHash) {
-    throw new Error(`Aleph pin response did not include item_hash: ${JSON.stringify(response ?? {})}`)
-  }
-  return itemHash
+  return result
 }
 
 export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): Promise<void> {
@@ -388,10 +497,9 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
   const siteDirectory = isAbsolute(siteDirectoryInput)
     ? siteDirectoryInput
     : resolve(projectDir, siteDirectoryInput)
-  const ipfsGateway = optionalEnv('ALEPH_SITE_IPFS_GATEWAY', 'https://ipfs-2.aleph.im', env)
   const pin = optionalEnv('ALEPH_SITE_PIN', 'true', env) === 'true'
 
-  const publish = await uploadStaticSiteDirectory(siteDirectory, ipfsGateway)
+  const { publish } = await uploadStaticSiteDirectoryWithGatewayFallback(siteDirectory, env)
   const cidV0 = publish.cidV0
   const cidV1 = publish.cidV1
 
@@ -401,11 +509,12 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
 
   let itemHash = ''
   if (pin) {
-    itemHash = await pinIpfsCidOnAleph(cidV0, env)
+    const pinned = await pinIpfsCidOnAleph(cidV0, env)
+    itemHash = pinned.itemHash
     await appendGithubOutput('item_hash', itemHash, env)
-    const processed = await waitForAlephMessage(itemHash, env)
+    const processed = await waitForAlephMessage(itemHash, pinned.apiHost, env)
     if (processed) {
-      await retainRecentSiteStores({ currentItemHash: itemHash, env })
+      await retainRecentSiteStores({ currentItemHash: itemHash, apiHost: pinned.apiHost, env })
     } else {
       console.warn(`Aleph STORE message ${itemHash} stayed pending after the wait window; continuing with the accepted item hash.`)
     }
@@ -426,28 +535,35 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): P
   const domain = requiredEnv('ALEPH_SITE_DOMAIN', env)
   const itemHash = requiredEnv('ALEPH_SITE_ITEM_HASH', env)
   const catchAllPath = optionalEnv('ALEPH_SITE_DOMAIN_CATCH_ALL_PATH', '/index.html', env)
-  const apiHost = optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env)
   const identity = await createPrivateKeyIdentity(privateKey)
 
-  await detachAlephDomain({
-    sender: identity.address,
-    domain,
-    signer: identity.signer,
-    hasher: async (payload) => defaultHasher(payload),
-    fetch,
-    apiHost,
-  })
+  const { result: attachPublication } = await withAlephApiHostFallback({
+    label: 'site domain link',
+    env,
+    run: async (apiHost) => {
+      await detachAlephDomain({
+        sender: identity.address,
+        domain,
+        signer: identity.signer,
+        hasher: async (payload) => defaultHasher(payload),
+        fetch,
+        apiHost,
+        broadcastAttempts: 1,
+      })
 
-  const attachPublication = await attachAlephDomain({
-    sender: identity.address,
-    domain,
-    itemHash,
-    kind: 'ipfs',
-    options: catchAllPath.startsWith('/') ? { catch_all_path: catchAllPath } : null,
-    signer: identity.signer,
-    hasher: async (payload) => defaultHasher(payload),
-    fetch,
-    apiHost,
+      return attachAlephDomain({
+        sender: identity.address,
+        domain,
+        itemHash,
+        kind: 'ipfs',
+        options: catchAllPath.startsWith('/') ? { catch_all_path: catchAllPath } : null,
+        signer: identity.signer,
+        hasher: async (payload) => defaultHasher(payload),
+        fetch,
+        apiHost,
+        broadcastAttempts: 1,
+      })
+    },
   })
 
   await appendGithubOutput('domain', attachPublication.domain, env)
