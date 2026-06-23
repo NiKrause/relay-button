@@ -81,18 +81,19 @@ Aleph API host fallback:
 
 - `api_host` configures the single Aleph API gateway used by default.
 - `api_hosts` optionally configures a comma-, space-, or newline-separated list
-  of Aleph API gateways to try in order during `deploy` mode.
-- When `api_hosts` is set, it overrides `api_host` for the deployment attempt
-  sequence. Each fallback attempt rebroadcasts the same deployment plan through
+  of Aleph API gateways to try in order during deployment, retention cleanup,
+  and relay bootstrap refresh steps.
+- When `api_hosts` is set, it overrides `api_host` for the action attempt
+  sequence. Each fallback attempt rebroadcasts the same action payload through
   the next API host.
 
 Example:
 
 ```yaml
 api_hosts: >-
-  https://api.aleph.im,
+  https://api3.aleph.im,
   https://api2.aleph.im,
-  https://api3.aleph.im
+  https://api.aleph.im
 ```
 
 Polling and timeout controls:

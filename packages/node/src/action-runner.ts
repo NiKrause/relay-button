@@ -56,12 +56,12 @@ function uniqueNonEmptyValues(values: string[]): string[] {
 }
 
 function parseApiHostCandidates(
-  plan: DeployPlan,
+  fallbackApiHost: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string[] {
   const rawHosts = optionalEnv("ALEPH_VM_API_HOSTS", "", env).trim();
   if (!rawHosts) {
-    return [normalizeApiHost(plan.apiHost)];
+    return [normalizeApiHost(fallbackApiHost)];
   }
 
   const explicitHosts = rawHosts.split(/[\s,]+/u);
@@ -72,12 +72,49 @@ function parseApiHostCandidates(
   return hosts;
 }
 
+async function withApiHostFallback<T>(args: {
+  label: string;
+  fallbackApiHost: string;
+  env: NodeJS.ProcessEnv;
+  run: (apiHost: string) => Promise<T>;
+}): Promise<{ result: T; apiHost: string }> {
+  const apiHosts = parseApiHostCandidates(args.fallbackApiHost, args.env);
+  let lastError: unknown = null;
+
+  for (const [index, apiHost] of apiHosts.entries()) {
+    try {
+      if (apiHosts.length > 1) {
+        actionLog(
+          "notice",
+          `Aleph ${args.label} API host attempt ${index + 1}/${apiHosts.length}: ${apiHost}`,
+        );
+      }
+      return { result: await args.run(apiHost), apiHost };
+    } catch (error) {
+      lastError = error;
+      if (index < apiHosts.length - 1) {
+        const message = error instanceof Error ? error.message : String(error);
+        actionLog(
+          "warning",
+          `Aleph ${args.label} API host ${apiHost} failed; retrying with ${apiHosts[index + 1]}. ${message}`,
+        );
+      }
+    }
+  }
+
+  const suffix =
+    lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(
+    `Aleph ${args.label} failed through all configured API hosts (${apiHosts.join(", ")}). Last error: ${suffix}`,
+  );
+}
+
 async function executeDeployPlanWithApiHostFallback(args: {
   plan: DeployPlan;
   env: NodeJS.ProcessEnv;
   deployExecutor: typeof executeDeployPlan;
 }): Promise<DeployOutputResult> {
-  const apiHosts = parseApiHostCandidates(args.plan, args.env);
+  const apiHosts = parseApiHostCandidates(args.plan.apiHost, args.env);
   let lastError: unknown = null;
 
   for (const [index, apiHost] of apiHosts.entries()) {
@@ -229,26 +266,35 @@ export async function runActionMode(
     const identity = await (
       hooks.createPrivateKeyIdentity ?? createPrivateKeyIdentity
     )(requiredEnv("ALEPH_VM_PRIVATE_KEY", env));
-    const payload = await (
-      hooks.retainSuccessfulDeployments ?? retainSuccessfulDeployments
-    )({
-      sender: identity.address,
-      currentRecord: jsonEnv<unknown>(
-        "ALEPH_VM_RETENTION_CURRENT_RECORD_JSON",
-        "{}",
-        env,
-      ),
-      keepCount: integerEnv("ALEPH_VM_RETENTION_KEEP_COUNT", 2, env),
-      extraForgetHashes: jsonEnv<string[]>(
-        "ALEPH_VM_RETENTION_EXTRA_FORGET_HASHES_JSON",
-        "[]",
-        env,
-      ),
-      signer: identity.signer,
-      hasher: async (content) => defaultHasher(content),
-      fetch: globalThis.fetch.bind(globalThis),
-      channel: optionalEnv("ALEPH_VM_CHANNEL", "TEST", env),
-      apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api.aleph.im", env),
+    const currentRecord = jsonEnv<unknown>(
+      "ALEPH_VM_RETENTION_CURRENT_RECORD_JSON",
+      "{}",
+      env,
+    );
+    const keepCount = integerEnv("ALEPH_VM_RETENTION_KEEP_COUNT", 2, env);
+    const extraForgetHashes = jsonEnv<string[]>(
+      "ALEPH_VM_RETENTION_EXTRA_FORGET_HASHES_JSON",
+      "[]",
+      env,
+    );
+    const channel = optionalEnv("ALEPH_VM_CHANNEL", "TEST", env);
+    const { result: payload } = await withApiHostFallback({
+      label: "retention",
+      fallbackApiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api.aleph.im", env),
+      env,
+      run: async (apiHost) => (
+        hooks.retainSuccessfulDeployments ?? retainSuccessfulDeployments
+      )({
+        sender: identity.address,
+        currentRecord,
+        keepCount,
+        extraForgetHashes,
+        signer: identity.signer,
+        hasher: async (content) => defaultHasher(content),
+        fetch: globalThis.fetch.bind(globalThis),
+        channel,
+        apiHost,
+      }),
     });
 
     await appendGithubOutput(
@@ -338,60 +384,71 @@ export async function runActionMode(
       env,
     );
 
-    const publication = await (
-      hooks.publishRelayBootstrapRegistration ?? publishRelayBootstrapRegistration
-    )({
-      sender: publisherIdentity.address,
-      signer: publisherIdentity.signer,
-      hasher: async (content) => defaultHasher(content),
-      fetch: globalThis.fetch.bind(globalThis),
-      apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api.aleph.im", env),
-      peerId,
-      multiaddrs,
-      browserMultiaddrs,
-      ownerAddress: ownerIdentity?.address,
-      publisherAddress: publisherIdentity.address,
-      ownerSigner: ownerIdentity?.signer,
-      publisherSigner: publisherIdentity.signer,
-      registrationId,
-      forgetPrevious: optionalEnv(
-        "ALEPH_VM_BOOTSTRAP_FORGET_PREVIOUS",
-        "true",
-        env,
-      ).toLowerCase() !== "false",
-      profile,
-      version: optionalEnv("ALEPH_VM_ROOTFS_VERSION", "", env) || undefined,
-      sync: true,
-    });
-    const reconcileResult = shouldReconcileOwner
-      ? await reconcileOwnerRelayBootstrapRegistrations({
-          instanceOwnerAddress,
+    const forgetPrevious = optionalEnv(
+      "ALEPH_VM_BOOTSTRAP_FORGET_PREVIOUS",
+      "true",
+      env,
+    ).toLowerCase() !== "false";
+    const version = optionalEnv("ALEPH_VM_ROOTFS_VERSION", "", env) || undefined;
+    const { result: bootstrapResult } = await withApiHostFallback({
+      label: "bootstrap refresh",
+      fallbackApiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api.aleph.im", env),
+      env,
+      run: async (apiHost) => {
+        const publication = await (
+          hooks.publishRelayBootstrapRegistration ?? publishRelayBootstrapRegistration
+        )({
           sender: publisherIdentity.address,
           signer: publisherIdentity.signer,
           hasher: async (content) => defaultHasher(content),
           fetch: globalThis.fetch.bind(globalThis),
-          apiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api.aleph.im", env),
-          profile,
+          apiHost,
+          peerId,
+          multiaddrs,
+          browserMultiaddrs,
           ownerAddress: ownerIdentity?.address,
-          ownerSigner: ownerIdentity?.signer,
           publisherAddress: publisherIdentity.address,
+          ownerSigner: ownerIdentity?.signer,
           publisherSigner: publisherIdentity.signer,
-          current: instanceItemHash
-            ? {
-                itemHash: instanceItemHash,
-                registrationId,
-                peerId,
-                probeMultiaddrs: multiaddrs,
-                browserBootstrapMultiaddrs: browserMultiaddrs,
-              }
-            : null,
-        })
-      : {
-          refreshedRegistrations: [],
-          forgottenHashes: [],
-          skippedInstanceHashes: [],
-          errors: [],
-        };
+          registrationId,
+          forgetPrevious,
+          profile,
+          version,
+          sync: true,
+        });
+        const reconcileResult = shouldReconcileOwner
+          ? await reconcileOwnerRelayBootstrapRegistrations({
+              instanceOwnerAddress,
+              sender: publisherIdentity.address,
+              signer: publisherIdentity.signer,
+              hasher: async (content) => defaultHasher(content),
+              fetch: globalThis.fetch.bind(globalThis),
+              apiHost,
+              profile,
+              ownerAddress: ownerIdentity?.address,
+              ownerSigner: ownerIdentity?.signer,
+              publisherAddress: publisherIdentity.address,
+              publisherSigner: publisherIdentity.signer,
+              current: instanceItemHash
+                ? {
+                    itemHash: instanceItemHash,
+                    registrationId,
+                    peerId,
+                    probeMultiaddrs: multiaddrs,
+                    browserBootstrapMultiaddrs: browserMultiaddrs,
+                  }
+                : null,
+            })
+          : {
+              refreshedRegistrations: [],
+              forgottenHashes: [],
+              skippedInstanceHashes: [],
+              errors: [],
+            };
+        return { publication, reconcileResult };
+      },
+    });
+    const { publication, reconcileResult } = bootstrapResult;
 
     await appendGithubOutput(
       "bootstrap_registration_json",

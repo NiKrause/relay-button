@@ -319,6 +319,61 @@ test('runActionMode emits retention outputs in retain-successful-deployments mod
   assert.match(writes.join(''), /aggregateHash/)
 })
 
+
+test('runActionMode retries retention across configured Aleph API hosts', async () => {
+  const { env, outputFile } = await createActionEnv('shared-aleph-action-retention-api-hosts-')
+  const attemptedHosts: string[] = []
+
+  await runActionMode(
+    {
+      ...env,
+      ALEPH_VM_MODE: 'retain-successful-deployments',
+      ALEPH_VM_PRIVATE_KEY: '0xabc',
+      ALEPH_VM_API_HOST: 'https://api.aleph.im',
+      ALEPH_VM_API_HOSTS: 'https://api.aleph.im, https://api3.aleph.im',
+      ALEPH_VM_RETENTION_KEEP_COUNT: '2',
+      ALEPH_VM_RETENTION_CURRENT_RECORD_JSON: JSON.stringify({
+        instance_item_hash: 'instanceHash'
+      }),
+      ALEPH_VM_RETENTION_EXTRA_FORGET_HASHES_JSON: '[]'
+    },
+    {
+      createPrivateKeyIdentity: async () => ({
+        address: '0x1234',
+        signer: async () => '0xsigned'
+      }),
+      retainSuccessfulDeployments: async (options) => {
+        attemptedHosts.push(options.apiHost)
+        if (options.apiHost === 'https://api.aleph.im') {
+          throw new Error('primary API unavailable')
+        }
+        return {
+          sender: options.sender,
+          aggregateKey: 'uc-go-peer-successful-deployments',
+          keepCount: 2,
+          aggregatePublication: {
+            itemHash: 'aggregateFallbackHash',
+            status: 'processed'
+          },
+          retainedRecords: [{ instance_item_hash: 'instanceHash' }],
+          prunedRecords: [],
+          forgetHashes: [],
+          forgottenHashes: [],
+          outstandingForgetHashes: [],
+          forgetResult: null
+        }
+      }
+    }
+  )
+
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.deepEqual(attemptedHosts, [
+    'https://api.aleph.im',
+    'https://api3.aleph.im'
+  ])
+  assert.match(outputs, /retention_retained_count=1/)
+})
+
 test('runActionMode refreshes bootstrap registration from deployment metadata', async () => {
   const { env, outputFile, summaryFile } = await createActionEnv('shared-aleph-action-bootstrap-refresh-')
   const writes: string[] = []
@@ -371,6 +426,55 @@ test('runActionMode refreshes bootstrap registration from deployment metadata', 
   assert.match(summary, /Aleph bootstrap refresh/)
   assert.match(summary, /Forgotten previous hashes: `1`/)
   assert.match(writes.join(''), /bootstrapHash/)
+})
+
+
+test('runActionMode retries bootstrap refresh across configured Aleph API hosts', async () => {
+  const { env, outputFile } = await createActionEnv('shared-aleph-action-bootstrap-api-hosts-')
+  const attemptedHosts: string[] = []
+
+  await runActionMode(
+    {
+      ...env,
+      ALEPH_VM_MODE: 'refresh-bootstrap',
+      ALEPH_VM_PRIVATE_KEY: '0xabc',
+      ALEPH_VM_NAME: 'relay-demo',
+      ALEPH_VM_PROFILE: 'uc-go-peer',
+      ALEPH_VM_API_HOST: 'https://api.aleph.im',
+      ALEPH_VM_API_HOSTS: 'https://api.aleph.im, https://api3.aleph.im',
+      ALEPH_VM_RELAY_PEER_ID: '12D3KooWRefreshFallback',
+      ALEPH_VM_PROBE_MULTIADDRS_JSON: JSON.stringify([
+        '/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWRefreshFallback'
+      ]),
+      ALEPH_VM_BROWSER_BOOTSTRAP_MULTIADDRS_JSON: JSON.stringify([
+        '/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWRefreshFallback'
+      ])
+    },
+    {
+      createPrivateKeyIdentity: async () => ({
+        address: '0x1234',
+        signer: async () => '0xsigned'
+      }),
+      publishRelayBootstrapRegistration: async (options) => {
+        attemptedHosts.push(options.apiHost)
+        if (options.apiHost === 'https://api.aleph.im') {
+          throw new Error('primary API unavailable')
+        }
+        return {
+          status: 'published',
+          itemHash: 'bootstrapFallbackHash',
+          forgottenHashes: []
+        }
+      }
+    }
+  )
+
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.deepEqual(attemptedHosts, [
+    'https://api.aleph.im',
+    'https://api3.aleph.im'
+  ])
+  assert.match(outputs, /bootstrap_registration_item_hash=bootstrapFallbackHash/)
 })
 
 test('runActionMode refresh-bootstrap can emit dual-key publication inputs', async () => {

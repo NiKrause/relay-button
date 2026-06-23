@@ -45,7 +45,17 @@ on:
       vm_api_hosts:
         description: Comma-separated Aleph API hosts to try for rootfs STORE publication and VM deployment
         required: false
-        default: https://api.aleph.im,https://api2.aleph.im,https://api3.aleph.im
+        default: https://api3.aleph.im,https://api2.aleph.im,https://api.aleph.im
+        type: string
+      ipfs_add_urls:
+        description: Comma-separated IPFS add endpoints to try for manifest publication
+        required: false
+        default: https://ipfs.aleph.cloud/api/v0/add,https://ipfs-2.aleph.im/api/v0/add
+        type: string
+      ipfs_gateway_urls:
+        description: Comma-separated IPFS gateway base URLs to try when verifying uploaded manifests
+        required: false
+        default: https://ipfs.aleph.cloud/ipfs,https://ipfs-2.aleph.im/ipfs
         type: string
       vm_name:
         description: Aleph VM instance name. Defaults to the profile name when empty.
@@ -438,8 +448,8 @@ jobs:
         if: ${{ always() && steps.run_rootfs.outputs.rootfs_manifest_path != '' }}
         env:
           MANIFEST_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_path }}
-          IPFS_ADD_URL: https://ipfs.aleph.cloud/api/v0/add
-          IPFS_GATEWAY_BASE_URL: https://ipfs.aleph.cloud/ipfs
+          IPFS_ADD_URLS: ${{ inputs.ipfs_add_urls }}
+          IPFS_GATEWAY_BASE_URLS: ${{ inputs.ipfs_gateway_urls }}
           IPFS_GATEWAY_WAIT_ATTEMPTS: '30'
           IPFS_GATEWAY_WAIT_DELAY_SECONDS: '10'
         shell: bash
@@ -449,7 +459,39 @@ jobs:
             exit 1
           fi
 
-          response_text="$(curl -fsSL -X POST -F "file=@${MANIFEST_PATH}" "${IPFS_ADD_URL}")"
+          mapfile -t ipfs_add_urls < <(python3 - <<'PY'
+          import os
+          import re
+
+          for value in re.split(r"[\s,]+", os.environ.get("IPFS_ADD_URLS", "")):
+              value = value.strip().rstrip("/")
+              if value:
+                  print(value)
+          PY
+          )
+          if [[ "${#ipfs_add_urls[@]}" -eq 0 ]]; then
+            echo "IPFS_ADD_URLS did not contain any endpoints." >&2
+            exit 1
+          fi
+
+          response_text=''
+          last_upload_error=''
+          for ((index = 0; index < ${#ipfs_add_urls[@]}; index += 1)); do
+            add_url="${ipfs_add_urls[$index]}"
+            echo "IPFS manifest add endpoint attempt $((index + 1))/${#ipfs_add_urls[@]}: ${add_url}"
+            if response_text="$(curl -fsSL -X POST -F "file=@${MANIFEST_PATH}" "${add_url}" 2>&1)"; then
+              break
+            fi
+            last_upload_error="${response_text}"
+            if [[ "${index}" -lt "$((${#ipfs_add_urls[@]} - 1))" ]]; then
+              echo "IPFS manifest add endpoint ${add_url} failed; retrying. ${last_upload_error}" >&2
+            fi
+          done
+          if [[ -z "${response_text}" ]]; then
+            echo "IPFS manifest upload failed through all configured endpoints. ${last_upload_error}" >&2
+            exit 1
+          fi
+
           export IPFS_ADD_RESPONSE_TEXT="${response_text}"
           manifest_cid="$(python3 - <<'PY'
           import json
@@ -467,14 +509,33 @@ jobs:
           PY
           )"
 
-          manifest_gateway_url="${IPFS_GATEWAY_BASE_URL%/}/${manifest_cid}"
+          mapfile -t gateway_base_urls < <(python3 - <<'PY'
+          import os
+          import re
+
+          for value in re.split(r"[\s,]+", os.environ.get("IPFS_GATEWAY_BASE_URLS", "")):
+              value = value.strip().rstrip("/")
+              if value:
+                  print(value)
+          PY
+          )
+          if [[ "${#gateway_base_urls[@]}" -eq 0 ]]; then
+            echo "IPFS_GATEWAY_BASE_URLS did not contain any gateway URLs." >&2
+            exit 1
+          fi
+
+          manifest_gateway_url=''
           for ((attempt = 1; attempt <= IPFS_GATEWAY_WAIT_ATTEMPTS; attempt += 1)); do
-            if curl -fsS -H "Range: bytes=0-0" "${manifest_gateway_url}" -o /dev/null; then
-              break
-            fi
+            for gateway_base_url in "${gateway_base_urls[@]}"; do
+              candidate_url="${gateway_base_url%/}/${manifest_cid}"
+              if curl -fsS -H "Range: bytes=0-0" "${candidate_url}" -o /dev/null; then
+                manifest_gateway_url="${candidate_url}"
+                break 2
+              fi
+            done
 
             if [[ "${attempt}" -eq "${IPFS_GATEWAY_WAIT_ATTEMPTS}" ]]; then
-              echo "CID ${manifest_cid} did not become retrievable from ${IPFS_GATEWAY_BASE_URL} after ${IPFS_GATEWAY_WAIT_ATTEMPTS} attempts." >&2
+              echo "CID ${manifest_cid} did not become retrievable from any configured gateway (${gateway_base_urls[*]}) after ${IPFS_GATEWAY_WAIT_ATTEMPTS} attempts." >&2
               exit 1
             fi
 
@@ -626,7 +687,8 @@ jobs:
         env:
           ALEPH_VM_MODE: retain-successful-deployments
           ALEPH_VM_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
-          ALEPH_VM_API_HOST: https://api.aleph.im
+          ALEPH_VM_API_HOST: https://api3.aleph.im
+          ALEPH_VM_API_HOSTS: ${{ inputs.vm_api_hosts }}
           ALEPH_VM_CHANNEL: ${{ inputs.vm_channel }}
           ALEPH_VM_RETENTION_KEEP_COUNT: ${{ inputs.retain_successful_deployments }}
           ALEPH_VM_RETENTION_EXTRA_FORGET_HASHES_JSON: '[]'
