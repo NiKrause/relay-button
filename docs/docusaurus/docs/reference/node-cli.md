@@ -173,10 +173,11 @@ Common optional environment:
 - `ALEPH_ROOTFS_DRIVER`
 - `ALEPH_ROOTFS_UPLOAD_DRIVER`
   Rootfs image upload path. Defaults to `aleph-ipfs`, which streams the image
-  to Aleph's authenticated IPFS upload endpoint, then publishes an Aleph
-  `STORE` pin with `item_type=ipfs` and credit payment. Use `helia` to import
-  the image into a local public-IPFS Helia node, or `api-fetch` / `api-curl` to
-  force the older direct IPFS add endpoints.
+  through the configured IPFS add endpoint(s), then publishes an Aleph `STORE`
+  pin with `item_type=ipfs` and credit payment. Use `aleph-api-ipfs` to force
+  Aleph's authenticated `/api/v0/ipfs/add_file` endpoint, `helia` to import the
+  image into a local public-IPFS Helia node, or `api-fetch` / `api-curl` for
+  direct IPFS add endpoint variants.
 - `ALEPH_ROOTFS_STORE_PAYMENT_TYPE`
   Payment type for the rootfs `STORE` pin. Defaults to `credit`; `credits` is
   accepted as an alias. Use `hold` only for locked-stake pinning.
@@ -193,7 +194,12 @@ Common optional environment:
   default list already includes the verified Aleph IPFS peer
   `/ip4/46.255.204.209/tcp/4001/p2p/12D3KooWHWNCn8t9NKQPBPZU61Fq6BoVw9XV37YsWTuMLwZXrEtj`
   plus the public IPFS bootstrap nodes.
-- `ALEPH_ROOTFS_IPFS_ADD_URL`
+- `ALEPH_ROOTFS_IPFS_ADD_URL` / `ALEPH_ROOTFS_IPFS_ADD_URLS`
+  IPFS add endpoint(s) for rootfs image upload. The plural form accepts comma
+  or whitespace-separated URLs and is tried in order.
+- `ALEPH_ROOTFS_IPFS_GATEWAY_URL` / `ALEPH_ROOTFS_IPFS_GATEWAY_URLS`
+  IPFS gateway base URL(s) used to verify that the uploaded rootfs CID is
+  retrievable without downloading the whole image.
 - `ALEPH_ROOTFS_ALEPH_API_HOST`
 - `ALEPH_ROOTFS_ORBITDB_RELAY_DIR`
   Required when the contract/profile is `orbitdb-relay`.

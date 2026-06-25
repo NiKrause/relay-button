@@ -83,7 +83,7 @@ jobs:
       - name: Write summary
         run: |
           {
-            echo "## Aleph Rootfs Helia Publish"
+            echo "## Aleph Rootfs IPFS Publish"
             echo
             echo "- result: ${{ needs.publish-rootfs.result }}"
             echo "- profile: ${{ inputs.profile }}"

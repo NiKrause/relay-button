@@ -53,7 +53,7 @@ interface RootfsIpfsUploadResult {
   cleanup?: () => Promise<void>;
 }
 
-type RootfsUploadDriver = 'aleph-ipfs' | 'helia' | 'api-fetch' | 'api-curl'
+type RootfsUploadDriver = 'ipfs-add' | 'aleph-api-ipfs' | 'helia' | 'api-fetch' | 'api-curl'
 
 interface RootfsUploadRuntimeOptions {
   driver: RootfsUploadDriver;
@@ -110,6 +110,38 @@ function parseRootfsAlephApiHosts(
     throw new Error('ALEPH_ROOTFS_ALEPH_API_HOSTS did not contain any API host URLs.')
   }
   return hosts
+}
+
+function parseRootfsIpfsAddUrls(
+  buildPlan: RootfsBuildPlan,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const rawUrls =
+    optionalEnv('ALEPH_ROOTFS_IPFS_ADD_URLS', '', env).trim() ||
+    optionalEnv('ALEPH_ROOTFS_IPFS_ADD_URL', '', env).trim()
+  if (!rawUrls) return [buildPlan.ipfsAddUrl]
+
+  const urls = uniqueNonEmptyValues(rawUrls.split(/[\s,]+/u))
+  if (urls.length === 0) {
+    throw new Error('ALEPH_ROOTFS_IPFS_ADD_URLS did not contain any IPFS add endpoint URLs.')
+  }
+  return urls
+}
+
+function parseRootfsIpfsGatewayUrls(
+  buildPlan: RootfsBuildPlan,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const rawUrls =
+    optionalEnv('ALEPH_ROOTFS_IPFS_GATEWAY_URLS', '', env).trim() ||
+    optionalEnv('ALEPH_ROOTFS_IPFS_GATEWAY_URL', '', env).trim()
+  if (!rawUrls) return [buildPlan.ipfsGatewayUrl]
+
+  const urls = uniqueNonEmptyValues(rawUrls.split(/[\s,]+/u))
+  if (urls.length === 0) {
+    throw new Error('ALEPH_ROOTFS_IPFS_GATEWAY_URLS did not contain any IPFS gateway URLs.')
+  }
+  return urls
 }
 
 async function commandExists(command: string, pathValue: string): Promise<boolean> {
@@ -279,9 +311,12 @@ function parseRootfsUploadDriver(value: string | undefined): RootfsUploadDriver 
   switch (normalized) {
     case '':
     case 'aleph-ipfs':
-    case 'aleph-api-ipfs':
     case 'ipfs':
-      return 'aleph-ipfs'
+    case 'ipfs-add':
+      return 'ipfs-add'
+    case 'aleph-api-ipfs':
+    case 'add-file':
+      return 'aleph-api-ipfs'
     case 'helia':
       return 'helia'
     case 'api-fetch':
@@ -292,7 +327,7 @@ function parseRootfsUploadDriver(value: string | undefined): RootfsUploadDriver 
       return 'api-curl'
     default:
       throw new Error(
-        `Unsupported ALEPH_ROOTFS_UPLOAD_DRIVER "${normalized}". Expected "aleph-ipfs", "helia", "api-fetch", or "api-curl".`,
+        `Unsupported ALEPH_ROOTFS_UPLOAD_DRIVER "${normalized}". Expected "aleph-ipfs", "aleph-api-ipfs", "helia", "api-fetch", or "api-curl".`,
       )
   }
 }
@@ -646,64 +681,88 @@ async function uploadRootfsImageToIpfsWithAlephApi(
   )
 }
 
-async function uploadRootfsImageToIpfsWithCurl(buildPlan: RootfsBuildPlan): Promise<RootfsIpfsUploadResult> {
-  const responseText = await new Promise<string>((resolve, reject) => {
-    const curl = spawn(
-      'curl',
-      [
-        '--fail',
-        '--silent',
-        '--show-error',
-        '-X',
-        'POST',
-        '-F',
-        `file=@${buildPlan.imagePath}`,
-        buildPlan.ipfsAddUrl,
-      ],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
-    )
+async function uploadRootfsImageToIpfsWithCurl(
+  buildPlan: RootfsBuildPlan,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<RootfsIpfsUploadResult> {
+  const ipfsAddUrls = parseRootfsIpfsAddUrls(buildPlan, env)
+  let lastError: unknown = null
 
-    let stdout = ''
-    let stderr = ''
-    curl.stdout.on('data', (chunk) => {
-      stdout += chunk.toString()
-    })
-    curl.stderr.on('data', (chunk) => {
-      stderr += chunk.toString()
-    })
-    curl.on('error', (error) => {
-      reject(error)
-    })
-    curl.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout)
-        return
+  for (const [index, ipfsAddUrl] of ipfsAddUrls.entries()) {
+    try {
+      if (ipfsAddUrls.length > 1) {
+        console.warn(`IPFS rootfs add endpoint attempt ${index + 1}/${ipfsAddUrls.length}: ${ipfsAddUrl}`)
+      }
+      const responseText = await new Promise<string>((resolve, reject) => {
+        const curl = spawn(
+          'curl',
+          [
+            '--fail',
+            '--silent',
+            '--show-error',
+            '-X',
+            'POST',
+            '-F',
+            `file=@${buildPlan.imagePath};type=application/octet-stream`,
+            ipfsAddUrl,
+          ],
+          { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } },
+        )
+
+        let stdout = ''
+        let stderr = ''
+        curl.stdout.on('data', (chunk) => {
+          stdout += chunk.toString()
+        })
+        curl.stderr.on('data', (chunk) => {
+          stderr += chunk.toString()
+        })
+        curl.on('error', (error) => {
+          reject(error)
+        })
+        curl.on('close', (code) => {
+          if (code === 0) {
+            resolve(stdout)
+            return
+          }
+
+          const details = stderr.trim()
+          reject(new Error(details ? `IPFS upload failed: ${details}` : `curl failed with exit code ${code ?? 'unknown'}`))
+        })
+      })
+
+      const lines = responseText.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean)
+      if (lines.length === 0) {
+        throw new Error('No response received from the IPFS add endpoint')
       }
 
-      const details = stderr.trim()
-      reject(new Error(details ? `IPFS upload failed: ${details}` : `curl failed with exit code ${code ?? 'unknown'}`))
-    })
-  })
+      const payload = JSON.parse(lines.at(-1) ?? '{}') as { Hash?: string; Size?: string | number }
+      const cid = payload.Hash?.trim()
+      if (!cid) {
+        throw new Error(`IPFS add response did not include a Hash: ${JSON.stringify(payload)}`)
+      }
 
-  const lines = responseText.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean)
-  if (lines.length === 0) {
-    throw new Error('No response received from the IPFS add endpoint')
+      let sourceSizeBytes: number | undefined
+      if (typeof payload.Size === 'number' && Number.isFinite(payload.Size) && payload.Size > 0) {
+        sourceSizeBytes = payload.Size
+      } else if (typeof payload.Size === 'string' && /^\d+$/u.test(payload.Size)) {
+        sourceSizeBytes = Number(payload.Size)
+      }
+
+      return { cid, responseText, sourceSizeBytes }
+    } catch (error) {
+      lastError = error
+      if (index < ipfsAddUrls.length - 1) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.warn(`IPFS rootfs add endpoint ${ipfsAddUrl} failed; retrying with ${ipfsAddUrls[index + 1]}. ${message}`)
+      }
+    }
   }
 
-  const payload = JSON.parse(lines.at(-1) ?? '{}') as { Hash?: string; Size?: string | number }
-  const cid = payload.Hash?.trim()
-  if (!cid) {
-    throw new Error(`IPFS add response did not include a Hash: ${JSON.stringify(payload)}`)
-  }
-
-  let sourceSizeBytes: number | undefined
-  if (typeof payload.Size === 'number' && Number.isFinite(payload.Size) && payload.Size > 0) {
-    sourceSizeBytes = payload.Size
-  } else if (typeof payload.Size === 'string' && /^\d+$/u.test(payload.Size)) {
-    sourceSizeBytes = Number(payload.Size)
-  }
-
-  return { cid, responseText, sourceSizeBytes }
+  const suffix = lastError instanceof Error ? lastError.message : String(lastError)
+  throw new Error(
+    `IPFS rootfs upload failed through all configured add endpoints (${ipfsAddUrls.join(', ')}). Last error: ${suffix}`,
+  )
 }
 
 async function uploadRootfsImageToIpfs(
@@ -712,30 +771,39 @@ async function uploadRootfsImageToIpfs(
 ): Promise<RootfsIpfsUploadResult> {
   const runtime = rootfsUploadRuntimeOptions(env)
   switch (runtime.driver) {
-    case 'aleph-ipfs':
+    case 'ipfs-add':
+      return uploadRootfsImageToIpfsWithCurl(buildPlan, env)
+    case 'aleph-api-ipfs':
       return uploadRootfsImageToIpfsWithAlephApi(buildPlan, env)
     case 'helia':
       return uploadRootfsImageToIpfsWithHelia(buildPlan, env)
     case 'api-fetch':
       return uploadRootfsImageToIpfsWithFetch(buildPlan, env)
     case 'api-curl':
-      return uploadRootfsImageToIpfsWithCurl(buildPlan)
+      return uploadRootfsImageToIpfsWithCurl(buildPlan, env)
   }
 }
 
-async function waitForIpfsCidAvailable(buildPlan: RootfsBuildPlan, cid: string): Promise<void> {
-  const gatewayUrl = `${buildPlan.ipfsGatewayUrl.replace(/\/+$/u, '')}/${cid}`
+async function waitForIpfsCidAvailable(
+  buildPlan: RootfsBuildPlan,
+  cid: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  const gatewayBaseUrls = parseRootfsIpfsGatewayUrls(buildPlan, env)
   for (let attempt = 1; attempt <= buildPlan.ipfsGatewayWaitAttempts; attempt += 1) {
-    try {
-      const response = await fetch(gatewayUrl, {
-        method: 'GET',
-        headers: { range: 'bytes=0-0' },
-      })
-      if (response.status === 200 || response.status === 206) {
-        return
+    for (const gatewayBaseUrl of gatewayBaseUrls) {
+      const gatewayUrl = `${gatewayBaseUrl.replace(/\/+$/u, '')}/${cid}`
+      try {
+        const response = await fetch(gatewayUrl, {
+          method: 'GET',
+          headers: { range: 'bytes=0-0' },
+        })
+        if (response.status === 200 || response.status === 206) {
+          return
+        }
+      } catch {
+        // retry below
       }
-    } catch {
-      // retry below
     }
 
     if (attempt < buildPlan.ipfsGatewayWaitAttempts) {
@@ -743,7 +811,7 @@ async function waitForIpfsCidAvailable(buildPlan: RootfsBuildPlan, cid: string):
     }
   }
 
-  throw new Error(`CID ${cid} did not become retrievable from ${buildPlan.ipfsGatewayUrl} after ${buildPlan.ipfsGatewayWaitAttempts} attempts.`)
+  throw new Error(`CID ${cid} did not become retrievable from ${gatewayBaseUrls.join(', ')} after ${buildPlan.ipfsGatewayWaitAttempts} attempts.`)
 }
 
 async function pinRootfsCidOnAleph(
@@ -946,7 +1014,7 @@ export async function runRootfsMode(
         : await uploadRootfsImageToIpfs(originalPlan, env)
       try {
         const pinned = await pinRootfsCidOnAleph(originalPlan, upload.cid, env)
-        await waitForIpfsCidAvailable(originalPlan, upload.cid)
+        await waitForIpfsCidAvailable(originalPlan, upload.cid, env)
 
         const artifacts = publicationArtifacts(originalPlan)
         await mkdir(originalPlan.outDir, { recursive: true })

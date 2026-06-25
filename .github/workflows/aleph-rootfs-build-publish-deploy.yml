@@ -43,7 +43,7 @@ on:
         default: auto
         type: string
       rootfs_upload_driver:
-        description: Rootfs image upload driver. aleph-ipfs uploads through Aleph IPFS and publishes a credit-paid STORE pin.
+        description: Rootfs image upload driver. aleph-ipfs uploads through IPFS add endpoints and publishes a credit-paid Aleph STORE pin.
         required: false
         default: aleph-ipfs
         type: string
@@ -455,6 +455,8 @@ jobs:
               ''
             }}
           ALEPH_ROOTFS_ALEPH_API_HOSTS: ${{ inputs.vm_api_hosts }}
+          ALEPH_ROOTFS_IPFS_ADD_URLS: ${{ inputs.ipfs_add_urls }}
+          ALEPH_ROOTFS_IPFS_GATEWAY_URLS: ${{ inputs.ipfs_gateway_urls }}
           ALEPH_ROOTFS_DRIVER: ${{ inputs.rootfs_driver }}
           ALEPH_ROOTFS_VERSION: ${{ inputs.rootfs_version }}
           ALEPH_ROOTFS_UPLOAD_DRIVER: ${{ inputs.rootfs_upload_driver }}

@@ -330,7 +330,7 @@ test('runRootfsMode executes rootfs-publish and emits outputs through the direct
   assert.match(writes.join(''), /uc-go-peer-git-20260516-deadbee/)
 })
 
-test('runRootfsMode uploads rootfs through Aleph IPFS API and pins with credit payment', async () => {
+test('runRootfsMode uploads rootfs through IPFS add endpoint and pins with credit payment', async () => {
   const projectDir = await mkdtemp(join(tmpdir(), 'shared-rootfs-aleph-ipfs-project-'))
   const { env, outputFile } = await createActionEnv('shared-rootfs-aleph-ipfs-', projectDir)
   const binDir = await mkdtemp(join(tmpdir(), 'shared-rootfs-aleph-ipfs-bin-'))
@@ -338,7 +338,7 @@ test('runRootfsMode uploads rootfs through Aleph IPFS API and pins with credit p
   await createFakeCommand(
     binDir,
     'curl',
-    'printf "%s\\n" "$@" > "$CURL_ARGS_FILE"\nprintf \'{"status":"success","hash":"bafyrootfs","name":"upload","size":987654321}\\n\'',
+    'printf "%s\\n" "$@" > "$CURL_ARGS_FILE"\nprintf \'{"Name":"upload","Hash":"bafyrootfs","Size":"987654321"}\\n\'',
   )
 
   const originalFetch = globalThis.fetch
@@ -382,6 +382,7 @@ test('runRootfsMode uploads rootfs through Aleph IPFS API and pins with credit p
       ALEPH_ROOTFS_SKIP_UPLOAD: 'false',
       ALEPH_ROOTFS_UPLOAD_DRIVER: 'aleph-ipfs',
       ALEPH_ROOTFS_ALEPH_API_HOSTS: 'https://api.aleph.im',
+      ALEPH_ROOTFS_IPFS_ADD_URLS: 'https://ipfs-2.aleph.im/api/v0/add,https://ipfs.aleph.cloud/api/v0/add',
       ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
       CURL_ARGS_FILE: curlArgsPath,
       PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -421,7 +422,7 @@ test('runRootfsMode uploads rootfs through Aleph IPFS API and pins with credit p
   const curlArgs = await readFile(curlArgsPath, 'utf8')
   assert.match(outputs, /rootfs_item_hash=store-item-hash/)
   assert.match(outputs, /rootfs_cid=bafyrootfs/)
-  assert.match(curlArgs, /https:\/\/api\.aleph\.im\/api\/v0\/ipfs\/add_file/)
+  assert.match(curlArgs, /https:\/\/ipfs-2\.aleph\.im\/api\/v0\/add/)
   assert.ok(calls.includes('https://api.aleph.im/api/v0/messages'))
 })
 
