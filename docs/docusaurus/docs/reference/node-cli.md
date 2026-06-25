@@ -171,8 +171,25 @@ Common optional environment:
 
 - `ALEPH_ROOTFS_VERSION`
 - `ALEPH_ROOTFS_DRIVER`
+- `ALEPH_ROOTFS_UPLOAD_DRIVER`
+  Rootfs image upload path. Defaults to `helia`, which imports the image into a
+  local public-IPFS Helia node, announces the CID, sends only an Aleph `STORE`
+  message for pinning, and verifies gateway availability with a byte-range
+  request. Use `api-fetch` or `api-curl` to force the older direct Aleph IPFS
+  API upload path.
 - `ALEPH_ROOTFS_SKIP_UPLOAD`
 - `ALEPH_ROOTFS_SKIP_BUILD`
+- `ALEPH_ROOTFS_HELIA_PROVIDER_KEEPALIVE_SECONDS`
+  Seconds to keep the local Helia provider online after Aleph accepts the
+  `STORE` message. GitHub automation defaults this to `300`; local CLI runs
+  default to `60`.
+- `ALEPH_ROOTFS_HELIA_PROVIDE_TIMEOUT_MS`
+- `ALEPH_ROOTFS_HELIA_BOOTSTRAP_DIAL_TIMEOUT_MS`
+- `ALEPH_ROOTFS_HELIA_BOOTSTRAP_MULTIADDRS`
+  Extra comma or whitespace-separated public IPFS bootstrap multiaddrs. The
+  default list already includes the verified Aleph IPFS peer
+  `/ip4/46.255.204.209/tcp/4001/p2p/12D3KooWHWNCn8t9NKQPBPZU61Fq6BoVw9XV37YsWTuMLwZXrEtj`
+  plus the public IPFS bootstrap nodes.
 - `ALEPH_ROOTFS_IPFS_ADD_URL`
 - `ALEPH_ROOTFS_ALEPH_API_HOST`
 - `ALEPH_ROOTFS_ORBITDB_RELAY_DIR`

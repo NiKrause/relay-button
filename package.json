@@ -15,6 +15,7 @@
   "pnpm": {
     "overrides": {
       "@babel/core": "^7.29.6",
+      "protons-runtime": "^7.0.0",
       "qs": "^6.15.2",
       "serialize-javascript": "^7.0.5",
       "ws": "^8.20.1"

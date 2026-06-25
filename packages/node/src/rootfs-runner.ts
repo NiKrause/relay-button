@@ -1,9 +1,26 @@
 import { pathToFileURL } from "node:url";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { Agent } from "undici";
+import { bitswap } from "@helia/block-brokers";
+import { libp2pRouting } from "@helia/routers";
+import { unixfs } from "@helia/unixfs";
+import { Helia } from "@helia/utils";
+import { bootstrap } from "@le-space/libp2p-bootstrap";
+import { noise } from "@le-space/libp2p-noise";
+import { identify } from "@le-space/libp2p-identify";
+import { kadDHT } from "@le-space/libp2p-kad-dht";
+import { ping } from "@le-space/libp2p-ping";
+import { tcp } from "@le-space/libp2p-tcp";
+import { yamux } from "@le-space/libp2p-yamux";
+import { webSockets } from "@le-space/libp2p-websockets";
+import { multiaddr } from "@multiformats/multiaddr";
+import { MemoryBlockstore } from "blockstore-core";
+import { MemoryDatastore } from "datastore-core";
+import { createLibp2p as createHeliaLibp2p } from "libp2p-helia";
 
 import {
   buildRootfs,
@@ -33,14 +50,32 @@ interface RootfsIpfsUploadResult {
   cid: string;
   responseText: string;
   sourceSizeBytes?: number;
+  cleanup?: () => Promise<void>;
 }
 
+type RootfsUploadDriver = 'helia' | 'api-fetch' | 'api-curl'
+
 interface RootfsUploadRuntimeOptions {
-  driver: 'fetch' | 'curl';
+  driver: RootfsUploadDriver;
   headersTimeoutMs: number;
   bodyTimeoutMs: number;
   connectTimeoutMs: number;
+  heliaProvideTimeoutMs: number;
+  heliaBootstrapDialTimeoutMs: number;
+  heliaProviderKeepaliveSeconds: number;
+  heliaBootstrapMultiaddrs: string[];
 }
+
+type RootfsHeliaNode = Helia<any>
+
+const DEFAULT_IPFS_BOOTSTRAP_MULTIADDRS = [
+  '/ip4/46.255.204.209/tcp/4001/p2p/12D3KooWHWNCn8t9NKQPBPZU61Fq6BoVw9XV37YsWTuMLwZXrEtj',
+  '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
+  '/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
+  '/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
+  '/dnsaddr/va1.bootstrap.libp2p.io/p2p/12D3KooWKnDdG3iXw9eTFijk3EWSunZcFi54Zka4wmtqtt6rPxc8',
+  '/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ',
+]
 
 function uniqueNonEmptyValues(values: readonly string[]): string[] {
   const seen = new Set<string>()
@@ -221,17 +256,49 @@ function positiveTimeoutMs(value: string | undefined, fallback: number): number 
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-function rootfsUploadRuntimeOptions(env: NodeJS.ProcessEnv = process.env): RootfsUploadRuntimeOptions {
-  const driver = optionalEnv('ALEPH_ROOTFS_UPLOAD_DRIVER', 'fetch', env).trim().toLowerCase()
-  if (driver !== 'fetch' && driver !== 'curl') {
-    throw new Error(`Unsupported ALEPH_ROOTFS_UPLOAD_DRIVER "${driver}". Expected "fetch" or "curl".`)
-  }
+function nonNegativeInteger(value: string | undefined, fallback: number): number {
+  const normalized = (value ?? '').trim()
+  if (!normalized) return fallback
+  const parsed = Number(normalized)
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback
+}
 
+function parseMultiaddrList(value: string | undefined): string[] {
+  return uniqueNonEmptyValues((value ?? '').split(/[\s,]+/u))
+}
+
+function parseRootfsUploadDriver(value: string | undefined): RootfsUploadDriver {
+  const normalized = (value ?? 'helia').trim().toLowerCase()
+  switch (normalized) {
+    case '':
+    case 'helia':
+      return 'helia'
+    case 'api-fetch':
+    case 'fetch':
+      return 'api-fetch'
+    case 'api-curl':
+    case 'curl':
+      return 'api-curl'
+    default:
+      throw new Error(
+        `Unsupported ALEPH_ROOTFS_UPLOAD_DRIVER "${normalized}". Expected "helia", "api-fetch", or "api-curl".`,
+      )
+  }
+}
+
+function rootfsUploadRuntimeOptions(env: NodeJS.ProcessEnv = process.env): RootfsUploadRuntimeOptions {
   return {
-    driver,
+    driver: parseRootfsUploadDriver(env.ALEPH_ROOTFS_UPLOAD_DRIVER),
     headersTimeoutMs: positiveTimeoutMs(env.ALEPH_ROOTFS_UPLOAD_HEADERS_TIMEOUT_MS, 15 * 60 * 1000),
     bodyTimeoutMs: positiveTimeoutMs(env.ALEPH_ROOTFS_UPLOAD_BODY_TIMEOUT_MS, 15 * 60 * 1000),
     connectTimeoutMs: positiveTimeoutMs(env.ALEPH_ROOTFS_UPLOAD_CONNECT_TIMEOUT_MS, 30 * 1000),
+    heliaProvideTimeoutMs: positiveTimeoutMs(env.ALEPH_ROOTFS_HELIA_PROVIDE_TIMEOUT_MS, 2 * 60 * 1000),
+    heliaBootstrapDialTimeoutMs: positiveTimeoutMs(env.ALEPH_ROOTFS_HELIA_BOOTSTRAP_DIAL_TIMEOUT_MS, 30 * 1000),
+    heliaProviderKeepaliveSeconds: nonNegativeInteger(env.ALEPH_ROOTFS_HELIA_PROVIDER_KEEPALIVE_SECONDS, 60),
+    heliaBootstrapMultiaddrs: parseMultiaddrList(
+      env.ALEPH_ROOTFS_HELIA_BOOTSTRAP_MULTIADDRS ??
+      env.ALEPH_ROOTFS_IPFS_BOOTSTRAP_MULTIADDRS,
+    ),
   }
 }
 
@@ -251,6 +318,159 @@ function describeUploadError(error: unknown): string {
     }
   }
   return details.join('; ')
+}
+
+async function sleep(seconds: number): Promise<void> {
+  if (seconds <= 0) return
+  await new Promise((resolve) => setTimeout(resolve, seconds * 1000))
+}
+
+async function createRootfsHeliaNode(extraBootstrapMultiaddrs: readonly string[]): Promise<RootfsHeliaNode> {
+  const datastore = new MemoryDatastore() as any
+  const blockstore = new MemoryBlockstore() as any
+  const bootstrapMultiaddrs = uniqueNonEmptyValues([
+    ...DEFAULT_IPFS_BOOTSTRAP_MULTIADDRS,
+    ...extraBootstrapMultiaddrs,
+  ])
+  const libp2p = await createHeliaLibp2p({
+    addresses: {
+      listen: [
+        '/ip4/0.0.0.0/tcp/0',
+        '/ip4/0.0.0.0/tcp/0/ws',
+      ],
+    },
+    datastore,
+    peerDiscovery: [
+      bootstrap({
+        list: bootstrapMultiaddrs,
+      }),
+    ],
+    transports: [
+      tcp(),
+      webSockets(),
+    ],
+    connectionEncrypters: [
+      noise(),
+    ],
+    streamMuxers: [
+      yamux(),
+    ],
+    connectionGater: {
+      denyDialMultiaddr: async () => false,
+    },
+    services: {
+      dht: kadDHT({
+        protocol: '/ipfs/kad/1.0.0',
+      }),
+      identify: identify(),
+      ping: ping(),
+    },
+    start: false,
+  })
+  const helia = new Helia({
+    libp2p,
+    datastore,
+    blockstore,
+    blockBrokers: [
+      bitswap(),
+    ],
+    routers: [
+      libp2pRouting(libp2p),
+    ],
+  }) as RootfsHeliaNode
+  await helia.start()
+  console.warn(
+    `Helia rootfs provider ${helia.libp2p.peerId.toString()} started with ${bootstrapMultiaddrs.length} bootstrap peers.`,
+  )
+  return helia
+}
+
+async function dialConfiguredHeliaBootstrapPeers(
+  helia: RootfsHeliaNode,
+  multiaddrs: readonly string[],
+  timeoutMs: number,
+): Promise<void> {
+  const attempts = multiaddrs.map(async (value) => {
+    const address = multiaddr(value)
+    await helia.libp2p.dial(address as any, {
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  })
+  const results = await Promise.allSettled(attempts)
+  for (const [index, result] of results.entries()) {
+    if (result.status === 'rejected') {
+      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason)
+      console.warn(`Helia bootstrap peer dial failed for ${multiaddrs[index]}: ${reason}`)
+    }
+  }
+}
+
+async function pinHeliaCid(helia: RootfsHeliaNode, cid: Parameters<RootfsHeliaNode['pins']['add']>[0]): Promise<void> {
+  for await (const pinnedCid of helia.pins.add(cid, {
+    metadata: {
+      source: 'relay-button-rootfs',
+    },
+  })) {
+    console.warn(`Helia pinned rootfs block ${pinnedCid.toString()}`)
+  }
+}
+
+async function uploadRootfsImageToIpfsWithHelia(
+  buildPlan: RootfsBuildPlan,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<RootfsIpfsUploadResult> {
+  const runtime = rootfsUploadRuntimeOptions(env)
+  const helia = await createRootfsHeliaNode(runtime.heliaBootstrapMultiaddrs)
+  let stopped = false
+  const stopHelia = async () => {
+    if (stopped) return
+    stopped = true
+    await helia.stop()
+  }
+
+  try {
+    if (runtime.heliaBootstrapMultiaddrs.length > 0) {
+      await dialConfiguredHeliaBootstrapPeers(
+        helia,
+        runtime.heliaBootstrapMultiaddrs,
+        runtime.heliaBootstrapDialTimeoutMs,
+      )
+    }
+
+    const fs = unixfs(helia)
+    const sourceSizeBytes = (await stat(buildPlan.imagePath)).size
+    const cid = await fs.addByteStream(createReadStream(buildPlan.imagePath), {
+      cidVersion: 1,
+      rawLeaves: true,
+    })
+    await pinHeliaCid(helia, cid)
+    await helia.routing.provide(cid, {
+      signal: AbortSignal.timeout(runtime.heliaProvideTimeoutMs),
+    })
+
+    const responseText = JSON.stringify({
+      Name: path.basename(buildPlan.imagePath),
+      Hash: cid.toString(),
+      Size: String(sourceSizeBytes),
+      Provider: 'helia',
+    })
+
+    return {
+      cid: cid.toString(),
+      responseText,
+      sourceSizeBytes,
+      cleanup: async () => {
+        await sleep(runtime.heliaProviderKeepaliveSeconds)
+        await stopHelia()
+      },
+    }
+  } catch (error) {
+    await stopHelia()
+    throw new Error(
+      `IPFS publication via Helia failed for ${buildPlan.imagePath}; provideTimeoutMs=${runtime.heliaProvideTimeoutMs}; bootstrapDialTimeoutMs=${runtime.heliaBootstrapDialTimeoutMs}; ${describeUploadError(error)}`,
+      { cause: error },
+    )
+  }
 }
 
 async function uploadRootfsImageToIpfsWithFetch(
@@ -380,9 +600,11 @@ async function uploadRootfsImageToIpfs(
 ): Promise<RootfsIpfsUploadResult> {
   const runtime = rootfsUploadRuntimeOptions(env)
   switch (runtime.driver) {
-    case 'fetch':
+    case 'helia':
+      return uploadRootfsImageToIpfsWithHelia(buildPlan, env)
+    case 'api-fetch':
       return uploadRootfsImageToIpfsWithFetch(buildPlan, env)
-    case 'curl':
+    case 'api-curl':
       return uploadRootfsImageToIpfsWithCurl(buildPlan)
   }
 }
@@ -598,16 +820,20 @@ export async function runRootfsMode(
       const upload = hooks.uploadRootfsImageToIpfs
         ? await hooks.uploadRootfsImageToIpfs(originalPlan)
         : await uploadRootfsImageToIpfs(originalPlan, env)
-      await waitForIpfsCidAvailable(originalPlan, upload.cid)
-      const pinned = await pinRootfsCidOnAleph(originalPlan, upload.cid, env)
+      try {
+        const pinned = await pinRootfsCidOnAleph(originalPlan, upload.cid, env)
+        await waitForIpfsCidAvailable(originalPlan, upload.cid)
 
-      const artifacts = publicationArtifacts(originalPlan)
-      await mkdir(originalPlan.outDir, { recursive: true })
-      await writeFile(artifacts.ipfsAddResponsePath, upload.responseText.endsWith('\n') ? upload.responseText : `${upload.responseText}\n`)
-      storeMessageContent = JSON.stringify({ item_hash: pinned.itemHash })
-      await writeFile(artifacts.storeMessagePath, `${storeMessageContent}\n`)
-      await writeFile(artifacts.storeMessageStderrPath, '')
-      ipfsAddResponseContent = upload.responseText
+        const artifacts = publicationArtifacts(originalPlan)
+        await mkdir(originalPlan.outDir, { recursive: true })
+        await writeFile(artifacts.ipfsAddResponsePath, upload.responseText.endsWith('\n') ? upload.responseText : `${upload.responseText}\n`)
+        storeMessageContent = JSON.stringify({ item_hash: pinned.itemHash })
+        await writeFile(artifacts.storeMessagePath, `${storeMessageContent}\n`)
+        await writeFile(artifacts.storeMessageStderrPath, '')
+        ipfsAddResponseContent = upload.responseText
+      } finally {
+        await upload.cleanup?.()
+      }
     }
 
     const finalized = finalizeRootfsBuildPipeline(originalPlan, {

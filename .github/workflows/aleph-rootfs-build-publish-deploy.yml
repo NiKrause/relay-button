@@ -42,6 +42,36 @@ on:
         required: false
         default: auto
         type: string
+      rootfs_upload_driver:
+        description: Rootfs image upload driver. helia adds to public IPFS locally and publishes only an Aleph STORE pin message.
+        required: false
+        default: helia
+        type: string
+      rootfs_skip_build:
+        description: Reuse an existing rootfs artifact from the workspace instead of rebuilding it
+        required: false
+        default: false
+        type: boolean
+      rootfs_helia_provider_keepalive_seconds:
+        description: Seconds to keep the Helia provider online after the Aleph STORE message is accepted
+        required: false
+        default: '300'
+        type: string
+      rootfs_helia_provide_timeout_ms:
+        description: Timeout for announcing the rootfs CID on the public IPFS DHT
+        required: false
+        default: '120000'
+        type: string
+      rootfs_helia_bootstrap_dial_timeout_ms:
+        description: Timeout for dialing public IPFS bootstrap peers before adding/providing the rootfs
+        required: false
+        default: '30000'
+        type: string
+      rootfs_helia_bootstrap_multiaddrs:
+        description: Optional comma or whitespace-separated extra IPFS bootstrap multiaddrs for the Helia publisher
+        required: false
+        default: ''
+        type: string
       vm_api_hosts:
         description: Comma-separated Aleph API hosts to try for rootfs STORE publication and VM deployment
         required: false
@@ -415,7 +445,13 @@ jobs:
           ALEPH_ROOTFS_ALEPH_API_HOSTS: ${{ inputs.vm_api_hosts }}
           ALEPH_ROOTFS_DRIVER: ${{ inputs.rootfs_driver }}
           ALEPH_ROOTFS_VERSION: ${{ inputs.rootfs_version }}
+          ALEPH_ROOTFS_UPLOAD_DRIVER: ${{ inputs.rootfs_upload_driver }}
+          ALEPH_ROOTFS_SKIP_BUILD: ${{ inputs.rootfs_skip_build }}
           ALEPH_ROOTFS_SKIP_UPLOAD: ${{ inputs.publish && 'false' || 'true' }}
+          ALEPH_ROOTFS_HELIA_PROVIDER_KEEPALIVE_SECONDS: ${{ inputs.rootfs_helia_provider_keepalive_seconds }}
+          ALEPH_ROOTFS_HELIA_PROVIDE_TIMEOUT_MS: ${{ inputs.rootfs_helia_provide_timeout_ms }}
+          ALEPH_ROOTFS_HELIA_BOOTSTRAP_DIAL_TIMEOUT_MS: ${{ inputs.rootfs_helia_bootstrap_dial_timeout_ms }}
+          ALEPH_ROOTFS_HELIA_BOOTSTRAP_MULTIADDRS: ${{ inputs.rootfs_helia_bootstrap_multiaddrs }}
         run: |
           if [[ "${{ inputs.publish }}" == "true" ]]; then
             if [[ -n "${{ secrets.ALEPH_PRIVATE_KEY }}" ]]; then

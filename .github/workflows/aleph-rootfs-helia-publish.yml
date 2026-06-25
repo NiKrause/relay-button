@@ -1,0 +1,83 @@
+name: Aleph Rootfs Helia Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Rootfs profile to build and publish
+        required: true
+        default: orbitdb-relay
+        type: choice
+        options:
+          - orbitdb-relay
+          - uc-go-peer
+          - ucan-store
+      publish:
+        description: Publish the rootfs image through Helia and Aleph STORE
+        required: true
+        default: true
+        type: boolean
+      deploy_vm:
+        description: Deploy a VM after publishing the rootfs
+        required: true
+        default: false
+        type: boolean
+      rootfs_contract_path:
+        description: Path to the rootfs contract in this repository
+        required: true
+        default: packages/rootfs/reference/orbitdb-relay/contract.json
+        type: string
+      rootfs_skip_build:
+        description: Reuse an existing rootfs artifact from the workspace
+        required: true
+        default: false
+        type: boolean
+      rootfs_helia_provider_keepalive_seconds:
+        description: Seconds to keep Helia online after Aleph accepts the STORE message
+        required: true
+        default: '300'
+        type: string
+      tooling_ref:
+        description: relay-button ref containing the shared tooling changes. Empty uses this workflow ref.
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  publish-rootfs:
+    uses: ./.github/workflows/aleph-rootfs-build-publish-deploy.yml
+    with:
+      profile: ${{ inputs.profile }}
+      publish: ${{ inputs.publish }}
+      deploy_vm: ${{ inputs.deploy_vm }}
+      rootfs_contract_path: ${{ inputs.rootfs_contract_path }}
+      rootfs_upload_driver: helia
+      rootfs_skip_build: ${{ inputs.rootfs_skip_build }}
+      rootfs_helia_provider_keepalive_seconds: ${{ inputs.rootfs_helia_provider_keepalive_seconds }}
+      tooling_repository: NiKrause/relay-button
+      tooling_ref: ${{ inputs.tooling_ref || github.ref_name }}
+    secrets: inherit
+
+  summarize:
+    runs-on: ubuntu-24.04
+    needs:
+      - publish-rootfs
+    if: always()
+    steps:
+      - name: Write summary
+        run: |
+          {
+            echo "## Aleph Rootfs Helia Publish"
+            echo
+            echo "- result: ${{ needs.publish-rootfs.result }}"
+            echo "- profile: ${{ inputs.profile }}"
+            echo "- rootfs cid: ${{ needs.publish-rootfs.outputs.rootfs_cid }}"
+            echo "- rootfs item hash: ${{ needs.publish-rootfs.outputs.rootfs_item_hash }}"
+            echo "- manifest gateway: ${{ needs.publish-rootfs.outputs.rootfs_manifest_gateway_url }}"
+            echo "- vm item hash: ${{ needs.publish-rootfs.outputs.vm_instance_item_hash }}"
+            echo "- vm status: ${{ needs.publish-rootfs.outputs.vm_status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
