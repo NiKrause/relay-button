@@ -43,9 +43,9 @@ on:
         default: auto
         type: string
       rootfs_upload_driver:
-        description: Rootfs image upload driver. helia adds to public IPFS locally and publishes only an Aleph STORE pin message.
+        description: Rootfs image upload driver. aleph-ipfs uploads through Aleph IPFS and publishes a credit-paid STORE pin.
         required: false
-        default: helia
+        default: aleph-ipfs
         type: string
       rootfs_skip_build:
         description: Reuse an existing rootfs artifact from the workspace instead of rebuilding it

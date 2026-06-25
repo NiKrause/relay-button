@@ -172,11 +172,14 @@ Common optional environment:
 - `ALEPH_ROOTFS_VERSION`
 - `ALEPH_ROOTFS_DRIVER`
 - `ALEPH_ROOTFS_UPLOAD_DRIVER`
-  Rootfs image upload path. Defaults to `helia`, which imports the image into a
-  local public-IPFS Helia node, announces the CID, sends only an Aleph `STORE`
-  message for pinning, and verifies gateway availability with a byte-range
-  request. Use `api-fetch` or `api-curl` to force the older direct Aleph IPFS
-  API upload path.
+  Rootfs image upload path. Defaults to `aleph-ipfs`, which streams the image
+  to Aleph's authenticated IPFS upload endpoint, then publishes an Aleph
+  `STORE` pin with `item_type=ipfs` and credit payment. Use `helia` to import
+  the image into a local public-IPFS Helia node, or `api-fetch` / `api-curl` to
+  force the older direct IPFS add endpoints.
+- `ALEPH_ROOTFS_STORE_PAYMENT_TYPE`
+  Payment type for the rootfs `STORE` pin. Defaults to `credit`; `credits` is
+  accepted as an alias. Use `hold` only for locked-stake pinning.
 - `ALEPH_ROOTFS_SKIP_UPLOAD`
 - `ALEPH_ROOTFS_SKIP_BUILD`
 - `ALEPH_ROOTFS_HELIA_PROVIDER_KEEPALIVE_SECONDS`

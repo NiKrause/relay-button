@@ -1,4 +1,4 @@
-name: Aleph Rootfs Helia Publish
+name: Aleph Rootfs IPFS Publish
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ on:
           - uc-go-peer
           - ucan-store
       publish:
-        description: Publish the rootfs image through Helia and Aleph STORE
+        description: Publish the rootfs image through Aleph IPFS and Aleph STORE
         required: true
         default: true
         type: boolean
@@ -43,7 +43,7 @@ on:
         default: false
         type: boolean
       rootfs_helia_provider_keepalive_seconds:
-        description: Seconds to keep Helia online after Aleph accepts the STORE message
+        description: Seconds to keep Helia online when rootfs_upload_driver is overridden to helia
         required: true
         default: '300'
         type: string
@@ -67,7 +67,7 @@ jobs:
       rootfs_contract_path: ${{ inputs.rootfs_contract_path }}
       project_repository: ${{ inputs.project_repository }}
       project_ref: ${{ inputs.project_ref }}
-      rootfs_upload_driver: helia
+      rootfs_upload_driver: aleph-ipfs
       rootfs_skip_build: ${{ inputs.rootfs_skip_build }}
       rootfs_helia_provider_keepalive_seconds: ${{ inputs.rootfs_helia_provider_keepalive_seconds }}
       tooling_repository: NiKrause/relay-button

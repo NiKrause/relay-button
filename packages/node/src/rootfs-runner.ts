@@ -53,7 +53,7 @@ interface RootfsIpfsUploadResult {
   cleanup?: () => Promise<void>;
 }
 
-type RootfsUploadDriver = 'helia' | 'api-fetch' | 'api-curl'
+type RootfsUploadDriver = 'aleph-ipfs' | 'helia' | 'api-fetch' | 'api-curl'
 
 interface RootfsUploadRuntimeOptions {
   driver: RootfsUploadDriver;
@@ -275,9 +275,13 @@ function parseMultiaddrList(value: string | undefined): string[] {
 }
 
 function parseRootfsUploadDriver(value: string | undefined): RootfsUploadDriver {
-  const normalized = (value ?? 'helia').trim().toLowerCase()
+  const normalized = (value ?? 'aleph-ipfs').trim().toLowerCase()
   switch (normalized) {
     case '':
+    case 'aleph-ipfs':
+    case 'aleph-api-ipfs':
+    case 'ipfs':
+      return 'aleph-ipfs'
     case 'helia':
       return 'helia'
     case 'api-fetch':
@@ -288,9 +292,16 @@ function parseRootfsUploadDriver(value: string | undefined): RootfsUploadDriver 
       return 'api-curl'
     default:
       throw new Error(
-        `Unsupported ALEPH_ROOTFS_UPLOAD_DRIVER "${normalized}". Expected "helia", "api-fetch", or "api-curl".`,
+        `Unsupported ALEPH_ROOTFS_UPLOAD_DRIVER "${normalized}". Expected "aleph-ipfs", "helia", "api-fetch", or "api-curl".`,
       )
   }
+}
+
+function rootfsStorePaymentType(env: NodeJS.ProcessEnv = process.env): 'credit' | 'hold' {
+  const normalized = optionalEnv('ALEPH_ROOTFS_STORE_PAYMENT_TYPE', 'credit', env).trim().toLowerCase()
+  if (normalized === 'credit' || normalized === 'credits') return 'credit'
+  if (normalized === 'hold') return 'hold'
+  throw new Error(`Unsupported ALEPH_ROOTFS_STORE_PAYMENT_TYPE "${normalized}". Expected "credit" or "hold".`)
 }
 
 function rootfsUploadRuntimeOptions(env: NodeJS.ProcessEnv = process.env): RootfsUploadRuntimeOptions {
@@ -541,6 +552,100 @@ async function uploadRootfsImageToIpfsWithFetch(
   }
 }
 
+async function uploadRootfsImageToIpfsWithAlephApi(
+  buildPlan: RootfsBuildPlan,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<RootfsIpfsUploadResult> {
+  const apiHosts = parseRootfsAlephApiHosts(buildPlan, env)
+  let lastError: unknown = null
+
+  for (const [index, apiHost] of apiHosts.entries()) {
+    const endpoint = `${apiHost.replace(/\/+$/u, '')}/api/v0/ipfs/add_file`
+    try {
+      if (apiHosts.length > 1) {
+        console.warn(`Aleph rootfs IPFS upload API host attempt ${index + 1}/${apiHosts.length}: ${apiHost}`)
+      }
+      const responseText = await new Promise<string>((resolve, reject) => {
+        const curl = spawn(
+          'curl',
+          [
+            '--fail',
+            '--silent',
+            '--show-error',
+            '-X',
+            'POST',
+            '-F',
+            `file=@${buildPlan.imagePath};type=application/octet-stream`,
+            endpoint,
+          ],
+          { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } },
+        )
+
+        let stdout = ''
+        let stderr = ''
+        curl.stdout.on('data', (chunk) => {
+          stdout += chunk.toString()
+        })
+        curl.stderr.on('data', (chunk) => {
+          stderr += chunk.toString()
+        })
+        curl.on('error', (error) => {
+          reject(error)
+        })
+        curl.on('close', (code) => {
+          if (code === 0) {
+            resolve(stdout)
+            return
+          }
+
+          const details = stderr.trim()
+          reject(new Error(details ? `Aleph IPFS upload failed: ${details}` : `curl failed with exit code ${code ?? 'unknown'}`))
+        })
+      })
+
+      const payload = JSON.parse(responseText.trim() || '{}') as {
+        Hash?: string;
+        hash?: string;
+        Size?: string | number;
+        size?: string | number;
+      }
+      const cid = (payload.Hash ?? payload.hash)?.trim()
+      if (!cid) {
+        throw new Error(`Aleph IPFS upload response did not include a hash: ${JSON.stringify(payload)}`)
+      }
+
+      const size = payload.Size ?? payload.size
+      let sourceSizeBytes: number | undefined
+      if (typeof size === 'number' && Number.isFinite(size) && size > 0) {
+        sourceSizeBytes = size
+      } else if (typeof size === 'string' && /^\d+$/u.test(size)) {
+        sourceSizeBytes = Number(size)
+      }
+
+      const normalizedResponseText = JSON.stringify({
+        ...payload,
+        Hash: cid,
+        Size: sourceSizeBytes !== undefined ? String(sourceSizeBytes) : undefined,
+      })
+
+      return { cid, responseText: normalizedResponseText, sourceSizeBytes }
+    } catch (error) {
+      lastError = error
+      if (index < apiHosts.length - 1) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.warn(
+          `Aleph rootfs IPFS upload API host ${apiHost} failed; retrying with ${apiHosts[index + 1]}. ${message}`,
+        )
+      }
+    }
+  }
+
+  const suffix = lastError instanceof Error ? lastError.message : String(lastError)
+  throw new Error(
+    `Aleph rootfs IPFS upload failed through all configured API hosts (${apiHosts.join(', ')}). Last error: ${suffix}`,
+  )
+}
+
 async function uploadRootfsImageToIpfsWithCurl(buildPlan: RootfsBuildPlan): Promise<RootfsIpfsUploadResult> {
   const responseText = await new Promise<string>((resolve, reject) => {
     const curl = spawn(
@@ -607,6 +712,8 @@ async function uploadRootfsImageToIpfs(
 ): Promise<RootfsIpfsUploadResult> {
   const runtime = rootfsUploadRuntimeOptions(env)
   switch (runtime.driver) {
+    case 'aleph-ipfs':
+      return uploadRootfsImageToIpfsWithAlephApi(buildPlan, env)
     case 'helia':
       return uploadRootfsImageToIpfsWithHelia(buildPlan, env)
     case 'api-fetch':
@@ -653,6 +760,9 @@ async function pinRootfsCidOnAleph(
     time: now,
     item_type: 'ipfs' as const,
     item_hash: cid,
+    payment: {
+      type: rootfsStorePaymentType(env),
+    },
     ...(ref ? { ref } : {}),
   }
   const itemContent = JSON.stringify(content)

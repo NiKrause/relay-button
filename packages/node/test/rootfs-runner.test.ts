@@ -330,6 +330,101 @@ test('runRootfsMode executes rootfs-publish and emits outputs through the direct
   assert.match(writes.join(''), /uc-go-peer-git-20260516-deadbee/)
 })
 
+test('runRootfsMode uploads rootfs through Aleph IPFS API and pins with credit payment', async () => {
+  const projectDir = await mkdtemp(join(tmpdir(), 'shared-rootfs-aleph-ipfs-project-'))
+  const { env, outputFile } = await createActionEnv('shared-rootfs-aleph-ipfs-', projectDir)
+  const binDir = await mkdtemp(join(tmpdir(), 'shared-rootfs-aleph-ipfs-bin-'))
+  const curlArgsPath = join(binDir, 'curl-args.txt')
+  await createFakeCommand(
+    binDir,
+    'curl',
+    'printf "%s\\n" "$@" > "$CURL_ARGS_FILE"\nprintf \'{"status":"success","hash":"bafyrootfs","name":"upload","size":987654321}\\n\'',
+  )
+
+  const originalFetch = globalThis.fetch
+  const calls: string[] = []
+
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    calls.push(url)
+    if (url === 'https://ipfs.aleph.cloud/ipfs/bafyrootfs') {
+      return new Response('', { status: 206 })
+    }
+    if (url === 'https://api.aleph.im/api/v0/messages') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { message?: { item_content?: string } }
+      const itemContent = JSON.parse(String(body.message?.item_content ?? '{}')) as {
+        item_type?: string;
+        item_hash?: string;
+        payment?: { type?: string };
+      }
+      assert.equal(itemContent.item_type, 'ipfs')
+      assert.equal(itemContent.item_hash, 'bafyrootfs')
+      assert.equal(itemContent.payment?.type, 'credit')
+      return new Response(JSON.stringify({ item_hash: 'store-item-hash' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url === 'https://api.aleph.im/api/v0/messages/store-item-hash') {
+      return new Response(JSON.stringify({ status: 'processed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    throw new Error(`Unexpected fetch call: ${url}`)
+  }) as typeof fetch
+
+  try {
+    await runRootfsMode({
+      ...env,
+      ALEPH_VM_MODE: 'rootfs-publish',
+      ALEPH_ROOTFS_VERSION: 'uc-go-peer-git-20260516-deadbee',
+      ALEPH_ROOTFS_SKIP_UPLOAD: 'false',
+      ALEPH_ROOTFS_UPLOAD_DRIVER: 'aleph-ipfs',
+      ALEPH_ROOTFS_ALEPH_API_HOSTS: 'https://api.aleph.im',
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+      CURL_ARGS_FILE: curlArgsPath,
+      PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    }, {
+      buildRootfs: async (buildPlan) => {
+        await mkdir(join(projectDir, 'go-peer/aleph/dist-rootfs'), { recursive: true })
+        await writeFile(buildPlan.imagePath, 'qcow2-binary')
+        return {
+          pipeline: {
+            buildPlan,
+            executionPlan: {
+              mode: 'docker',
+              reason: 'test',
+              referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+              runCommand: { command: '/bin/bash', args: ['build-rootfs.sh'] },
+            },
+            publicationArtifacts: {
+              ipfsAddResponsePath: '/tmp/ipfs-add-response.jsonl',
+              storeMessagePath: '/tmp/store-message.json',
+              storeMessageStderrPath: '/tmp/store-message.stderr.log',
+            },
+            manifestPaths: {
+              primaryPath: buildPlan.manifestPath,
+              copyTargetPath: buildPlan.latestManifestPath ?? undefined,
+              versionedTargetPath: buildPlan.versionedManifestPath ?? undefined,
+            },
+          },
+          executedCommands: [],
+        }
+      },
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  const outputs = await readFile(outputFile, 'utf8')
+  const curlArgs = await readFile(curlArgsPath, 'utf8')
+  assert.match(outputs, /rootfs_item_hash=store-item-hash/)
+  assert.match(outputs, /rootfs_cid=bafyrootfs/)
+  assert.match(curlArgs, /https:\/\/api\.aleph\.im\/api\/v0\/ipfs\/add_file/)
+  assert.ok(calls.includes('https://api.aleph.im/api/v0/messages'))
+})
+
 test('runRootfsMode retries transient Aleph message lookup failures during rootfs publish', async () => {
   const projectDir = await mkdtemp(join(tmpdir(), 'shared-rootfs-retry-project-'))
   const { env, outputFile } = await createActionEnv('shared-rootfs-retry-', projectDir)
