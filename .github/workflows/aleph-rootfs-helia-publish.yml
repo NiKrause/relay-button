@@ -25,7 +25,17 @@ on:
       rootfs_contract_path:
         description: Path to the rootfs contract in this repository
         required: true
-        default: packages/rootfs/reference/orbitdb-relay/contract.json
+        default: aleph/contract.json
+        type: string
+      project_repository:
+        description: Repository that contains the project being packaged
+        required: true
+        default: NiKrause/orbitdb-relay
+        type: string
+      project_ref:
+        description: Ref of the project repository to package
+        required: true
+        default: main
         type: string
       rootfs_skip_build:
         description: Reuse an existing rootfs artifact from the workspace
@@ -55,6 +65,8 @@ jobs:
       publish: ${{ inputs.publish }}
       deploy_vm: ${{ inputs.deploy_vm }}
       rootfs_contract_path: ${{ inputs.rootfs_contract_path }}
+      project_repository: ${{ inputs.project_repository }}
+      project_ref: ${{ inputs.project_ref }}
       rootfs_upload_driver: helia
       rootfs_skip_build: ${{ inputs.rootfs_skip_build }}
       rootfs_helia_provider_keepalive_seconds: ${{ inputs.rootfs_helia_provider_keepalive_seconds }}

@@ -182,6 +182,16 @@ on:
         required: false
         default: '0'
         type: string
+      project_repository:
+        description: Repository that contains the project being packaged. Defaults to the workflow caller repository.
+        required: false
+        default: ''
+        type: string
+      project_ref:
+        description: Ref of the project repository to checkout. Defaults to the workflow ref.
+        required: false
+        default: ''
+        type: string
       project_checkout_path:
         description: Checkout path for the caller repository
         required: false
@@ -338,6 +348,8 @@ jobs:
       - name: Checkout caller repository
         uses: actions/checkout@v6
         with:
+          repository: ${{ inputs.project_repository || github.repository }}
+          ref: ${{ inputs.project_ref || github.ref }}
           path: ${{ inputs.project_checkout_path }}
 
       - name: Checkout shared aleph tooling
