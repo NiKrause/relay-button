@@ -68,6 +68,13 @@ interface RootfsUploadRuntimeOptions {
 
 type RootfsHeliaNode = Helia<any>
 
+class TerminalAlephStorePublishError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TerminalAlephStorePublishError'
+  }
+}
+
 const DEFAULT_IPFS_BOOTSTRAP_MULTIADDRS = [
   '/ip4/46.255.204.209/tcp/4001/p2p/12D3KooWHWNCn8t9NKQPBPZU61Fq6BoVw9XV37YsWTuMLwZXrEtj',
   '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
@@ -677,7 +684,9 @@ async function pinRootfsCidOnAleph(
       })
       const status = normalizeBroadcastStatus(httpStatus, response?.message_status)
       if (status === 'rejected') {
-        throw new Error(`Aleph STORE pin was rejected: ${JSON.stringify(response?.details ?? response ?? {})}`)
+        throw new TerminalAlephStorePublishError(
+          `Aleph STORE pin was rejected: ${JSON.stringify(response?.details ?? response ?? {})}`,
+        )
       }
       const pinned = {
         itemHash: typeof response?.item_hash === 'string' ? response.item_hash : message.item_hash,
@@ -687,6 +696,9 @@ async function pinRootfsCidOnAleph(
       return pinned
     } catch (error) {
       lastError = error
+      if (error instanceof TerminalAlephStorePublishError) {
+        throw error
+      }
       if (index < apiHosts.length - 1) {
         const message = error instanceof Error ? error.message : String(error)
         console.warn(
@@ -712,7 +724,9 @@ async function waitForAlephMessageProcessed(buildPlan: RootfsBuildPlan, itemHash
       })
       if (result.status === 'processed') return
       if (result.status === 'rejected') {
-        throw new Error(result.rejectionReason ?? `Aleph STORE message ${itemHash} was rejected.`)
+        throw new TerminalAlephStorePublishError(
+          result.rejectionReason ?? `Aleph STORE message ${itemHash} was rejected.`,
+        )
       }
     } catch (error) {
       if (!isTransientMessageLookupError(error) || attempt >= buildPlan.alephMessageWaitAttempts) {
