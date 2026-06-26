@@ -378,6 +378,7 @@ test("ucan-store-configure serves proxy and custom service hostnames through Cad
   const caddy = await readFile(caddyFile, "utf8");
   assert.match(caddy, /reserved-proxy\.example\.2n6\.me, ucan-api\.nicokrause\.com/u);
   assert.match(caddy, /reverse_proxy 127\.0\.0\.1:8788/u);
+  assert.doesNotMatch(caddy, /auto_https disable_redirects/u);
   await assert.rejects(readFile(systemctlLog, "utf8"));
   assert.equal(await readFile(readyFile, "utf8"), "");
 });

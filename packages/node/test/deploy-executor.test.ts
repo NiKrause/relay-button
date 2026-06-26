@@ -394,6 +394,7 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
   const calls: string[] = []
   const configureBodies: string[] = []
   const postedMessages: string[] = []
+  const events: string[] = []
   let sleepCount = 0
 
   const result = await executeDeployPlan(
@@ -416,7 +417,7 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
       },
       instanceCustomDomain: 'https://upload.example.com',
       publishPortForwards: false,
-      verifyReachability: false
+      verifyReachability: true
     },
     {
       sender: '0x1234',
@@ -479,6 +480,7 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
         }
 
         if (String(url).includes('/configure')) {
+          events.push('configure')
           configureBodies.push(String(init?.body ?? ''))
           return jsonResponse({ status: 'configured' })
         }
@@ -507,12 +509,30 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
           return jsonResponse({ ok: true })
         }
 
+        if (String(url) === 'https://upload.example.com/.well-known/ucan-store.json') {
+          return jsonResponse({ status: 'ok' })
+        }
+
         if (String(url).includes('/api/v0/messages/') && !init?.method) {
           return jsonResponse({ status: 'processed', message: { type: 'STORE' } })
         }
 
         if (String(url).endsWith('/api/v0/messages') && init?.method === 'POST') {
-          postedMessages.push(String(init.body ?? ''))
+          const body = String(init.body ?? '')
+          postedMessages.push(body)
+          try {
+            const parsed = JSON.parse(body) as { message?: { type?: string; item_content?: string } }
+            if (parsed.message?.type === 'AGGREGATE') {
+              const itemContent = JSON.parse(parsed.message.item_content ?? '{}') as {
+                content?: Record<string, unknown>
+              }
+              if (itemContent.content?.['upload.example.com']) {
+                events.push('domain-aggregate')
+              }
+            }
+          } catch {
+            // Keep the test focused on deployment sequencing.
+          }
           return jsonResponse(
             {
               publication_status: { status: 'success' },
@@ -569,8 +589,22 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
   assert.ok(calls.some((entry) => entry.includes('/health')))
   assert.ok(calls.some((entry) => entry.includes('/configure')))
   assert.ok(calls.some((entry) => entry.includes('/metadata')))
+  assert.ok(calls.some((entry) => entry === 'GET https://upload.example.com/.well-known/ucan-store.json'))
   assert.ok(!calls.some((entry) => entry.includes('relay-bootstrap')))
   assert.equal(sleepCount, 0)
+  assert.ok(
+    events.indexOf('domain-aggregate') >= 0 &&
+      events.indexOf('domain-aggregate') < events.indexOf('configure')
+  )
+  assert.deepEqual(
+    result.verification?.checks?.['https:instance-custom-domain'],
+    {
+      ok: true,
+      url: 'https://upload.example.com/.well-known/ucan-store.json',
+      status: 200,
+      error: undefined
+    }
+  )
 
   const domainAggregate = postedMessages
     .map((body) => JSON.parse(body) as { message?: { type?: string; item_content?: string } })

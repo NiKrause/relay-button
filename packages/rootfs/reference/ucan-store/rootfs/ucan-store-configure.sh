@@ -108,10 +108,6 @@ write_caddyfile() {
   done
   mkdir -p "$(dirname "${CADDYFILE}")"
   cat > "${CADDYFILE}" <<EOF
-{
-  auto_https disable_redirects
-}
-
 ${site_label} {
   reverse_proxy 127.0.0.1:${PROXY_PORT}
 }

@@ -41,7 +41,7 @@ import type { DeployPlan } from "./deploy-plan.ts";
 import { deriveBootstrapPublisherPrivateKey } from "./bootstrap-publisher.ts";
 import { createPrivateKeyIdentity } from "./signer.ts";
 import { deriveLibp2pSecp256k1IdentityFromEvmKey } from "./relay-identity.ts";
-import { attachAlephDomain } from "./domain-link.ts";
+import { attachAlephDomain, normalizeDomainName } from "./domain-link.ts";
 
 export interface DeployExecutorDependencies {
   fetch?: typeof fetch;
@@ -212,6 +212,71 @@ async function logBalancePreflight(args: {
       }`,
     );
   }
+}
+
+async function waitForUcanStoreCustomDomainHttps(args: {
+  domain: string;
+  fetch: typeof fetch;
+  attempts: number;
+  delayMs: number;
+  timeoutMs: number;
+  sleep: (ms: number) => Promise<void>;
+  log: (message: string) => void;
+}): Promise<{
+  ok: boolean;
+  url: string;
+  status?: number;
+  error?: string;
+}> {
+  const domain = normalizeDomainName(args.domain);
+  const url = `https://${domain}/.well-known/ucan-store.json`;
+  let latest: {
+    ok: boolean;
+    url: string;
+    status?: number;
+    error?: string;
+  } = {
+    ok: false,
+    url,
+    error: "not attempted",
+  };
+
+  for (let attempt = 0; attempt < args.attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), args.timeoutMs);
+    try {
+      const response = await args.fetch(url, {
+        cache: "no-cache",
+        signal: controller.signal,
+      });
+      latest = {
+        ok: response.ok,
+        url,
+        status: response.status,
+        error: response.ok ? undefined : `HTTP ${response.status}`,
+      };
+    } catch (error) {
+      latest = {
+        ok: false,
+        url,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    args.log(
+      `[deploy] ucan-store custom domain HTTPS ${attempt + 1}/${args.attempts}: ok=${latest.ok} status=${latest.status ?? "-"} url=${url}${latest.error ? ` error=${latest.error}` : ""}`,
+    );
+    if (latest.ok) {
+      break;
+    }
+    if (attempt < args.attempts - 1) {
+      await args.sleep(args.delayMs);
+    }
+  }
+
+  return latest;
 }
 
 async function deploymentPlacementsForPlan(
@@ -531,6 +596,41 @@ export async function executeDeployPlan(
 
     let portForwarding: DeployOutputResult["portForwarding"] = null;
     let instanceDomain: DeployOutputResult["instanceDomain"] = null;
+    const attachInstanceCustomDomain = async () => {
+      if (!plan.instanceCustomDomain) {
+        return null;
+      }
+      if (instanceDomain) {
+        return instanceDomain;
+      }
+      log(
+        `[deploy] linking Aleph instance custom domain ${plan.instanceCustomDomain} to ${deployment.itemHash}`,
+      );
+      const attachedDomain = await attachAlephDomain({
+        sender: identity.address,
+        domain: plan.instanceCustomDomain,
+        itemHash: deployment.itemHash,
+        kind: "instance",
+        signer: identity.signer,
+        hasher,
+        fetch: fetchImpl,
+        apiHost: plan.apiHost,
+        updatedAt: Date.now() / 1000,
+      });
+      instanceDomain = {
+        domain: attachedDomain.domain,
+        url: `https://${attachedDomain.domain}`,
+        itemHash: attachedDomain.itemHash,
+        aggregateItemHash: attachedDomain.aggregateItemHash,
+        aggregateStatus: attachedDomain.aggregateStatus,
+        httpStatus: attachedDomain.httpStatus,
+      };
+      log(
+        `[deploy] linked Aleph instance custom domain ${attachedDomain.domain}: status=${attachedDomain.aggregateStatus} aggregate=${attachedDomain.aggregateItemHash}`,
+      );
+      return instanceDomain;
+    };
+
     if (plan.publishPortForwards && plan.requiredPorts.length > 0) {
       log(
         `[deploy] publishing required port-forward aggregate for ${deployment.itemHash}`,
@@ -694,6 +794,10 @@ export async function executeDeployPlan(
             `[deploy] proxy URL still inactive for ${deployment.itemHash}; configuring guest Caddy with reserved proxy URL and verifying it directly`,
           );
         }
+      }
+
+      if (plan.profile === "ucan-store" && plan.instanceCustomDomain) {
+        await attachInstanceCustomDomain();
       }
 
       if (setupPort && runtime.hostIpv4) {
@@ -996,6 +1100,66 @@ export async function executeDeployPlan(
           verification = latestVerification;
         }
 
+        if (
+          plan.profile === "ucan-store" &&
+          plan.instanceCustomDomain &&
+          plan.verifyReachability !== false
+        ) {
+          const customDomainVerification =
+            await waitForUcanStoreCustomDomainHttps({
+              domain: plan.instanceCustomDomain,
+              fetch: fetchImpl,
+              attempts: plan.verifyAttempts,
+              delayMs: plan.verifyDelayMs,
+              timeoutMs: plan.httpTimeoutMs,
+              sleep: sleepImpl,
+              log,
+            });
+          const existingVerification =
+            verification && typeof verification === "object"
+              ? verification
+              : { ok: true };
+          const existingChecks =
+            existingVerification.checks &&
+            typeof existingVerification.checks === "object"
+              ? (existingVerification.checks as Record<string, unknown>)
+              : {};
+          verification = {
+            ...existingVerification,
+            ok:
+              existingVerification.ok !== false &&
+              customDomainVerification.ok,
+            checks: {
+              ...existingChecks,
+              "https:instance-custom-domain": customDomainVerification,
+            },
+          };
+
+          if (!customDomainVerification.ok) {
+            log(
+              `[deploy] ucan-store custom domain HTTPS verification failed for ${deployment.itemHash}; cleaning up`,
+            );
+            await cleanupFailedDeployment({
+              sender: identity.address,
+              instanceItemHash: deployment.itemHash,
+              reason: `ucan-store custom domain HTTPS verification failed for ${customDomainVerification.url}`,
+              signer: identity.signer,
+              hasher,
+              fetch: fetchImpl,
+              channel: plan.channel,
+              apiHost: plan.apiHost,
+            });
+            lastError = new Error(
+              `ucan-store custom domain HTTPS verification failed for ${customDomainVerification.url}: ${
+                customDomainVerification.error ??
+                customDomainVerification.status ??
+                "not reachable"
+              }.`,
+            );
+            continue;
+          }
+        }
+
         const metadata = configuration?.metadata ?? null;
         if (
           publisherDerivedRelayIdentity &&
@@ -1176,33 +1340,7 @@ export async function executeDeployPlan(
         runtime: runtimeMetadata,
       });
 
-    if (plan.instanceCustomDomain) {
-      log(
-        `[deploy] linking Aleph instance custom domain ${plan.instanceCustomDomain} to ${deployment.itemHash}`,
-      );
-      const attachedDomain = await attachAlephDomain({
-        sender: identity.address,
-        domain: plan.instanceCustomDomain,
-        itemHash: deployment.itemHash,
-        kind: "instance",
-        signer: identity.signer,
-        hasher,
-        fetch: fetchImpl,
-        apiHost: plan.apiHost,
-        updatedAt: Date.now() / 1000,
-      });
-      instanceDomain = {
-        domain: attachedDomain.domain,
-        url: `https://${attachedDomain.domain}`,
-        itemHash: attachedDomain.itemHash,
-        aggregateItemHash: attachedDomain.aggregateItemHash,
-        aggregateStatus: attachedDomain.aggregateStatus,
-        httpStatus: attachedDomain.httpStatus,
-      };
-      log(
-        `[deploy] linked Aleph instance custom domain ${attachedDomain.domain}: status=${attachedDomain.aggregateStatus} aggregate=${attachedDomain.aggregateItemHash}`,
-      );
-    }
+    await attachInstanceCustomDomain();
 
     return {
       sender: identity.address,
