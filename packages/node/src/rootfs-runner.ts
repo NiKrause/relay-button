@@ -302,6 +302,10 @@ function nonNegativeInteger(value: string | undefined, fallback: number): number
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback
 }
 
+function timeoutSeconds(valueMs: number): string {
+  return String(Math.max(1, Math.ceil(valueMs / 1000)))
+}
+
 function parseMultiaddrList(value: string | undefined): string[] {
   return uniqueNonEmptyValues((value ?? '').split(/[\s,]+/u))
 }
@@ -685,6 +689,7 @@ async function uploadRootfsImageToIpfsWithCurl(
   buildPlan: RootfsBuildPlan,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RootfsIpfsUploadResult> {
+  const runtime = rootfsUploadRuntimeOptions(env)
   const ipfsAddUrls = parseRootfsIpfsAddUrls(buildPlan, env)
   let lastError: unknown = null
 
@@ -700,6 +705,10 @@ async function uploadRootfsImageToIpfsWithCurl(
             '--fail',
             '--silent',
             '--show-error',
+            '--connect-timeout',
+            timeoutSeconds(runtime.connectTimeoutMs),
+            '--max-time',
+            timeoutSeconds(runtime.bodyTimeoutMs),
             '-X',
             'POST',
             '-F',
