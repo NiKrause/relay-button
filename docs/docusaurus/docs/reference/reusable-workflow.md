@@ -105,28 +105,29 @@ At a high level, the workflow:
 5. validates input combinations
 6. installs system packages needed for RootFS builds
 7. runs `packages/node/src/rootfs-runner.ts`
-8. exports the generated manifest JSON
-9. uploads the resulting workspace artifacts
-10. resolves the uploaded manifest artifact URLs and prints them in the job summary
+8. validates published RootFS outputs when `publish=true`
+9. exports the generated manifest JSON
+10. publishes the generated manifest JSON to IPFS only when `publish=true`
+11. uploads the resulting workspace artifacts
+12. resolves the uploaded manifest artifact URLs and prints them in the job summary
 
 ## Manifest Artifact URLs
 
-When the workflow uploads the generated RootFS manifest bundle, it now also:
+When the workflow uploads the generated RootFS manifest bundle, it also:
 
-- publishes the manifest JSON itself to IPFS
-- exposes `rootfs_manifest_cid` as a reusable workflow output
-- exposes `rootfs_manifest_gateway_url` as a reusable workflow output
 - exposes `rootfs_manifest_artifact_url` as a reusable workflow output
 - exposes `rootfs_manifest_artifact_api_zip_url` as a reusable workflow output
-- prints the IPFS CID, the Aleph gateway URL, and the GitHub artifact links in the workflow summary together with the manifest paths
+- prints the GitHub artifact links in the workflow summary together with the manifest paths
 
-This gives consumer repos a concrete workflow-run URL they can surface in later
-steps, summaries, or follow-up deployment automation.
+When `publish=true`, the workflow also:
 
-Important limitation:
+- requires the RootFS publisher to emit both `rootfs_cid` and `rootfs_item_hash`
+- publishes the final manifest JSON itself to IPFS
+- exposes `rootfs_manifest_cid` as a reusable workflow output
+- exposes `rootfs_manifest_gateway_url` as a reusable workflow output
+- prints the RootFS CID, Aleph item hash, manifest IPFS CID, and Aleph gateway URL in the workflow summary
 
-- these URLs point to GitHub Actions artifact storage, not a public IPFS object,
-  so they follow GitHub artifact retention and access rules
+When `publish=false`, no RootFS CID or Aleph STORE item hash is expected, and the manifest JSON is kept as a GitHub Actions artifact only. Those artifact URLs follow GitHub artifact retention and access rules.
 
 ## Validation Rules
 

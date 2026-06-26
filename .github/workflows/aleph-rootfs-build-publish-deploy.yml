@@ -478,6 +478,20 @@ jobs:
           fi
           ALEPH_PRIVATE_KEY='${{ secrets.ALEPH_PRIVATE_KEY }}' node ./packages/node/src/rootfs-runner.ts
 
+      - name: Validate published rootfs outputs
+        if: ${{ inputs.publish }}
+        env:
+          ROOTFS_CID: ${{ steps.run_rootfs.outputs.rootfs_cid }}
+          ROOTFS_ITEM_HASH: ${{ steps.run_rootfs.outputs.rootfs_item_hash }}
+        shell: bash
+        run: |
+          if [[ -z "${ROOTFS_CID}" || -z "${ROOTFS_ITEM_HASH}" ]]; then
+            echo "publish=true but rootfs publication did not produce both rootfs_cid and rootfs_item_hash." >&2
+            echo "rootfs_cid=${ROOTFS_CID}" >&2
+            echo "rootfs_item_hash=${ROOTFS_ITEM_HASH}" >&2
+            exit 1
+          fi
+
       - name: Export rootfs manifest content
         id: export_manifest
         shell: bash
@@ -495,7 +509,7 @@ jobs:
 
       - name: Publish rootfs manifest JSON to IPFS
         id: publish_manifest
-        if: ${{ always() && steps.run_rootfs.outputs.rootfs_manifest_path != '' }}
+        if: ${{ inputs.publish && steps.run_rootfs.outputs.rootfs_manifest_path != '' }}
         env:
           MANIFEST_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_path }}
           IPFS_ADD_URLS: ${{ inputs.ipfs_add_urls }}
@@ -658,10 +672,18 @@ jobs:
             echo "## Rootfs Artifact URLs"
             echo
             echo "- Rootfs version: \`${ROOTFS_VERSION}\`"
-            echo "- Rootfs CID: \`${ROOTFS_CID}\`"
-            echo "- Rootfs Aleph item hash: \`${ROOTFS_ITEM_HASH}\`"
-            echo "- Manifest IPFS CID: \`${ROOTFS_MANIFEST_CID}\`"
-            echo "- Manifest Aleph IPFS gateway URL: ${ROOTFS_MANIFEST_GATEWAY_URL}"
+            if [[ -n "${ROOTFS_CID}" && -n "${ROOTFS_ITEM_HASH}" ]]; then
+              echo "- Rootfs CID: \`${ROOTFS_CID}\`"
+              echo "- Rootfs Aleph item hash: \`${ROOTFS_ITEM_HASH}\`"
+            else
+              echo "- Rootfs publication: skipped; no rootfs CID or Aleph item hash was produced."
+            fi
+            if [[ -n "${ROOTFS_MANIFEST_CID}" ]]; then
+              echo "- Manifest IPFS CID: \`${ROOTFS_MANIFEST_CID}\`"
+              echo "- Manifest Aleph IPFS gateway URL: ${ROOTFS_MANIFEST_GATEWAY_URL}"
+            else
+              echo "- Manifest IPFS CID: not published."
+            fi
             echo "- Manifest artifact page: ${artifact_page_url}"
             echo "- Manifest artifact ZIP API URL: \`${artifact_api_zip_url}\`"
             echo "- Manifest path inside runner workspace: \`${MANIFEST_PATH}\`"
@@ -672,7 +694,11 @@ jobs:
               echo "- Versioned copied manifest path: \`${MANIFEST_VERSIONED_PATH}\`"
             fi
             echo
-            echo "The manifest JSON is currently stored as a GitHub Actions artifact, not pinned to IPFS."
+            if [[ -n "${ROOTFS_MANIFEST_CID}" ]]; then
+              echo "The manifest JSON was published to IPFS and also uploaded as a GitHub Actions artifact."
+            else
+              echo "The manifest JSON was uploaded as a GitHub Actions artifact only because rootfs publishing was skipped."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy VM from published rootfs
@@ -753,6 +779,11 @@ jobs:
           VM_BROWSER_BOOTSTRAP_MULTIADDRS_JSON: ${{ steps.deploy_vm.outputs.browser_bootstrap_multiaddrs_json }}
           VM_PROTOCOL_PROBE_JSON: ${{ steps.protocol_probe.outputs.json }}
           RETENTION_RESULT_JSON: ${{ steps.retention.outputs.retention_result_json }}
+          ROOTFS_CID: ${{ steps.run_rootfs.outputs.rootfs_cid }}
+          ROOTFS_ITEM_HASH: ${{ steps.run_rootfs.outputs.rootfs_item_hash }}
+          ROOTFS_MANIFEST_CID: ${{ steps.publish_manifest.outputs.rootfs_manifest_cid }}
+          ROOTFS_MANIFEST_GATEWAY_URL: ${{ steps.publish_manifest.outputs.rootfs_manifest_gateway_url }}
+          ROOTFS_MANIFEST_ARTIFACT_URL: ${{ steps.resolve_artifact.outputs.rootfs_manifest_artifact_url }}
         run: |
           {
             echo "## ${{ inputs.profile }} rootfs deployment"
@@ -765,11 +796,19 @@ jobs:
             echo "- Deploy VM after publish: \`${{ inputs.deploy_vm }}\`"
             echo "- Enable proxy-backed Caddy/WSS: \`${{ inputs.enable_caddy_proxy }}\`"
             echo "- Keep successful deployments: \`${{ inputs.retain_successful_deployments }}\`"
-            echo "- Rootfs CID: \`${{ steps.run_rootfs.outputs.rootfs_cid }}\`"
-            echo "- Rootfs Aleph item hash: \`${{ steps.run_rootfs.outputs.rootfs_item_hash }}\`"
-            echo "- Manifest IPFS CID: \`${{ steps.publish_manifest.outputs.rootfs_manifest_cid }}\`"
-            echo "- Manifest gateway URL: ${{ steps.publish_manifest.outputs.rootfs_manifest_gateway_url }}"
-            echo "- Manifest artifact page: ${{ steps.resolve_artifact.outputs.rootfs_manifest_artifact_url }}"
+            if [[ -n "${ROOTFS_CID}" && -n "${ROOTFS_ITEM_HASH}" ]]; then
+              echo "- Rootfs CID: \`${ROOTFS_CID}\`"
+              echo "- Rootfs Aleph item hash: \`${ROOTFS_ITEM_HASH}\`"
+            else
+              echo "- Rootfs publication: skipped; no rootfs CID or Aleph item hash was produced."
+            fi
+            if [[ -n "${ROOTFS_MANIFEST_CID}" ]]; then
+              echo "- Manifest IPFS CID: \`${ROOTFS_MANIFEST_CID}\`"
+              echo "- Manifest gateway URL: ${ROOTFS_MANIFEST_GATEWAY_URL}"
+            else
+              echo "- Manifest IPFS CID: not published."
+            fi
+            echo "- Manifest artifact page: ${ROOTFS_MANIFEST_ARTIFACT_URL}"
             if [[ "${{ inputs.deploy_vm }}" != "true" ]]; then
               echo
               echo "### VM Deployment"
