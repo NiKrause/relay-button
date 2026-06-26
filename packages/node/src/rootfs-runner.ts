@@ -75,6 +75,13 @@ class TerminalAlephStorePublishError extends Error {
   }
 }
 
+class PendingAlephStorePublishError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PendingAlephStorePublishError'
+  }
+}
+
 const DEFAULT_IPFS_BOOTSTRAP_MULTIADDRS = [
   '/ip4/46.255.204.209/tcp/4001/p2p/12D3KooWHWNCn8t9NKQPBPZU61Fq6BoVw9XV37YsWTuMLwZXrEtj',
   '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
@@ -341,6 +348,10 @@ function rootfsStorePaymentType(env: NodeJS.ProcessEnv = process.env): 'credit' 
   if (normalized === 'credit' || normalized === 'credits') return 'credit'
   if (normalized === 'hold') return 'hold'
   throw new Error(`Unsupported ALEPH_ROOTFS_STORE_PAYMENT_TYPE "${normalized}". Expected "credit" or "hold".`)
+}
+
+function rootfsRequireProcessedStore(env: NodeJS.ProcessEnv = process.env): boolean {
+  return booleanEnv('ALEPH_ROOTFS_REQUIRE_PROCESSED_STORE', false, env)
 }
 
 function rootfsUploadRuntimeOptions(env: NodeJS.ProcessEnv = process.env): RootfsUploadRuntimeOptions {
@@ -879,7 +890,15 @@ async function pinRootfsCidOnAleph(
         itemHash: typeof response?.item_hash === 'string' ? response.item_hash : message.item_hash,
         apiHost,
       }
-      await waitForAlephMessageProcessed({ ...buildPlan, alephApiHost: apiHost }, pinned.itemHash)
+      try {
+        await waitForAlephMessageProcessed({ ...buildPlan, alephApiHost: apiHost }, pinned.itemHash)
+      } catch (error) {
+        if (error instanceof PendingAlephStorePublishError && !rootfsRequireProcessedStore(env)) {
+          console.warn(`${error.message}; continuing with accepted Aleph STORE item hash ${pinned.itemHash}.`)
+          return pinned
+        }
+        throw error
+      }
       return pinned
     } catch (error) {
       lastError = error
@@ -925,7 +944,7 @@ async function waitForAlephMessageProcessed(buildPlan: RootfsBuildPlan, itemHash
     }
   }
 
-  throw new Error(`Aleph STORE message ${itemHash} did not become processed in time.`)
+  throw new PendingAlephStorePublishError(`Aleph STORE message ${itemHash} did not become processed in time.`)
 }
 
 async function writeRootfsManifestOutputs(result: RootfsPublishExecutionResult): Promise<void> {
@@ -1022,8 +1041,8 @@ export async function runRootfsMode(
         ? await hooks.uploadRootfsImageToIpfs(originalPlan)
         : await uploadRootfsImageToIpfs(originalPlan, env)
       try {
-        const pinned = await pinRootfsCidOnAleph(originalPlan, upload.cid, env)
         await waitForIpfsCidAvailable(originalPlan, upload.cid, env)
+        const pinned = await pinRootfsCidOnAleph(originalPlan, upload.cid, env)
 
         const artifacts = publicationArtifacts(originalPlan)
         await mkdir(originalPlan.outDir, { recursive: true })

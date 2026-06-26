@@ -462,6 +462,7 @@ jobs:
           ALEPH_ROOTFS_UPLOAD_DRIVER: ${{ inputs.rootfs_upload_driver }}
           ALEPH_ROOTFS_SKIP_BUILD: ${{ inputs.rootfs_skip_build }}
           ALEPH_ROOTFS_SKIP_UPLOAD: ${{ inputs.publish && 'false' || 'true' }}
+          ALEPH_ROOTFS_REQUIRE_PROCESSED_STORE: ${{ inputs.deploy_vm && 'true' || 'false' }}
           ALEPH_ROOTFS_HELIA_PROVIDER_KEEPALIVE_SECONDS: ${{ inputs.rootfs_helia_provider_keepalive_seconds }}
           ALEPH_ROOTFS_HELIA_PROVIDE_TIMEOUT_MS: ${{ inputs.rootfs_helia_provide_timeout_ms }}
           ALEPH_ROOTFS_HELIA_BOOTSTRAP_DIAL_TIMEOUT_MS: ${{ inputs.rootfs_helia_bootstrap_dial_timeout_ms }}
