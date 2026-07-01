@@ -168,7 +168,8 @@ def json_dumps(payload: object) -> str:
 def sign_personal_message(private_key: str, payload: str) -> str:
     message = encode_defunct(text=payload)
     signed = Account.sign_message(message, private_key=private_key)
-    return signed.signature.hex()
+    signature = signed.signature.hex()
+    return signature if signature.startswith("0x") else f"0x{signature}"
 
 
 def address_from_private_key(private_key: str) -> str:
@@ -179,6 +180,21 @@ def signature_payload(chain: str, sender: str, message_type: str, item_hash: str
     return "\n".join([chain, sender, message_type, item_hash])
 
 
+def registration_id_instance_item_hash(registration_id: str | None) -> str | None:
+    normalized = str(registration_id or "").strip()
+    if not normalized:
+        return None
+
+    parts = [part.strip() for part in normalized.split(":") if part.strip()]
+    if not parts:
+        return None
+
+    candidate = parts[-1]
+    if len(candidate) == 64 and all(char in "0123456789abcdefABCDEF" for char in candidate):
+        return candidate
+    return None
+
+
 def relay_authorization_payload(
     owner_address: str,
     publisher_address: str,
@@ -186,6 +202,7 @@ def relay_authorization_payload(
     registration_id: str | None,
     profile: str | None,
     version: str | None,
+    instance_item_hash: str | None,
     issued_at: int,
 ) -> dict[str, object]:
     return {
@@ -195,7 +212,7 @@ def relay_authorization_payload(
         "registrationId": registration_id,
         "profile": profile,
         "version": version,
-        "instanceItemHash": None,
+        "instanceItemHash": instance_item_hash,
         "issuedAt": issued_at,
         "expiresAt": None,
     }
@@ -244,6 +261,7 @@ def load_owner_authorization(
         return None
 
     owner_address = address_from_private_key(owner_private_key)
+    instance_item_hash = registration_id_instance_item_hash(registration_id)
     payload = relay_authorization_payload(
         owner_address,
         publisher_address,
@@ -251,6 +269,7 @@ def load_owner_authorization(
         registration_id,
         profile,
         version,
+        instance_item_hash,
         issued_at,
     )
     return {
@@ -258,6 +277,28 @@ def load_owner_authorization(
         "payload": payload,
         "signature": sign_personal_message(owner_private_key, json_dumps(payload)),
     }
+
+
+def resolve_owner_address(
+    env_values: dict[str, str],
+    owner_authorization: dict[str, object] | None,
+) -> str | None:
+    if isinstance(owner_authorization, dict):
+        payload = owner_authorization.get("payload")
+        if isinstance(payload, dict):
+            owner_address = str(payload.get("ownerAddress") or "").strip()
+            if owner_address:
+                return owner_address
+
+    owner_address = env_values.get("ALEPH_BOOTSTRAP_OWNER_ADDRESS", "").strip()
+    if owner_address:
+        return owner_address
+
+    owner_private_key = env_values.get("ALEPH_BOOTSTRAP_OWNER_PRIVATE_KEY", "").strip()
+    if owner_private_key:
+        return address_from_private_key(owner_private_key)
+
+    return None
 
 
 def post_json(url: str, body: dict[str, object]) -> tuple[int, dict]:
@@ -293,9 +334,11 @@ def build_post_content(
     registration_id: str | None,
     profile: str | None,
     version: str | None,
+    owner_address: str | None,
     owner_authorization: dict[str, object] | None,
     relay_proof: dict[str, object],
     now_ms: int,
+    now_seconds: float,
     ref: str,
     post_type: str,
 ) -> dict[str, object]:
@@ -306,22 +349,20 @@ def build_post_content(
         "registrationId": registration_id,
         "profile": profile,
         "version": version,
-        "ownerAddress": (
-            owner_authorization.get("payload", {}).get("ownerAddress")
-            if isinstance(owner_authorization, dict)
-            else None
-        ),
+        "ownerAddress": owner_address,
         "publisherAddress": sender,
         "authorization": owner_authorization,
         "relayProof": relay_proof,
         "updatedAt": now_ms,
     }
+    if browser_multiaddrs:
+        content["browserMultiaddrs"] = browser_multiaddrs
     return {
         "type": post_type,
         "address": sender,
         "ref": ref,
         "content": content,
-        "time": now_ms,
+        "time": now_seconds,
     }
 
 
@@ -550,9 +591,7 @@ def main() -> None:
         version,
         now_ms,
     )
-    if owner_authorization is None:
-        print(json_dumps({"status": "skipped", "reason": "missing owner authorization"}))
-        return
+    owner_address = resolve_owner_address(env_values, owner_authorization)
 
     proof_payload = relay_proof_payload(
         peer_id,
@@ -576,9 +615,11 @@ def main() -> None:
         registration_id,
         profile,
         version,
+        owner_address,
         owner_authorization,
         relay_proof,
         now_ms,
+        now_seconds,
         ref,
         post_type,
     )
@@ -614,6 +655,7 @@ def main() -> None:
                 "publishedBrowserMultiaddrs": published_browser_multiaddrs or published_multiaddrs,
                 "forgottenHashes": previous_hashes,
                 "forgetStaleOlderThanSeconds": STALE_RECORD_MAX_AGE_SECONDS,
+                "ownerAuthorizationPresent": owner_authorization is not None,
                 "forgetResponse": forget_response[1] if forget_response else None,
                 "response": response,
             }

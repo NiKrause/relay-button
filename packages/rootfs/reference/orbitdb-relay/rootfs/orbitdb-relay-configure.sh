@@ -75,7 +75,13 @@ write_caddyfile() {
   auto_https disable_redirects
 }
 
-${hostname} {
+https://${hostname} {
+  tls {
+    issuer acme {
+      disable_http_challenge
+    }
+  }
+
   # Proxy the full orbitdb-relay HTTP API surface to the metrics/HTTP port.
   # Everything else falls through to the relay WebSocket backend for browser libp2p.
   handle /health {
@@ -202,11 +208,11 @@ fi
 if [ -n "${PROXY_HOSTNAME}" ]; then
   announce+=("/dns4/${PROXY_HOSTNAME}/tcp/443/tls/ws")
   announce+=("/dns6/${PROXY_HOSTNAME}/tcp/443/tls/ws")
-else
-  announce+=("/ip4/${PUBLIC_IPV4}/tcp/${WS_PORT}/ws")
-  if [ -n "${PUBLIC_IPV6}" ]; then
-    announce+=("/ip6/${PUBLIC_IPV6}/tcp/${WS_PORT}/ws")
-  fi
+fi
+
+announce+=("/ip4/${PUBLIC_IPV4}/tcp/${WS_PORT}/ws")
+if [ -n "${PUBLIC_IPV6}" ]; then
+  announce+=("/ip6/${PUBLIC_IPV6}/tcp/${WS_PORT}/ws")
 fi
 
 if [ -n "${WEBRTC_PORT}" ]; then
