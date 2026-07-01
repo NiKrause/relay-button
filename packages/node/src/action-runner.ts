@@ -115,37 +115,30 @@ async function executeDeployPlanWithApiHostFallback(args: {
   deployExecutor: typeof executeDeployPlan;
 }): Promise<DeployOutputResult> {
   const apiHosts = parseApiHostCandidates(args.plan.apiHost, args.env);
-  let lastError: unknown = null;
-
-  for (const [index, apiHost] of apiHosts.entries()) {
-    try {
-      if (apiHosts.length > 1) {
-        actionLog(
-          "notice",
-          `Aleph deploy API host attempt ${index + 1}/${apiHosts.length}: ${apiHost}`,
-        );
-      }
-      return await args.deployExecutor({
-        ...args.plan,
-        apiHost,
-      });
-    } catch (error) {
-      lastError = error;
-      if (index < apiHosts.length - 1) {
-        const message = error instanceof Error ? error.message : String(error);
-        actionLog(
-          "warning",
-          `Aleph deploy API host ${apiHost} failed; retrying with ${apiHosts[index + 1]}. ${message}`,
-        );
-      }
-    }
+  const apiHost = apiHosts[0] ?? normalizeApiHost(args.plan.apiHost);
+  if (apiHosts.length > 1) {
+    actionLog(
+      "notice",
+      `Aleph deploy API host attempt 1/${apiHosts.length}: ${apiHost}`,
+    );
   }
 
-  const suffix =
-    lastError instanceof Error ? lastError.message : String(lastError);
-  throw new Error(
-    `Aleph deploy failed through all configured API hosts (${apiHosts.join(", ")}). Last error: ${suffix}`,
-  );
+  try {
+    return await args.deployExecutor({
+      ...args.plan,
+      apiHost,
+    });
+  } catch (error) {
+    if (apiHosts.length > 1) {
+      const skippedHosts = apiHosts.slice(1).join(", ");
+      const message = error instanceof Error ? error.message : String(error);
+      actionLog(
+        "warning",
+        `Aleph deploy API host ${apiHost} failed; not retrying deploy on ${skippedHosts} because deploy mode may already have created an INSTANCE. ${message}`,
+      );
+    }
+    throw error;
+  }
 }
 
 export function buildScaffoldDeployResult(

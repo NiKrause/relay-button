@@ -106,7 +106,7 @@ write_caddyfile() {
     if [ -n "${site_label}" ]; then
       site_label+=", "
     fi
-    site_label+="http://${hostnames[${index}]}, https://${hostnames[${index}]}"
+    site_label+="https://${hostnames[${index}]}"
   done
   mkdir -p "$(dirname "${CADDYFILE}")"
   cat > "${CADDYFILE}" <<EOF
@@ -117,7 +117,7 @@ write_caddyfile() {
 ${site_label} {
   tls {
     issuer acme {
-      disable_tlsalpn_challenge
+      disable_http_challenge
     }
   }
 
