@@ -151,6 +151,10 @@ inputs:
     description: Verify mapped TCP ports and the HTTPS proxy after guest configuration
     required: false
     default: 'true'
+  preserve_failed_deployment:
+    description: Leave a failed INSTANCE message in Aleph for remote debugging instead of broadcasting cleanup FORGET messages
+    required: false
+    default: 'false'
   publish_port_forwards:
     description: Publish the shared required-port aggregate after broadcasting the INSTANCE message
     required: false
@@ -362,6 +366,7 @@ runs:
         ALEPH_VM_ENABLE_CADDY_PROXY: ${{ inputs.enable_caddy_proxy }}
         ALEPH_VM_AUTO_CONFIGURE: ${{ inputs.auto_configure }}
         ALEPH_VM_VERIFY_REACHABILITY: ${{ inputs.verify_reachability }}
+        ALEPH_VM_PRESERVE_FAILED_DEPLOYMENT: ${{ inputs.preserve_failed_deployment }}
         ALEPH_VM_PUBLISH_PORT_FORWARDS: ${{ inputs.publish_port_forwards }}
         ALEPH_VM_REQUIRED_PORTS_JSON: ${{ inputs.required_ports_json }}
         ALEPH_VM_UCAN_STORE_BOOTSTRAP_MODE: ${{ inputs.ucan_store_bootstrap_mode }}

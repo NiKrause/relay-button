@@ -80,6 +80,21 @@ type DeploymentPlacementCandidate =
       crns: CrnRecord[];
     };
 
+async function cleanupFailedDeploymentForPlan(
+  plan: DeployPlan,
+  log: (message: string) => void,
+  args: Parameters<typeof cleanupFailedDeployment>[0],
+): Promise<void> {
+  if (plan.preserveFailedDeployment) {
+    log(
+      `[deploy] preserving failed deployment ${args.instanceItemHash} for debugging; cleanup skipped: ${args.reason}`,
+    );
+    return;
+  }
+
+  await cleanupFailedDeployment(args);
+}
+
 function defaultHasher(payload: string): string {
   return createHash("sha256").update(payload).digest("hex");
 }
@@ -594,7 +609,7 @@ export async function executeDeployPlan(
       log(
         `[deploy] deployment ${deployment.itemHash} via ${placementLabel} did not become processed; cleaning up`,
       );
-      await cleanupFailedDeployment({
+      await cleanupFailedDeploymentForPlan(plan, log, {
         sender: identity.address,
         instanceItemHash: deployment.itemHash,
         reason: `Deployment message stayed ${inspection.status}`,
@@ -736,7 +751,7 @@ export async function executeDeployPlan(
       log(
         `[deploy] processed deployment ${deployment.itemHash} never exposed usable runtime networking via ${placementLabel}; cleaning up`,
       );
-      await cleanupFailedDeployment({
+      await cleanupFailedDeploymentForPlan(plan, log, {
         sender: identity.address,
         instanceItemHash: deployment.itemHash,
         reason: `Processed deployment never exposed runtime networking${runtime?.diagnostics?.state ? ` (${runtime.diagnostics.state})` : ""}`,
@@ -842,7 +857,7 @@ export async function executeDeployPlan(
           log(
             `[deploy] setup endpoint never became reachable; cleaning up ${deployment.itemHash}`,
           );
-          await cleanupFailedDeployment({
+          await cleanupFailedDeploymentForPlan(plan, log, {
             sender: identity.address,
             instanceItemHash: deployment.itemHash,
             reason: "Temporary setup endpoint never became reachable",
@@ -866,7 +881,7 @@ export async function executeDeployPlan(
             log(
               `[deploy] orbitdb relay runtime is missing required mapped ports; cleaning up ${deployment.itemHash}`,
             );
-            await cleanupFailedDeployment({
+            await cleanupFailedDeploymentForPlan(plan, log, {
               sender: identity.address,
               instanceItemHash: deployment.itemHash,
               reason: "OrbitDB relay runtime missing mapped TCP/WS ports",
@@ -889,7 +904,7 @@ export async function executeDeployPlan(
           log(
             `[deploy] ucan-store runtime is missing a proxy URL; cleaning up ${deployment.itemHash}`,
           );
-          await cleanupFailedDeployment({
+          await cleanupFailedDeploymentForPlan(plan, log, {
             sender: identity.address,
             instanceItemHash: deployment.itemHash,
             reason: "ucan-store runtime missing proxy URL",
@@ -1159,7 +1174,7 @@ export async function executeDeployPlan(
             log(
               `[deploy] ucan-store custom domain HTTPS verification failed for ${deployment.itemHash}; cleaning up`,
             );
-            await cleanupFailedDeployment({
+            await cleanupFailedDeploymentForPlan(plan, log, {
               sender: identity.address,
               instanceItemHash: deployment.itemHash,
               reason: `ucan-store custom domain HTTPS verification failed for ${customDomainVerification.url}`,
@@ -1189,7 +1204,7 @@ export async function executeDeployPlan(
           log(
             `[deploy] guest peerId ${metadata.peer_id} did not match preseeded publisher-derived peerId ${publisherDerivedRelayIdentity.peerId}; cleaning up`,
           );
-          await cleanupFailedDeployment({
+          await cleanupFailedDeploymentForPlan(plan, log, {
             sender: identity.address,
             instanceItemHash: deployment.itemHash,
             reason: "Relay peerId did not match the publisher-derived libp2p identity",

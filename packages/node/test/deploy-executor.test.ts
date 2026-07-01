@@ -46,6 +46,7 @@ const DEPLOY_PLAN: DeployPlan = {
   enableCaddyProxy: true,
   autoConfigure: true,
   verifyReachability: true,
+  preserveFailedDeployment: false,
   requiredPorts: [{ port: 22, tcp: true, udp: false, purpose: 'SSH' }],
   publishPortForwards: true
 }
@@ -976,6 +977,72 @@ test('executeDeployPlan retries on the next CRN when a processed deployment neve
 
   const instanceBodies = postedBodies.filter((body) => body.includes('"type":"INSTANCE"'))
   assert.equal(instanceBodies.length, 2)
+})
+
+test('executeDeployPlan can preserve a failed deployment for debugging', async () => {
+  const postedBodies: string[] = []
+  const logs: string[] = []
+
+  await assert.rejects(
+    executeDeployPlan(
+      {
+        ...DEPLOY_PLAN,
+        crnHash: '',
+        maxCrnAttempts: 1,
+        publishPortForwards: false,
+        autoConfigure: false,
+        verifyReachability: false,
+        preserveFailedDeployment: true
+      },
+      {
+        sender: '0x1234',
+        signer: async () => '0xsigned',
+        hasher: (() => {
+          let count = 0
+          return () => `hash-debug-${++count}`
+        })(),
+        sleep: async () => undefined,
+        log: (message) => logs.push(message),
+        tcpProbe: async () => ({ ok: true }),
+        fetch: async (url, init) => {
+          if (String(url).includes('crns-list.aleph.sh')) {
+            return jsonResponse({
+              crns: [
+                { hash: 'crn-a', name: 'CRN A', address: 'https://crn-a.example.com', score: 10, country_code: 'DE' }
+              ]
+            })
+          }
+
+          if (String(url).includes('/api/v0/messages') && init?.method === 'POST') {
+            postedBodies.push(String(init.body ?? ''))
+            return jsonResponse({ message_status: 'pending' }, 202)
+          }
+
+          if (String(url).includes('/api/v0/messages/hash-debug-1') && !init?.method) {
+            return jsonResponse({ status: 'processed', details: {} })
+          }
+
+          if (String(url).includes('/v2/about/executions/list')) {
+            return jsonResponse({
+              'hash-debug-1': {
+                networking: {
+                  host_ipv4: null,
+                  mapped_ports: {}
+                }
+              }
+            })
+          }
+
+          return jsonResponse({ status: 'processed', message: { type: 'STORE' } })
+        }
+      }
+    ),
+    /did not expose runtime networking/
+  )
+
+  const forgetBodies = postedBodies.filter((body) => body.includes('"type":"FORGET"'))
+  assert.equal(forgetBodies.length, 0)
+  assert.ok(logs.some((entry) => entry.includes('preserving failed deployment hash-debug-1 for debugging')))
 })
 
 test('executeDeployPlan retries on the next CRN when a proxy-backed deployment exposes only ULA guest IPv6', async () => {

@@ -61,6 +61,7 @@ export interface DeployPlan {
   enableCaddyProxy: boolean;
   autoConfigure: boolean;
   verifyReachability: boolean;
+  preserveFailedDeployment: boolean;
   requiredPorts: RootfsRequiredPortForward[];
   publishPortForwards: boolean;
 }
@@ -315,6 +316,11 @@ export function parseDeployPlan(
     enableCaddyProxy: booleanEnv("ALEPH_VM_ENABLE_CADDY_PROXY", false, env),
     autoConfigure: booleanEnv("ALEPH_VM_AUTO_CONFIGURE", true, env),
     verifyReachability: booleanEnv("ALEPH_VM_VERIFY_REACHABILITY", true, env),
+    preserveFailedDeployment: booleanEnv(
+      "ALEPH_VM_PRESERVE_FAILED_DEPLOYMENT",
+      false,
+      env,
+    ),
     requiredPorts,
     publishPortForwards: booleanEnv(
       "ALEPH_VM_PUBLISH_PORT_FORWARDS",
