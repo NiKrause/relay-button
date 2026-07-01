@@ -396,6 +396,7 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
   const postedMessages: string[] = []
   const events: string[] = []
   let sleepCount = 0
+  let customDomainAttempts = 0
 
   const result = await executeDeployPlan(
     {
@@ -510,6 +511,10 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
         }
 
         if (String(url) === 'https://upload.example.com/.well-known/ucan-store.json') {
+          customDomainAttempts += 1
+          if (customDomainAttempts < 4) {
+            return jsonResponse({ status: 'warming' }, 503)
+          }
           return jsonResponse({ status: 'ok' })
         }
 
@@ -591,7 +596,8 @@ test('executeDeployPlan configures ucan-store guests without relay bootstrap pub
   assert.ok(calls.some((entry) => entry.includes('/metadata')))
   assert.ok(calls.some((entry) => entry === 'GET https://upload.example.com/.well-known/ucan-store.json'))
   assert.ok(!calls.some((entry) => entry.includes('relay-bootstrap')))
-  assert.equal(sleepCount, 0)
+  assert.equal(customDomainAttempts, 4)
+  assert.equal(sleepCount, 3)
   assert.ok(
     events.indexOf('domain-aggregate') >= 0 &&
       events.indexOf('domain-aggregate') < events.indexOf('configure')

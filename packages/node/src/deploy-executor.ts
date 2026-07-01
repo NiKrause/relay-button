@@ -43,6 +43,8 @@ import { createPrivateKeyIdentity } from "./signer.ts";
 import { deriveLibp2pSecp256k1IdentityFromEvmKey } from "./relay-identity.ts";
 import { attachAlephDomain, normalizeDomainName } from "./domain-link.ts";
 
+const UCAN_STORE_CUSTOM_DOMAIN_MIN_ATTEMPTS = 120;
+
 export interface DeployExecutorDependencies {
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
@@ -238,6 +240,10 @@ async function waitForUcanStoreCustomDomainHttps(args: {
   status?: number;
   error?: string;
 }> {
+  const attempts = Math.max(
+    args.attempts,
+    UCAN_STORE_CUSTOM_DOMAIN_MIN_ATTEMPTS,
+  );
   const domain = normalizeDomainName(args.domain);
   const url = `https://${domain}/.well-known/ucan-store.json`;
   let latest: {
@@ -251,7 +257,7 @@ async function waitForUcanStoreCustomDomainHttps(args: {
     error: "not attempted",
   };
 
-  for (let attempt = 0; attempt < args.attempts; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), args.timeoutMs);
     try {
@@ -276,12 +282,12 @@ async function waitForUcanStoreCustomDomainHttps(args: {
     }
 
     args.log(
-      `[deploy] ucan-store custom domain HTTPS ${attempt + 1}/${args.attempts}: ok=${latest.ok} status=${latest.status ?? "-"} url=${url}${latest.error ? ` error=${latest.error}` : ""}`,
+      `[deploy] ucan-store custom domain HTTPS ${attempt + 1}/${attempts}: ok=${latest.ok} status=${latest.status ?? "-"} url=${url}${latest.error ? ` error=${latest.error}` : ""}`,
     );
     if (latest.ok) {
       break;
     }
-    if (attempt < args.attempts - 1) {
+    if (attempt < attempts - 1) {
       await args.sleep(args.delayMs);
     }
   }
