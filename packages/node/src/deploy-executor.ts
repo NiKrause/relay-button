@@ -82,6 +82,16 @@ function defaultHasher(payload: string): string {
   return createHash("sha256").update(payload).digest("hex");
 }
 
+function normalizeOrigin(value: string | null | undefined): string | null {
+  const trimmed = String(value ?? "").trim().replace(/\/+$/u, "");
+  return trimmed ? trimmed : null;
+}
+
+function originForDomain(domain: string): string | null {
+  const normalized = normalizeDomainName(domain);
+  return normalized ? `https://${normalized}` : null;
+}
+
 async function defaultTcpProbe(
   host: string,
   port: number,
@@ -912,6 +922,11 @@ export async function executeDeployPlan(
                 signer: bootstrapOwnerIdentity.signer,
               })
             : undefined;
+        const ucanStoreProxyUrl = runtime.proxyUrl ?? proxyUrl ?? null;
+        const ucanStorePublicOrigin =
+          normalizeOrigin(plan.ucanStoreBootstrapPackage?.serviceOrigin) ??
+          originForDomain(plan.instanceCustomDomain) ??
+          normalizeOrigin(ucanStoreProxyUrl);
         const configureResult =
           isOrbitdbRelayProfile
             ? await configureOrbitdbRelaySetup({
@@ -949,13 +964,12 @@ export async function executeDeployPlan(
                   hostIpv4: runtime.hostIpv4,
                   publicIpv6: runtime.ipv6,
                   setupPort,
-                  proxyUrl: runtime.proxyUrl ?? proxyUrl ?? null,
-                  webauthnOrigin: runtime.proxyUrl ?? proxyUrl ?? null,
+                  proxyUrl: ucanStoreProxyUrl,
+                  webauthnOrigin: ucanStorePublicOrigin,
                   serviceDid:
                     plan.ucanStoreBootstrapPackage?.serviceDid ?? null,
-                  serviceOrigin:
-                    plan.ucanStoreBootstrapPackage?.serviceOrigin ?? null,
-                  publicStorageOrigin: runtime.proxyUrl ?? proxyUrl ?? null,
+                  serviceOrigin: ucanStorePublicOrigin,
+                  publicStorageOrigin: ucanStorePublicOrigin,
                   adminDid: plan.adminDid ?? null,
                   adminApiToken: plan.ucanStoreAdminApiToken ?? null,
                   bootstrapPackage: plan.ucanStoreBootstrapPackage ?? null,

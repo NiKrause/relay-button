@@ -328,8 +328,8 @@ test("ucan-store-configure preserves explicit custom service identity without pr
   assert.equal(await readFile(readyFile, "utf8"), "");
 });
 
-test("ucan-store-configure serves proxy and custom service hostnames through Caddy", async (t) => {
-  const tempDir = await makeTempDir("ucan-store-configure-dual-caddy-");
+test("ucan-store-configure serves the custom service hostname through Caddy", async (t) => {
+  const tempDir = await makeTempDir("ucan-store-configure-service-caddy-");
   t.after(async () => {
     await rm(tempDir, { recursive: true, force: true });
   });
@@ -350,8 +350,6 @@ test("ucan-store-configure serves proxy and custom service hostnames through Cad
       "203.0.113.20",
       "--proxy-hostname",
       "reserved-proxy.example.2n6.me",
-      "--service-did",
-      "did:web:ucan-api.nicokrause.com",
       "--service-origin",
       "https://ucan-api.nicokrause.com/",
       "--admin-did",
@@ -376,9 +374,11 @@ test("ucan-store-configure serves proxy and custom service hostnames through Cad
   assert.equal(envValue(rawEnv, "UCAN_STORE_PUBLIC_STORAGE_ORIGIN"), "https://ucan-api.nicokrause.com");
 
   const caddy = await readFile(caddyFile, "utf8");
-  assert.match(caddy, /reserved-proxy\.example\.2n6\.me, ucan-api\.nicokrause\.com/u);
+  assert.match(caddy, /http:\/\/ucan-api\.nicokrause\.com, https:\/\/ucan-api\.nicokrause\.com/u);
+  assert.doesNotMatch(caddy, /reserved-proxy\.example\.2n6\.me/u);
   assert.match(caddy, /reverse_proxy 127\.0\.0\.1:8788/u);
-  assert.doesNotMatch(caddy, /auto_https disable_redirects/u);
+  assert.match(caddy, /auto_https disable_redirects/u);
+  assert.match(caddy, /disable_tlsalpn_challenge/u);
   await assert.rejects(readFile(systemctlLog, "utf8"));
   assert.equal(await readFile(readyFile, "utf8"), "");
 });

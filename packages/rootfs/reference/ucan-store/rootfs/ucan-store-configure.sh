@@ -100,15 +100,27 @@ write_caddyfile() {
     return 0
   fi
 
-  local site_label
+  local site_label=""
   local index
-  site_label="${hostnames[0]}"
-  for ((index = 1; index < ${#hostnames[@]}; index++)); do
-    site_label+=", ${hostnames[${index}]}"
+  for ((index = 0; index < ${#hostnames[@]}; index++)); do
+    if [ -n "${site_label}" ]; then
+      site_label+=", "
+    fi
+    site_label+="http://${hostnames[${index}]}, https://${hostnames[${index}]}"
   done
   mkdir -p "$(dirname "${CADDYFILE}")"
   cat > "${CADDYFILE}" <<EOF
+{
+  auto_https disable_redirects
+}
+
 ${site_label} {
+  tls {
+    issuer acme {
+      disable_tlsalpn_challenge
+    }
+  }
+
   reverse_proxy 127.0.0.1:${PROXY_PORT}
 }
 EOF
@@ -295,14 +307,18 @@ if [ -n "${WEBAUTHN_ORIGIN}" ]; then
 fi
 write_env_var "WEBAUTHN_ORIGIN_FALLBACKS" "${WEBAUTHN_ORIGIN_FALLBACKS}"
 
-if [ -z "${SERVICE_DID}" ] && [ -n "${PROXY_HOSTNAME}" ]; then
-  SERVICE_DID="$(derive_service_did_from_hostname "${PROXY_HOSTNAME}")"
-fi
-
 if [ -z "${SERVICE_ORIGIN}" ] && [ -n "${PROXY_HOSTNAME}" ]; then
   SERVICE_ORIGIN="https://${PROXY_HOSTNAME}"
 fi
 SERVICE_HOSTNAME="$(derive_hostname_from_origin "${SERVICE_ORIGIN}")"
+
+if [ -z "${SERVICE_DID}" ]; then
+  if [ -n "${SERVICE_HOSTNAME}" ]; then
+    SERVICE_DID="$(derive_service_did_from_hostname "${SERVICE_HOSTNAME}")"
+  elif [ -n "${PROXY_HOSTNAME}" ]; then
+    SERVICE_DID="$(derive_service_did_from_hostname "${PROXY_HOSTNAME}")"
+  fi
+fi
 
 write_env_var "UCAN_STORE_SERVICE_DID" "${SERVICE_DID}"
 write_env_var "UCAN_STORE_SERVICE_HOSTNAME" "${SERVICE_HOSTNAME}"
@@ -319,7 +335,7 @@ if [ -n "${SERVICE_ORIGIN}" ]; then
 fi
 
 if [ -n "${PROXY_HOSTNAME}" ]; then
-  write_caddyfile "${PROXY_HOSTNAME}" "${SERVICE_HOSTNAME}"
+  write_caddyfile "${SERVICE_HOSTNAME:-${PROXY_HOSTNAME}}"
 fi
 
 touch "${READY_FILE}"
