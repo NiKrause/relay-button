@@ -75,10 +75,10 @@ write_caddyfile() {
   auto_https disable_redirects
 }
 
-https://${hostname} {
+http://${hostname}, https://${hostname} {
   tls {
     issuer acme {
-      disable_http_challenge
+      disable_tlsalpn_challenge
     }
   }
 
