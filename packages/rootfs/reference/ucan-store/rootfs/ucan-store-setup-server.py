@@ -12,6 +12,8 @@ ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/ucan-store")
 READY_FILE = os.environ.get("READY_FILE", "/etc/default/ucan-store.ready")
 SERVICE_NAME = os.environ.get("SERVICE_NAME", "ucan-store.service")
 BOOTSTRAP_SERVICE = os.environ.get("BOOTSTRAP_SERVICE", "ucan-store-bootstrap.service")
+CADDY_SERVICE = os.environ.get("CADDY_SERVICE", "caddy.service")
+CADDYFILE = os.environ.get("CADDYFILE", "/etc/caddy/Caddyfile")
 CONFIGURE_SCRIPT = "/usr/local/sbin/ucan-store-configure.sh"
 DESCRIBE_SCRIPT = "/usr/local/sbin/ucan-store-describe.py"
 METADATA_FILE = os.environ.get("METADATA_FILE", "/run/ucan-store-setup-metadata.json")
@@ -49,6 +51,18 @@ def _generate_metadata_files() -> None:
 
 
 def _stop_bootstrap_service() -> None:
+    if os.path.exists(CADDYFILE):
+        subprocess.run(
+            [
+                "systemd-run",
+                "--unit=ucan-store-caddy-after-bootstrap",
+                "--on-active=3",
+                "/bin/systemctl",
+                "restart",
+                CADDY_SERVICE,
+            ],
+            check=False,
+        )
     subprocess.run(["systemctl", "stop", BOOTSTRAP_SERVICE], check=False)
 
 

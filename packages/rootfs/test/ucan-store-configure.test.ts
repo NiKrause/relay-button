@@ -375,11 +375,11 @@ test("ucan-store-configure serves the custom service hostname through Caddy", as
 
   const caddy = await readFile(caddyFile, "utf8");
   assert.match(caddy, /https:\/\/ucan-api\.nicokrause\.com/u);
-  assert.doesNotMatch(caddy, /http:\/\/ucan-api\.nicokrause\.com/u);
+  assert.match(caddy, /http:\/\/ucan-api\.nicokrause\.com/u);
   assert.doesNotMatch(caddy, /reserved-proxy\.example\.2n6\.me/u);
   assert.match(caddy, /reverse_proxy 127\.0\.0\.1:8788/u);
   assert.match(caddy, /auto_https disable_redirects/u);
-  assert.match(caddy, /disable_http_challenge/u);
+  assert.match(caddy, /disable_tlsalpn_challenge/u);
   await assert.rejects(readFile(systemctlLog, "utf8"));
   assert.equal(await readFile(readyFile, "utf8"), "");
 });
@@ -511,5 +511,8 @@ test("ucan-store-configure re-verifies bootstrap inputs against runtime DID and 
   const systemctlCalls = await readFile(systemctlLog, "utf8");
   assert.match(systemctlCalls, /^daemon-reload$/mu);
   assert.match(systemctlCalls, /^restart ucan-store\.service$/mu);
-  assert.match(systemctlCalls, /^restart caddy\.service$/mu);
+  assert.match(systemctlCalls, /^enable caddy\.service$/mu);
+  assert.match(systemctlCalls, /^is-active --quiet ucan-store-bootstrap\.service$/mu);
+  assert.match(systemctlCalls, /^reset-failed caddy\.service$/mu);
+  assert.doesNotMatch(systemctlCalls, /^restart caddy\.service$/mu);
 });

@@ -8,6 +8,7 @@ BOOTSTRAP_VALIDATOR="${BOOTSTRAP_VALIDATOR:-/usr/local/sbin/ucan_store_bootstrap
 BOOTSTRAP_CRYPTO_VERIFIER="${BOOTSTRAP_CRYPTO_VERIFIER:-/usr/local/sbin/ucan-store-bootstrap-verify.mjs}"
 BOOTSTRAP_VERIFICATION_FILE="${BOOTSTRAP_VERIFICATION_FILE:-/etc/ucan-store/bootstrap-verification.json}"
 SERVICE_NAME="${SERVICE_NAME:-ucan-store.service}"
+BOOTSTRAP_SERVICE="${BOOTSTRAP_SERVICE:-ucan-store-bootstrap.service}"
 CADDY_SERVICE="${CADDY_SERVICE:-caddy.service}"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 SERVICE_PORT="${SERVICE_PORT:-8787}"
@@ -106,7 +107,7 @@ write_caddyfile() {
     if [ -n "${site_label}" ]; then
       site_label+=", "
     fi
-    site_label+="https://${hostnames[${index}]}"
+    site_label+="http://${hostnames[${index}]}, https://${hostnames[${index}]}"
   done
   mkdir -p "$(dirname "${CADDYFILE}")"
   cat > "${CADDYFILE}" <<EOF
@@ -117,7 +118,7 @@ write_caddyfile() {
 ${site_label} {
   tls {
     issuer acme {
-      disable_http_challenge
+      disable_tlsalpn_challenge
     }
   }
 
@@ -344,7 +345,12 @@ if [ "${START_SERVICE}" = "1" ]; then
   systemctl daemon-reload
   systemctl restart "${SERVICE_NAME}"
   if [ -n "${PROXY_HOSTNAME}" ]; then
-    systemctl restart "${CADDY_SERVICE}"
+    systemctl enable "${CADDY_SERVICE}" >/dev/null 2>&1 || true
+    if systemctl is-active --quiet "${BOOTSTRAP_SERVICE}"; then
+      systemctl reset-failed "${CADDY_SERVICE}" >/dev/null 2>&1 || true
+    else
+      systemctl restart "${CADDY_SERVICE}"
+    fi
   fi
 
   PROBED_SERVICE_DID="$(probe_service_did)"
