@@ -151,6 +151,13 @@ Current profile behavior:
     publisher key `B`
   - when publisher key `B` is supplied, the relay `peerId` comes from the
     same underlying key material as the Aleph publisher identity
+  - keeps libp2p AutoTLS enabled by default; the guest first advertises direct
+    plain websocket candidates, then the AutoTLS refresh service appends
+    `*.libp2p.direct` secure websocket addresses after the relay exposes its
+    serving zone
+  - when Aleph reserves a `2n6` proxy hostname, Caddy only serves that hostname
+    and uses HTTP-01 certificate validation, leaving libp2p AutoTLS to manage
+    the direct secure websocket hostnames
   - when publisher key `B` is not supplied, it falls back to the older
     self-generated Ed25519 relay identity
   - in that fallback mode, owner authorization is still written back into the

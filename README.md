@@ -236,8 +236,9 @@ Canonical real integrations currently include:
   - especially the Aleph workflow integration proposed in PR `#344`
 - `aleph-libp2p-relay`
   - especially `relay-deployer-pwa` as the browser/PWA integration reference
-  - including the OrbitDB relay RootFS path where a single public Caddy-backed
-    hostname serves HTTPS helper endpoints and secure libp2p WSS transport
+  - including the OrbitDB relay RootFS path where the Caddy-backed `2n6`
+    hostname serves HTTPS helper endpoints while direct libp2p AutoTLS WSS
+    addresses are advertised on `*.libp2p.direct`
 
 ## Publishing And Setup
 

@@ -128,7 +128,18 @@ Two implementation changes matter most here:
    older second configure pass is only a fallback path now
 
 This direct guest-configure path also keeps the new runtime checks for rootfs
-visibility retries, CRN fallback, and proxy activation before guest setup.
+visibility retries, CRN fallback, and proxy activation before guest setup. The
+proxy hostname and libp2p AutoTLS hostname are intentionally separate:
+
+- Caddy owns only the reserved `2n6` hostname on ports `80` and `443`; it uses
+  HTTP-01 by disabling TLS-ALPN challenge handling, so Caddy does not compete
+  with the relay's libp2p AutoTLS listener.
+- `orbitdb-relay` keeps AutoTLS enabled by default and the guest refresh helper
+  later appends the discovered `*.libp2p.direct` secure websocket addresses to
+  `VITE_APPEND_ANNOUNCE`.
+- The initial announce set still includes the public plain websocket port so
+  libp2p AutoTLS can observe the externally reachable listener before the
+  secure websocket addresses are known.
 
 ```mermaid
 sequenceDiagram
@@ -145,8 +156,8 @@ sequenceDiagram
   Note right of Deploy: Shared Node executor that signs deployment messages,<br/>selects CRNs, configures the guest, and publishes bootstrap records.
   Note right of Aleph: Accepts INSTANCE, AGGREGATE, POST, and FORGET messages;<br/>also exposes deployment processing and 2n6 state.
   Note right of CRN: Selected compute node that exposes the VM execution map<br/>and mapped ports used by the setup endpoint.
-  Note right of Guest: Temporary HTTP setup service on port 80.<br/>It writes env files, Caddy config, and relay identity material.
-  Note right of Relay: Long-running orbitdb-relay service plus refresh timer<br/>that republishes current relay metadata after startup.
+  Note right of Guest: Temporary HTTP setup service on port 80.<br/>It writes env files, Caddy HTTP-01 config, and relay identity material.
+  Note right of Relay: Long-running orbitdb-relay service, AutoTLS refresh,<br/>and bootstrap refresh timer after startup.
   Note right of Registry: Bootstrap POST registry containing relay proof,<br/>owner authorization, and current public multiaddrs.
 
   Operator->>Deploy: deploy published orbitdb-relay rootfs
@@ -169,7 +180,10 @@ sequenceDiagram
     Deploy->>Deploy: precompute owner authorization for registrationId
     Note over Deploy,Guest: The owner authorization now rides in the first /configure call.<br/>The older no_start follow-up is only a fallback path.
     Deploy->>Guest: POST /configure with TCP/WS/metrics ports, proxy hostname, publisher key, libp2p identity, owner authorization
-    Guest->>Relay: write runtime env, seed RELAY_PRIV_KEY, enable Caddy / AutoTLS, start relay
+    Guest->>Relay: write runtime env with proxy WSS + plain WS announce candidates
+    Guest->>Relay: seed RELAY_PRIV_KEY, keep AutoTLS enabled, start relay
+    Guest->>Guest: write Caddy 2n6 vhost using HTTP-01 and restart Caddy
+    Relay->>Relay: discover AutoTLS serving zone and append libp2p.direct WSS addrs
     Relay-->>Guest: peerId + public multiaddrs
     Deploy->>Guest: poll /metadata until peerId + public multiaddrs are ready
     Deploy->>Guest: run reachability verification
