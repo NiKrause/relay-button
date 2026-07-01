@@ -376,10 +376,12 @@ test("ucan-store-configure serves the custom service hostname through Caddy", as
   const caddy = await readFile(caddyFile, "utf8");
   assert.match(caddy, /https:\/\/ucan-api\.nicokrause\.com/u);
   assert.match(caddy, /http:\/\/ucan-api\.nicokrause\.com/u);
-  assert.doesNotMatch(caddy, /reserved-proxy\.example\.2n6\.me/u);
+  assert.match(caddy, /https:\/\/reserved-proxy\.example\.2n6\.me/u);
+  assert.match(caddy, /http:\/\/reserved-proxy\.example\.2n6\.me/u);
   assert.match(caddy, /reverse_proxy 127\.0\.0\.1:8788/u);
   assert.match(caddy, /auto_https disable_redirects/u);
   assert.match(caddy, /disable_tlsalpn_challenge/u);
+  assert.match(caddy, /tls internal/u);
   await assert.rejects(readFile(systemctlLog, "utf8"));
   assert.equal(await readFile(readyFile, "utf8"), "");
 });

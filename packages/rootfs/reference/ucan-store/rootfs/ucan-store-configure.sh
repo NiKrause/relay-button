@@ -76,10 +76,19 @@ PY
 }
 
 write_caddyfile() {
+  local service_hostname="${1:-}"
+  local proxy_hostname="${2:-}"
+  local primary_hostname="${service_hostname}"
   local hostnames=()
   local hostname
   local known
-  for hostname in "$@"; do
+
+  if [ -z "${primary_hostname}" ]; then
+    primary_hostname="${proxy_hostname}"
+    proxy_hostname=""
+  fi
+
+  for hostname in "${primary_hostname}" "${proxy_hostname}"; do
     if [ -z "${hostname}" ]; then
       continue
     fi
@@ -101,13 +110,13 @@ write_caddyfile() {
     return 0
   fi
 
-  local site_label=""
+  local http_site_label=""
   local index
   for ((index = 0; index < ${#hostnames[@]}; index++)); do
-    if [ -n "${site_label}" ]; then
-      site_label+=", "
+    if [ -n "${http_site_label}" ]; then
+      http_site_label+=", "
     fi
-    site_label+="http://${hostnames[${index}]}, https://${hostnames[${index}]}"
+    http_site_label+="http://${hostnames[${index}]}"
   done
   mkdir -p "$(dirname "${CADDYFILE}")"
   cat > "${CADDYFILE}" <<EOF
@@ -115,7 +124,11 @@ write_caddyfile() {
   auto_https disable_redirects
 }
 
-${site_label} {
+${http_site_label} {
+  reverse_proxy 127.0.0.1:${PROXY_PORT}
+}
+
+https://${primary_hostname} {
   tls {
     issuer acme {
       disable_tlsalpn_challenge
@@ -125,6 +138,17 @@ ${site_label} {
   reverse_proxy 127.0.0.1:${PROXY_PORT}
 }
 EOF
+
+  if [ -n "${proxy_hostname}" ] && [ "${proxy_hostname}" != "${primary_hostname}" ]; then
+    cat >> "${CADDYFILE}" <<EOF
+
+https://${proxy_hostname} {
+  tls internal
+
+  reverse_proxy 127.0.0.1:${PROXY_PORT}
+}
+EOF
+  fi
 }
 
 derive_hostname_from_origin() {
@@ -336,7 +360,7 @@ if [ -n "${SERVICE_ORIGIN}" ]; then
 fi
 
 if [ -n "${PROXY_HOSTNAME}" ]; then
-  write_caddyfile "${SERVICE_HOSTNAME:-${PROXY_HOSTNAME}}"
+  write_caddyfile "${SERVICE_HOSTNAME:-}" "${PROXY_HOSTNAME}"
 fi
 
 touch "${READY_FILE}"
