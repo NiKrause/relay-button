@@ -13,9 +13,9 @@ on:
           - uc-go-peer
           - ucan-store
       publish:
-        description: Publish the rootfs image through Aleph IPFS and Aleph STORE
+        description: Optionally publish the rootfs image through Aleph IPFS and Aleph STORE. The rootfs artifact is always uploaded.
         required: true
-        default: true
+        default: false
         type: boolean
       deploy_vm:
         description: Deploy a VM after publishing the rootfs
@@ -89,6 +89,7 @@ jobs:
             echo "- profile: ${{ inputs.profile }}"
             echo "- rootfs cid: ${{ needs.publish-rootfs.outputs.rootfs_cid }}"
             echo "- rootfs item hash: ${{ needs.publish-rootfs.outputs.rootfs_item_hash }}"
+            echo "- rootfs artifact: ${{ needs.publish-rootfs.outputs.rootfs_artifact_url }}"
             echo "- manifest gateway: ${{ needs.publish-rootfs.outputs.rootfs_manifest_gateway_url }}"
             echo "- vm item hash: ${{ needs.publish-rootfs.outputs.vm_instance_item_hash }}"
             echo "- vm status: ${{ needs.publish-rootfs.outputs.vm_status }}"

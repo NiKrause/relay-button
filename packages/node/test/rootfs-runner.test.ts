@@ -330,6 +330,66 @@ test('runRootfsMode executes rootfs-publish and emits outputs through the direct
   assert.match(writes.join(''), /uc-go-peer-git-20260516-deadbee/)
 })
 
+test('runRootfsMode can build an artifact-ready rootfs while skipping Aleph IPFS upload', async () => {
+  const projectDir = await mkdtemp(join(tmpdir(), 'shared-rootfs-artifact-only-project-'))
+  const { env, outputFile, summaryFile } = await createActionEnv('shared-rootfs-artifact-only-', projectDir)
+  const writes: string[] = []
+  const imagePathSeen: string[] = []
+
+  await runRootfsMode({
+    ...env,
+    ALEPH_VM_MODE: 'rootfs-publish',
+    ALEPH_ROOTFS_VERSION: 'uc-go-peer-git-20260516-deadbee',
+    ALEPH_ROOTFS_SKIP_UPLOAD: 'true',
+  }, {
+    stdout: (text) => writes.push(text),
+    buildRootfs: async (buildPlan) => {
+      await mkdir(join(projectDir, 'go-peer/aleph/dist-rootfs'), { recursive: true })
+      await writeFile(buildPlan.imagePath, 'qcow2-binary')
+      imagePathSeen.push(buildPlan.imagePath)
+      return {
+        pipeline: {
+          buildPlan,
+          executionPlan: {
+            mode: 'docker',
+            reason: 'test',
+            referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+            runCommand: { command: '/bin/bash', args: ['build-rootfs.sh'] },
+          },
+          publicationArtifacts: {
+            ipfsAddResponsePath: '/tmp/ipfs-add-response.jsonl',
+            storeMessagePath: '/tmp/store-message.json',
+            storeMessageStderrPath: '/tmp/store-message.stderr.log',
+          },
+          manifestPaths: {
+            primaryPath: buildPlan.manifestPath,
+            copyTargetPath: buildPlan.latestManifestPath ?? undefined,
+            versionedTargetPath: buildPlan.versionedManifestPath ?? undefined,
+          },
+        },
+        executedCommands: [],
+      }
+    },
+    uploadRootfsImageToIpfs: async () => {
+      throw new Error('Aleph IPFS upload should be skipped')
+    },
+  })
+
+  const outputs = await readFile(outputFile, 'utf8')
+  const summary = await readFile(summaryFile, 'utf8')
+  const stdout = writes.join('')
+
+  assert.equal(imagePathSeen.length, 1)
+  assert.match(outputs, /rootfs_version=uc-go-peer-git-20260516-deadbee/)
+  assert.match(outputs, /rootfs_manifest_path=/)
+  assert.match(outputs, /rootfs_image_path=/)
+  assert.doesNotMatch(outputs, /rootfs_cid=/)
+  assert.doesNotMatch(outputs, /rootfs_item_hash=/)
+  assert.match(summary, /Published CID: ``/)
+  assert.match(summary, /Aleph item hash: ``/)
+  assert.match(stdout, /uc-go-peer-git-20260516-deadbee/)
+})
+
 test('runRootfsMode uploads rootfs through IPFS add endpoint and pins with credit payment', async () => {
   const projectDir = await mkdtemp(join(tmpdir(), 'shared-rootfs-aleph-ipfs-project-'))
   const { env, outputFile } = await createActionEnv('shared-rootfs-aleph-ipfs-', projectDir)

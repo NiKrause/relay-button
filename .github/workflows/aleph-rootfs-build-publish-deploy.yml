@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       publish:
-        description: Whether to publish the built rootfs
+        description: Optionally publish the built rootfs image through Aleph IPFS and Aleph STORE. GitHub artifacts are always uploaded when a rootfs is built.
         required: false
         default: false
         type: boolean
@@ -43,7 +43,7 @@ on:
         default: auto
         type: string
       rootfs_upload_driver:
-        description: Rootfs image upload driver. aleph-ipfs uploads through IPFS add endpoints and publishes a credit-paid Aleph STORE pin.
+        description: Optional Aleph IPFS rootfs upload driver used only when publish=true. aleph-ipfs uploads through IPFS add endpoints and publishes a credit-paid Aleph STORE pin.
         required: false
         default: aleph-ipfs
         type: string
@@ -253,6 +253,12 @@ on:
       rootfs_source_size_bytes:
         description: Source image size reported by the IPFS add endpoint
         value: ${{ jobs.build-rootfs.outputs.rootfs_source_size_bytes }}
+      rootfs_artifact_url:
+        description: GitHub artifact page URL for the uploaded rootfs image and manifest bundle
+        value: ${{ jobs.build-rootfs.outputs.rootfs_artifact_url }}
+      rootfs_artifact_api_zip_url:
+        description: GitHub API ZIP URL for the uploaded rootfs image and manifest bundle
+        value: ${{ jobs.build-rootfs.outputs.rootfs_artifact_api_zip_url }}
       rootfs_manifest_cid:
         description: Published IPFS CID for the uploaded rootfs manifest JSON
         value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_cid }}
@@ -260,10 +266,10 @@ on:
         description: Aleph IPFS gateway URL for the uploaded rootfs manifest JSON
         value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_gateway_url }}
       rootfs_manifest_artifact_url:
-        description: GitHub artifact page URL for the uploaded rootfs manifest bundle
+        description: Deprecated alias for rootfs_artifact_url
         value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_artifact_url }}
       rootfs_manifest_artifact_api_zip_url:
-        description: GitHub API ZIP URL for the uploaded rootfs manifest bundle
+        description: Deprecated alias for rootfs_artifact_api_zip_url
         value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_artifact_api_zip_url }}
       vm_instance_item_hash:
         description: Aleph INSTANCE item hash for the deployed VM
@@ -329,6 +335,8 @@ jobs:
       rootfs_cid: ${{ steps.run_rootfs.outputs.rootfs_cid }}
       rootfs_item_hash: ${{ steps.run_rootfs.outputs.rootfs_item_hash }}
       rootfs_source_size_bytes: ${{ steps.run_rootfs.outputs.rootfs_source_size_bytes }}
+      rootfs_artifact_url: ${{ steps.resolve_artifact.outputs.rootfs_artifact_url }}
+      rootfs_artifact_api_zip_url: ${{ steps.resolve_artifact.outputs.rootfs_artifact_api_zip_url }}
       rootfs_manifest_cid: ${{ steps.publish_manifest.outputs.rootfs_manifest_cid }}
       rootfs_manifest_gateway_url: ${{ steps.publish_manifest.outputs.rootfs_manifest_gateway_url }}
       rootfs_manifest_artifact_url: ${{ steps.resolve_artifact.outputs.rootfs_manifest_artifact_url }}
@@ -427,7 +435,7 @@ jobs:
             exit 1
           fi
           if [[ "${{ inputs.deploy_vm }}" == "true" && "${{ inputs.publish }}" != "true" && -z "${{ inputs.rootfs_item_hash }}" ]]; then
-            echo "deploy_vm=true requires publish=true or an explicit rootfs_item_hash." >&2
+            echo "deploy_vm=true requires either publish=true for Aleph IPFS/STORE rootfs publication or an explicit rootfs_item_hash." >&2
             exit 1
           fi
 
@@ -444,7 +452,7 @@ jobs:
             squashfs-tools \
             tar
 
-      - name: Run shared rootfs publish pipeline
+      - name: Build rootfs and optional Aleph IPFS publish
         id: run_rootfs
         working-directory: ${{ inputs.tooling_checkout_path }}
         env:
@@ -484,7 +492,7 @@ jobs:
           fi
           ALEPH_PRIVATE_KEY='${{ secrets.ALEPH_PRIVATE_KEY }}' node ./packages/node/src/rootfs-runner.ts
 
-      - name: Validate published rootfs outputs
+      - name: Validate Aleph IPFS rootfs outputs
         if: ${{ inputs.publish }}
         env:
           ROOTFS_CID: ${{ steps.run_rootfs.outputs.rootfs_cid }}
@@ -492,7 +500,7 @@ jobs:
         shell: bash
         run: |
           if [[ -z "${ROOTFS_CID}" || -z "${ROOTFS_ITEM_HASH}" ]]; then
-            echo "publish=true but rootfs publication did not produce both rootfs_cid and rootfs_item_hash." >&2
+            echo "publish=true but Aleph IPFS/STORE publication did not produce both rootfs_cid and rootfs_item_hash." >&2
             echo "rootfs_cid=${ROOTFS_CID}" >&2
             echo "rootfs_item_hash=${ROOTFS_ITEM_HASH}" >&2
             exit 1
@@ -616,7 +624,8 @@ jobs:
           echo "rootfs_manifest_gateway_url=${manifest_gateway_url}" >> "$GITHUB_OUTPUT"
 
       - name: Upload rootfs workspace artifacts
-        if: ${{ always() && steps.run_rootfs.outputs.rootfs_manifest_path != '' }}
+        id: upload_rootfs_artifacts
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: rootfs-${{ inputs.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -626,12 +635,15 @@ jobs:
             ${{ steps.run_rootfs.outputs.rootfs_manifest_copy_target_path }}
             ${{ steps.run_rootfs.outputs.rootfs_manifest_versioned_path }}
             ${{ steps.run_rootfs.outputs.rootfs_image_path }}
+            ${{ github.workspace }}/${{ inputs.project_checkout_path }}/dist-rootfs/**
 
       - name: Resolve rootfs artifact URLs
         id: resolve_artifact
-        if: ${{ always() && steps.run_rootfs.outputs.rootfs_manifest_path != '' }}
+        if: ${{ always() && steps.upload_rootfs_artifacts.outputs.artifact-id != '' }}
         env:
           ARTIFACT_NAME: rootfs-${{ inputs.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
+          UPLOAD_ARTIFACT_ID: ${{ steps.upload_rootfs_artifacts.outputs.artifact-id }}
+          UPLOAD_ARTIFACT_URL: ${{ steps.upload_rootfs_artifacts.outputs.artifact-url }}
           GITHUB_TOKEN: ${{ github.token }}
           MANIFEST_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_path }}
           MANIFEST_COPY_TARGET_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_copy_target_path }}
@@ -643,34 +655,28 @@ jobs:
           ROOTFS_VERSION: ${{ steps.run_rootfs.outputs.rootfs_version }}
         shell: bash
         run: |
-          api_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts"
-          artifact_json="$(curl -fsSL \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${api_url}")"
-          export ARTIFACT_JSON="${artifact_json}"
+          artifact_id="${UPLOAD_ARTIFACT_ID}"
+          if [[ -z "${artifact_id}" ]]; then
+            api_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts"
+            artifact_json="$(curl -fsSL \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${api_url}")"
+            export ARTIFACT_JSON="${artifact_json}"
 
-          artifact_id="$(python3 - <<'PY'
-          import json
-          import os
-
-          payload = json.loads(os.environ["ARTIFACT_JSON"])
-          target = os.environ["ARTIFACT_NAME"]
-          for artifact in payload.get("artifacts", []):
-              if artifact.get("name") == target:
-                  print(artifact.get("id", ""))
-                  break
-          PY
-          )"
+            artifact_id="$(python3 -c 'import json, os; payload=json.loads(os.environ["ARTIFACT_JSON"]); target=os.environ["ARTIFACT_NAME"]; print(next((str(a.get("id", "")) for a in payload.get("artifacts", []) if a.get("name") == target), ""))')"
+          fi
 
           if [[ -z "${artifact_id}" ]]; then
             echo "Unable to resolve artifact id for ${ARTIFACT_NAME}" >&2
             exit 1
           fi
 
-          artifact_page_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts/${artifact_id}"
+          artifact_page_url="${UPLOAD_ARTIFACT_URL:-https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts/${artifact_id}}"
           artifact_api_zip_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip"
 
+          echo "rootfs_artifact_url=${artifact_page_url}" >> "$GITHUB_OUTPUT"
+          echo "rootfs_artifact_api_zip_url=${artifact_api_zip_url}" >> "$GITHUB_OUTPUT"
           echo "rootfs_manifest_artifact_url=${artifact_page_url}" >> "$GITHUB_OUTPUT"
           echo "rootfs_manifest_artifact_api_zip_url=${artifact_api_zip_url}" >> "$GITHUB_OUTPUT"
 
@@ -690,8 +696,8 @@ jobs:
             else
               echo "- Manifest IPFS CID: not published."
             fi
-            echo "- Manifest artifact page: ${artifact_page_url}"
-            echo "- Manifest artifact ZIP API URL: \`${artifact_api_zip_url}\`"
+            echo "- Rootfs artifact page: ${artifact_page_url}"
+            echo "- Rootfs artifact ZIP API URL: \`${artifact_api_zip_url}\`"
             echo "- Manifest path inside runner workspace: \`${MANIFEST_PATH}\`"
             if [[ -n "${MANIFEST_COPY_TARGET_PATH}" ]]; then
               echo "- Latest copied manifest path: \`${MANIFEST_COPY_TARGET_PATH}\`"
@@ -789,6 +795,7 @@ jobs:
           ROOTFS_ITEM_HASH: ${{ steps.run_rootfs.outputs.rootfs_item_hash }}
           ROOTFS_MANIFEST_CID: ${{ steps.publish_manifest.outputs.rootfs_manifest_cid }}
           ROOTFS_MANIFEST_GATEWAY_URL: ${{ steps.publish_manifest.outputs.rootfs_manifest_gateway_url }}
+          ROOTFS_ARTIFACT_URL: ${{ steps.resolve_artifact.outputs.rootfs_artifact_url }}
           ROOTFS_MANIFEST_ARTIFACT_URL: ${{ steps.resolve_artifact.outputs.rootfs_manifest_artifact_url }}
         run: |
           {
@@ -798,7 +805,7 @@ jobs:
             echo "- Shared tooling source: \`${{ inputs.tooling_repository }}@${{ inputs.tooling_ref }}\`"
             echo "- Rootfs profile: \`${{ inputs.profile }}\`"
             echo "- Derived version: \`${{ steps.run_rootfs.outputs.rootfs_version }}\`"
-            echo "- Publish to Aleph: \`${{ inputs.publish }}\`"
+            echo "- Publish rootfs to Aleph IPFS/STORE: \`${{ inputs.publish }}\`"
             echo "- Deploy VM after publish: \`${{ inputs.deploy_vm }}\`"
             echo "- Enable proxy-backed Caddy/WSS: \`${{ inputs.enable_caddy_proxy }}\`"
             echo "- Keep successful deployments: \`${{ inputs.retain_successful_deployments }}\`"
@@ -814,7 +821,7 @@ jobs:
             else
               echo "- Manifest IPFS CID: not published."
             fi
-            echo "- Manifest artifact page: ${ROOTFS_MANIFEST_ARTIFACT_URL}"
+            echo "- Rootfs artifact page: ${ROOTFS_ARTIFACT_URL:-${ROOTFS_MANIFEST_ARTIFACT_URL}}"
             if [[ "${{ inputs.deploy_vm }}" != "true" ]]; then
               echo
               echo "### VM Deployment"
