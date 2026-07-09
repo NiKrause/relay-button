@@ -17,13 +17,27 @@ The current bootstrap feature does two things:
 
 Current shared producers:
 
-- GitHub Action VM deploy path
-- Sponsor Relay browser UI path
+- GitHub Action VM deploy path in
+  [`relay-button`](https://github.com/NiKrause/relay-button)
+- Sponsor Relay browser UI path in
+  [`relay-button`](https://github.com/NiKrause/relay-button)
 
 Current shared consumers:
 
-- `universal-connectivity/js-peer`
-- `simple-todo`
+- [`universal-connectivity/js-peer`](https://github.com/NiKrause/universal-connectivity/tree/main/js-peer)
+- [`simple-todo`](https://github.com/NiKrause/simple-todo)
+
+Current shared deployment/rootfs profiles:
+
+- [`uc-go-peer`](https://github.com/NiKrause/relay-button/tree/main/packages/rootfs/reference/uc-go-peer)
+- [`orbitdb-relay`](https://github.com/NiKrause/relay-button/tree/main/packages/rootfs/reference/orbitdb-relay)
+  for [`NiKrause/orbitdb-relay`](https://github.com/NiKrause/orbitdb-relay)
+- [`ucan-store`](https://github.com/NiKrause/relay-button/tree/main/packages/rootfs/reference/ucan-store)
+  for [`NomadKids/ucan-store`](https://github.com/NomadKids/ucan-store)
+
+`ucan-store` is listed here as a shared deployment profile, not as a
+relay-bootstrap producer. Its public discovery path is service metadata, not
+relay multiaddr registration posts.
 
 ## Current Versus Target Trust Model
 

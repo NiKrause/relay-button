@@ -5,8 +5,7 @@
   "description": "Relay Button deployment, rootfs, and automation tooling monorepo.",
   "license": "MIT",
   "bin": {
-    "relay-button": "./scripts/aleph-cli.mjs",
-    "shared-aleph": "./scripts/aleph-cli.mjs"
+    "relay-button": "./scripts/aleph-cli.mjs"
   },
   "packageManager": "pnpm@10.33.0",
   "engines": {

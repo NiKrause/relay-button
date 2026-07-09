@@ -22,12 +22,12 @@ async function loadPlan(driver: 'auto' | 'host' | 'docker' = 'auto', skipUpload 
 
 test('createRootfsScriptCommand runs the shared build-rootfs script with UC-compatible env', async () => {
   const plan = await loadPlan('auto');
-  const command = createRootfsScriptCommand(plan, '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs');
+  const command = createRootfsScriptCommand(plan, '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs');
 
   assert.deepEqual(command, {
     command: '/bin/bash',
-    args: ['/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs/build-rootfs.sh'],
-    workdir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+    args: ['/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs/build-rootfs.sh'],
+    workdir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
     env: {
       PROJECT_DIR: '/workspace/universal-connectivity',
       OUT_DIR: '/workspace/universal-connectivity/go-peer/aleph/dist-rootfs',
@@ -69,7 +69,7 @@ test('buildRootfs executes prepare and run commands from the selected execution 
       hasVirtCustomize: false,
     },
     {
-      referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+      referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
     },
   );
 
@@ -78,8 +78,8 @@ test('buildRootfs executes prepare and run commands from the selected execution 
     command: 'docker',
     args: [
       'build', '--platform', 'linux/amd64', '-t', 'uc-go-peer-rootfs-builder:local', '-f',
-      '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs/Dockerfile.rootfs',
-      '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+      '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs/Dockerfile.rootfs',
+      '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
     ],
   });
   assert.equal(commands[1]?.command, 'docker');
@@ -89,7 +89,7 @@ test('buildRootfs executes prepare and run commands from the selected execution 
   assert.ok(commands[1]?.args.includes('ROOTFS_CONTRACT_FILE=/workspace/project/go-peer/aleph/root-profiles/uc-go-peer.json'));
   assert.ok(commands[1]?.args.includes('ROOTFS_IMAGE_SIZE=20G'));
   assert.ok(commands[1]?.args.includes('/workspace/universal-connectivity:/workspace/project'));
-  assert.ok(commands[1]?.args.includes('/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs:/workspace/shared-rootfs'));
+  assert.ok(commands[1]?.args.includes('/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs:/workspace/shared-rootfs'));
   assert.deepEqual(commands[1]?.args.slice(-3), [
     'uc-go-peer-rootfs-builder:local',
     '/bin/bash',
@@ -119,11 +119,11 @@ test('publishRootfs runs the shared build-rootfs script and finalizes publish ar
     },
   }, {
     createdAt: '2026-05-16T12:34:56Z',
-    referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+    referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
   });
 
   assert.deepEqual(commands, [
-    '/bin/bash /workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs/build-rootfs.sh',
+    '/bin/bash /workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs/build-rootfs.sh',
   ]);
   assert.equal(result.finalized.manifest.rootfsCid, 'bafyrootfs');
   assert.equal(result.finalized.manifest.rootfsItemHash, 'store-item-hash');
@@ -142,7 +142,7 @@ test('publishRootfs supports skip-upload manifest generation without reading pub
     },
   }, {
     createdAt: '2026-05-16T12:34:56Z',
-    referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+    referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
   });
 
   assert.equal(readCalls, 0);

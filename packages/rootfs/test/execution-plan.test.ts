@@ -23,13 +23,13 @@ async function loadPlan(driver: 'auto' | 'host' | 'docker' = 'auto') {
 test('createHostRootfsExecutionPlan runs the shared build script with UC-compatible env', async () => {
   const plan = await loadPlan('host');
   const execution = createHostRootfsExecutionPlan(plan, {
-    referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+    referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
   });
 
   assert.equal(execution.mode, 'host');
   assert.equal(execution.runCommand.command, '/bin/bash');
   assert.deepEqual(execution.runCommand.args, [
-    '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs/build-rootfs-image.sh',
+    '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs/build-rootfs-image.sh',
   ]);
   assert.equal(execution.runCommand.env?.PROJECT_DIR, '/workspace/universal-connectivity');
   assert.equal(execution.runCommand.env?.ROOTFS_CONTRACT_FILE, '/workspace/universal-connectivity/go-peer/aleph/root-profiles/uc-go-peer.json');
@@ -38,7 +38,7 @@ test('createHostRootfsExecutionPlan runs the shared build script with UC-compati
 test('createDockerRootfsExecutionPlan mirrors the current Dockerized rootfs build flow', async () => {
   const plan = await loadPlan('docker');
   const execution = createDockerRootfsExecutionPlan(plan, {
-    referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+    referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
   });
 
   assert.equal(execution.mode, 'docker');
@@ -49,8 +49,8 @@ test('createDockerRootfsExecutionPlan mirrors the current Dockerized rootfs buil
     '-t',
     'uc-go-peer-rootfs-builder:local',
     '-f',
-    '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs/Dockerfile.rootfs',
-    '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+    '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs/Dockerfile.rootfs',
+    '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
   ]);
   assert.deepEqual(execution.runCommand.args.slice(0, 6), [
     'run',
@@ -66,7 +66,7 @@ test('createDockerRootfsExecutionPlan mirrors the current Dockerized rootfs buil
   assert.ok(execution.runCommand.args.includes('ROOTFS_CONTRACT_FILE=/workspace/project/go-peer/aleph/root-profiles/uc-go-peer.json'));
   assert.ok(execution.runCommand.args.includes('ROOTFS_IMAGE_SIZE=20G'));
   assert.ok(execution.runCommand.args.includes('/workspace/universal-connectivity:/workspace/project'));
-  assert.ok(execution.runCommand.args.includes('/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs:/workspace/shared-rootfs'));
+  assert.ok(execution.runCommand.args.includes('/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs:/workspace/shared-rootfs'));
   assert.deepEqual(execution.runCommand.args.slice(-3), [
     'uc-go-peer-rootfs-builder:local',
     '/bin/bash',
@@ -82,7 +82,7 @@ test('selectRootfsExecutionPlan prefers Docker on GitHub Actions for auto driver
     dockerDaemonRunning: true,
     hasVirtCustomize: true,
   }, {
-    referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+    referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
   });
 
   assert.equal(execution.mode, 'docker');
@@ -94,7 +94,7 @@ test('selectRootfsExecutionPlan falls back to host tools when auto driver is loc
     hasDocker: false,
     hasVirtCustomize: true,
   }, {
-    referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+    referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
   });
 
   assert.equal(execution.mode, 'host');

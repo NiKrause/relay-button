@@ -1,7 +1,7 @@
 # Node CLI
 
-`relay-button` now includes a small Node-only CLI wrapper around the
-same shared runners used by the GitHub Action and reusable workflow layers.
+`relay-button` includes a small Node-only CLI wrapper around the same reusable
+runners used by the GitHub Action and workflow layers.
 
 It does not use any browser package code. It simply dispatches into:
 
@@ -22,8 +22,6 @@ binary directly:
 ```bash
 pnpm exec relay-button <command>
 ```
-
-The legacy `shared-aleph` command remains available as a compatibility alias.
 
 Supported commands:
 
@@ -174,10 +172,12 @@ Common optional environment:
 - `ALEPH_ROOTFS_UPLOAD_DRIVER`
   Rootfs image upload path. Defaults to `aleph-ipfs`, which streams the image
   through the configured IPFS add endpoint(s), then publishes an Aleph `STORE`
-  pin with `item_type=ipfs` and credit payment. Use `aleph-api-ipfs` to force
-  Aleph's authenticated `/api/v0/ipfs/add_file` endpoint, `helia` to import the
-  image into a local public-IPFS Helia node, or `api-fetch` / `api-curl` for
-  direct IPFS add endpoint variants.
+  pin with `item_type=ipfs` and credit payment. Use `aleph-api-ipfs` to match
+  the Rust CLI upload path: compute the CID locally, build the signed `STORE`
+  message, and send both the file and `metadata={"message":...,"sync":true}`
+  to Aleph's authenticated `/api/v0/ipfs/add_file` endpoint. Use `helia` to
+  import the image into a local public-IPFS Helia node, or `api-fetch` /
+  `api-curl` for direct IPFS add endpoint variants.
 - `ALEPH_ROOTFS_STORE_PAYMENT_TYPE`
   Payment type for the rootfs `STORE` pin. Defaults to `credit`; `credits` is
   accepted as an alias. Use `hold` only for locked-stake pinning.

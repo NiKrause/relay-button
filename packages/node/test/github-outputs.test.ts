@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { actionLog, appendGithubOutput, appendGithubSummary } from '../src/github-outputs.ts'
 
 test('appendGithubOutput writes name=value pairs when GITHUB_OUTPUT is set', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'shared-aleph-output-'))
+  const dir = await mkdtemp(join(tmpdir(), 'relay-button-output-'))
   const file = join(dir, 'output.txt')
   await appendGithubOutput('foo', 'bar', { GITHUB_OUTPUT: file })
   const content = await readFile(file, 'utf8')
@@ -15,7 +15,7 @@ test('appendGithubOutput writes name=value pairs when GITHUB_OUTPUT is set', asy
 })
 
 test('appendGithubOutput uses multiline syntax for newline-containing values', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'shared-aleph-output-'))
+  const dir = await mkdtemp(join(tmpdir(), 'relay-button-output-'))
   const file = join(dir, 'output.txt')
   await appendGithubOutput('json', '{\n  "ok": true\n}', { GITHUB_OUTPUT: file })
   const content = await readFile(file, 'utf8')
@@ -23,7 +23,7 @@ test('appendGithubOutput uses multiline syntax for newline-containing values', a
 })
 
 test('appendGithubSummary writes multiline summary content', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'shared-aleph-summary-'))
+  const dir = await mkdtemp(join(tmpdir(), 'relay-button-summary-'))
   const file = join(dir, 'summary.txt')
   await appendGithubSummary(['# Heading', '', 'hello'], { GITHUB_STEP_SUMMARY: file })
   const content = await readFile(file, 'utf8')

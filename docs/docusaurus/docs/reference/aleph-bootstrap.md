@@ -17,10 +17,18 @@ integration.
 
 Today it is used by:
 
-- `simple-todo`
-- `universal-connectivity/js-peer`
-- shared relay deployment flows such as `uc-go-peer` and
-  `orbitdb-relay`
+- [`simple-todo`](https://github.com/NiKrause/simple-todo)
+- [`universal-connectivity/js-peer`](https://github.com/NiKrause/universal-connectivity/tree/main/js-peer)
+- shared relay deployment flows in
+  [`relay-button`](https://github.com/NiKrause/relay-button), including the
+  [`uc-go-peer`](https://github.com/NiKrause/relay-button/tree/main/packages/rootfs/reference/uc-go-peer)
+  and
+  [`orbitdb-relay`](https://github.com/NiKrause/relay-button/tree/main/packages/rootfs/reference/orbitdb-relay)
+  rootfs profiles
+- the
+  [`ucan-store`](https://github.com/NiKrause/relay-button/tree/main/packages/rootfs/reference/ucan-store)
+  rootfs/deployment profile for
+  [`NomadKids/ucan-store`](https://github.com/NomadKids/ucan-store)
 
 The package still ships with a backward-compatible default namespace rooted in
 the earliest `simple-todo` integration:
@@ -36,12 +44,16 @@ isolation between environments.
 
 ## Relay Registration
 
-The shared deploy flows now register bootstrap addresses automatically for the
-`uc-go-peer` and `orbitdb-relay` RootFS profiles when they are launched
+The shared deploy flows now register relay bootstrap addresses automatically
+for the `uc-go-peer` and `orbitdb-relay` RootFS profiles when they are launched
 through:
 
 - the shared GitHub Action VM deploy path
 - the Sponsor Relay browser UI path
+
+`ucan-store` is also a shared RootFS/deployment profile, but it intentionally
+does not publish relay bootstrap records. It exposes service discovery through
+guest metadata and `/.well-known/ucan-store.json` instead.
 
 New registrations prefer the compact `relay-bootstrap-v2` shape. It stores the
 browser-ready bootstrap list directly in `multiaddrs`, caps it to the best

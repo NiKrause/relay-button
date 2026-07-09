@@ -16,7 +16,7 @@ async function createActionEnv(
   prefix: string,
   projectDir = '/workspace/universal-connectivity',
   contractPath = rootfsContractPath,
-  referenceRootfsDir = '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+  referenceRootfsDir = '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
 ) {
   const dir = await mkdtemp(join(tmpdir(), prefix))
   const outputFile = join(dir, 'output.txt')
@@ -53,7 +53,7 @@ test('parseRootfsRunnerInputs creates a shared rootfs build plan from env', asyn
   assert.equal(parsed.buildPlan.driver, 'docker')
   assert.equal(parsed.buildPlan.rootfsVersion, 'uc-go-peer-git-20260516-deadbee')
   assert.equal(parsed.availability.hasDocker, true)
-  assert.equal(parsed.referenceRootfsDir, '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs')
+  assert.equal(parsed.referenceRootfsDir, '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs')
 })
 
 test('parseRootfsRunnerInputs derives orbitdb relay rootfs versions from the caller package', async () => {
@@ -68,7 +68,7 @@ test('parseRootfsRunnerInputs derives orbitdb relay rootfs versions from the cal
     'shared-rootfs-orbitdb-relay-',
     projectDir,
     orbitdbRelayContractPath,
-    '/workspace/shared-aleph-tooling/packages/rootfs/reference/orbitdb-relay/rootfs',
+    '/workspace/relay-button/packages/rootfs/reference/orbitdb-relay/rootfs',
   )
   const parsed = await parseRootfsRunnerInputs({
     ...env,
@@ -81,7 +81,7 @@ test('parseRootfsRunnerInputs derives orbitdb relay rootfs versions from the cal
   assert.equal(parsed.buildPlan.rootfsVersion, 'orbitdb-relay-v0.9.2')
   assert.equal(
     parsed.referenceRootfsDir,
-    '/workspace/shared-aleph-tooling/packages/rootfs/reference/orbitdb-relay/rootfs',
+    '/workspace/relay-button/packages/rootfs/reference/orbitdb-relay/rootfs',
   )
 })
 
@@ -134,7 +134,7 @@ test('runRootfsMode executes rootfs-build through the shared build hook', async 
         executionPlan: {
           mode: 'docker',
           reason: 'test',
-          referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+          referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
           runCommand: { command: 'docker', args: ['run'] },
         },
         publicationArtifacts: {
@@ -188,7 +188,7 @@ test('emitRootfsOutputs writes shared rootfs publish outputs', async () => {
       executionPlan: {
         mode: 'docker',
         reason: 'test',
-        referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+        referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
         runCommand: { command: 'docker', args: ['run'] },
       },
       publicationArtifacts: {
@@ -292,7 +292,7 @@ test('runRootfsMode executes rootfs-publish and emits outputs through the direct
             executionPlan: {
               mode: 'docker',
               reason: 'test',
-              referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+              referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
               runCommand: { command: '/bin/bash', args: ['build-rootfs.sh'] },
             },
             publicationArtifacts: {
@@ -353,7 +353,7 @@ test('runRootfsMode can build an artifact-ready rootfs while skipping Aleph IPFS
           executionPlan: {
             mode: 'docker',
             reason: 'test',
-            referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+            referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
             runCommand: { command: '/bin/bash', args: ['build-rootfs.sh'] },
           },
           publicationArtifacts: {
@@ -456,7 +456,7 @@ test('runRootfsMode uploads rootfs through IPFS add endpoint and pins with credi
             executionPlan: {
               mode: 'docker',
               reason: 'test',
-              referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+              referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
               runCommand: { command: '/bin/bash', args: ['build-rootfs.sh'] },
             },
             publicationArtifacts: {
@@ -484,6 +484,89 @@ test('runRootfsMode uploads rootfs through IPFS add endpoint and pins with credi
   assert.match(outputs, /rootfs_cid=bafyrootfs/)
   assert.match(curlArgs, /https:\/\/ipfs-2\.aleph\.im\/api\/v0\/add/)
   assert.ok(calls.includes('https://api.aleph.im/api/v0/messages'))
+})
+
+test('runRootfsMode uploads rootfs through authenticated Aleph IPFS API with STORE metadata', async () => {
+  const projectDir = await mkdtemp(join(tmpdir(), 'shared-rootfs-auth-ipfs-project-'))
+  const { env, outputFile } = await createActionEnv('shared-rootfs-auth-ipfs-', projectDir)
+  const binDir = await mkdtemp(join(tmpdir(), 'shared-rootfs-auth-ipfs-bin-'))
+  const curlArgsPath = join(binDir, 'curl-args.txt')
+  const expectedCid = 'QmcCd8B3y9bEhePjw8FwNuSwoTAXSbUjqkJZCgLuSNtSYn'
+  await createFakeCommand(
+    binDir,
+    'curl',
+    `printf "%s\\n" "$@" > "$CURL_ARGS_FILE"\nprintf '{"Hash":"${expectedCid}","Size":"11"}\\n'`,
+  )
+
+  const originalFetch = globalThis.fetch
+  const calls: Array<{ url: string; method?: string }> = []
+
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    calls.push({ url, method: init?.method })
+    if (url.startsWith('https://api.aleph.im/api/v0/messages/')) {
+      return new Response(JSON.stringify({ status: 'processed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    throw new Error(`Unexpected fetch call: ${url}`)
+  }) as typeof fetch
+
+  try {
+    await runRootfsMode({
+      ...env,
+      ALEPH_VM_MODE: 'rootfs-publish',
+      ALEPH_ROOTFS_VERSION: 'uc-go-peer-git-20260516-deadbee',
+      ALEPH_ROOTFS_SKIP_UPLOAD: 'false',
+      ALEPH_ROOTFS_UPLOAD_DRIVER: 'aleph-api-ipfs',
+      ALEPH_ROOTFS_ALEPH_API_HOSTS: 'https://api.aleph.im',
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+      CURL_ARGS_FILE: curlArgsPath,
+      PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    }, {
+      buildRootfs: async (buildPlan) => {
+        await mkdir(join(projectDir, 'go-peer/aleph/dist-rootfs'), { recursive: true })
+        await writeFile(buildPlan.imagePath, 'qcow2-binary')
+        return {
+          pipeline: {
+            buildPlan,
+            executionPlan: {
+              mode: 'docker',
+              reason: 'test',
+              referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
+              runCommand: { command: '/bin/bash', args: ['build-rootfs.sh'] },
+            },
+            publicationArtifacts: {
+              ipfsAddResponsePath: '/tmp/ipfs-add-response.jsonl',
+              storeMessagePath: '/tmp/store-message.json',
+              storeMessageStderrPath: '/tmp/store-message.stderr.log',
+            },
+            manifestPaths: {
+              primaryPath: buildPlan.manifestPath,
+              copyTargetPath: buildPlan.latestManifestPath ?? undefined,
+              versionedTargetPath: buildPlan.versionedManifestPath ?? undefined,
+            },
+          },
+          executedCommands: [],
+        }
+      },
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  const outputs = await readFile(outputFile, 'utf8')
+  const curlArgs = await readFile(curlArgsPath, 'utf8')
+  const itemHash = outputs.match(/^rootfs_item_hash=(.+)$/m)?.[1]
+  assert.ok(itemHash)
+  assert.match(outputs, new RegExp(`rootfs_cid=${expectedCid}`))
+  assert.match(curlArgs, /https:\/\/api\.aleph\.im\/api\/v0\/ipfs\/add_file/)
+  assert.match(curlArgs, /metadata=\{"message":/)
+  assert.match(curlArgs, new RegExp(`\\\\?"item_hash\\\\?":\\\\?"${expectedCid}\\\\?"`))
+  assert.match(curlArgs, /"sync":true/)
+  assert.ok(calls.some((call) => call.url === `https://api.aleph.im/api/v0/messages/${itemHash}`))
+  assert.equal(calls.some((call) => call.url === 'https://api.aleph.im/api/v0/messages' && call.method === 'POST'), false)
 })
 
 test('runRootfsMode retries transient Aleph message lookup failures during rootfs publish', async () => {
@@ -535,7 +618,7 @@ test('runRootfsMode retries transient Aleph message lookup failures during rootf
             executionPlan: {
               mode: 'docker',
               reason: 'test',
-              referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+              referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
               runCommand: { command: '/bin/bash', args: ['build-rootfs.sh'] },
             },
             publicationArtifacts: {
@@ -623,7 +706,7 @@ test('runRootfsMode falls back across Aleph API hosts when STORE broadcast is tr
             executionPlan: {
               mode: 'docker',
               reason: 'test',
-              referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+              referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
               runCommand: { command: '/bin/bash', args: ['build-rootfs.sh'] },
             },
             publicationArtifacts: {
@@ -719,7 +802,7 @@ test('runRootfsMode keeps accepted Aleph STORE hash when publish-only processing
             executionPlan: {
               mode: 'docker',
               reason: 'test',
-              referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+              referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
               runCommand: { command: '/bin/bash', args: ['build-rootfs.sh'] },
             },
             publicationArtifacts: {
@@ -817,7 +900,7 @@ test('runRootfsMode requires processed Aleph STORE hash when requested', async (
             executionPlan: {
               mode: 'docker',
               reason: 'test',
-              referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+              referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
               runCommand: { command: '/bin/bash', args: ['build-rootfs.sh'] },
             },
             publicationArtifacts: {
@@ -911,7 +994,7 @@ test('runRootfsMode does not fall back across Aleph API hosts when STORE is reje
               executionPlan: {
                 mode: 'docker',
                 reason: 'test',
-                referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+                referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
                 runCommand: { command: '/bin/bash', args: ['build-rootfs.sh'] },
               },
               publicationArtifacts: {

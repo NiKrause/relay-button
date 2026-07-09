@@ -29,7 +29,6 @@ Commands:
 Examples:
   pnpm relay-button deploy
   pnpm relay-button rootfs-publish
-  pnpm exec shared-aleph deploy   Compatibility alias during the rebrand transition
 
 Required environment for deploy:
   ALEPH_VM_PRIVATE_KEY
@@ -102,7 +101,7 @@ function resolveCommand(argv) {
     case undefined:
       return null;
     default:
-      throw new Error(`Unknown command "${command}". Run "pnpm aleph help".`);
+      throw new Error(`Unknown command "${command}". Run "pnpm relay-button help".`);
   }
 }
 

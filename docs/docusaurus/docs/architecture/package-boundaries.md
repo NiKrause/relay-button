@@ -53,7 +53,7 @@ This package should not directly depend on:
 
 ## `@le-space/aleph-bootstrap`
 
-This package owns the shared Aleph bootstrap namespace and the reusable helpers
+This package owns the Relay Button bootstrap namespace and the reusable helpers
 around it.
 
 Current responsibilities:

@@ -21,7 +21,7 @@ async function createOutputEnv(prefix: string) {
 }
 
 test('emitDeployOutputs writes action outputs and summary content', async () => {
-  const { env, outputFile, summaryFile } = await createOutputEnv('shared-aleph-deploy-')
+  const { env, outputFile, summaryFile } = await createOutputEnv('relay-button-deploy-')
 
   const result = await emitDeployOutputs(
     {
@@ -93,7 +93,7 @@ test('emitDeployOutputs writes action outputs and summary content', async () => 
 })
 
 test('emitGeocodedCrnOutputs writes CRN outputs and summary content', async () => {
-  const { env, outputFile, summaryFile } = await createOutputEnv('shared-aleph-crn-')
+  const { env, outputFile, summaryFile } = await createOutputEnv('relay-button-crn-')
 
   await emitGeocodedCrnOutputs([{ hash: 'a' }, { hash: 'b' }], env)
 

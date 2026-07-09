@@ -28,7 +28,7 @@ test('createRootfsBuildPipeline composes execution, publication, and manifest pl
     dockerDaemonRunning: true,
     hasVirtCustomize: true,
   }, {
-    referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+    referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
   });
 
   assert.equal(pipeline.executionPlan.mode, 'docker');
@@ -50,13 +50,13 @@ test('createHostRootfsBuildPipeline and createDockerRootfsBuildPipeline force th
 
   assert.equal(
     createHostRootfsBuildPipeline(hostPlan, {
-      referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+      referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
     }).executionPlan.mode,
     'host',
   );
   assert.equal(
     createDockerRootfsBuildPipeline(dockerPlan, {
-      referenceRootfsDir: '/workspace/shared-aleph-tooling/packages/rootfs/reference/uc-go-peer/rootfs',
+      referenceRootfsDir: '/workspace/relay-button/packages/rootfs/reference/uc-go-peer/rootfs',
     }).executionPlan.mode,
     'docker',
   );

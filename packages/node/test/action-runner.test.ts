@@ -35,7 +35,7 @@ test('buildScaffoldDeployResult creates a minimal deploy-shaped payload from env
 })
 
 test('runActionMode emits geocoded CRN outputs in list-crns mode', async () => {
-  const { env, outputFile, summaryFile } = await createActionEnv('shared-aleph-action-crn-')
+  const { env, outputFile, summaryFile } = await createActionEnv('relay-button-action-crn-')
   const writes: string[] = []
 
   await runActionMode(
@@ -58,7 +58,7 @@ test('runActionMode emits geocoded CRN outputs in list-crns mode', async () => {
 })
 
 test('runActionMode can fetch geocoded CRNs through the shared core hook', async () => {
-  const { env, outputFile } = await createActionEnv('shared-aleph-action-crn-hook-')
+  const { env, outputFile } = await createActionEnv('relay-button-action-crn-hook-')
   const writes: string[] = []
 
   await runActionMode(
@@ -84,7 +84,7 @@ test('runActionMode can fetch geocoded CRNs through the shared core hook', async
 })
 
 test('runActionMode emits scaffold deploy outputs in deploy mode', async () => {
-  const { env, outputFile, summaryFile } = await createActionEnv('shared-aleph-action-deploy-')
+  const { env, outputFile, summaryFile } = await createActionEnv('relay-button-action-deploy-')
   const writes: string[] = []
 
   await runActionMode(
@@ -109,7 +109,7 @@ test('runActionMode emits scaffold deploy outputs in deploy mode', async () => {
 })
 
 test('runActionMode executes the shared deploy executor when required env is present', async () => {
-  const { env, outputFile } = await createActionEnv('shared-aleph-action-live-deploy-')
+  const { env, outputFile } = await createActionEnv('relay-button-action-live-deploy-')
   const writes: string[] = []
 
   await runActionMode(
@@ -145,7 +145,7 @@ test('runActionMode executes the shared deploy executor when required env is pre
 })
 
 test('runActionMode does not retry deploy mode across configured Aleph API hosts', async () => {
-  const { env } = await createActionEnv('shared-aleph-action-api-hosts-')
+  const { env } = await createActionEnv('relay-button-action-api-hosts-')
   const attemptedHosts: string[] = []
 
   await assert.rejects(
@@ -174,7 +174,7 @@ test('runActionMode does not retry deploy mode across configured Aleph API hosts
 })
 
 test('runActionMode derives ucan-store bootstrap JSON before parsing the deploy plan', async () => {
-  const { env, outputFile, summaryFile } = await createActionEnv('shared-aleph-action-ucan-derived-')
+  const { env, outputFile, summaryFile } = await createActionEnv('relay-button-action-ucan-derived-')
 
   await runActionMode(
     {
@@ -243,7 +243,7 @@ test('runActionMode derives ucan-store bootstrap JSON before parsing the deploy 
 })
 
 test('runActionMode emits retention outputs in retain-successful-deployments mode', async () => {
-  const { env, outputFile, summaryFile } = await createActionEnv('shared-aleph-action-retention-')
+  const { env, outputFile, summaryFile } = await createActionEnv('relay-button-action-retention-')
   const writes: string[] = []
 
   await runActionMode(
@@ -304,7 +304,7 @@ test('runActionMode emits retention outputs in retain-successful-deployments mod
 
 
 test('runActionMode retries retention across configured Aleph API hosts', async () => {
-  const { env, outputFile } = await createActionEnv('shared-aleph-action-retention-api-hosts-')
+  const { env, outputFile } = await createActionEnv('relay-button-action-retention-api-hosts-')
   const attemptedHosts: string[] = []
 
   await runActionMode(
@@ -358,7 +358,7 @@ test('runActionMode retries retention across configured Aleph API hosts', async 
 })
 
 test('runActionMode refreshes bootstrap registration from deployment metadata', async () => {
-  const { env, outputFile, summaryFile } = await createActionEnv('shared-aleph-action-bootstrap-refresh-')
+  const { env, outputFile, summaryFile } = await createActionEnv('relay-button-action-bootstrap-refresh-')
   const writes: string[] = []
 
   await runActionMode(
@@ -413,7 +413,7 @@ test('runActionMode refreshes bootstrap registration from deployment metadata', 
 
 
 test('runActionMode retries bootstrap refresh across configured Aleph API hosts', async () => {
-  const { env, outputFile } = await createActionEnv('shared-aleph-action-bootstrap-api-hosts-')
+  const { env, outputFile } = await createActionEnv('relay-button-action-bootstrap-api-hosts-')
   const attemptedHosts: string[] = []
 
   await runActionMode(
@@ -461,7 +461,7 @@ test('runActionMode retries bootstrap refresh across configured Aleph API hosts'
 })
 
 test('runActionMode refresh-bootstrap can emit dual-key publication inputs', async () => {
-  const { env } = await createActionEnv('shared-aleph-action-bootstrap-refresh-dual-')
+  const { env } = await createActionEnv('relay-button-action-bootstrap-refresh-dual-')
   const seenKeys: string[] = []
 
   await runActionMode(

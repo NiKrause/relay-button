@@ -50,7 +50,7 @@ Packages use the `@le-space/*` scope.
 - [`.github/workflows/release-packages.yml`](./.github/workflows/release-packages.yml)
   Package release workflow.
 - [`.github/workflows/aleph-rootfs-build-publish-deploy.yml`](./.github/workflows/aleph-rootfs-build-publish-deploy.yml)
-  Shared Aleph workflow entrypoint.
+  Relay Button workflow entrypoint.
 
 ## How Consumer Repos Use It
 
@@ -100,7 +100,6 @@ Useful commands:
 - `pnpm relay-button deploy`
 - `pnpm relay-button rootfs-publish`
 - `pnpm exec relay-button list-crns | jq`
-- `pnpm exec shared-aleph list-crns | jq` (compatibility alias during the rebrand transition)
 - `pnpm --filter @le-space/core test`
 - `pnpm --filter @le-space/node test`
 - `pnpm docs:dev`
@@ -195,6 +194,11 @@ export ALEPH_ROOTFS_ORBITDB_RELAY_DIR=/path/to/orbitdb-relay
 pnpm relay-button rootfs-build
 pnpm relay-button rootfs-publish
 ```
+
+For Rust CLI-equivalent IPFS publication, set
+`ALEPH_ROOTFS_UPLOAD_DRIVER=aleph-api-ipfs`. This computes the rootfs CID
+locally, sends the signed `STORE` metadata with the file to
+`/api/v0/ipfs/add_file`, and avoids a later standalone pin request.
 
 If the image build already succeeded but the later Aleph `STORE` publication
 failed, for example due to insufficient Aleph balance, you can retry the

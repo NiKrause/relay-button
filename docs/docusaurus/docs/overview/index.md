@@ -76,7 +76,7 @@ Some parts are still intentionally incomplete:
 - `.github/actions/aleph-vm-deploy`
   Shared GitHub Action wrapper around the Node runner.
 - `.github/workflows/aleph-rootfs-build-publish-deploy.yml`
-  Shared Aleph workflow entrypoint.
+  Relay Button workflow entrypoint.
 
 ## Examples And Real Integrations
 

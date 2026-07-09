@@ -216,7 +216,7 @@ yet shipped as a fully bundled standalone distribution artifact.
 ## When To Use This Action
 
 Use this action when a consumer workflow wants to keep control of its own
-workflow structure but reuse the shared Aleph deployment logic.
+workflow structure but reuse the Relay Button deployment logic.
 
 That is the current recommended pattern for repositories such as
 `universal-connectivity`:

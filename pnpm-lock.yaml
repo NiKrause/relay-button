@@ -101,6 +101,9 @@ importers:
       '@helia/utils':
         specifier: ^2.5.2
         version: 2.5.2
+      ipfs-unixfs-importer:
+        specifier: ^16.1.5
+        version: 16.1.5
       '@le-space/core':
         specifier: workspace:*
         version: link:../core

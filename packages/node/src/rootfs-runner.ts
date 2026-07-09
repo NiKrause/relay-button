@@ -20,6 +20,7 @@ import { webSockets } from "@le-space/libp2p-websockets";
 import { multiaddr } from "@multiformats/multiaddr";
 import { MemoryBlockstore } from "blockstore-core";
 import { MemoryDatastore } from "datastore-core";
+import { importer as importUnixfs } from "ipfs-unixfs-importer";
 import { createLibp2p as createHeliaLibp2p } from "libp2p-helia";
 
 import {
@@ -50,6 +51,8 @@ interface RootfsIpfsUploadResult {
   cid: string;
   responseText: string;
   sourceSizeBytes?: number;
+  itemHash?: string;
+  apiHost?: string;
   cleanup?: () => Promise<void>;
 }
 
@@ -293,6 +296,65 @@ export async function runLocalCommand(command: {
 async function sha256Hex(payload: string): Promise<string> {
   const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+class DiscardingBlockstore {
+  async put(cid: unknown): Promise<unknown> {
+    return cid
+  }
+}
+
+async function computeRootfsIpfsCid(buildPlan: RootfsBuildPlan): Promise<string> {
+  let cid: string | undefined
+  for await (const entry of importUnixfs(
+    [{ path: path.basename(buildPlan.imagePath), content: createReadStream(buildPlan.imagePath) }],
+    new DiscardingBlockstore() as any,
+    {
+      cidVersion: 0,
+      rawLeaves: false,
+      wrapWithDirectory: false,
+    },
+  )) {
+    cid = entry.cid.toString()
+  }
+
+  if (!cid) {
+    throw new Error(`Could not compute IPFS CID for ${buildPlan.imagePath}.`)
+  }
+  return cid
+}
+
+async function buildRootfsStoreMessage(
+  buildPlan: RootfsBuildPlan,
+  cid: string,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
+  const identity = await createPrivateKeyIdentity(privateKey)
+  const now = Date.now() / 1000
+  const ref = optionalEnv('ALEPH_ROOTFS_REF', '', env).trim() || undefined
+  const content = {
+    address: identity.address,
+    time: now,
+    item_type: 'ipfs' as const,
+    item_hash: cid,
+    payment: {
+      type: rootfsStorePaymentType(env),
+    },
+    ...(ref ? { ref } : {}),
+  }
+  const itemContent = JSON.stringify(content)
+  const unsignedMessage = {
+    sender: identity.address,
+    chain: 'ETH' as const,
+    type: 'STORE' as const,
+    item_hash: await sha256Hex(itemContent),
+    item_type: 'inline' as const,
+    item_content: itemContent,
+    time: now,
+    channel: buildPlan.channel,
+  }
+  return signAlephMessage(unsignedMessage, identity.signer)
 }
 
 function positiveTimeoutMs(value: string | undefined, fallback: number): number {
@@ -607,6 +669,9 @@ async function uploadRootfsImageToIpfsWithAlephApi(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RootfsIpfsUploadResult> {
   const apiHosts = parseRootfsAlephApiHosts(buildPlan, env)
+  const cid = await computeRootfsIpfsCid(buildPlan)
+  const message = await buildRootfsStoreMessage(buildPlan, cid, env)
+  const metadata = JSON.stringify({ message, sync: true })
   let lastError: unknown = null
 
   for (const [index, apiHost] of apiHosts.entries()) {
@@ -626,6 +691,8 @@ async function uploadRootfsImageToIpfsWithAlephApi(
             'POST',
             '-F',
             `file=@${buildPlan.imagePath};type=application/octet-stream`,
+            '-F',
+            `metadata=${metadata};type=application/json`,
             endpoint,
           ],
           { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } },
@@ -659,9 +726,12 @@ async function uploadRootfsImageToIpfsWithAlephApi(
         Size?: string | number;
         size?: string | number;
       }
-      const cid = (payload.Hash ?? payload.hash)?.trim()
-      if (!cid) {
+      const responseCid = (payload.Hash ?? payload.hash)?.trim()
+      if (!responseCid) {
         throw new Error(`Aleph IPFS upload response did not include a hash: ${JSON.stringify(payload)}`)
+      }
+      if (responseCid !== cid) {
+        throw new Error(`Aleph IPFS upload response hash mismatch: locally computed ${cid}, server returned ${responseCid}.`)
       }
 
       const size = payload.Size ?? payload.size
@@ -678,7 +748,23 @@ async function uploadRootfsImageToIpfsWithAlephApi(
         Size: sourceSizeBytes !== undefined ? String(sourceSizeBytes) : undefined,
       })
 
-      return { cid, responseText: normalizedResponseText, sourceSizeBytes }
+      try {
+        await waitForAlephMessageProcessed({ ...buildPlan, alephApiHost: apiHost }, message.item_hash)
+      } catch (error) {
+        if (error instanceof PendingAlephStorePublishError && !rootfsRequireProcessedStore(env)) {
+          console.warn(`${error.message}; continuing with accepted Aleph STORE item hash ${message.item_hash}.`)
+        } else {
+          throw error
+        }
+      }
+
+      return {
+        cid,
+        responseText: normalizedResponseText,
+        sourceSizeBytes,
+        itemHash: message.item_hash,
+        apiHost,
+      }
     } catch (error) {
       lastError = error
       if (index < apiHosts.length - 1) {
@@ -839,32 +925,7 @@ async function pinRootfsCidOnAleph(
   cid: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ itemHash: string; apiHost: string }> {
-  const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
-  const identity = await createPrivateKeyIdentity(privateKey)
-  const now = Date.now() / 1000
-  const ref = optionalEnv('ALEPH_ROOTFS_REF', '', env).trim() || undefined
-  const content = {
-    address: identity.address,
-    time: now,
-    item_type: 'ipfs' as const,
-    item_hash: cid,
-    payment: {
-      type: rootfsStorePaymentType(env),
-    },
-    ...(ref ? { ref } : {}),
-  }
-  const itemContent = JSON.stringify(content)
-  const unsignedMessage = {
-    sender: identity.address,
-    chain: 'ETH' as const,
-    type: 'STORE' as const,
-    item_hash: await sha256Hex(itemContent),
-    item_type: 'inline' as const,
-    item_content: itemContent,
-    time: now,
-    channel: buildPlan.channel,
-  }
-  const message = await signAlephMessage(unsignedMessage, identity.signer)
+  const message = await buildRootfsStoreMessage(buildPlan, cid, env)
   const apiHosts = parseRootfsAlephApiHosts(buildPlan, env)
   let lastError: unknown = null
 
@@ -1041,13 +1102,17 @@ export async function runRootfsMode(
         ? await hooks.uploadRootfsImageToIpfs(originalPlan)
         : await uploadRootfsImageToIpfs(originalPlan, env)
       try {
-        await waitForIpfsCidAvailable(originalPlan, upload.cid, env)
-        const pinned = await pinRootfsCidOnAleph(originalPlan, upload.cid, env)
+        let itemHash = upload.itemHash
+        if (!itemHash) {
+          await waitForIpfsCidAvailable(originalPlan, upload.cid, env)
+          const pinned = await pinRootfsCidOnAleph(originalPlan, upload.cid, env)
+          itemHash = pinned.itemHash
+        }
 
         const artifacts = publicationArtifacts(originalPlan)
         await mkdir(originalPlan.outDir, { recursive: true })
         await writeFile(artifacts.ipfsAddResponsePath, upload.responseText.endsWith('\n') ? upload.responseText : `${upload.responseText}\n`)
-        storeMessageContent = JSON.stringify({ item_hash: pinned.itemHash })
+        storeMessageContent = JSON.stringify({ item_hash: itemHash })
         await writeFile(artifacts.storeMessagePath, `${storeMessageContent}\n`)
         await writeFile(artifacts.storeMessageStderrPath, '')
         ipfsAddResponseContent = upload.responseText
