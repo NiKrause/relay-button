@@ -1,6 +1,6 @@
 {
   "name": "@le-space/node",
-  "version": "0.6.21",
+  "version": "0.6.22",
   "description": "Node and GitHub Actions adapters for Relay Button deployment tooling.",
   "license": "MIT",
   "private": true,
@@ -15,6 +15,7 @@
     "@helia/routers": "^5.1.1",
     "@helia/unixfs": "^7.2.1",
     "@helia/utils": "^2.5.2",
+    "@ipld/car": "^5.4.6",
     "@le-space/core": "workspace:*",
     "@le-space/libp2p-bootstrap": "npm:@libp2p/bootstrap@^12.0.25",
     "@le-space/libp2p-identify": "npm:@libp2p/identify@^4.1.8",
@@ -43,6 +44,7 @@
     "ipfs-unixfs-importer": "^16.1.5",
     "libp2p": "^2.8.3",
     "libp2p-helia": "npm:libp2p@^3.3.4",
+    "multiformats": "^14.0.4",
     "undici": "^6.22.0"
   },
   "scripts": {
