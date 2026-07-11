@@ -302,6 +302,59 @@ test('runActionMode emits retention outputs in retain-successful-deployments mod
   assert.match(writes.join(''), /aggregateHash/)
 })
 
+test('runActionMode cleans up an instance before its rootfs STORE', async () => {
+  const { env, outputFile, summaryFile } = await createActionEnv('relay-button-action-cleanup-')
+  let cleanupOptions
+
+  await runActionMode({
+    ...env,
+    ALEPH_VM_MODE: 'cleanup-deployment',
+    ALEPH_VM_PRIVATE_KEY: '0xabc',
+    ALEPH_VM_CLEANUP_INSTANCE_ITEM_HASH: 'instanceHash',
+    ALEPH_VM_CLEANUP_DEPENDENT_HASHES_JSON: JSON.stringify(['rootfsHash'])
+  }, {
+    stdout: () => {},
+    createPrivateKeyIdentity: async () => ({ address: '0x1234', signer: async () => '0xsigned' }),
+    retainSuccessfulDeployments: async (options) => {
+      cleanupOptions = options
+      return {
+        forgetHashes: ['instanceHash', 'rootfsHash'],
+        forgottenHashes: ['instanceHash', 'rootfsHash'],
+        outstandingForgetHashes: []
+      }
+    }
+  })
+
+  assert.equal(cleanupOptions.keepCount, 0)
+  assert.equal(cleanupOptions.currentRecord.instance_item_hash, 'instanceHash')
+  assert.equal(cleanupOptions.currentRecord.rootfs_item_hash, 'rootfsHash')
+  assert.match(await readFile(outputFile, 'utf8'), /cleanup_outstanding_hashes_json=\[\]/)
+  assert.match(await readFile(summaryFile, 'utf8'), /Daily deployment cleanup/)
+})
+
+test('runActionMode forgets a rootfs STORE when deployment failed before INSTANCE creation', async () => {
+  const { env, outputFile } = await createActionEnv('relay-button-action-partial-cleanup-')
+  let forgottenHashes
+
+  await runActionMode({
+    ...env,
+    ALEPH_VM_MODE: 'cleanup-deployment',
+    ALEPH_VM_PRIVATE_KEY: '0xabc',
+    ALEPH_VM_CLEANUP_INSTANCE_ITEM_HASH: '',
+    ALEPH_VM_CLEANUP_DEPENDENT_HASHES_JSON: JSON.stringify(['rootfsHash'])
+  }, {
+    stdout: () => {},
+    createPrivateKeyIdentity: async () => ({ address: '0x1234', signer: async () => '0xsigned' }),
+    forgetAlephMessages: async (options) => {
+      forgottenHashes = options.hashes
+      return { itemHash: 'forgetHash', status: 'processed' }
+    }
+  })
+
+  assert.deepEqual(forgottenHashes, ['rootfsHash'])
+  assert.match(await readFile(outputFile, 'utf8'), /cleanup_outstanding_hashes_json=\[\]/)
+})
+
 
 test('runActionMode retries retention across configured Aleph API hosts', async () => {
   const { env, outputFile } = await createActionEnv('relay-button-action-retention-api-hosts-')

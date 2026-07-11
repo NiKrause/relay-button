@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import type { PortMapping } from "@le-space/shared-types";
 import {
   createRelayBootstrapRegistrationId,
+  forgetAlephMessages,
   listGeocodedCrns,
   publishRelayBootstrapRegistration,
   reconcileOwnerRelayBootstrapRegistrations,
@@ -218,6 +219,7 @@ export async function runActionMode(
     deployExecutor?: typeof executeDeployPlan;
     deriveUcanStoreBootstrapPackage?: typeof deriveUcanStoreBootstrapPackageFromEnv;
     retainSuccessfulDeployments?: typeof retainSuccessfulDeployments;
+    forgetAlephMessages?: typeof forgetAlephMessages;
     publishRelayBootstrapRegistration?: typeof publishRelayBootstrapRegistration;
     createPrivateKeyIdentity?: (
       privateKey: string,
@@ -226,6 +228,79 @@ export async function runActionMode(
 ): Promise<void> {
   const mode = optionalEnv("ALEPH_VM_MODE", "deploy", env);
   const stdout = hooks.stdout ?? ((text: string) => process.stdout.write(text));
+
+  if (mode === "cleanup-deployment") {
+    if (typeof globalThis.fetch !== "function") {
+      throw new Error("A fetch implementation is required for cleanup-deployment mode.");
+    }
+    const identity = await (hooks.createPrivateKeyIdentity ?? createPrivateKeyIdentity)(
+      requiredEnv("ALEPH_VM_PRIVATE_KEY", env),
+    );
+    const instanceItemHash = optionalEnv("ALEPH_VM_CLEANUP_INSTANCE_ITEM_HASH", "", env).trim();
+    const dependentHashes = jsonEnv<string[]>("ALEPH_VM_CLEANUP_DEPENDENT_HASHES_JSON", "[]", env).filter(Boolean);
+    const channel = optionalEnv("ALEPH_VM_CHANNEL", "TEST", env);
+    const { result: payload, apiHost } = await withApiHostFallback({
+      label: "deployment cleanup",
+      fallbackApiHost: optionalEnv("ALEPH_VM_API_HOST", "https://api.aleph.im", env),
+      env,
+      run: async (selectedApiHost) => {
+        if (instanceItemHash) {
+          return (hooks.retainSuccessfulDeployments ?? retainSuccessfulDeployments)({
+            sender: identity.address,
+            currentRecord: {
+              instance_item_hash: instanceItemHash,
+              rootfs_item_hash: dependentHashes[0] ?? "",
+              site_item_hash: dependentHashes[1] ?? "",
+              vm_name: optionalEnv("ALEPH_VM_NAME", "daily-smoke", env),
+            },
+            keepCount: 0,
+            extraForgetHashes: dependentHashes.slice(2),
+            signer: identity.signer,
+            hasher: async (content) => defaultHasher(content),
+            fetch: globalThis.fetch.bind(globalThis),
+            channel,
+            apiHost: selectedApiHost,
+            reason: "Clean up daily Aleph profile smoke test",
+          });
+        }
+        if (dependentHashes.length === 0) {
+          return { forgetHashes: [], forgottenHashes: [], outstandingForgetHashes: [] };
+        }
+        const forgetResult = await (hooks.forgetAlephMessages ?? forgetAlephMessages)({
+          sender: identity.address,
+          hashes: dependentHashes,
+          reason: "Clean up partial daily Aleph profile smoke test",
+          signer: identity.signer,
+          hasher: async (content) => defaultHasher(content),
+          fetch: globalThis.fetch.bind(globalThis),
+          channel,
+          apiHost: selectedApiHost,
+        });
+        return {
+          forgetHashes: dependentHashes,
+          forgottenHashes: dependentHashes,
+          outstandingForgetHashes: [],
+          forgetResult,
+        };
+      },
+    });
+    await appendGithubOutput("cleanup_api_host", apiHost, env);
+    await appendGithubOutput("cleanup_result_json", JSON.stringify(payload), env);
+    await appendGithubOutput("cleanup_outstanding_hashes_json", JSON.stringify(payload.outstandingForgetHashes ?? []), env);
+    await appendGithubSummary([
+      "## Daily deployment cleanup",
+      "",
+      `- API host: \`${apiHost}\``,
+      `- Instance: \`${instanceItemHash || "not-created"}\``,
+      `- Requested hashes: \`${(payload.forgetHashes ?? []).length}\``,
+      `- Outstanding hashes: \`${(payload.outstandingForgetHashes ?? []).length}\``,
+    ], env);
+    if ((payload.outstandingForgetHashes ?? []).length > 0) {
+      throw new Error(`Deployment cleanup left outstanding hashes: ${payload.outstandingForgetHashes.join(", ")}`);
+    }
+    stdout(`${JSON.stringify(payload)}\n`);
+    return;
+  }
 
   if (mode === "list-crns") {
     if (
