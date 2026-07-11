@@ -101,9 +101,9 @@ importers:
       '@helia/utils':
         specifier: ^2.5.2
         version: 2.5.2
-      ipfs-unixfs-importer:
-        specifier: ^16.1.5
-        version: 16.1.5
+      '@ipld/car':
+        specifier: ^5.4.6
+        version: 5.4.6
       '@le-space/core':
         specifier: workspace:*
         version: link:../core
@@ -179,6 +179,9 @@ importers:
       ethers:
         specifier: ^6.15.0
         version: 6.16.0
+      ipfs-unixfs-importer:
+        specifier: ^16.1.5
+        version: 16.1.5
       libp2p:
         specifier: ^2.8.3
         version: 2.10.0

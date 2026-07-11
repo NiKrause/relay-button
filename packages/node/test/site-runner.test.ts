@@ -4,10 +4,15 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { cidV0ToV1, computeStaticSiteDirectoryCid, parseLastJsonObject, runBootstrapEnvMode, runDomainLinkMode, runProbeMode, runSitePublishMode } from "../src/site-runner.ts"
+import { cidV0ToV1, computeStaticSiteDirectoryCid, parseLastJsonObject, runBootstrapEnvMode, runDomainLinkMode, runProbeMode, runSitePublishMode as runSitePublishModeCar } from "../src/site-runner.ts"
 
-const TWO_FILE_SITE_CID = 'QmUW8xf4tffW2UY7o9VdJucbkL4rcu7mnS9Z9tGR7AwWBP'
-const ONE_FILE_SITE_CID = 'QmbgouCzqJ9VWBus4FPdnT79C5dgxLGaXhz9yRGDtRT4XU'
+const TWO_FILE_SITE_CID = 'bafybeibijbzrkewear2lkoylctlf6v4atsukit4c36dsxpeq4ndj66gqzi'
+const TWO_FILE_SITE_CID_V0 = 'QmR3u6JNpvpoGEKfepbKQ6QRpDma6kwbg1e6aa4yoW9gzM'
+const ONE_FILE_SITE_CID = 'bafybeiab5vrtxat6w4pmynetb4g6x5iirj3dtpnz74pgdupansxehuh72m'
+
+function runSitePublishMode(env: NodeJS.ProcessEnv) {
+  return runSitePublishModeCar({ ...env, ALEPH_SITE_UPLOAD_DRIVER: 'gateway-relay' })
+}
 
 async function createOutputEnv(prefix: string) {
   const dir = await mkdtemp(join(tmpdir(), prefix))
@@ -107,10 +112,8 @@ test('runDomainLinkMode detaches and attaches the production domain', async () =
   assert.match(outputs, /domain_message_hash=[a-f0-9]{64}/)
   assert.match(outputs, new RegExp(`domain_verified_cid=${ONE_FILE_SITE_CID}`))
   assert.match(outputs, /domain_verified=true/)
-  assert.equal(requests.length, 2)
-  const detachMessage = (((requests[0]?.message as Record<string, unknown>)?.item_content as string | undefined) ?? '')
-  const attachMessage = (((requests[1]?.message as Record<string, unknown>)?.item_content as string | undefined) ?? '')
-  assert.match(detachMessage, /"relay\.example\.com":null/)
+  assert.equal(requests.length, 1)
+  const attachMessage = (((requests[0]?.message as Record<string, unknown>)?.item_content as string | undefined) ?? '')
   assert.match(attachMessage, /"relay\.example\.com":\{"message_id":"abcd1234","type":"ipfs","programType":"ipfs","options":\{"catch_all_path":"\/index\.html"\}\}/)
 })
 
@@ -160,7 +163,7 @@ test('runDomainLinkMode falls back once and keeps the working Aleph API host', a
   assert.equal(calls.filter((url) => url === 'https://api.aleph.im/api/v0/messages/abcd1234').length, 1)
   assert.equal(calls.filter((url) => url === 'https://api.aleph.im/api/v0/messages').length, 0)
   assert.equal(calls.filter((url) => url === 'https://api2.aleph.im/api/v0/messages/abcd1234').length, 1)
-  assert.equal(calls.filter((url) => url === 'https://api2.aleph.im/api/v0/messages').length, 2)
+  assert.equal(calls.filter((url) => url === 'https://api2.aleph.im/api/v0/messages').length, 1)
 })
 
 test('cidV0ToV1 converts dag-pb CIDv0 values to lowercase base32 CIDv1', () => {
@@ -178,7 +181,8 @@ test('computeStaticSiteDirectoryCid is deterministic for nested ordered fixtures
   const first = await computeStaticSiteDirectoryCid(dir)
   const second = await computeStaticSiteDirectoryCid(dir)
   assert.deepEqual(first, second)
-  assert.equal(first.cidV0, TWO_FILE_SITE_CID)
+  assert.equal(first.cidV0, TWO_FILE_SITE_CID_V0)
+  assert.equal(first.cidV1, TWO_FILE_SITE_CID)
 })
 
 test('runSitePublishMode uploads dist through the Node IPFS client and emits outputs', async () => {
@@ -223,9 +227,9 @@ test('runSitePublishMode uploads dist through the Node IPFS client and emits out
 
   const outputs = await readFile(outputFile, 'utf8')
   const summary = await readFile(summaryFile, 'utf8')
-  assert.equal(requestUrl, 'https://ipfs-2.aleph.im/api/v0/add?recursive=true&wrap-with-directory=true')
+  assert.equal(requestUrl, 'https://ipfs-2.aleph.im/api/v0/add?recursive=true&wrap-with-directory=true&cid-version=1&raw-leaves=true')
   assert.deepEqual(uploadedFileNames, ['assets/app.js', 'index.html'])
-  assert.match(outputs, new RegExp(`ipfs_cid_v0=${TWO_FILE_SITE_CID}`))
+  assert.match(outputs, new RegExp(`ipfs_cid_v0=${TWO_FILE_SITE_CID_V0}`))
   assert.match(outputs, /cid_match=true/)
   assert.match(outputs, /ipfs_gateway=https:\/\/ipfs-2\.aleph\.im/)
   assert.match(outputs, /aleph_api_host=https:\/\/api2\.aleph\.im/)
@@ -301,6 +305,64 @@ test('runSitePublishMode rejects a CID mismatch before publishing a STORE', asyn
   }
   assert.equal(calls.length, 1)
   assert.match(calls[0]!, /ipfs-2\.aleph\.im\/api\/v0\/add/)
+})
+
+test('runSitePublishMode uploads CAR and signed STORE metadata atomically by default', async () => {
+  const { dir, outputFile, summaryFile } = await createOutputEnv('site-publish-car-')
+  const siteDir = join(dir, 'dist')
+  await mkdir(siteDir, { recursive: true })
+  await writeFile(join(siteDir, 'index.html'), '<!doctype html><title>blog</title>')
+  let storeHash = ''
+  const calls: string[] = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    calls.push(url)
+    if (url === 'https://api2.aleph.im/api/v0/ipfs/add_car') {
+      assert.equal(init?.method, 'POST')
+      assert.ok(init?.body instanceof FormData)
+      const file = init.body.get('file')
+      const metadata = init.body.get('metadata')
+      assert.ok(file instanceof File)
+      assert.equal(file.name, 'upload.car')
+      assert.equal(file.type, 'application/vnd.ipld.car')
+      assert.ok(file.size > 0)
+      assert.ok(metadata instanceof Blob)
+      const envelope = JSON.parse(await metadata.text()) as { sync?: boolean; message?: Record<string, unknown> }
+      assert.equal(envelope.sync, true)
+      const message = envelope.message ?? {}
+      assert.equal(message.type, 'STORE')
+      storeHash = String(message.item_hash ?? '')
+      const content = JSON.parse(String(message.item_content ?? '{}')) as Record<string, unknown>
+      assert.equal(content.item_hash, ONE_FILE_SITE_CID)
+      assert.deepEqual(content.payment, { type: 'credit' })
+      assert.equal('ref' in content, false)
+      return new Response(JSON.stringify({ status: 'success', hash: ONE_FILE_SITE_CID, size: file.size }), { status: 200 })
+    }
+    if (url === `https://api2.aleph.im/api/v0/messages/${storeHash}`) {
+      return new Response(JSON.stringify({ status: 'processed' }), { status: 200 })
+    }
+    if (url.includes('.ipfs.aleph.sh')) {
+      return new Response('<!doctype html><title>blog</title>', { status: 200, headers: { 'x-ipfs-roots': ONE_FILE_SITE_CID } })
+    }
+    throw new Error(`Unexpected fetch call: ${url}`)
+  }) as typeof fetch
+  try {
+    await runSitePublishModeCar({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_SITE_DIRECTORY: siteDir,
+      ALEPH_SITE_PIN: 'true',
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, /site_upload_driver=authenticated-car/)
+  assert.match(outputs, /store_processed=true/)
+  assert.equal(calls.filter((url) => url.endsWith('/api/v0/ipfs/add_car')).length, 1)
+  assert.equal(calls.filter((url) => url.endsWith('/api/v0/messages')).length, 0)
 })
 
 test('runSitePublishMode reuses the exact signed STORE envelope for transient retries', async () => {
