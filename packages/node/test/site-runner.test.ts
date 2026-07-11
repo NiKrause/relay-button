@@ -4,7 +4,10 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { cidV0ToV1, parseLastJsonObject, runBootstrapEnvMode, runDomainLinkMode, runProbeMode, runSitePublishMode } from "../src/site-runner.ts"
+import { cidV0ToV1, computeStaticSiteDirectoryCid, parseLastJsonObject, runBootstrapEnvMode, runDomainLinkMode, runProbeMode, runSitePublishMode } from "../src/site-runner.ts"
+
+const TWO_FILE_SITE_CID = 'QmUW8xf4tffW2UY7o9VdJucbkL4rcu7mnS9Z9tGR7AwWBP'
+const ONE_FILE_SITE_CID = 'QmbgouCzqJ9VWBus4FPdnT79C5dgxLGaXhz9yRGDtRT4XU'
 
 async function createOutputEnv(prefix: string) {
   const dir = await mkdtemp(join(tmpdir(), prefix))
@@ -61,13 +64,19 @@ test('runDomainLinkMode detaches and attaches the production domain', async () =
   const originalFetch = globalThis.fetch
   const requests: Array<Record<string, unknown>> = []
   globalThis.fetch = (async (input, init) => {
-    if (String(input) === 'https://api.aleph.im/api/v0/messages/abcd1234') {
+    if (String(input) === 'https://relay.example.com') {
+      return new Response('<!doctype html><title>site</title>', {
+        status: 200,
+        headers: { 'x-ipfs-roots': ONE_FILE_SITE_CID },
+      })
+    }
+    if (String(input) === 'https://api2.aleph.im/api/v0/messages/abcd1234') {
       return new Response(JSON.stringify({ status: 'processed' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (String(input) !== 'https://api.aleph.im/api/v0/messages') {
+    if (String(input) !== 'https://api2.aleph.im/api/v0/messages') {
       throw new Error(`Unexpected fetch call: ${String(input)}`)
     }
     const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
@@ -85,6 +94,7 @@ test('runDomainLinkMode detaches and attaches the production domain', async () =
       ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
       ALEPH_SITE_DOMAIN: 'relay.example.com',
       ALEPH_SITE_ITEM_HASH: 'abcd1234',
+      ALEPH_SITE_IPFS_CID_V0: ONE_FILE_SITE_CID,
     })
   } finally {
     globalThis.fetch = originalFetch
@@ -95,6 +105,8 @@ test('runDomainLinkMode detaches and attaches the production domain', async () =
   assert.match(outputs, /item_hash=abcd1234/)
   assert.match(outputs, /url=https:\/\/relay.example.com/)
   assert.match(outputs, /domain_message_hash=[a-f0-9]{64}/)
+  assert.match(outputs, new RegExp(`domain_verified_cid=${ONE_FILE_SITE_CID}`))
+  assert.match(outputs, /domain_verified=true/)
   assert.equal(requests.length, 2)
   const detachMessage = (((requests[0]?.message as Record<string, unknown>)?.item_content as string | undefined) ?? '')
   const attachMessage = (((requests[1]?.message as Record<string, unknown>)?.item_content as string | undefined) ?? '')
@@ -158,6 +170,17 @@ test('cidV0ToV1 converts dag-pb CIDv0 values to lowercase base32 CIDv1', () => {
   )
 })
 
+test('computeStaticSiteDirectoryCid is deterministic for nested ordered fixtures', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'site-cid-fixture-'))
+  await mkdir(join(dir, 'assets'), { recursive: true })
+  await writeFile(join(dir, 'index.html'), '<!doctype html><title>blog</title>')
+  await writeFile(join(dir, 'assets', 'app.js'), 'console.log("hello")')
+  const first = await computeStaticSiteDirectoryCid(dir)
+  const second = await computeStaticSiteDirectoryCid(dir)
+  assert.deepEqual(first, second)
+  assert.equal(first.cidV0, TWO_FILE_SITE_CID)
+})
+
 test('runSitePublishMode uploads dist through the Node IPFS client and emits outputs', async () => {
   const { dir, outputFile, summaryFile } = await createOutputEnv('site-publish-')
   const siteDir = join(dir, 'dist')
@@ -178,7 +201,7 @@ test('runSitePublishMode uploads dist through the Node IPFS client and emits out
     })
     return new Response([
       JSON.stringify({ Name: 'index.html', Hash: 'QmFileOne' }),
-      JSON.stringify({ Name: '', Hash: 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n' }),
+      JSON.stringify({ Name: '', Hash: TWO_FILE_SITE_CID }),
     ].join('\n'), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -202,10 +225,12 @@ test('runSitePublishMode uploads dist through the Node IPFS client and emits out
   const summary = await readFile(summaryFile, 'utf8')
   assert.equal(requestUrl, 'https://ipfs-2.aleph.im/api/v0/add?recursive=true&wrap-with-directory=true')
   assert.deepEqual(uploadedFileNames, ['assets/app.js', 'index.html'])
-  assert.match(outputs, /ipfs_cid_v0=QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n/)
-  assert.match(outputs, /ipfs_cid_v1=bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku/)
-  assert.match(outputs, /url=https:\/\/bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku\.ipfs\.aleph\.sh/)
-  assert.match(summary, /IPFS CID v1: `bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku`/)
+  assert.match(outputs, new RegExp(`ipfs_cid_v0=${TWO_FILE_SITE_CID}`))
+  assert.match(outputs, /cid_match=true/)
+  assert.match(outputs, /ipfs_gateway=https:\/\/ipfs-2\.aleph\.im/)
+  assert.match(outputs, /aleph_api_host=https:\/\/api2\.aleph\.im/)
+  assert.match(outputs, /direct_gateway_verified=false/)
+  assert.match(summary, /Locally computed CID v0:/)
 })
 
 test('runSitePublishMode resolves a relative site directory from ALEPH_SITE_PROJECT_DIR', async () => {
@@ -227,7 +252,7 @@ test('runSitePublishMode resolves a relative site directory from ALEPH_SITE_PROJ
     })
     return new Response([
       JSON.stringify({ Name: 'index.html', Hash: 'QmFileOne' }),
-      JSON.stringify({ Name: '', Hash: 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n' }),
+      JSON.stringify({ Name: '', Hash: TWO_FILE_SITE_CID }),
     ].join('\n'), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -249,6 +274,76 @@ test('runSitePublishMode resolves a relative site directory from ALEPH_SITE_PROJ
   assert.deepEqual(uploadedFileNames, ['assets/app.js', 'index.html'])
 })
 
+test('runSitePublishMode rejects a CID mismatch before publishing a STORE', async () => {
+  const { dir, outputFile, summaryFile } = await createOutputEnv('site-publish-mismatch-')
+  const siteDir = join(dir, 'dist')
+  await mkdir(siteDir, { recursive: true })
+  await writeFile(join(siteDir, 'index.html'), '<!doctype html><title>blog</title>')
+  const calls: string[] = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input) => {
+    calls.push(String(input))
+    return new Response(JSON.stringify({ Name: '', Hash: 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }) as typeof fetch
+  try {
+    await assert.rejects(runSitePublishMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_SITE_DIRECTORY: siteDir,
+      ALEPH_SITE_PIN: 'true',
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+    }), /CID mismatch before STORE publication/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  assert.equal(calls.length, 1)
+  assert.match(calls[0]!, /ipfs-2\.aleph\.im\/api\/v0\/add/)
+})
+
+test('runSitePublishMode reuses the exact signed STORE envelope for transient retries', async () => {
+  const { dir, outputFile, summaryFile } = await createOutputEnv('site-publish-idempotent-')
+  const siteDir = join(dir, 'dist')
+  await mkdir(siteDir, { recursive: true })
+  await writeFile(join(siteDir, 'index.html'), '<!doctype html><title>blog</title>')
+  const storeBodies: string[] = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    if (url.startsWith('https://ipfs-2.aleph.im/api/v0/add')) {
+      return new Response(JSON.stringify({ Name: '', Hash: ONE_FILE_SITE_CID }), { status: 200 })
+    }
+    if (url === 'https://api2.aleph.im/api/v0/messages') {
+      storeBodies.push(String(init?.body ?? ''))
+      if (storeBodies.length < 3) return new Response('{}', { status: 503 })
+      return new Response(JSON.stringify({ item_hash: 'stable-store' }), { status: 200 })
+    }
+    if (url === 'https://api2.aleph.im/api/v0/messages/stable-store') {
+      return new Response(JSON.stringify({ status: 'processed' }), { status: 200 })
+    }
+    if (url.includes('.ipfs.aleph.sh')) {
+      return new Response('<!doctype html><title>blog</title>', { status: 200, headers: { etag: ONE_FILE_SITE_CID } })
+    }
+    throw new Error(`Unexpected fetch call: ${url}`)
+  }) as typeof fetch
+  try {
+    await runSitePublishMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_SITE_DIRECTORY: siteDir,
+      ALEPH_SITE_PIN: 'true',
+      ALEPH_SITE_STORE_BROADCAST_ATTEMPTS: '3',
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  assert.equal(storeBodies.length, 3)
+  assert.equal(new Set(storeBodies).size, 1)
+})
+
 test('runSitePublishMode pins the CID through the direct Aleph REST API', async () => {
   const { dir, outputFile, summaryFile } = await createOutputEnv('site-publish-pin-')
   const siteDir = join(dir, 'dist')
@@ -259,13 +354,16 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
   const calls: Array<{ url: string; init?: RequestInit }> = []
   globalThis.fetch = (async (input, init) => {
     calls.push({ url: String(input), init })
+    if (String(input).includes('.ipfs.aleph.sh')) {
+      return new Response('<!doctype html><title>blog</title>', { status: 200, headers: { 'x-ipfs-roots': ONE_FILE_SITE_CID } })
+    }
     if (String(input).startsWith('https://ipfs-2.aleph.im/api/v0/add')) {
-      return new Response(JSON.stringify({ Name: '', Hash: 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n' }), {
+      return new Response(JSON.stringify({ Name: '', Hash: ONE_FILE_SITE_CID }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (String(input) === 'https://api.aleph.im/api/v0/messages') {
+    if (String(input) === 'https://api2.aleph.im/api/v0/messages') {
       const body = JSON.parse(String(init?.body ?? '{}')) as {
         message?: {
           type?: string
@@ -291,14 +389,14 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
         address?: string
       }
       assert.equal(itemContent.item_type, 'ipfs')
-      assert.equal(itemContent.item_hash, 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n')
+      assert.equal(itemContent.item_hash, ONE_FILE_SITE_CID)
       assert.match(String(itemContent.address ?? ''), /^0x[0-9a-fA-F]{40}$/)
       return new Response(JSON.stringify({ item_hash: 'store123' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (String(input) === 'https://api.aleph.im/api/v0/messages/store123') {
+    if (String(input) === 'https://api2.aleph.im/api/v0/messages/store123') {
       return new Response(JSON.stringify({ status: 'processed' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -323,7 +421,8 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
 
   const outputs = await readFile(outputFile, 'utf8')
   assert.match(outputs, /item_hash=store123/)
-  assert.equal(calls.filter((call) => call.url === 'https://api.aleph.im/api/v0/messages').length, 1)
+  assert.match(outputs, /direct_gateway_verified=true/)
+  assert.equal(calls.filter((call) => call.url === 'https://api2.aleph.im/api/v0/messages').length, 1)
 })
 
 test('runSitePublishMode falls back to one Aleph API host and reuses it for wait', async () => {
@@ -337,8 +436,11 @@ test('runSitePublishMode falls back to one Aleph API host and reuses it for wait
   globalThis.fetch = (async (input, init) => {
     const url = String(input)
     calls.push(url)
+    if (url.includes('.ipfs.aleph.sh')) {
+      return new Response('<!doctype html><title>blog</title>', { status: 200, headers: { etag: ONE_FILE_SITE_CID } })
+    }
     if (url.startsWith('https://ipfs-2.aleph.im/api/v0/add')) {
-      return new Response(JSON.stringify({ Name: '', Hash: 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n' }), {
+      return new Response(JSON.stringify({ Name: '', Hash: ONE_FILE_SITE_CID }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
@@ -375,7 +477,10 @@ test('runSitePublishMode falls back to one Aleph API host and reuses it for wait
       ALEPH_SITE_IPFS_GATEWAY: 'https://ipfs-2.aleph.im',
       ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
       ALEPH_SITE_PIN: 'true',
-      ALEPH_SITE_ALEPH_API_HOSTS: 'https://api.aleph.im, https://api2.aleph.im, https://api3.aleph.im',
+      ALEPH_SITE_ENDPOINT_PAIRS: JSON.stringify([
+        { ipfsGateway: 'https://ipfs-2.aleph.im', apiHost: 'https://api.aleph.im' },
+        { ipfsGateway: 'https://ipfs-2.aleph.im', apiHost: 'https://api2.aleph.im' },
+      ]),
     })
   } finally {
     globalThis.fetch = originalFetch
@@ -383,7 +488,7 @@ test('runSitePublishMode falls back to one Aleph API host and reuses it for wait
 
   const outputs = await readFile(outputFile, 'utf8')
   assert.match(outputs, /item_hash=store-api2/)
-  assert.equal(calls.filter((url) => url === 'https://api.aleph.im/api/v0/messages').length, 1)
+  assert.equal(calls.filter((url) => url === 'https://api.aleph.im/api/v0/messages').length, 3)
   assert.equal(calls.filter((url) => url === 'https://api2.aleph.im/api/v0/messages').length, 1)
   assert.equal(calls.filter((url) => url === 'https://api2.aleph.im/api/v0/messages/store-api2').length, 1)
   assert.ok(!calls.some((url) => url.startsWith('https://api3.aleph.im/')))
@@ -399,19 +504,19 @@ test('runSitePublishMode rejects a pending STORE by default', async () => {
   globalThis.fetch = (async (input, init) => {
     const url = String(input)
     if (url.startsWith('https://ipfs-2.aleph.im/api/v0/add')) {
-      return new Response(JSON.stringify({ Name: '', Hash: 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n' }), {
+      return new Response(JSON.stringify({ Name: '', Hash: ONE_FILE_SITE_CID }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (url === 'https://api.aleph.im/api/v0/messages') {
+    if (url === 'https://api2.aleph.im/api/v0/messages') {
       assert.equal(init?.method, 'POST')
       return new Response(JSON.stringify({ item_hash: 'store-pending' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (url === 'https://api.aleph.im/api/v0/messages/store-pending') {
+    if (url === 'https://api2.aleph.im/api/v0/messages/store-pending') {
       return new Response(JSON.stringify({ status: 'pending' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -444,7 +549,7 @@ test('runDomainLinkMode refuses to link a pending STORE', async () => {
   const { outputFile, summaryFile } = await createOutputEnv('site-domain-pending-')
   const originalFetch = globalThis.fetch
   globalThis.fetch = (async (input) => {
-    if (String(input) === 'https://api.aleph.im/api/v0/messages/pending-store') {
+    if (String(input) === 'https://api2.aleph.im/api/v0/messages/pending-store') {
       return new Response(JSON.stringify({ status: 'pending' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -478,13 +583,16 @@ test('runSitePublishMode forgets older STORE messages for the same ALEPH_SITE_RE
   globalThis.fetch = (async (input, init) => {
     const url = String(input)
     calls.push({ url, init })
+    if (url.includes('.ipfs.aleph.sh')) {
+      return new Response('<!doctype html><title>blog</title>', { status: 200, headers: { 'x-ipfs-roots': ONE_FILE_SITE_CID } })
+    }
     if (url.startsWith('https://ipfs-2.aleph.im/api/v0/add')) {
-      return new Response(JSON.stringify({ Name: '', Hash: 'QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n' }), {
+      return new Response(JSON.stringify({ Name: '', Hash: ONE_FILE_SITE_CID }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (url === 'https://api.aleph.im/api/v0/messages' && init?.method === 'POST') {
+    if (url === 'https://api2.aleph.im/api/v0/messages' && init?.method === 'POST') {
       const body = JSON.parse(String(init.body ?? '{}')) as { message?: { type?: string; item_content?: string } }
       const message = body.message ?? {}
       if (message.type === 'STORE') {
@@ -502,13 +610,13 @@ test('runSitePublishMode forgets older STORE messages for the same ALEPH_SITE_RE
         })
       }
     }
-    if (url === 'https://api.aleph.im/api/v0/messages/store123') {
+    if (url === 'https://api2.aleph.im/api/v0/messages/store123') {
       return new Response(JSON.stringify({ status: 'processed' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (url.startsWith('https://api.aleph.im/api/v0/messages.json?')) {
+    if (url.startsWith('https://api2.aleph.im/api/v0/messages.json?')) {
       const parsedUrl = new URL(url)
       assert.equal(parsedUrl.searchParams.get('msgTypes'), 'STORE')
       assert.equal(parsedUrl.searchParams.get('pagination'), '100')
@@ -544,7 +652,7 @@ test('runSitePublishMode forgets older STORE messages for the same ALEPH_SITE_RE
     globalThis.fetch = originalFetch
   }
 
-  assert.equal(calls.filter((call) => call.url === 'https://api.aleph.im/api/v0/messages').length, 2)
+  assert.equal(calls.filter((call) => call.url === 'https://api2.aleph.im/api/v0/messages').length, 2)
 })
 
 test('parseLastJsonObject parses multiline trailing JSON output', () => {

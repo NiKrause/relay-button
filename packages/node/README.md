@@ -24,3 +24,9 @@ enable it in a publish-and-link pipeline.
 
 See the Docusaurus page “Static sites and custom domains” for a complete GitHub
 Actions example and the environment-variable contract.
+
+Publication computes the wrapped UnixFS root locally and rejects an uploaded
+root that differs. `ALEPH_SITE_ENDPOINT_PAIRS` couples each IPFS gateway with
+its Aleph API host; `ipfs-2.aleph.im` + `api2.aleph.im` is the default. A
+processed STORE must also pass direct CID gateway verification. Supply
+`ALEPH_SITE_IPFS_CID_V0` during domain linking to verify the public domain too.
