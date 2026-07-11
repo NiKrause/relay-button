@@ -2,6 +2,7 @@ import process from "node:process"
 import { createHash } from "node:crypto"
 import { readFile, readdir } from "node:fs/promises"
 import { isAbsolute, join, relative, resolve } from "node:path"
+import { importer as importUnixfs } from "ipfs-unixfs-importer"
 
 import { broadcastAlephMessage, DEFAULT_ALEPH_CHANNEL, forgetAlephMessages, normalizeBroadcastStatus, signAlephMessage } from "../../core/src/index.ts"
 import { inspectMessageResult, isTransientMessageLookupError } from "../../core/src/deployment-inspection.ts"
@@ -36,15 +37,50 @@ function parseCsvOrWhitespaceList(raw: string): string[] {
   return raw.split(/[\s,]+/u)
 }
 
+interface SiteEndpointPair {
+  ipfsGateway: string
+  apiHost: string
+}
+
 function siteAlephApiHosts(env: NodeJS.ProcessEnv = process.env): string[] {
   const rawHosts =
     optionalEnv('ALEPH_SITE_ALEPH_API_HOSTS', '', env).trim() ||
-    optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api.aleph.im', env).trim()
+    optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api2.aleph.im', env).trim()
   const hosts = uniqueNonEmptyValues(parseCsvOrWhitespaceList(rawHosts))
   if (hosts.length === 0) {
     throw new Error('ALEPH_SITE_ALEPH_API_HOSTS did not contain any API host URLs.')
   }
   return hosts
+}
+
+function siteEndpointPairs(env: NodeJS.ProcessEnv = process.env): SiteEndpointPair[] {
+  const configured = optionalEnv('ALEPH_SITE_ENDPOINT_PAIRS', '', env).trim()
+  if (configured) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(configured)
+    } catch (error) {
+      throw new Error(`ALEPH_SITE_ENDPOINT_PAIRS must be valid JSON: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (!Array.isArray(parsed)) throw new Error('ALEPH_SITE_ENDPOINT_PAIRS must be a JSON array.')
+    const pairs = parsed.map((entry, index) => {
+      if (!entry || typeof entry !== 'object') throw new Error(`ALEPH_SITE_ENDPOINT_PAIRS[${index}] must be an object.`)
+      const record = entry as Record<string, unknown>
+      if (typeof record.ipfsGateway !== 'string' || typeof record.apiHost !== 'string') {
+        throw new Error(`ALEPH_SITE_ENDPOINT_PAIRS[${index}] requires string ipfsGateway and apiHost values.`)
+      }
+      return { ipfsGateway: normalizeUrl(record.ipfsGateway), apiHost: normalizeUrl(record.apiHost) }
+    })
+    if (pairs.length === 0) throw new Error('ALEPH_SITE_ENDPOINT_PAIRS must contain at least one endpoint pair.')
+    return pairs
+  }
+
+  const gateways = siteIpfsGateways(env)
+  const apiHosts = siteAlephApiHosts(env)
+  if (gateways.length !== apiHosts.length && (gateways.length > 1 || apiHosts.length > 1)) {
+    throw new Error('Legacy ALEPH_SITE_IPFS_GATEWAYS and ALEPH_SITE_ALEPH_API_HOSTS must have equal lengths; prefer ALEPH_SITE_ENDPOINT_PAIRS.')
+  }
+  return gateways.map((ipfsGateway, index) => ({ ipfsGateway, apiHost: apiHosts[index] ?? apiHosts[0]! }))
 }
 
 function siteIpfsGateways(env: NodeJS.ProcessEnv = process.env): string[] {
@@ -132,9 +168,47 @@ async function waitForAlephMessage(itemHash: string, apiHost: string, env: NodeJ
   return false
 }
 
+function responseMatchesCid(response: Response, cidV0: string): boolean {
+  const etag = (response.headers.get('etag') ?? '').replace(/^W\//u, '').replaceAll('"', '')
+  const roots = (response.headers.get('x-ipfs-roots') ?? '').split(/[\s,]+/u)
+  return etag === cidV0 || roots.includes(cidV0)
+}
+
+async function waitForPublicCid(args: {
+  url: string
+  cidV0: string
+  env?: NodeJS.ProcessEnv
+  label: string
+}): Promise<void> {
+  const env = args.env ?? process.env
+  const attempts = Number(optionalEnv('ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS', '60', env))
+  const delayMs = Number(optionalEnv('ALEPH_SITE_GATEWAY_WAIT_DELAY_MS', '5000', env))
+  let lastEvidence = 'no response'
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(args.url, { cache: 'no-cache', redirect: 'follow' })
+      const body = response.ok ? await response.text() : ''
+      const cidMatches = responseMatchesCid(response, args.cidV0)
+      const usableIndex = /<(?:!doctype|html|head|body)\b/iu.test(body)
+      lastEvidence = `HTTP ${response.status}, cidMatches=${cidMatches}, usableIndex=${usableIndex}`
+      if (response.ok && cidMatches && usableIndex) return
+    } catch (error) {
+      lastEvidence = error instanceof Error ? error.message : String(error)
+    }
+    if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+  throw new Error(`${args.label} did not serve expected CID ${args.cidV0}: ${lastEvidence}`)
+}
+
 interface SitePublishResult {
   cidV0: string
   cidV1: string
+}
+
+class DiscardingBlockstore {
+  async put(cid: unknown): Promise<unknown> {
+    return cid
+  }
 }
 
 interface AlephStoreContent {
@@ -233,6 +307,21 @@ async function collectFiles(folder: string, base = folder): Promise<Array<{ rela
   return files
 }
 
+export async function computeStaticSiteDirectoryCid(directory: string): Promise<SitePublishResult> {
+  const files = await collectFiles(directory)
+  if (files.length === 0) throw new Error(`No files found under ${directory}`)
+  let cidV0 = ''
+  for await (const entry of importUnixfs(
+    files.map((file) => ({ path: file.relativePath, content: file.bytes })),
+    new DiscardingBlockstore() as any,
+    { cidVersion: 0, rawLeaves: false, wrapWithDirectory: true },
+  )) {
+    cidV0 = entry.cid.toString()
+  }
+  if (!cidV0) throw new Error(`Could not compute wrapped UnixFS directory CID for ${directory}.`)
+  return { cidV0, cidV1: cidV0ToV1(cidV0) }
+}
+
 export async function uploadStaticSiteDirectory(directory: string, gateway: string): Promise<SitePublishResult> {
   const files = await collectFiles(directory)
   if (files.length === 0) {
@@ -265,8 +354,8 @@ export async function uploadStaticSiteDirectory(directory: string, gateway: stri
   for (const line of responseText.split(/\r?\n/)) {
     const trimmed = line.trim()
     if (!trimmed) continue
-    const payload = JSON.parse(trimmed) as { Hash?: string }
-    cidV0 = payload.Hash ?? cidV0
+    const payload = JSON.parse(trimmed) as { Name?: string; Hash?: string }
+    if (payload.Name === '' && payload.Hash) cidV0 = payload.Hash
   }
   if (!cidV0) {
     throw new Error('CID not found in IPFS response')
@@ -280,23 +369,30 @@ export async function uploadStaticSiteDirectory(directory: string, gateway: stri
 
 async function uploadStaticSiteDirectoryWithGatewayFallback(
   directory: string,
+  expected: SitePublishResult,
   env: NodeJS.ProcessEnv = process.env,
-): Promise<{ publish: SitePublishResult; gateway: string }> {
-  const gateways = siteIpfsGateways(env)
+  onVerified?: (endpointPair: SiteEndpointPair, publish: SitePublishResult) => Promise<void>,
+): Promise<{ publish: SitePublishResult; endpointPair: SiteEndpointPair }> {
+  const pairs = siteEndpointPairs(env)
   let lastError: unknown = null
 
-  for (const [index, gateway] of gateways.entries()) {
+  for (const [index, endpointPair] of pairs.entries()) {
     try {
-      if (gateways.length > 1) {
-        console.warn(`Aleph site IPFS gateway attempt ${index + 1}/${gateways.length}: ${gateway}`)
+      if (pairs.length > 1) {
+        console.warn(`Aleph site endpoint pair attempt ${index + 1}/${pairs.length}: ${endpointPair.ipfsGateway} + ${endpointPair.apiHost}`)
       }
-      return { publish: await uploadStaticSiteDirectory(directory, gateway), gateway }
+      const publish = await uploadStaticSiteDirectory(directory, endpointPair.ipfsGateway)
+      if (publish.cidV0 !== expected.cidV0) {
+        throw new Error(`Static site CID mismatch before STORE publication: expected ${expected.cidV0}, uploaded ${publish.cidV0}. Options: cidVersion=0, rawLeaves=false, wrapWithDirectory=true.`)
+      }
+      await onVerified?.(endpointPair, publish)
+      return { publish, endpointPair }
     } catch (error) {
       lastError = error
-      if (index < gateways.length - 1) {
+      if (index < pairs.length - 1) {
         const message = error instanceof Error ? error.message : String(error)
         console.warn(
-          `Aleph site IPFS gateway ${gateway} failed; retrying with ${gateways[index + 1]}. ${message}`,
+          `Aleph site endpoint pair ${endpointPair.ipfsGateway} + ${endpointPair.apiHost} failed; retrying with the next pair. ${message}`,
         )
       }
     }
@@ -304,7 +400,7 @@ async function uploadStaticSiteDirectoryWithGatewayFallback(
 
   const suffix = lastError instanceof Error ? lastError.message : String(lastError)
   throw new Error(
-    `Aleph site IPFS upload failed through all configured gateways (${gateways.join(', ')}). Last error: ${suffix}`,
+    `Aleph site IPFS upload failed through all configured endpoint pairs. Last error: ${suffix}`,
   )
 }
 
@@ -442,7 +538,7 @@ async function retainRecentSiteStores(args: {
   }
 }
 
-async function pinIpfsCidOnAleph(cidV0: string, env: NodeJS.ProcessEnv = process.env): Promise<{ itemHash: string; apiHost: string }> {
+async function pinIpfsCidOnAleph(cidV0: string, apiHost: string, env: NodeJS.ProcessEnv = process.env): Promise<{ itemHash: string; apiHost: string }> {
   const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
   const channel = optionalEnv('ALEPH_SITE_CHANNEL', DEFAULT_ALEPH_CHANNEL, env)
   const ref = optionalEnv('ALEPH_SITE_REF', '', env).trim() || undefined
@@ -467,15 +563,12 @@ async function pinIpfsCidOnAleph(cidV0: string, env: NodeJS.ProcessEnv = process
     channel,
   }
   const message = await signAlephMessage(unsignedMessage, identity.signer)
-  const { result } = await withAlephApiHostFallback({
-    label: 'site STORE pin',
-    env,
-    run: async (apiHost) => {
-      const { response, httpStatus } = await broadcastAlephMessage(message, {
+  const attempts = Number(optionalEnv('ALEPH_SITE_STORE_BROADCAST_ATTEMPTS', '3', env))
+  const { response, httpStatus } = await broadcastAlephMessage(message, {
         apiHost,
         sync: true,
         fetch,
-        attempts: 1,
+        attempts,
       })
       const status = normalizeBroadcastStatus(httpStatus, response?.message_status)
       if (status === 'rejected') {
@@ -485,10 +578,7 @@ async function pinIpfsCidOnAleph(cidV0: string, env: NodeJS.ProcessEnv = process
       if (!itemHash) {
         throw new Error(`Aleph pin response did not include item_hash: ${JSON.stringify(response ?? {})}`)
       }
-      return { itemHash, apiHost }
-    },
-  })
-  return result
+  return { itemHash, apiHost }
 }
 
 export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): Promise<void> {
@@ -499,7 +589,16 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
     : resolve(projectDir, siteDirectoryInput)
   const pin = optionalEnv('ALEPH_SITE_PIN', 'true', env) === 'true'
 
-  const { publish } = await uploadStaticSiteDirectoryWithGatewayFallback(siteDirectory, env)
+  const expected = await computeStaticSiteDirectoryCid(siteDirectory)
+  let pinned: { itemHash: string; apiHost: string } | undefined
+  const { publish, endpointPair } = await uploadStaticSiteDirectoryWithGatewayFallback(
+    siteDirectory,
+    expected,
+    env,
+    pin ? async (pair, uploaded) => {
+      pinned = await pinIpfsCidOnAleph(uploaded.cidV0, pair.apiHost, env)
+    } : undefined,
+  )
   const cidV0 = publish.cidV0
   const cidV1 = publish.cidV1
 
@@ -510,12 +609,18 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
   let itemHash = ''
   let storeStatus = pin ? 'pending' : 'not-requested'
   if (pin) {
-    const pinned = await pinIpfsCidOnAleph(cidV0, env)
+    if (!pinned) throw new Error('Static site upload completed without an Aleph STORE result.')
     itemHash = pinned.itemHash
     await appendGithubOutput('item_hash', itemHash, env)
     const processed = await waitForAlephMessage(itemHash, pinned.apiHost, env)
     if (processed) {
       storeStatus = 'processed'
+      await waitForPublicCid({
+        url: `https://${cidV1}.ipfs.aleph.sh`,
+        cidV0,
+        env,
+        label: 'Direct CID gateway',
+      })
       await retainRecentSiteStores({ currentItemHash: itemHash, apiHost: pinned.apiHost, env })
     } else {
       const allowPending = optionalEnv('ALEPH_SITE_ALLOW_PENDING_STORE', 'false', env) === 'true'
@@ -537,10 +642,12 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
     '## Aleph Site Runner',
     '',
     `- Site directory: \`${siteDirectory}\``,
+    `- Locally computed CID v0: \`${expected.cidV0}\``,
     `- IPFS CID v0: \`${cidV0}\``,
     `- IPFS CID v1: \`${cidV1}\``,
     `- Aleph item hash: \`${itemHash}\``,
     `- Aleph STORE status: \`${storeStatus}\``,
+    `- Endpoint pair: \`${endpointPair.ipfsGateway} + ${endpointPair.apiHost}\``,
   ], env)
 }
 
@@ -548,6 +655,7 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): P
   const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
   const domain = requiredEnv('ALEPH_SITE_DOMAIN', env)
   const itemHash = requiredEnv('ALEPH_SITE_ITEM_HASH', env)
+  const cidV0 = optionalEnv('ALEPH_SITE_IPFS_CID_V0', '', env).trim()
   const catchAllPath = optionalEnv('ALEPH_SITE_DOMAIN_CATCH_ALL_PATH', '/index.html', env)
   const identity = await createPrivateKeyIdentity(privateKey)
 
@@ -593,12 +701,18 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): P
   await appendGithubOutput('url', `https://${attachPublication.domain}`, env)
   await appendGithubOutput('domain_message_hash', attachPublication.aggregateItemHash, env)
 
+  if (cidV0) {
+    await waitForPublicCid({ url: `https://${attachPublication.domain}`, cidV0, env, label: 'Custom domain' })
+    await appendGithubOutput('domain_verified_cid', cidV0, env)
+  }
+
   await appendGithubSummary([
     '## Aleph Site Runner',
     '',
     `- Linked domain: \`${attachPublication.domain}\``,
     `- Aleph item hash: \`${itemHash}\``,
     `- Domain aggregate hash: \`${attachPublication.aggregateItemHash}\``,
+    `- Verified domain CID: \`${cidV0 || 'not-requested'}\``,
     `- Catch-all path: \`${catchAllPath}\``,
   ], env)
 }
