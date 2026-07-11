@@ -604,10 +604,16 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
 
   await appendGithubOutput('ipfs_cid_v0', cidV0, env)
   await appendGithubOutput('ipfs_cid_v1', cidV1, env)
+  await appendGithubOutput('local_ipfs_cid_v0', expected.cidV0, env)
+  await appendGithubOutput('uploaded_ipfs_cid_v0', publish.cidV0, env)
+  await appendGithubOutput('cid_match', String(expected.cidV0 === publish.cidV0), env)
+  await appendGithubOutput('ipfs_gateway', endpointPair.ipfsGateway, env)
+  await appendGithubOutput('aleph_api_host', endpointPair.apiHost, env)
   await appendGithubOutput('url', `https://${cidV1}.ipfs.aleph.sh`, env)
 
   let itemHash = ''
   let storeStatus = pin ? 'pending' : 'not-requested'
+  let directGatewayVerified = false
   if (pin) {
     if (!pinned) throw new Error('Static site upload completed without an Aleph STORE result.')
     itemHash = pinned.itemHash
@@ -621,6 +627,7 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
         env,
         label: 'Direct CID gateway',
       })
+      directGatewayVerified = true
       await retainRecentSiteStores({ currentItemHash: itemHash, apiHost: pinned.apiHost, env })
     } else {
       const allowPending = optionalEnv('ALEPH_SITE_ALLOW_PENDING_STORE', 'false', env) === 'true'
@@ -637,6 +644,7 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
 
   await appendGithubOutput('store_status', storeStatus, env)
   await appendGithubOutput('store_processed', String(storeStatus === 'processed'), env)
+  await appendGithubOutput('direct_gateway_verified', String(directGatewayVerified), env)
 
   await appendGithubSummary([
     '## Aleph Site Runner',
@@ -644,10 +652,12 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
     `- Site directory: \`${siteDirectory}\``,
     `- Locally computed CID v0: \`${expected.cidV0}\``,
     `- IPFS CID v0: \`${cidV0}\``,
+    `- CID match: \`${expected.cidV0 === publish.cidV0}\``,
     `- IPFS CID v1: \`${cidV1}\``,
     `- Aleph item hash: \`${itemHash}\``,
     `- Aleph STORE status: \`${storeStatus}\``,
     `- Endpoint pair: \`${endpointPair.ipfsGateway} + ${endpointPair.apiHost}\``,
+    `- Direct CID gateway verified: \`${directGatewayVerified}\``,
   ], env)
 }
 
@@ -701,10 +711,13 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): P
   await appendGithubOutput('url', `https://${attachPublication.domain}`, env)
   await appendGithubOutput('domain_message_hash', attachPublication.aggregateItemHash, env)
 
+  let domainVerified = false
   if (cidV0) {
     await waitForPublicCid({ url: `https://${attachPublication.domain}`, cidV0, env, label: 'Custom domain' })
+    domainVerified = true
     await appendGithubOutput('domain_verified_cid', cidV0, env)
   }
+  await appendGithubOutput('domain_verified', String(domainVerified), env)
 
   await appendGithubSummary([
     '## Aleph Site Runner',
@@ -713,6 +726,7 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): P
     `- Aleph item hash: \`${itemHash}\``,
     `- Domain aggregate hash: \`${attachPublication.aggregateItemHash}\``,
     `- Verified domain CID: \`${cidV0 || 'not-requested'}\``,
+    `- Public domain verified: \`${domainVerified}\``,
     `- Catch-all path: \`${catchAllPath}\``,
   ], env)
 }

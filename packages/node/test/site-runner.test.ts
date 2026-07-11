@@ -106,6 +106,7 @@ test('runDomainLinkMode detaches and attaches the production domain', async () =
   assert.match(outputs, /url=https:\/\/relay.example.com/)
   assert.match(outputs, /domain_message_hash=[a-f0-9]{64}/)
   assert.match(outputs, new RegExp(`domain_verified_cid=${ONE_FILE_SITE_CID}`))
+  assert.match(outputs, /domain_verified=true/)
   assert.equal(requests.length, 2)
   const detachMessage = (((requests[0]?.message as Record<string, unknown>)?.item_content as string | undefined) ?? '')
   const attachMessage = (((requests[1]?.message as Record<string, unknown>)?.item_content as string | undefined) ?? '')
@@ -225,6 +226,10 @@ test('runSitePublishMode uploads dist through the Node IPFS client and emits out
   assert.equal(requestUrl, 'https://ipfs-2.aleph.im/api/v0/add?recursive=true&wrap-with-directory=true')
   assert.deepEqual(uploadedFileNames, ['assets/app.js', 'index.html'])
   assert.match(outputs, new RegExp(`ipfs_cid_v0=${TWO_FILE_SITE_CID}`))
+  assert.match(outputs, /cid_match=true/)
+  assert.match(outputs, /ipfs_gateway=https:\/\/ipfs-2\.aleph\.im/)
+  assert.match(outputs, /aleph_api_host=https:\/\/api2\.aleph\.im/)
+  assert.match(outputs, /direct_gateway_verified=false/)
   assert.match(summary, /Locally computed CID v0:/)
 })
 
@@ -416,6 +421,7 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
 
   const outputs = await readFile(outputFile, 'utf8')
   assert.match(outputs, /item_hash=store123/)
+  assert.match(outputs, /direct_gateway_verified=true/)
   assert.equal(calls.filter((call) => call.url === 'https://api2.aleph.im/api/v0/messages').length, 1)
 })
 
