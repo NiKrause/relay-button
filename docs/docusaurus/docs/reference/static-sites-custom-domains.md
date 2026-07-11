@@ -33,7 +33,7 @@ jobs:
       store_processed: ${{ steps.publish.outputs.store_processed }}
     steps:
       - uses: actions/checkout@v6
-      - run: npm install --prefix /tmp/relay-button @le-space/node@0.6.19
+      - run: npm install --prefix /tmp/relay-button @le-space/node@0.6.20
       - id: publish
         env:
           ALEPH_VM_MODE: site-publish
@@ -51,7 +51,7 @@ jobs:
     if: needs.publish.outputs.store_processed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - run: npm install --prefix /tmp/relay-button @le-space/node@0.6.19
+      - run: npm install --prefix /tmp/relay-button @le-space/node@0.6.20
       - env:
           ALEPH_VM_MODE: site-domain-link
           ALEPH_SITE_ITEM_HASH: ${{ needs.publish.outputs.item_hash }}
