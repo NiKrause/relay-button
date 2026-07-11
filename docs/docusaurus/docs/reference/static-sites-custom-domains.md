@@ -33,7 +33,7 @@ jobs:
       store_processed: ${{ steps.publish.outputs.store_processed }}
     steps:
       - uses: actions/checkout@v6
-      - run: npm install --prefix /tmp/relay-button @le-space/node@0.6.20
+      - run: npm install --prefix /tmp/relay-button @le-space/node@0.6.21
       - id: publish
         env:
           ALEPH_VM_MODE: site-publish
@@ -51,7 +51,7 @@ jobs:
     if: needs.publish.outputs.store_processed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - run: npm install --prefix /tmp/relay-button @le-space/node@0.6.20
+      - run: npm install --prefix /tmp/relay-button @le-space/node@0.6.21
       - env:
           ALEPH_VM_MODE: site-domain-link
           ALEPH_SITE_ITEM_HASH: ${{ needs.publish.outputs.item_hash }}
@@ -104,6 +104,11 @@ prevents unrelated upload and API nodes from being mixed. The locally computed
 CID must equal the upload's explicit wrapped-root response before the STORE is
 signed. `ALEPH_SITE_STORE_BROADCAST_ATTEMPTS` retries the exact same signed
 envelope and item hash.
+
+The signed website STORE declares Aleph credit payment explicitly as
+`payment: { type: "credit" }`. Directory upload and STORE publication remain
+two separate network messages: the STORE references only the already verified
+wrapped root CID.
 
 After STORE processing, the direct CID URL must return HTTP 200, HTML, and an
 `etag` equal to the CIDv0 or `X-Ipfs-Roots` containing it. Pass
