@@ -44,6 +44,7 @@
     "ipfs-unixfs-importer": "^16.1.5",
     "libp2p": "^2.8.3",
     "libp2p-helia": "npm:libp2p@^3.3.4",
+    "multiformats": "^14.0.4",
     "undici": "^6.22.0"
   },
   "scripts": {

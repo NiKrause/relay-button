@@ -188,6 +188,9 @@ importers:
       libp2p-helia:
         specifier: npm:libp2p@^3.3.4
         version: libp2p@3.3.4
+      multiformats:
+        specifier: ^14.0.4
+        version: 14.0.4
       undici:
         specifier: ^6.22.0
         version: 6.25.0
@@ -5848,8 +5851,8 @@ packages:
   multiformats@13.4.2:
     resolution: {integrity: sha512-eh6eHCrRi1+POZ3dA+Dq1C6jhP1GNtr9CRINMb67OKzqW9I5DUuZM/3jLPlzhgpGeiNUlEGEbkCYChXMCc/8DQ==}
 
-  multiformats@14.0.0:
-    resolution: {integrity: sha512-iWK1RrAS58p2NDfeZFuSUSv3ZPewTIhsGbh/5NgeGGJwJmRljLxGtjRR3nkn+loG3zl+IrfR/W1590QnrSK+Gg==}
+  multiformats@14.0.4:
+    resolution: {integrity: sha512-+SXItmOUWzT0kjlIfkZ4NawJaC9jW/mPlyn902V9Qgpc7YDwdEiwqbiZxTyvC0XWh1jZguXca3A/WQ+UOPRLUA==}
 
   mz@2.7.0:
     resolution: {integrity: sha512-z81GNO7nnYMEhrGh9LeymoE4+Yr0Wn5McHIZMK5cfQCl+NDX08sCZgUc9/6MHni9IWuFLm1Z3HTCXu2z9fN62Q==}
@@ -10651,13 +10654,13 @@ snapshots:
     dependencies:
       '@ipld/dag-cbor': 10.0.1
       cborg: 5.1.1
-      multiformats: 14.0.0
+      multiformats: 14.0.4
       varint: 6.0.0
 
   '@ipld/dag-cbor@10.0.1':
     dependencies:
       cborg: 5.1.1
-      multiformats: 14.0.0
+      multiformats: 14.0.4
 
   '@ipld/dag-cbor@9.2.7':
     dependencies:
@@ -10671,7 +10674,7 @@ snapshots:
 
   '@ipld/dag-pb@4.1.7':
     dependencies:
-      multiformats: 14.0.0
+      multiformats: 14.0.4
 
   '@ipld/dag-ucan@3.4.5':
     dependencies:
@@ -10930,7 +10933,7 @@ snapshots:
       '@libp2p/interface': 3.2.4
       '@noble/curves': 2.2.0
       '@noble/hashes': 2.2.0
-      multiformats: 14.0.0
+      multiformats: 14.0.4
       protons-runtime: 7.0.0
       uint8arraylist: 3.0.2
       uint8arrays: 6.1.1
@@ -11009,7 +11012,7 @@ snapshots:
       '@multiformats/dns': 1.0.13
       '@multiformats/multiaddr': 13.0.3
       main-event: 1.0.4
-      multiformats: 14.0.0
+      multiformats: 14.0.4
       progress-events: 1.1.0
       uint8arraylist: 3.0.2
 
@@ -11037,7 +11040,7 @@ snapshots:
       it-pushable: 3.2.4
       it-take: 3.0.11
       main-event: 1.0.4
-      multiformats: 14.0.0
+      multiformats: 14.0.4
       p-defer: 4.0.1
       p-event: 7.1.0
       progress-events: 1.1.0
@@ -11066,7 +11069,7 @@ snapshots:
       '@noble/hashes': 2.2.0
       asn1js: 3.0.10
       interface-datastore: 10.0.1
-      multiformats: 14.0.0
+      multiformats: 14.0.4
       sanitize-filename: 1.6.4
       uint8arrays: 6.1.1
 
@@ -11083,7 +11086,7 @@ snapshots:
       '@libp2p/interface': 3.2.4
       '@multiformats/multiaddr': 13.0.3
       interface-datastore: 10.0.1
-      multiformats: 14.0.0
+      multiformats: 14.0.4
       weald: 1.1.1
 
   '@libp2p/multistream-select@6.0.29':
@@ -11118,7 +11121,7 @@ snapshots:
       '@libp2p/interface': 3.2.4
       '@libp2p/peer-id': 6.0.11
       '@libp2p/utils': 7.2.3
-      multiformats: 14.0.0
+      multiformats: 14.0.4
 
   '@libp2p/peer-id@5.1.9':
     dependencies:
@@ -11131,7 +11134,7 @@ snapshots:
     dependencies:
       '@libp2p/crypto': 5.1.20
       '@libp2p/interface': 3.2.4
-      multiformats: 14.0.0
+      multiformats: 14.0.4
       uint8arrays: 6.1.1
 
   '@libp2p/peer-record@8.0.35':
@@ -11153,7 +11156,7 @@ snapshots:
       '@libp2p/interface': 3.2.4
       '@libp2p/peer-id': 6.0.11
       '@multiformats/multiaddr': 13.0.3
-      multiformats: 14.0.0
+      multiformats: 14.0.4
       protons-runtime: 7.0.0
       uint8-varint: 3.0.0
       uint8arraylist: 3.0.2
@@ -11188,7 +11191,7 @@ snapshots:
       it-all: 3.0.11
       main-event: 1.0.4
       mortice: 3.3.1
-      multiformats: 14.0.0
+      multiformats: 14.0.4
       protons-runtime: 7.0.0
       uint8arraylist: 3.0.2
       uint8arrays: 6.1.1
@@ -11485,13 +11488,13 @@ snapshots:
   '@multiformats/multiaddr@13.0.3':
     dependencies:
       '@chainsafe/is-ip': 2.1.0
-      multiformats: 14.0.0
+      multiformats: 14.0.4
       uint8-varint: 3.0.0
       uint8arrays: 6.1.1
 
   '@multiformats/murmur3@2.2.5':
     dependencies:
-      multiformats: 14.0.0
+      multiformats: 14.0.4
 
   '@multiformats/uri-to-multiaddr@10.0.0':
     dependencies:
@@ -15006,7 +15009,7 @@ snapshots:
       it-merge: 3.0.14
       it-parallel: 3.0.15
       main-event: 1.0.4
-      multiformats: 14.0.0
+      multiformats: 14.0.4
       p-defer: 4.0.1
       p-event: 7.1.0
       p-retry: 8.0.0
@@ -15931,7 +15934,7 @@ snapshots:
 
   multiformats@13.4.2: {}
 
-  multiformats@14.0.0: {}
+  multiformats@14.0.4: {}
 
   mz@2.7.0:
     dependencies:
@@ -17844,7 +17847,7 @@ snapshots:
 
   uint8arrays@6.1.1:
     dependencies:
-      multiformats: 14.0.0
+      multiformats: 14.0.4
 
   undici-types@6.19.8: {}
 
