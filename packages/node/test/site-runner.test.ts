@@ -387,9 +387,11 @@ test('runSitePublishMode pins the CID through the direct Aleph REST API', async 
         item_type?: string
         item_hash?: string
         address?: string
+        payment?: { type?: string }
       }
       assert.equal(itemContent.item_type, 'ipfs')
       assert.equal(itemContent.item_hash, ONE_FILE_SITE_CID)
+      assert.deepEqual(itemContent.payment, { type: 'credit' })
       assert.match(String(itemContent.address ?? ''), /^0x[0-9a-fA-F]{40}$/)
       return new Response(JSON.stringify({ item_hash: 'store123' }), {
         status: 200,

@@ -216,6 +216,7 @@ interface AlephStoreContent {
   time: number
   item_type: 'ipfs'
   item_hash: string
+  payment: { type: 'credit' }
   ref?: string
 }
 
@@ -549,6 +550,7 @@ async function pinIpfsCidOnAleph(cidV0: string, apiHost: string, env: NodeJS.Pro
     time: now,
     item_type: 'ipfs',
     item_hash: cidV0,
+    payment: { type: 'credit' },
     ...(ref ? { ref } : {}),
   }
   const itemContent = JSON.stringify(content)
