@@ -61,6 +61,12 @@ test('runDomainLinkMode detaches and attaches the production domain', async () =
   const originalFetch = globalThis.fetch
   const requests: Array<Record<string, unknown>> = []
   globalThis.fetch = (async (input, init) => {
+    if (String(input) === 'https://api.aleph.im/api/v0/messages/abcd1234') {
+      return new Response(JSON.stringify({ status: 'processed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     if (String(input) !== 'https://api.aleph.im/api/v0/messages') {
       throw new Error(`Unexpected fetch call: ${String(input)}`)
     }
@@ -115,6 +121,12 @@ test('runDomainLinkMode falls back once and keeps the working Aleph API host', a
         headers: { 'content-type': 'application/json' },
       })
     }
+    if (url === 'https://api2.aleph.im/api/v0/messages/abcd1234') {
+      return new Response(JSON.stringify({ status: 'processed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     throw new Error(`Unexpected fetch call: ${url}`)
   }) as typeof fetch
 
@@ -133,7 +145,9 @@ test('runDomainLinkMode falls back once and keeps the working Aleph API host', a
 
   const outputs = await readFile(outputFile, 'utf8')
   assert.match(outputs, /domain=relay.example.com/)
-  assert.equal(calls.filter((url) => url === 'https://api.aleph.im/api/v0/messages').length, 1)
+  assert.equal(calls.filter((url) => url === 'https://api.aleph.im/api/v0/messages/abcd1234').length, 1)
+  assert.equal(calls.filter((url) => url === 'https://api.aleph.im/api/v0/messages').length, 0)
+  assert.equal(calls.filter((url) => url === 'https://api2.aleph.im/api/v0/messages/abcd1234').length, 1)
   assert.equal(calls.filter((url) => url === 'https://api2.aleph.im/api/v0/messages').length, 2)
 })
 
@@ -375,7 +389,7 @@ test('runSitePublishMode falls back to one Aleph API host and reuses it for wait
   assert.ok(!calls.some((url) => url.startsWith('https://api3.aleph.im/')))
 })
 
-test('runSitePublishMode continues when accepted STORE message stays pending', async () => {
+test('runSitePublishMode rejects a pending STORE by default', async () => {
   const { dir, outputFile, summaryFile } = await createOutputEnv('site-publish-pending-')
   const siteDir = join(dir, 'dist')
   await mkdir(siteDir, { recursive: true })
@@ -407,7 +421,7 @@ test('runSitePublishMode continues when accepted STORE message stays pending', a
   }) as typeof fetch
 
   try {
-    await runSitePublishMode({
+    await assert.rejects(runSitePublishMode({
       GITHUB_OUTPUT: outputFile,
       GITHUB_STEP_SUMMARY: summaryFile,
       ALEPH_SITE_PROJECT_DIR: dir,
@@ -416,15 +430,41 @@ test('runSitePublishMode continues when accepted STORE message stays pending', a
       ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
       ALEPH_SITE_PIN: 'true',
       ALEPH_SITE_ALEPH_MESSAGE_WAIT_ATTEMPTS: '1',
-    })
+    }), /not safe to link a custom domain yet/)
   } finally {
     globalThis.fetch = originalFetch
   }
 
   const outputs = await readFile(outputFile, 'utf8')
-  const summary = await readFile(summaryFile, 'utf8')
   assert.match(outputs, /item_hash=store-pending/)
-  assert.match(summary, /Aleph item hash: `store-pending`/)
+  assert.doesNotMatch(outputs, /store_processed=true/)
+})
+
+test('runDomainLinkMode refuses to link a pending STORE', async () => {
+  const { outputFile, summaryFile } = await createOutputEnv('site-domain-pending-')
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input) => {
+    if (String(input) === 'https://api.aleph.im/api/v0/messages/pending-store') {
+      return new Response(JSON.stringify({ status: 'pending' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    throw new Error(`Unexpected fetch call: ${String(input)}`)
+  }) as typeof fetch
+
+  try {
+    await assert.rejects(runDomainLinkMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+      ALEPH_SITE_DOMAIN: 'relay.example.com',
+      ALEPH_SITE_ITEM_HASH: 'pending-store',
+      ALEPH_SITE_ALEPH_MESSAGE_WAIT_ATTEMPTS: '1',
+    }), /Custom domains may only target processed STORE messages/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('runSitePublishMode forgets older STORE messages for the same ALEPH_SITE_REF only', async () => {

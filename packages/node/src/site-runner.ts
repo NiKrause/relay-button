@@ -508,17 +508,30 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
   await appendGithubOutput('url', `https://${cidV1}.ipfs.aleph.sh`, env)
 
   let itemHash = ''
+  let storeStatus = pin ? 'pending' : 'not-requested'
   if (pin) {
     const pinned = await pinIpfsCidOnAleph(cidV0, env)
     itemHash = pinned.itemHash
     await appendGithubOutput('item_hash', itemHash, env)
     const processed = await waitForAlephMessage(itemHash, pinned.apiHost, env)
     if (processed) {
+      storeStatus = 'processed'
       await retainRecentSiteStores({ currentItemHash: itemHash, apiHost: pinned.apiHost, env })
     } else {
-      console.warn(`Aleph STORE message ${itemHash} stayed pending after the wait window; continuing with the accepted item hash.`)
+      const allowPending = optionalEnv('ALEPH_SITE_ALLOW_PENDING_STORE', 'false', env) === 'true'
+      if (!allowPending) {
+        throw new Error(
+          `Aleph STORE message ${itemHash} stayed pending after the wait window. ` +
+          'The site was uploaded to IPFS, but it is not safe to link a custom domain yet. ' +
+          'Retry publication after Aleph processes the STORE. Set ALEPH_SITE_ALLOW_PENDING_STORE=true only for asynchronous workflows that do not link a domain.',
+        )
+      }
+      console.warn(`Aleph STORE message ${itemHash} stayed pending; continuing because ALEPH_SITE_ALLOW_PENDING_STORE=true.`)
     }
   }
+
+  await appendGithubOutput('store_status', storeStatus, env)
+  await appendGithubOutput('store_processed', String(storeStatus === 'processed'), env)
 
   await appendGithubSummary([
     '## Aleph Site Runner',
@@ -527,6 +540,7 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
     `- IPFS CID v0: \`${cidV0}\``,
     `- IPFS CID v1: \`${cidV1}\``,
     `- Aleph item hash: \`${itemHash}\``,
+    `- Aleph STORE status: \`${storeStatus}\``,
   ], env)
 }
 
@@ -541,6 +555,14 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): P
     label: 'site domain link',
     env,
     run: async (apiHost) => {
+      const processed = await waitForAlephMessage(itemHash, apiHost, env)
+      if (!processed) {
+        throw new Error(
+          `Refusing to link ${domain}: Aleph STORE message ${itemHash} is still pending. ` +
+          'Custom domains may only target processed STORE messages.',
+        )
+      }
+
       await detachAlephDomain({
         sender: identity.address,
         domain,

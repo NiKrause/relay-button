@@ -1,7 +1,7 @@
 {
   "name": "relay-button",
   "private": true,
-  "version": "0.6.18",
+  "version": "0.6.19",
   "description": "Relay Button deployment, rootfs, and automation tooling monorepo.",
   "license": "MIT",
   "bin": {
