@@ -388,7 +388,7 @@ function runtimeMappedPorts(
   }));
 }
 
-function rootfsHealth(args: {
+export function rootfsHealth(args: {
   manifestState: RootfsManifestState;
   rootfsVerified: boolean;
   resolution: SponsorRelayState["rootfsResolution"];
@@ -422,7 +422,7 @@ function rootfsHealth(args: {
     return {
       tone: "ok",
       label: "deployable",
-      detail: args.resolution.gatewayUrl,
+      detail: args.resolution.gatewayUrl ?? "Rootfs verified on Aleph.",
     };
   }
 
