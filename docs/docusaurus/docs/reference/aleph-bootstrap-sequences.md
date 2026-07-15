@@ -2,7 +2,7 @@
 
 This page ties together the real implementation paths across:
 
-- the browser Sponsor Relay UI
+- the browser Relay Button UI
 - the guest VM bootstrap publisher
 - the reusable UC rootfs workflow
 - the shared `@le-space/node` deploy and site runners
@@ -154,7 +154,7 @@ sequenceDiagram
 
   Note right of Operator: Starts the CLI or action flow with rootfs,<br/>sizing, key, and CRN preference inputs.
   Note right of Deploy: Shared Node executor that signs deployment messages,<br/>selects CRNs, configures the guest, and publishes bootstrap records.
-  Note right of Aleph: Accepts INSTANCE, AGGREGATE, POST, and FORGET messages;<br/>also exposes deployment processing and 2n6 state.
+  Note right of Aleph: Accepts INSTANCE, AGGREGATE, POST, and FORGET messages,<br/>and also exposes deployment processing and 2n6 state.
   Note right of CRN: Selected compute node that exposes the VM execution map<br/>and mapped ports used by the setup endpoint.
   Note right of Guest: Temporary HTTP setup service on port 80.<br/>It writes env files, Caddy HTTP-01 config, and relay identity material.
   Note right of Relay: Long-running orbitdb-relay service, AutoTLS refresh,<br/>and bootstrap refresh timer after startup.
@@ -210,7 +210,7 @@ profiles:
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Operator as CLI / GitHub Action / Sponsor Relay UI
+  participant Operator as CLI / GitHub Action / Relay Button UI
   participant Action as action-runner + deploy executor
   participant Aleph as Aleph API
   participant CRN as Scheduler / selected CRN
@@ -221,7 +221,7 @@ sequenceDiagram
 
   Note right of Operator: Starts deployment from CI, CLI, or UI and supplies<br/>service domain, admin DID, and bootstrap package inputs.
   Note right of Action: Derives optional UCAN bootstrap package data,<br/>deploys the VM, configures the guest, and emits metadata outputs.
-  Note right of Aleph: Stores the VM INSTANCE and optional domain aggregate;<br/>no relay-bootstrap POST is expected for this profile.
+  Note right of Aleph: Stores the VM INSTANCE and optional domain aggregate.<br/>No relay-bootstrap POST is expected for this profile.
   Note right of CRN: Hosts the upload service VM and exposes mapped setup,<br/>SSH, and HTTPS ports.
   Note right of Guest: Temporary setup endpoint that validates input,<br/>persists bootstrap material, writes env, and starts services.
   Note right of Service: Local ucan-store upload API worker on 127.0.0.1:8787<br/>with a persisted service signer.
@@ -298,7 +298,7 @@ If you are debugging a broken rollout, read the system in this order:
 
 ## Delete And Orphan Cleanup
 
-The registration lifecycle does not end at publish time. The Sponsor Relay UI
+The registration lifecycle does not end at publish time. The Relay Button UI
 also cleans up linked and orphaned registrations explicitly.
 
 ```mermaid

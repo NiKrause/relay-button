@@ -4,7 +4,7 @@ Floating Aleph relay deployment UI components for Svelte and React.
 
 Primary goals:
 
-- Svelte-first floating `Sponsor Relay` panel
+- Svelte-first floating `Relay Button` panel
 - lightweight React wrapper
 - shared controller and browser-safe Aleph helpers
 - minimal host configuration beyond a rootfs manifest URL

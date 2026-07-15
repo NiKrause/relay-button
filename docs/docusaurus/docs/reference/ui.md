@@ -15,7 +15,7 @@ The package currently covers:
 
 - shared deployment status presentation
 - reusable small UI primitives for deployment flows
-- Sponsor Relay browser deployment integration
+- Relay Button browser deployment integration
 - framework-specific entrypoints for React and Svelte consumers
 
 The goal is to keep reusable deployment UX here while leaving product-specific
@@ -39,7 +39,7 @@ Use `@le-space/ui` when a consumer app needs:
 
 - a shared relay deployment button or flow
 - consistent deployment status display
-- reusable Sponsor Relay UX across projects
+- reusable Relay Button UX across projects
 - the shared deployment orchestration already implemented in this monorepo
 
 Keep implementation local to the consumer app when you need:
@@ -69,7 +69,7 @@ logic can live in the browser package instead.
 
 Known current consumer directions include:
 
-- Sponsor Relay browser flows
+- Relay Button browser flows
 - PWA-style Aleph deployment integrations
 - relay deployment UI shared across `aleph-libp2p-relay`-related projects
 

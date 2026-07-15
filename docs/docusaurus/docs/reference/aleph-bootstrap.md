@@ -49,7 +49,7 @@ for the `uc-go-peer` and `orbitdb-relay` RootFS profiles when they are launched
 through:
 
 - the shared GitHub Action VM deploy path
-- the Sponsor Relay browser UI path
+- the Relay Button browser UI path
 
 `ucan-store` is also a shared RootFS/deployment profile, but it intentionally
 does not publish relay bootstrap records. It exposes service discovery through
@@ -77,9 +77,9 @@ For compact v2 records, browser transports are preferred in this order:
 `/tcp/443/tls/ws`, other `/tls/ws`, WebTransport, WebRTC direct, then other
 websocket addresses.
 
-### Sponsor Relay Registration Lifecycle
+### Relay Button Registration Lifecycle
 
-For `uc-go-peer`, the browser Sponsor Relay flow is now a staged handoff rather
+For `uc-go-peer`, the browser Relay Button flow is now a staged handoff rather
 than a single direct bootstrap publish:
 
 1. the browser waits for Aleph runtime networking and mapped ports
@@ -280,7 +280,7 @@ Current implementation detail:
 
 Current UI state handling also relies on `registrationId`:
 
-- the Sponsor Relay panel marks registrations that match a live instance as
+- the Relay Button panel marks registrations that match a live instance as
   confirmed instance-linked registrations
 - registrations for the current wallet that no longer match any instance are
   shown as orphan bootstrap registrations

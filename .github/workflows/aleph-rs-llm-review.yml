@@ -1,21 +1,9 @@
 name: Aleph RS LLM Review
 
 on:
+  # This optional reviewer is manual-only. See README.md for configuration and
+  # instructions for restoring scheduled or push-based comparisons.
   workflow_dispatch:
-  schedule:
-    - cron: "41 5 * * 1"
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/aleph-rs-llm-review.yml"
-      - "scripts/review-aleph-rs-with-llm.mjs"
-      - "packages/browser/src/aleph-api.ts"
-      - "packages/core/src/forget.ts"
-      - "packages/core/src/retention.ts"
-      - "packages/core/src/runtime.ts"
-      - "packages/ui/src/shared/controller.ts"
-      - "packages/rootfs/reference/orbitdb-relay/rootfs/build-rootfs.sh"
 
 permissions:
   contents: read

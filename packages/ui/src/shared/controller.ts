@@ -2928,7 +2928,7 @@ export class SponsorRelayController {
             await forgetAlephMessages({
               sender: this.state.wallet.address,
               hashes: [attemptItemHash],
-              reason: `Discard failed Sponsor Relay deployment attempt on ${attemptLabel}`,
+              reason: `Discard failed Relay Button deployment attempt on ${attemptLabel}`,
               signer: personalSign,
               hasher: sha256Hex,
               fetch: (url, init) =>
@@ -3075,8 +3075,8 @@ export class SponsorRelayController {
         hashes: hashesToForget,
         reason:
           linkedRegistrationCount > 0
-            ? `Deleted instance and ${linkedRegistrationCount} linked relay bootstrap registration${linkedRegistrationCount === 1 ? "" : "s"} from Sponsor Relay panel`
-            : "Deleted from Sponsor Relay panel",
+            ? `Deleted instance and ${linkedRegistrationCount} linked relay bootstrap registration${linkedRegistrationCount === 1 ? "" : "s"} from Relay Button panel`
+            : "Deleted from Relay Button panel",
         signer: personalSign,
         hasher: sha256Hex,
         fetch: asJsonFetch,
@@ -3157,7 +3157,7 @@ export class SponsorRelayController {
         sender: this.state.wallet.address,
         hashes: [registrationHash],
         reason:
-          "Deleted orphan relay bootstrap registration from Sponsor Relay panel",
+          "Deleted orphan relay bootstrap registration from Relay Button panel",
         signer: personalSign,
         hasher: sha256Hex,
         fetch: asJsonFetch,

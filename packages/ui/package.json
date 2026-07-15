@@ -1,7 +1,7 @@
 {
   "name": "@le-space/ui",
   "version": "0.6.24",
-  "description": "Floating Aleph sponsor relay UI components for Svelte and React.",
+  "description": "Floating Aleph Relay Button UI components for Svelte and React.",
   "license": "MIT",
   "type": "module",
   "main": "./src/shared/index.ts",
