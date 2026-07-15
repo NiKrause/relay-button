@@ -22,9 +22,25 @@ test('describes a processed rootfs without a gateway URL as verified', () => {
     {
       tone: 'ok',
       label: 'deployable',
-      detail: 'Rootfs verified on Aleph.'
+      detail: 'Rootfs verified on Aleph.',
+      code: 'rootfs-ready'
     }
   )
+})
+
+test('exposes an actionable blocker for a removed rootfs STORE', () => {
+  const health = rootfsHealth({
+    manifestState,
+    rootfsVerified: true,
+    resolution: {
+      messageStatus: 'removing',
+      messageType: 'STORE',
+      rejectionReason: 'The rootfs STORE is being removed because its publisher no longer has enough Aleph credits.'
+    }
+  })
+  assert.equal(health.tone, 'error')
+  assert.equal(health.code, 'rootfs-unavailable')
+  assert.match(health.detail, /publisher no longer has enough Aleph credits/i)
 })
 
 test('shows the gateway URL when one is available', () => {

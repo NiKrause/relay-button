@@ -104,7 +104,7 @@ export function validateRootfsManifest(manifest: RootfsManifest | null): RootfsM
 function normalizeStatus(status: unknown): MessageStatus {
   if (typeof status !== 'string') return 'unknown'
   const normalized = status.toLowerCase()
-  if (normalized === 'processed' || normalized === 'pending' || normalized === 'rejected') {
+  if (normalized === 'processed' || normalized === 'pending' || normalized === 'rejected' || normalized === 'removing' || normalized === 'removed') {
     return normalized
   }
   return 'unknown'
@@ -141,6 +141,7 @@ function parseCidFromPayload(payload: Record<string, unknown>): string | null {
 
 function parseRejectionReason(payload: Record<string, unknown>): Pick<RootfsResolution, 'rejectionErrorCode' | 'rejectionReason'> {
   const errorCode = typeof payload.error_code === 'number' ? payload.error_code : null
+  const reason = typeof payload.reason === 'string' ? payload.reason.trim() : ''
   const details = payload.details && typeof payload.details === 'object' ? (payload.details as Record<string, unknown>) : null
   const rawErrors = Array.isArray(details?.errors) ? details.errors : []
   const firstError =
@@ -158,6 +159,20 @@ function parseRejectionReason(payload: Record<string, unknown>): Pick<RootfsReso
             ? `Rejected by Aleph for insufficient hold balance: ${accountBalance.toFixed(3)} available, ${requiredBalance.toFixed(3)} required, ${shortfall.toFixed(3)} short.`
             : `Rejected by Aleph for insufficient hold balance: ${accountBalance.toFixed(3)} available, ${requiredBalance.toFixed(3)} required.`
       }
+    }
+  }
+
+  if (reason === 'balance_insufficient') {
+    return {
+      rejectionErrorCode: errorCode,
+      rejectionReason: 'The rootfs STORE is being removed because its publisher no longer has enough Aleph credits. Your connected MetaMask balance may be sufficient, but this manifest must point to a newly published, processed rootfs STORE.'
+    }
+  }
+
+  if (reason) {
+    return {
+      rejectionErrorCode: errorCode,
+      rejectionReason: `Aleph marked the rootfs STORE as unavailable: ${reason.replaceAll('_', ' ')}.`
     }
   }
 
@@ -245,10 +260,11 @@ export async function resolveRootfsReference(
     payload.message && typeof payload.message === 'object' ? (payload.message as Record<string, unknown>) : null
 
   const cid = parseCidFromPayload(payload)
+  const messageStatus = normalizeStatus(payload.status)
   const rejection =
-    normalizeStatus(payload.status) === 'rejected'
-      ? parseRejectionReason(payload)
-      : { rejectionErrorCode: null, rejectionReason: null }
+    messageStatus === 'processed' || messageStatus === 'pending'
+      ? { rejectionErrorCode: null, rejectionReason: null }
+      : parseRejectionReason(payload)
   const gateway = cid
     ? await probeRootfsGateway(cid, {
         gatewayBaseUrl: options.gatewayBaseUrl,
@@ -258,7 +274,7 @@ export async function resolveRootfsReference(
 
   return {
     itemHash,
-    messageStatus: normalizeStatus(payload.status),
+    messageStatus,
     messageType: String(payload.type || messageObject?.type || firstMessage?.type || '').toUpperCase() || null,
     cid,
     receptionTime: typeof payload.reception_time === 'string' ? payload.reception_time : null,

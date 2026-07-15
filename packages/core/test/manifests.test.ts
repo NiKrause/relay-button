@@ -185,3 +185,19 @@ test('resolveRootfsReference returns detailed rejection reason when Aleph reject
   assert.match(result?.rejectionReason ?? '', /insufficient hold balance/i)
   assert.equal(result?.gatewayStatus, 'unknown')
 })
+
+test('resolveRootfsReference explains a rootfs STORE being removed for insufficient publisher credits', async () => {
+  const result = await resolveRootfsReference(validUcManifest.rootfsItemHash!, {
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return { status: 'removing', type: 'STORE', reason: 'balance_insufficient' }
+      }
+    })
+  })
+
+  assert.equal(result?.messageStatus, 'removing')
+  assert.match(result?.rejectionReason ?? '', /publisher no longer has enough Aleph credits/i)
+  assert.match(result?.rejectionReason ?? '', /connected MetaMask balance may be sufficient/i)
+})

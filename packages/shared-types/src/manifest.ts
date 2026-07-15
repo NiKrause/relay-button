@@ -5,7 +5,7 @@ export interface RootfsRequiredPortForward {
   purpose?: string
 }
 
-export type MessageStatus = 'processed' | 'pending' | 'rejected' | 'unknown'
+export type MessageStatus = 'processed' | 'pending' | 'rejected' | 'removing' | 'removed' | 'unknown'
 export type GatewayProbeStatus = 'reachable' | 'timeout' | 'error' | 'unavailable' | 'unknown'
 export type RootfsInstallStrategy = 'thin' | 'prebaked'
 

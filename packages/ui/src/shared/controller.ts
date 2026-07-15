@@ -398,6 +398,7 @@ export function rootfsHealth(args: {
       tone: "error",
       label: "manifest invalid",
       detail: args.manifestState.errors[0] ?? "Manifest could not be parsed.",
+      code: "manifest-invalid",
     };
   }
 
@@ -407,6 +408,7 @@ export function rootfsHealth(args: {
       label: "not found on Aleph",
       detail:
         "The manifest points to a rootfs STORE message that Aleph cannot find. Check that the manifest URL is correct and that the referenced rootfs was not forgotten.",
+      code: "rootfs-not-found",
     };
   }
 
@@ -415,6 +417,7 @@ export function rootfsHealth(args: {
       tone: "caution",
       label: "verifying rootfs",
       detail: "The rootfs reference is still being resolved.",
+      code: "rootfs-verifying",
     };
   }
 
@@ -423,6 +426,7 @@ export function rootfsHealth(args: {
       tone: "ok",
       label: "deployable",
       detail: args.resolution.gatewayUrl ?? "Rootfs verified on Aleph.",
+      code: "rootfs-ready",
     };
   }
 
@@ -435,6 +439,7 @@ export function rootfsHealth(args: {
       label: "pending but reachable",
       detail:
         "Gateway probe succeeded even though Aleph still reports pending.",
+      code: "rootfs-pending",
     };
   }
 
@@ -443,6 +448,7 @@ export function rootfsHealth(args: {
       tone: "caution",
       label: "pending on Aleph",
       detail: "Wait until the STORE message is processed.",
+      code: "rootfs-pending",
     };
   }
 
@@ -454,6 +460,7 @@ export function rootfsHealth(args: {
       (args.resolution.messageType === "STORE"
         ? "This manifest points to a rootfs STORE message that exists but is not deployable anymore, for example because it was forgotten or replaced. Double-check the manifest URL."
         : "Aleph rejected the rootfs reference. Double-check that the manifest URL points to the intended current rootfs."),
+    code: "rootfs-unavailable",
   };
 }
 

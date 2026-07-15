@@ -462,10 +462,13 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
         };
   const launcherLabel =
     deploymentLauncherLabel(state, compactInlineLabel, launcherMode);
+  const rootfsBlocked = state.rootfsHealth.tone === "error";
   const deployCallToAction = state.wallet.connected
     ? state.busy.deploying
       ? "Deploying…"
-      : deploymentButtonLabel(state)
+      : rootfsBlocked
+        ? "Deployment blocked — Rootfs unavailable"
+        : deploymentButtonLabel(state)
     : "Connect MetaMask";
 
   return (
@@ -1112,6 +1115,50 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               </div>
             </div>
 
+            {rootfsBlocked ? (
+              <div
+                role="alert"
+                id="relay-rootfs-deployment-blocker"
+                style={{
+                  display: "grid",
+                  gap: "0.55rem",
+                  marginTop: "1rem",
+                  padding: "0.9rem",
+                  borderRadius: "1rem",
+                  border: "1px solid rgba(248, 113, 113, 0.58)",
+                  background: "rgba(127, 29, 29, 0.34)",
+                  color: "#fee2e2",
+                }}
+              >
+                <strong>Rootfs unavailable — deployment blocked</strong>
+                <span style={{ fontSize: "0.82rem", lineHeight: 1.45 }}>
+                  {state.rootfsHealth.detail}
+                </span>
+                <span style={{ fontSize: "0.75rem", lineHeight: 1.4 }}>
+                  This is separate from the connected MetaMask balance. The manifest must reference an Aleph rootfs STORE with status <code>processed</code>.
+                </span>
+                {state.manifest?.rootfsItemHash ? (
+                  <code style={{ fontSize: "0.7rem", overflowWrap: "anywhere" }}>
+                    Rootfs: {state.manifest.rootfsItemHash}
+                    {state.rootfsResolution?.messageStatus ? ` · Aleph status: ${state.rootfsResolution.messageStatus}` : ""}
+                  </code>
+                ) : null}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                  <button type="button" onClick={() => void controller.refresh()} disabled={state.busy.refreshing} style={{ ...secondaryButtonStyle, padding: "0.55rem 0.7rem" }}>
+                    {state.busy.refreshing ? "Checking…" : "Retry validation"}
+                  </button>
+                  <button type="button" onClick={() => controller.setShowAdvanced(true)} style={{ ...secondaryButtonStyle, padding: "0.55rem 0.7rem" }}>
+                    Edit manifest URL
+                  </button>
+                  {/^https?:\/\//.test(state.manifestUrl) ? (
+                    <a href={state.manifestUrl} target="_blank" rel="noreferrer" style={{ color: "#bfdbfe", alignSelf: "center", fontSize: "0.78rem" }}>
+                      Open manifest
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
             <button
               type="button"
               onClick={() =>
@@ -1124,7 +1171,13 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   ? state.busy.deploying || state.rootfsHealth.tone !== "ok"
                   : state.busy.connectingWallet
               }
-              style={{ ...primaryButtonStyle, width: "100%", marginTop: "1rem" }}
+              aria-describedby={rootfsBlocked ? "relay-rootfs-deployment-blocker" : undefined}
+              style={{
+                ...primaryButtonStyle,
+                width: "100%",
+                marginTop: "1rem",
+                ...(rootfsBlocked ? { background: "rgba(148, 163, 184, 0.22)", borderColor: "rgba(248, 113, 113, 0.45)", color: "#fee2e2", boxShadow: "none", cursor: "not-allowed" } : {}),
+              }}
             >
               {deployCallToAction}
             </button>
