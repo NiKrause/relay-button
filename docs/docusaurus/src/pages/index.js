@@ -53,15 +53,14 @@ export default function Home() {
   return (
     <Layout
       title="Relay Button"
-      description="Reusable Aleph Cloud deployment tooling for RootFS publishing, VM relay deployment, runtime verification, and browser sponsor flows."
+      description="Reusable Aleph Cloud deployment tooling for RootFS creation, RootFS publishing, VM deployment, runtime verification, and browser flows via the relay button component for ReactJS and Svelte."
     >
       <header className="hero hero--shared">
         <div className="container">
           <p className="hero__kicker">CLI · GitHub Actions · Browser UI</p>
           <h1 className="hero__title">Relay Button</h1>
           <p className="hero__subtitle">
-            Reusable Aleph Cloud deployment tooling for RootFS publishing, VM relay deployment,
-            runtime verification, and browser-driven sponsor flows.
+Reusable Aleph Cloud deployment tooling for RootFS creation, RootFS publishing, VM deployment, runtime verification, and browser flows via the relay button component for ReactJS and Svelte
           </p>
           <p className="hero__description">
             Use it when a consumer project needs Aleph deployment behavior without copying the

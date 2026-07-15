@@ -1,7 +1,6 @@
 # Relay Button
 
-`relay-button` provides reusable Aleph Cloud deployment tooling for
-consumer projects that need to:
+`relay-button` Reusable Aleph Cloud deployment tooling for RootFS creation, RootFS publishing, VM deployment, runtime verification, and browser flows via the relay button component for ReactJS and Svelte:
 
 - build and publish RootFS images
 - deploy Aleph VM instances
