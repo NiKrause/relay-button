@@ -27,9 +27,7 @@ DESCRIBE_SCRIPT = os.environ.get(
 DEFAULT_API_HOST = os.environ.get("ALEPH_BOOTSTRAP_API_HOST", "https://api.aleph.im")
 DEFAULT_CHANNEL = os.environ.get("ALEPH_BOOTSTRAP_CHANNEL", "simple-todo")
 DEFAULT_REF = os.environ.get("ALEPH_BOOTSTRAP_REF", "simple-todo-bootstrap")
-COMPACT_POST_TYPE = "relay-bootstrap-v2"
-LEGACY_POST_TYPE = "relay-bootstrap"
-DEFAULT_POST_TYPE = os.environ.get("ALEPH_BOOTSTRAP_POST_TYPE", COMPACT_POST_TYPE)
+POST_TYPE = "relay-bootstrap-v2"
 DEFAULT_PROFILE = os.environ.get("ALEPH_BOOTSTRAP_PROFILE", "orbitdb-relay")
 MAX_PREVIOUS_PAGES = int(os.environ.get("ALEPH_BOOTSTRAP_MAX_PREVIOUS_PAGES", "5"))
 PAGINATION = int(os.environ.get("ALEPH_BOOTSTRAP_PAGINATION", "50"))
@@ -430,6 +428,15 @@ def parse_post_record(entry: object) -> dict[str, object] | None:
             item_content = None
 
     content_source = item_content if isinstance(item_content, dict) else entry
+    record_type = content_source.get("type")
+    if record_type == "relay-bootstrap":
+        raise RuntimeError(
+            "Legacy relay-bootstrap record encountered. Only relay-bootstrap-v2 is supported."
+        )
+    if isinstance(record_type, str) and record_type and record_type != POST_TYPE:
+        raise RuntimeError(
+            f"Unsupported relay bootstrap post type: {record_type}. Expected {POST_TYPE}."
+        )
     content = content_source.get("content")
     if not isinstance(content, dict):
         return None
@@ -465,7 +472,7 @@ def fetch_previous_hashes(
     api_host: str,
     channel: str,
     ref: str,
-    post_types: list[str],
+    post_type: str,
     sender: str,
     current_item_hash: str,
     now_ms: int,
@@ -473,38 +480,37 @@ def fetch_previous_hashes(
     stale_cutoff_ms = now_ms - (STALE_RECORD_MAX_AGE_SECONDS * 1000)
     normalized_sender = normalize_address(sender)
     found: list[str] = []
-    for post_type in post_types:
-        for page in range(1, MAX_PREVIOUS_PAGES + 1):
-            url = (
-                f"{api_host.rstrip('/')}/api/v0/posts.json?"
-                f"channels={urllib.parse.quote(channel)}&"
-                f"refs={urllib.parse.quote(ref)}&"
-                f"types={urllib.parse.quote(post_type)}&"
-                f"pagination={PAGINATION}&page={page}"
-            )
-            payload = get_json(url)
-            posts = payload.get("posts")
-            if not isinstance(posts, list):
-                break
+    for page in range(1, MAX_PREVIOUS_PAGES + 1):
+        url = (
+            f"{api_host.rstrip('/')}/api/v0/posts.json?"
+            f"channels={urllib.parse.quote(channel)}&"
+            f"refs={urllib.parse.quote(ref)}&"
+            f"types={urllib.parse.quote(post_type)}&"
+            f"pagination={PAGINATION}&page={page}"
+        )
+        payload = get_json(url)
+        posts = payload.get("posts")
+        if not isinstance(posts, list):
+            break
 
-            for entry in posts:
-                parsed = parse_post_record(entry)
-                if parsed is None:
-                    continue
-                same_publisher = normalized_sender in {
-                    normalize_address(parsed["sender"]),
-                    normalize_address(parsed["publisher_address"]),
-                }
-                if not same_publisher:
-                    continue
-                if parsed["item_hash"] == current_item_hash:
-                    continue
-                updated_at = timestamp_ms(parsed["updated_at"])
-                if updated_at is not None and updated_at < stale_cutoff_ms:
-                    found.append(str(parsed["item_hash"]))
+        for entry in posts:
+            parsed = parse_post_record(entry)
+            if parsed is None:
+                continue
+            same_publisher = normalized_sender in {
+                normalize_address(parsed["sender"]),
+                normalize_address(parsed["publisher_address"]),
+            }
+            if not same_publisher:
+                continue
+            if parsed["item_hash"] == current_item_hash:
+                continue
+            updated_at = timestamp_ms(parsed["updated_at"])
+            if updated_at is not None and updated_at < stale_cutoff_ms:
+                found.append(str(parsed["item_hash"]))
 
-            if len(posts) < PAGINATION:
-                break
+        if len(posts) < PAGINATION:
+            break
 
     return dedupe(found)
 
@@ -568,18 +574,16 @@ def main() -> None:
     version = env_values.get("ALEPH_BOOTSTRAP_VERSION", "").strip() or None
     channel = env_values.get("ALEPH_BOOTSTRAP_CHANNEL", DEFAULT_CHANNEL).strip() or DEFAULT_CHANNEL
     ref = env_values.get("ALEPH_BOOTSTRAP_REF", DEFAULT_REF).strip() or DEFAULT_REF
-    post_type = env_values.get("ALEPH_BOOTSTRAP_POST_TYPE", DEFAULT_POST_TYPE).strip() or DEFAULT_POST_TYPE
+    post_type = env_values.get("ALEPH_BOOTSTRAP_POST_TYPE", POST_TYPE).strip() or POST_TYPE
+    if post_type != POST_TYPE:
+        raise RuntimeError(
+            f"Unsupported ALEPH_BOOTSTRAP_POST_TYPE: {post_type}. Expected {POST_TYPE}."
+        )
     api_host = env_values.get("ALEPH_BOOTSTRAP_API_HOST", DEFAULT_API_HOST).strip() or DEFAULT_API_HOST
-    compact = post_type == COMPACT_POST_TYPE
-    published_multiaddrs = (
-        select_compact_multiaddrs(browser_multiaddrs or multiaddrs)
-        if compact
-        else multiaddrs
-    )
-    published_browser_multiaddrs = [] if compact else browser_multiaddrs
+    published_multiaddrs = select_compact_multiaddrs(browser_multiaddrs or multiaddrs)
+    published_browser_multiaddrs: list[str] = []
     if not published_multiaddrs:
-        reason = "no public browser multiaddrs" if compact else "no public multiaddrs"
-        print(json_dumps({"status": "skipped", "reason": reason}))
+        print(json_dumps({"status": "skipped", "reason": "no public browser multiaddrs"}))
         return
 
     owner_authorization = load_owner_authorization(
@@ -634,7 +638,7 @@ def main() -> None:
         api_host,
         channel,
         ref,
-        [post_type, LEGACY_POST_TYPE] if compact else [post_type],
+        post_type,
         publisher_address,
         str(unsigned_message["item_hash"]),
         now_ms,

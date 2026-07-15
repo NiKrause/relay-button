@@ -43,8 +43,7 @@ async function main() {
   const apiHost = process.env.ALEPH_BOOTSTRAP_TEST_API_HOST ?? DEFAULT_ALEPH_API_HOST
   const channel =
     process.env.ALEPH_BOOTSTRAP_TEST_CHANNEL ?? DEFAULT_ALEPH_BOOTSTRAP_CHANNEL
-  const postType =
-    process.env.ALEPH_BOOTSTRAP_TEST_POST_TYPE ?? DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE
+  const postType = DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE
   const ref =
     process.env.ALEPH_BOOTSTRAP_TEST_REF ??
     `aleph-bootstrap-live-${new Date().toISOString().replace(/[:.]/g, '-')}`
@@ -117,7 +116,6 @@ async function main() {
     apiHost,
     channel,
     ref,
-    postType,
     peerId,
     registrationId,
     profile: 'aleph-bootstrap-live-test',
@@ -129,7 +127,7 @@ async function main() {
   })
 
   assert.equal(publication.status, 'published')
-  assert.deepEqual(publication.publishedMultiaddrs, publicMultiaddrs)
+  assert.deepEqual(publication.publishedMultiaddrs, browserMultiaddrs)
   assert.deepEqual(publication.publishedBrowserMultiaddrs, browserMultiaddrs)
 
   async function fetchState() {
@@ -137,14 +135,12 @@ async function main() {
       apiHost,
       channel,
       ref,
-      postType,
       fetch: globalThis.fetch.bind(globalThis)
     })
     const discovered = await discoverAlephBootstrapMultiaddrs({
       apiHost,
       channel,
       ref,
-      postType,
       fetch: globalThis.fetch.bind(globalThis)
     })
     return { posts, discovered }
@@ -211,7 +207,6 @@ async function main() {
     apiHost,
     channel,
     ref,
-    postType,
     peerId,
     registrationId,
     profile: 'aleph-bootstrap-live-test',
@@ -223,7 +218,7 @@ async function main() {
   })
 
   assert.equal(refreshedPublication.status, 'published')
-  assert.deepEqual(refreshedPublication.publishedMultiaddrs, refreshedPublicMultiaddrs)
+  assert.deepEqual(refreshedPublication.publishedMultiaddrs, refreshedBrowserMultiaddrs)
   assert.deepEqual(
     refreshedPublication.publishedBrowserMultiaddrs,
     refreshedBrowserMultiaddrs

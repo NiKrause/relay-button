@@ -134,7 +134,7 @@ test('controller waits for active 2n6 web access before publishing guest proxyUr
             item_hash: 'bootstrap-item-hash',
             address: walletAddress,
             ref: 'simple-todo-bootstrap',
-            type: 'relay-bootstrap',
+            type: 'relay-bootstrap-v2',
             content: {
               peerId: '12D3KooWTestPeer',
               multiaddrs: ['/ip4/203.0.113.7/tcp/32095/p2p/12D3KooWTestPeer'],
@@ -366,7 +366,7 @@ test('controller falls back to bootstrap signal metadata when 2n6 never becomes 
             item_hash: 'bootstrap-item-hash-2',
             address: walletAddress,
             ref: 'simple-todo-bootstrap',
-            type: 'relay-bootstrap',
+            type: 'relay-bootstrap-v2',
             content: {
               peerId: '12D3KooWFallbackPeer',
               multiaddrs: ['/ip4/203.0.113.8/tcp/32095/p2p/12D3KooWFallbackPeer'],

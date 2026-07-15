@@ -2,8 +2,6 @@ import {
   createRelayBootstrapPost,
   fetchAlephBootstrapPosts,
   DEFAULT_ALEPH_API_HOST,
-  DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE,
-  DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE,
   signRelayBootstrapAuthorization,
   signRelayBootstrapProof,
   selectCurrentRelayBootstrapPosts,
@@ -60,7 +58,6 @@ export async function waitForRelayBootstrapRegistration(args: {
   apiHost?: string;
   channel?: string;
   ref?: string;
-  postType?: string;
   attempts?: number;
   delayMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -75,7 +72,6 @@ export async function waitForRelayBootstrapRegistration(args: {
   const expectedSender = args.sender?.trim().toLowerCase() || null;
   const expectedRegistrationId = args.registrationId?.trim() || null;
   const expectedPeerId = args.peerId?.trim() || null;
-  const postType = args.postType ?? DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE;
   const sleepImpl = args.sleep ?? sleep;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -83,7 +79,6 @@ export async function waitForRelayBootstrapRegistration(args: {
       apiHost: args.apiHost ?? DEFAULT_ALEPH_API_HOST,
       channel: args.channel,
       ref: args.ref,
-      postType,
       fetch: args.fetch as typeof fetch,
     });
     const currentPosts = selectCurrentRelayBootstrapPosts(posts);
@@ -138,7 +133,6 @@ export async function publishRelayBootstrapRegistration(args: {
   apiHost?: string;
   channel?: string;
   ref?: string;
-  postType?: string;
   compactMultiaddrLimit?: number;
   profile?: string;
   version?: string;
@@ -158,8 +152,6 @@ export async function publishRelayBootstrapRegistration(args: {
 }): Promise<RelayBootstrapPublicationResult> {
   const publisherAddress = args.publisherAddress ?? args.sender;
   const ownerAddress = args.ownerAddress;
-  const postType = args.postType ?? DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE;
-  const compact = postType === DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE;
   let ownerAuthorization = args.ownerAuthorization;
   let relayProof = args.relayProof;
 
@@ -188,7 +180,6 @@ export async function publishRelayBootstrapRegistration(args: {
       profile: args.profile,
       version: args.version,
       updatedAt: args.now ?? Date.now(),
-      compact,
       compactMultiaddrLimit: args.compactMultiaddrLimit,
       signer: args.publisherSigner,
     });
@@ -202,14 +193,12 @@ export async function publishRelayBootstrapRegistration(args: {
     registrationId: args.registrationId,
     channel: args.channel,
     ref: args.ref,
-    postType,
     profile: args.profile,
     version: args.version,
     ownerAddress,
     publisherAddress,
     authorization: ownerAuthorization,
     relayProof,
-    compact,
     compactMultiaddrLimit: args.compactMultiaddrLimit,
     now: args.now,
     hasher: args.hasher,
@@ -241,22 +230,12 @@ export async function publishRelayBootstrapRegistration(args: {
   let forgottenHashes: string[] = [];
   let forgetResult: Awaited<ReturnType<typeof forgetAlephMessages>> | undefined;
   if (args.forgetPrevious && args.registrationId) {
-    const previousPostTypes = compact
-      ? [postType, DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE]
-      : [postType];
-    const previousPosts = (
-      await Promise.all(
-        previousPostTypes.map((previousPostType) =>
-          fetchAlephBootstrapPosts({
-            apiHost: args.apiHost ?? DEFAULT_ALEPH_API_HOST,
-            channel: args.channel,
-            ref: args.ref,
-            postType: previousPostType,
-            fetch: args.fetch as typeof fetch,
-          }),
-        ),
-      )
-    ).flat();
+    const previousPosts = await fetchAlephBootstrapPosts({
+      apiHost: args.apiHost ?? DEFAULT_ALEPH_API_HOST,
+      channel: args.channel,
+      ref: args.ref,
+      fetch: args.fetch as typeof fetch,
+    });
 
     const forgottenHashSet = new Set(
       previousPosts

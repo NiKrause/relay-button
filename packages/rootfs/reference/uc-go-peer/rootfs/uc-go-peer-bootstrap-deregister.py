@@ -23,7 +23,7 @@ DESCRIBE_SCRIPT = os.environ.get("DESCRIBE_SCRIPT", "/usr/local/sbin/uc-go-peer-
 DEFAULT_API_HOST = os.environ.get("ALEPH_BOOTSTRAP_API_HOST", "https://api.aleph.im")
 DEFAULT_CHANNEL = os.environ.get("ALEPH_BOOTSTRAP_CHANNEL", "simple-todo")
 DEFAULT_REF = os.environ.get("ALEPH_BOOTSTRAP_REF", "simple-todo-bootstrap")
-DEFAULT_POST_TYPE = os.environ.get("ALEPH_BOOTSTRAP_POST_TYPE", "relay-bootstrap")
+POST_TYPE = "relay-bootstrap-v2"
 MAX_PREVIOUS_PAGES = int(os.environ.get("ALEPH_BOOTSTRAP_MAX_PREVIOUS_PAGES", "5"))
 PAGINATION = int(os.environ.get("ALEPH_BOOTSTRAP_PAGINATION", "50"))
 
@@ -185,6 +185,16 @@ def parse_post_record(entry: object) -> dict[str, object] | None:
     if not isinstance(item_content, dict):
         return None
 
+    record_type = item_content.get("type")
+    if record_type == "relay-bootstrap":
+        raise RuntimeError(
+            "Legacy relay-bootstrap record encountered. Only relay-bootstrap-v2 is supported."
+        )
+    if isinstance(record_type, str) and record_type and record_type != POST_TYPE:
+        raise RuntimeError(
+            f"Unsupported relay bootstrap post type: {record_type}. Expected {POST_TYPE}."
+        )
+
     content = item_content.get("content")
     if not isinstance(content, dict):
         return None
@@ -297,7 +307,11 @@ def main() -> None:
     peer_id = load_peer_id()
     channel = env_values.get("ALEPH_BOOTSTRAP_CHANNEL", DEFAULT_CHANNEL).strip() or DEFAULT_CHANNEL
     ref = env_values.get("ALEPH_BOOTSTRAP_REF", DEFAULT_REF).strip() or DEFAULT_REF
-    post_type = env_values.get("ALEPH_BOOTSTRAP_POST_TYPE", DEFAULT_POST_TYPE).strip() or DEFAULT_POST_TYPE
+    post_type = env_values.get("ALEPH_BOOTSTRAP_POST_TYPE", POST_TYPE).strip() or POST_TYPE
+    if post_type != POST_TYPE:
+        raise RuntimeError(
+            f"Unsupported ALEPH_BOOTSTRAP_POST_TYPE: {post_type}. Expected {POST_TYPE}."
+        )
     api_host = env_values.get("ALEPH_BOOTSTRAP_API_HOST", DEFAULT_API_HOST).strip() or DEFAULT_API_HOST
 
     hashes = fetch_current_hashes(

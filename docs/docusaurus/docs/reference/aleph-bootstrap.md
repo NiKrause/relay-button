@@ -35,12 +35,11 @@ the earliest `simple-todo` integration:
 
 - channel: `simple-todo`
 - ref: `simple-todo-bootstrap`
-- compact post type: `relay-bootstrap-v2`
-- legacy post type: `relay-bootstrap`
+- post type: `relay-bootstrap-v2`
 
-These defaults are exported for compatibility, but every value can be
-overridden when a consumer needs an app-specific namespace or stronger
-isolation between environments.
+The channel and ref can be overridden when a consumer needs an app-specific
+namespace or stronger isolation between environments. The post type is fixed to
+`relay-bootstrap-v2`.
 
 ## Relay Registration
 
@@ -55,17 +54,15 @@ through:
 does not publish relay bootstrap records. It exposes service discovery through
 guest metadata and `/.well-known/ucan-store.json` instead.
 
-New registrations prefer the compact `relay-bootstrap-v2` shape. It stores the
+Registrations use the compact `relay-bootstrap-v2` shape. It stores the
 browser-ready bootstrap list directly in `multiaddrs`, caps it to the best
-public browser-dialable candidates, and omits the old duplicate
-`browserMultiaddrs` array. Legacy `relay-bootstrap` records are still supported
-and keep the full diagnostic shape.
+public browser-dialable candidates, and omits the duplicate
+`browserMultiaddrs` array.
 
-The legacy registration payload stores:
+The registration payload stores:
 
 - `peerId`
 - `multiaddrs`
-- `browserMultiaddrs`
 - `registrationId` when a producer can provide a stable relay identity
 - `profile`
 - `version`
@@ -73,7 +70,7 @@ The legacy registration payload stores:
 
 Only public multiaddrs are published. Loopback, RFC1918, link-local, and
 localhost-style addresses are filtered out before the Aleph `POST` is signed.
-For compact v2 records, browser transports are preferred in this order:
+Browser transports are preferred in this order:
 `/tcp/443/tls/ws`, other `/tls/ws`, WebTransport, WebRTC direct, then other
 websocket addresses.
 
@@ -143,9 +140,9 @@ the proxy-backed HTTPS path itself.
 
 ### Current Signing Model
 
-Today the codebase supports two bootstrap signing shapes:
+Today the codebase supports two signing modes for v2 bootstrap records:
 
-- legacy wallet-signed records
+- wallet-signed records
 - dual-key records with owner authorization plus relay proof
 
 Current profile behavior:
@@ -182,8 +179,7 @@ So the remaining trust gap is now narrower than before:
   same secp256k1 root
 - `orbitdb-relay` can now do the same when publisher key `B` is
   supplied
-- legacy wallet-signed records are still accepted by default for backward
-  compatibility
+- wallet-signed v2 records are accepted by default
 
 ### Target Signing Model
 
@@ -252,14 +248,13 @@ const list = await discoverAlephBootstrapMultiaddrs()
 By default, discovery:
 
 - queries `https://api2.aleph.im/api/v0/posts.json`
-- loads compact `relay-bootstrap-v2` posts first, then falls back to legacy
-  `relay-bootstrap` posts when v2 has no usable addresses
+- loads only `relay-bootstrap-v2` posts
+- fails clearly if the API returns a legacy `relay-bootstrap` record
 - skips entries older than 7 days
 - keeps only the newest fresh record per relay identity
 - sorts fetched records by recency client-side, even though Aleph currently
   returns page 1 newest-first for this query
 - deduplicates the returned multiaddrs
-- prefers `browserMultiaddrs` for legacy records when available
 - verifies dual-key records when they are present
 
 Important caveat:
@@ -276,7 +271,7 @@ Current implementation detail:
   newest fresh record for that relay identity
 - otherwise discovery falls back to the newest fresh record per sender address
 - invalid dual-key records are ignored during discovery
-- legacy wallet-signed records are still accepted by default
+- wallet-signed v2 records are accepted by default
 
 Current UI state handling also relies on `registrationId`:
 
@@ -294,7 +289,7 @@ Discovery can be tightened further with:
   This is the default behavior for posts that already carry dual-key proof
   objects.
 - `requireDualKeyAttestation: true`
-  This rejects legacy wallet-signed records and only accepts dual-key-attested
+  This rejects wallet-signed records and only accepts dual-key-attested
   relay registrations.
 
 Example:

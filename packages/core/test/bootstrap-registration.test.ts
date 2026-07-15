@@ -130,12 +130,12 @@ test('publishRelayBootstrapRegistration can forget older records for the same re
                   item_hash: 'older-item-hash',
                   address: '0xabc',
                   ref: 'simple-todo-bootstrap',
-                  type: 'relay-bootstrap',
+                  type: 'relay-bootstrap-v2',
                   content: {
                     peerId: '12D3KooWPublic',
                     registrationId: 'relay:uc-go-peer:demo',
                     updatedAt: Date.now() - 1_000,
-                    multiaddrs: ['/ip4/203.0.113.9/tcp/9095/p2p/12D3KooWPublic']
+                    multiaddrs: ['/dns4/relay-old.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic']
                   }
                 }
               ]
@@ -260,12 +260,11 @@ test('waitForRelayBootstrapRegistration observes the current registration once i
                       item_hash: 'visible-hash',
                       address: '0xAbC',
                       ref: 'simple-todo-bootstrap',
-                      type: 'relay-bootstrap',
+                      type: 'relay-bootstrap-v2',
                       content: {
                         peerId: '12D3KooWVisible',
                         registrationId: 'relay:uc-go-peer:demo',
-                        multiaddrs: ['/ip4/203.0.113.10/tcp/9095/p2p/12D3KooWVisible'],
-                        browserMultiaddrs: ['/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWVisible'],
+                        multiaddrs: ['/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWVisible'],
                         updatedAt: Date.now(),
                       },
                     },
@@ -282,7 +281,7 @@ test('waitForRelayBootstrapRegistration observes the current registration once i
     sender: '0xAbC',
     registrationId: 'relay:uc-go-peer:demo',
     peerId: '12D3KooWVisible',
-    multiaddrs: ['/ip4/203.0.113.10/tcp/9095/p2p/12D3KooWVisible'],
-    browserMultiaddrs: ['/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWVisible'],
+    multiaddrs: ['/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWVisible'],
+    browserMultiaddrs: [],
   })
 })

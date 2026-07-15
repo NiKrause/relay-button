@@ -43,7 +43,8 @@ relay multiaddr registration posts.
 
 Current implementation:
 
-- legacy bootstrap `POST`s are still possible and remain wallet-signed
+- all bootstrap records use the `relay-bootstrap-v2` post type
+- wallet-signed v2 bootstrap `POST`s remain supported
 - dual-key bootstrap `POST`s are supported and readers can verify them
 - both `uc-go-peer` and `orbitdb-relay` can now preseed their libp2p
   secp256k1 identity from publisher key `B`, so the relay `peerId` and Aleph
@@ -440,9 +441,6 @@ After a live test run, the post can be queried without a wallet:
 ```bash
 curl -s "https://api2.aleph.im/api/v0/posts.json?channels=simple-todo&refs=YOUR_REF&types=relay-bootstrap-v2&pagination=10&page=1"
 ```
-
-Use `types=relay-bootstrap` to inspect legacy full-shape records during the
-v1/v2 migration window.
 
 or by message hash:
 

@@ -27,20 +27,21 @@ The package defaults to the shared relay-bootstrap namespace:
 
 - channel: `simple-todo`
 - ref: `simple-todo-bootstrap`
-- post type: `relay-bootstrap`
+- post type: `relay-bootstrap-v2`
 
-All values are overrideable per app or environment.
+The channel and ref are overrideable per app or environment. The post type is
+fixed to `relay-bootstrap-v2`.
 
 ## Discovery Trust Modes
 
-The package accepts both:
+The package accepts two signing modes for v2 records:
 
-- legacy wallet-signed bootstrap posts
+- wallet-signed bootstrap posts
 - dual-key-attested bootstrap posts
 
 By default, discovery will:
 
-- accept legacy posts
+- accept wallet-signed v2 posts
 - verify dual-key records when they are present
 - ignore malformed or invalid dual-key records
 

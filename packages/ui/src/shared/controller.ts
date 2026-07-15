@@ -41,8 +41,6 @@ import {
   waitForVmRuntime,
 } from "../../../core/src/index.ts";
 import {
-  DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE,
-  DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE,
   fetchAlephBootstrapPosts,
   selectCurrentRelayBootstrapPosts,
 } from "../../../aleph-bootstrap/src/index.ts";
@@ -2149,18 +2147,10 @@ export class SponsorRelayController {
             ? this.client.fetchInstances(this.state.wallet.address)
             : Promise.resolve([]),
           bootstrapEnabled
-            ? Promise.all(
-                [
-                  DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE,
-                  DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE,
-                ].map((postType) =>
-                  fetchAlephBootstrapPosts({
-                    apiHost: this.client.apiHost,
-                    postType,
-                    fetch,
-                  }).catch(() => []),
-                ),
-              ).then((pages) => pages.flat())
+            ? fetchAlephBootstrapPosts({
+                apiHost: this.client.apiHost,
+                fetch,
+              })
             : Promise.resolve([]),
         ]);
         balance = nextBalance;

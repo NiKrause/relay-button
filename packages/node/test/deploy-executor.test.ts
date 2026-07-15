@@ -1409,7 +1409,7 @@ test('executeDeployPlan includes bootstrap owner authorization during the initia
                 item_hash: 'bootstrap-visible-hash',
                 address: expectedPublisherIdentity.address,
                 ref: 'simple-todo-bootstrap',
-                type: 'relay-bootstrap',
+                type: 'relay-bootstrap-v2',
                 content: {
                   peerId: expectedRelayIdentity.peerId,
                   multiaddrs: [

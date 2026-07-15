@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { privateKeyToAccount } from "viem/accounts";
 
 import {
-  DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE,
+  DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE,
   buildRelayBootstrapPostContent,
   createRelayBootstrapPost,
   dedupeMultiaddrs,
@@ -49,7 +49,7 @@ test("filterPublicMultiaddrs can keep only browser dialable addresses", () => {
   ]);
 });
 
-test("buildRelayBootstrapPostContent keeps public addrs and browser subset", () => {
+test("buildRelayBootstrapPostContent emits only compact v2 browser addresses", () => {
   const content = buildRelayBootstrapPostContent({
     sender: "0xabc",
     peerId: "12D3KooWPublic",
@@ -65,15 +65,14 @@ test("buildRelayBootstrapPostContent keeps public addrs and browser subset", () 
   });
 
   assert.deepEqual(content.content.multiaddrs, [
-    "/ip4/203.0.113.10/tcp/9095/p2p/12D3KooWPublic",
-  ]);
-  assert.deepEqual(content.content.browserMultiaddrs, [
     "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
   ]);
+  assert.equal(content.content.browserMultiaddrs, undefined);
+  assert.equal(content.type, DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE);
   assert.equal(content.content.updatedAt, 1234);
 });
 
-test("buildRelayBootstrapPostContent can emit compact v2 browser records", () => {
+test("buildRelayBootstrapPostContent limits compact v2 addresses per transport", () => {
   const browserAddrs = [
     "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/p2p/12D3KooWPublic",
     "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
@@ -86,13 +85,12 @@ test("buildRelayBootstrapPostContent can emit compact v2 browser records", () =>
   const content = buildRelayBootstrapPostContent({
     sender: "0xabc",
     peerId: "12D3KooWPublic",
-    postType: DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE,
     multiaddrs: ["/ip4/203.0.113.10/tcp/9095/p2p/12D3KooWPublic"],
     browserMultiaddrs: browserAddrs,
     now: 1234,
   });
 
-  assert.equal(content.type, DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE);
+  assert.equal(content.type, DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE);
   assert.deepEqual(content.content.multiaddrs, [
     "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
     "/dns6/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
@@ -166,7 +164,7 @@ test("createRelayBootstrapPost builds an Aleph POST envelope", async () => {
 
   assert.equal(post.type, "POST");
   assert.equal(post.item_hash, "deadbeef");
-  assert.match(post.item_content, /"type":"relay-bootstrap"/);
+  assert.match(post.item_content, /"type":"relay-bootstrap-v2"/);
   assert.match(post.item_content, /"ref":"simple-todo-bootstrap"/);
 });
 
@@ -208,7 +206,7 @@ test("discoverAlephBootstrapMultiaddrs accepts posts carrying dual-key proof met
             hash: "hash-proof",
             item_hash: "item-proof",
             address: publisher.address,
-            type: "relay-bootstrap",
+            type: "relay-bootstrap-v2",
             ref: "simple-todo-bootstrap",
             content: {
               peerId: "12D3KooWProof",
@@ -216,7 +214,6 @@ test("discoverAlephBootstrapMultiaddrs accepts posts carrying dual-key proof met
               publisherAddress: publisher.address,
               updatedAt: now,
               multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
-              browserMultiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
               authorization,
               relayProof,
             },
@@ -244,7 +241,7 @@ test("discoverAlephBootstrapMultiaddrs ignores invalid dual-key proof records", 
             hash: "hash-invalid-proof",
             item_hash: "item-invalid-proof",
             address: "0xpublisher",
-            type: "relay-bootstrap",
+            type: "relay-bootstrap-v2",
             ref: "simple-todo-bootstrap",
             content: {
               peerId: "12D3KooWProof",
@@ -294,7 +291,7 @@ test("discoverAlephBootstrapMultiaddrs dedupes and skips stale entries", async (
         posts: [
           {
             hash: "hash-1",
-            type: "relay-bootstrap",
+            type: "relay-bootstrap-v2",
             ref: "simple-todo-bootstrap",
             content: {
               peerId: "12D3KooWFresh",
@@ -305,7 +302,7 @@ test("discoverAlephBootstrapMultiaddrs dedupes and skips stale entries", async (
           },
           {
             hash: "hash-2",
-            type: "relay-bootstrap",
+            type: "relay-bootstrap-v2",
             ref: "simple-todo-bootstrap",
             content: {
               peerId: "12D3KooWStale",
@@ -315,7 +312,7 @@ test("discoverAlephBootstrapMultiaddrs dedupes and skips stale entries", async (
           },
           {
             hash: "hash-3",
-            type: "relay-bootstrap",
+            type: "relay-bootstrap-v2",
             ref: "simple-todo-bootstrap",
             content: {
               peerId: "12D3KooWFresh2",
@@ -358,7 +355,7 @@ test("discoverAlephBootstrapMultiaddrs scans later pages when page 1 has no usab
             posts: [
               {
                 hash: "hash-local-only",
-                type: "relay-bootstrap",
+                type: "relay-bootstrap-v2",
                 ref: "simple-todo-bootstrap",
                 content: {
                   peerId: "12D3KooWLocalOnly",
@@ -375,7 +372,7 @@ test("discoverAlephBootstrapMultiaddrs scans later pages when page 1 has no usab
           posts: [
             {
               hash: "hash-page-2",
-              type: "relay-bootstrap",
+              type: "relay-bootstrap-v2",
               ref: "simple-todo-bootstrap",
               content: {
                 peerId: "12D3KooWPage2",
@@ -402,7 +399,7 @@ test("discoverAlephBootstrapMultiaddrs scans later pages when page 1 has no usab
   ]);
 });
 
-test("discoverAlephBootstrapMultiaddrs falls back from compact v2 to legacy posts", async () => {
+test("discoverAlephBootstrapMultiaddrs rejects legacy v1 records", async () => {
   const now = Date.now();
   const requestedTypes = [];
   const fetch = async (url) => {
@@ -414,9 +411,6 @@ test("discoverAlephBootstrapMultiaddrs falls back from compact v2 to legacy post
       ok: true,
       status: 200,
       async json() {
-        if (postType === DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE) {
-          return { posts: [] };
-        }
         return {
           posts: [
             {
@@ -435,14 +429,11 @@ test("discoverAlephBootstrapMultiaddrs falls back from compact v2 to legacy post
     };
   };
 
-  const addrs = await discoverAlephBootstrapMultiaddrs({ fetch });
-  assert.deepEqual(requestedTypes, [
-    DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE,
-    "relay-bootstrap",
-  ]);
-  assert.deepEqual(addrs, [
-    "/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy",
-  ]);
+  await assert.rejects(
+    discoverAlephBootstrapMultiaddrs({ fetch }),
+    /Legacy relay-bootstrap record encountered.*relay-bootstrap-v2/,
+  );
+  assert.deepEqual(requestedTypes, [DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE]);
 });
 
 test("selectCurrentRelayBootstrapPosts keeps only the newest record per sender identity", () => {
@@ -453,7 +444,7 @@ test("selectCurrentRelayBootstrapPosts keeps only the newest record per sender i
       itemHash: "item-old",
       address: "0xabc",
       ref: "simple-todo-bootstrap",
-      type: "relay-bootstrap",
+      type: "relay-bootstrap-v2",
       time: now / 1000,
       content: {
         peerId: "12D3KooWOld",
@@ -466,7 +457,7 @@ test("selectCurrentRelayBootstrapPosts keeps only the newest record per sender i
       itemHash: "item-new",
       address: "0xabc",
       ref: "simple-todo-bootstrap",
-      type: "relay-bootstrap",
+      type: "relay-bootstrap-v2",
       time: now / 1000,
       content: {
         peerId: "12D3KooWNew",
@@ -479,7 +470,7 @@ test("selectCurrentRelayBootstrapPosts keeps only the newest record per sender i
       itemHash: "item-other",
       address: "0xdef",
       ref: "simple-todo-bootstrap",
-      type: "relay-bootstrap",
+      type: "relay-bootstrap-v2",
       time: now / 1000,
       content: {
         peerId: "12D3KooWOther",
@@ -495,14 +486,14 @@ test("selectCurrentRelayBootstrapPosts keeps only the newest record per sender i
   );
 });
 
-test("relayBootstrapTrustMode distinguishes legacy and dual-key records", () => {
+test("relayBootstrapTrustMode distinguishes wallet-signed and dual-key records", () => {
   assert.equal(
     relayBootstrapTrustMode({
-      peerId: "12D3KooWLegacy",
-      multiaddrs: ["/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy"],
+      peerId: "12D3KooWWallet",
+      multiaddrs: ["/dns4/relay-wallet.example.com/tcp/443/tls/ws/p2p/12D3KooWWallet"],
       updatedAt: 1,
     }),
-    "legacy-wallet-signed",
+    "wallet-signed",
   );
 
   assert.equal(
@@ -545,16 +536,16 @@ test("discoverAlephBootstrapMultiaddrs can require dual-key attestation", async 
       return {
         posts: [
           {
-            hash: "hash-legacy",
-            item_hash: "item-legacy",
-            address: "0xlegacy",
-            type: "relay-bootstrap",
+            hash: "hash-wallet",
+            item_hash: "item-wallet",
+            address: "0xwallet",
+            type: "relay-bootstrap-v2",
             ref: "simple-todo-bootstrap",
             content: {
-              peerId: "12D3KooWLegacy",
+              peerId: "12D3KooWWallet",
               updatedAt: now,
-              multiaddrs: ["/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy"],
-              browserMultiaddrs: ["/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy"],
+              multiaddrs: ["/dns4/relay-wallet.example.com/tcp/443/tls/ws/p2p/12D3KooWWallet"],
+              browserMultiaddrs: ["/dns4/relay-wallet.example.com/tcp/443/tls/ws/p2p/12D3KooWWallet"],
             },
           },
         ],
@@ -618,7 +609,6 @@ test("dual-key authorization and relay proof can be signed and verified", async 
   const verified = await verifyRelayBootstrapDualKeyContent({
     peerId: "12D3KooWProof",
     multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
-    browserMultiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
     registrationId: "relay:proof",
     profile: "orbitdb-relay",
     version: "0.4.0",
@@ -668,7 +658,6 @@ test("compact relay proofs verify against signed multiaddr hashes", async () => 
     profile: "orbitdb-relay",
     version: "0.4.0",
     updatedAt: 200,
-    compact: true,
     signer,
   });
 

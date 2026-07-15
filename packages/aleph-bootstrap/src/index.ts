@@ -4,8 +4,7 @@ import { keccak256, recoverMessageAddress, stringToHex } from "viem";
 export const DEFAULT_ALEPH_API_HOST = "https://api.aleph.im";
 export const DEFAULT_ALEPH_BOOTSTRAP_CHANNEL = "simple-todo";
 export const DEFAULT_ALEPH_BOOTSTRAP_REF = "simple-todo-bootstrap";
-export const DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE = "relay-bootstrap";
-export const DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE = "relay-bootstrap-v2";
+export const DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE = "relay-bootstrap-v2";
 export const DEFAULT_BOOTSTRAP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const DEFAULT_BOOTSTRAP_PAGINATION = 50;
 export const DEFAULT_BOOTSTRAP_MAX_PAGES = 5;
@@ -94,8 +93,6 @@ export interface DiscoverAlephBootstrapOptions {
   apiHost?: string;
   channel?: string;
   ref?: string;
-  postType?: string;
-  postTypes?: string[];
   page?: number;
   pagination?: number;
   maxPages?: number;
@@ -120,21 +117,19 @@ export interface CreateRelayBootstrapPostOptions {
   registrationId?: string;
   ref?: string;
   channel?: string;
-  postType?: string;
   profile?: string;
   version?: string;
   ownerAddress?: string;
   publisherAddress?: string;
   authorization?: RelayBootstrapAuthorizationRecord;
   relayProof?: RelayBootstrapProofRecord;
-  compact?: boolean;
   compactMultiaddrLimit?: number;
   now?: number;
   hasher: (payload: string) => Promise<string> | string;
 }
 
 export type RelayBootstrapTrustMode =
-  | "legacy-wallet-signed"
+  | "wallet-signed"
   | "dual-key-attested";
 
 function serializeOwnerAuthorizationPayload(
@@ -173,11 +168,6 @@ function serializeRelayProofPayload(payload: RelayBootstrapProofPayload): string
 
 export function relayBootstrapMultiaddrsHash(addrs: readonly string[]): string {
   return keccak256(stringToHex(JSON.stringify(dedupeMultiaddrs(addrs))));
-}
-
-function compactPostType(postType: string | undefined): boolean {
-  return (postType ?? DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE) ===
-    DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE;
 }
 
 function browserMultiaddrPreference(addr: string): number {
@@ -517,21 +507,17 @@ export function buildRelayBootstrapPostContent(args: {
   browserMultiaddrs?: string[];
   registrationId?: string;
   ref?: string;
-  postType?: string;
   profile?: string;
   version?: string;
   ownerAddress?: string;
   publisherAddress?: string;
   authorization?: RelayBootstrapAuthorizationRecord;
   relayProof?: RelayBootstrapProofRecord;
-  compact?: boolean;
   compactMultiaddrLimit?: number;
   now?: number;
 }): RelayBootstrapPostContent {
   const now = args.now ?? Date.now() / 1000;
   const updatedAt = args.now ?? Date.now();
-  const postType = args.postType ?? DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE;
-  const compact = args.compact ?? compactPostType(postType);
   const fullMultiaddrs = filterPublicMultiaddrs(args.multiaddrs);
   const fullBrowserMultiaddrs = args.browserMultiaddrs
     ? filterPublicMultiaddrs(args.browserMultiaddrs, {
@@ -546,13 +532,13 @@ export function buildRelayBootstrapPostContent(args: {
   );
 
   return {
-    type: postType,
+    type: DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE,
     address: args.sender,
     ...(args.ref ? { ref: args.ref } : {}),
     content: {
       peerId: args.peerId,
-      multiaddrs: compact ? compactMultiaddrs : fullMultiaddrs,
-      browserMultiaddrs: compact ? undefined : fullBrowserMultiaddrs,
+      multiaddrs: compactMultiaddrs,
+      browserMultiaddrs: undefined,
       registrationId: args.registrationId,
       profile: args.profile,
       version: args.version,
@@ -587,14 +573,12 @@ export async function createRelayBootstrapPost(
     browserMultiaddrs: args.browserMultiaddrs,
     registrationId: args.registrationId,
     ref: args.ref ?? DEFAULT_ALEPH_BOOTSTRAP_REF,
-    postType: args.postType ?? DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE,
     profile: args.profile,
     version: args.version,
     ownerAddress: args.ownerAddress,
     publisherAddress: args.publisherAddress,
     authorization: args.authorization,
     relayProof: args.relayProof,
-    compact: args.compact,
     compactMultiaddrLimit: args.compactMultiaddrLimit,
     now: nowMillis,
   });
@@ -625,7 +609,7 @@ export function relayBootstrapTrustMode(
   ) {
     return "dual-key-attested";
   }
-  return "legacy-wallet-signed";
+  return "wallet-signed";
 }
 
 export async function signRelayBootstrapAuthorization(args: {
@@ -670,7 +654,6 @@ export async function signRelayBootstrapProof(args: {
   profile?: string;
   version?: string;
   updatedAt?: number;
-  compact?: boolean;
   compactMultiaddrLimit?: number;
   signer: RelayBootstrapProofSigner;
 }): Promise<RelayBootstrapProofRecord> {
@@ -686,14 +669,11 @@ export async function signRelayBootstrapProof(args: {
       : fullMultiaddrs,
     args.compactMultiaddrLimit,
   );
-  const compact = args.compact ?? false;
   const payload: RelayBootstrapProofPayload = {
     peerId: args.peerId,
-    multiaddrs: compact ? undefined : fullMultiaddrs,
-    browserMultiaddrs: compact ? undefined : fullBrowserMultiaddrs,
-    multiaddrsHash: compact
-      ? relayBootstrapMultiaddrsHash(compactMultiaddrs)
-      : undefined,
+    multiaddrs: undefined,
+    browserMultiaddrs: undefined,
+    multiaddrsHash: relayBootstrapMultiaddrsHash(compactMultiaddrs),
     registrationId: args.registrationId,
     profile: args.profile,
     version: args.version,
@@ -914,10 +894,7 @@ export async function fetchAlephBootstrapPosts(
     options.channel ?? DEFAULT_ALEPH_BOOTSTRAP_CHANNEL,
   );
   url.searchParams.set("refs", options.ref ?? DEFAULT_ALEPH_BOOTSTRAP_REF);
-  url.searchParams.set(
-    "types",
-    options.postType ?? DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE,
-  );
+  url.searchParams.set("types", DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE);
   url.searchParams.set(
     "pagination",
     String(options.pagination ?? DEFAULT_BOOTSTRAP_PAGINATION),
@@ -933,10 +910,28 @@ export async function fetchAlephBootstrapPosts(
   }
 
   const payload = (await response.json()) as AlephPostsResponse;
-  return (payload.posts ?? [])
+  const posts = (payload.posts ?? [])
     .map((entry) => normalizeRelayBootstrapPostRecord(entry))
     .filter((entry): entry is RelayBootstrapPostRecord => entry != null)
     .sort((left, right) => compareRelayBootstrapPostRecency(right, left));
+
+  posts.forEach(assertSupportedRelayBootstrapPost);
+  return posts;
+}
+
+function assertSupportedRelayBootstrapPost(
+  post: RelayBootstrapPostRecord,
+): void {
+  if (post.type === "relay-bootstrap") {
+    throw new Error(
+      "Legacy relay-bootstrap record encountered. Only relay-bootstrap-v2 is supported.",
+    );
+  }
+  if (post.type && post.type !== DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE) {
+    throw new Error(
+      `Unsupported relay bootstrap post type: ${post.type}. Expected ${DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE}.`,
+    );
+  }
 }
 
 function compareRelayBootstrapPostRecency(
@@ -971,6 +966,7 @@ export function selectCurrentRelayBootstrapPosts(
   const selected = new Map<string, RelayBootstrapPostRecord>();
 
   for (const post of posts) {
+    assertSupportedRelayBootstrapPost(post);
     const content = post.content;
     if (!content) continue;
     if (now - content.updatedAt > maxAgeMs) continue;
@@ -1008,7 +1004,7 @@ async function filterTrustedRelayBootstrapPosts(
     if (!content) continue;
 
     const trustMode = relayBootstrapTrustMode(content);
-    if (trustMode === "legacy-wallet-signed") {
+    if (trustMode === "wallet-signed") {
       if (!requireDualKeyAttestation) {
         trusted.push(post);
       }
@@ -1036,47 +1032,34 @@ export async function discoverAlephBootstrapMultiaddrs(
   const pagination = options.pagination ?? DEFAULT_BOOTSTRAP_PAGINATION;
   const startPage = options.page ?? 1;
   const maxPages = Math.max(1, options.maxPages ?? DEFAULT_BOOTSTRAP_MAX_PAGES);
-  const postTypes =
-    options.postType != null
-      ? [options.postType]
-      : options.postTypes && options.postTypes.length > 0
-        ? options.postTypes
-        : [
-            DEFAULT_ALEPH_BOOTSTRAP_COMPACT_POST_TYPE,
-            DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE,
-          ];
+  const collectedPosts: RelayBootstrapPostRecord[] = [];
 
-  for (const postType of postTypes) {
-    const collectedPosts: RelayBootstrapPostRecord[] = [];
+  for (let offset = 0; offset < maxPages; offset += 1) {
+    const page = startPage + offset;
+    const pagePosts = await fetchAlephBootstrapPosts({
+      ...options,
+      page,
+      pagination,
+    });
+    collectedPosts.push(...pagePosts);
 
-    for (let offset = 0; offset < maxPages; offset += 1) {
-      const page = startPage + offset;
-      const pagePosts = await fetchAlephBootstrapPosts({
-        ...options,
-        postType,
-        page,
-        pagination,
-      });
-      collectedPosts.push(...pagePosts);
+    const selectedPosts = selectCurrentRelayBootstrapPosts(collectedPosts, {
+      maxAgeMs: options.maxAgeMs,
+    });
+    const trustedPosts = await filterTrustedRelayBootstrapPosts(selectedPosts, {
+      requireDualKeyAttestation: options.requireDualKeyAttestation,
+      verifyDualKeyAttestation: options.verifyDualKeyAttestation,
+    });
+    const addrs = relayBootstrapPostsToMultiaddrs(
+      trustedPosts,
+      browserDialableOnly,
+    );
+    if (addrs.length > 0) {
+      return addrs;
+    }
 
-      const selectedPosts = selectCurrentRelayBootstrapPosts(collectedPosts, {
-        maxAgeMs: options.maxAgeMs,
-      });
-      const trustedPosts = await filterTrustedRelayBootstrapPosts(selectedPosts, {
-        requireDualKeyAttestation: options.requireDualKeyAttestation,
-        verifyDualKeyAttestation: options.verifyDualKeyAttestation,
-      });
-      const addrs = relayBootstrapPostsToMultiaddrs(
-        trustedPosts,
-        browserDialableOnly,
-      );
-      if (addrs.length > 0) {
-        return addrs;
-      }
-
-      if (pagePosts.length < pagination) {
-        break;
-      }
+    if (pagePosts.length < pagination) {
+      break;
     }
   }
 

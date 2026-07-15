@@ -187,7 +187,6 @@ export async function reconcileOwnerRelayBootstrapRegistrations(args: {
   apiHost?: string
   channel?: string
   ref?: string
-  postType?: string
   version?: string
   ownerAddress?: string
   ownerSigner?: MessageSigner
@@ -270,7 +269,6 @@ export async function reconcileOwnerRelayBootstrapRegistrations(args: {
         apiHost: args.apiHost,
         channel: args.channel,
         ref: args.ref,
-        postType: args.postType,
         peerId: relayMetadata.peerId,
         multiaddrs: relayMetadata.probeMultiaddrs,
         browserMultiaddrs: relayMetadata.browserBootstrapMultiaddrs,
@@ -301,7 +299,6 @@ export async function reconcileOwnerRelayBootstrapRegistrations(args: {
       apiHost: args.apiHost ?? DEFAULT_ALEPH_API_HOST,
       channel: args.channel,
       ref: args.ref,
-      postType: args.postType,
       fetch: args.fetch as typeof fetch,
     })
     const currentPosts = selectCurrentRelayBootstrapPosts(bootstrapPosts)

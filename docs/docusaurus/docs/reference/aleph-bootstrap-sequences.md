@@ -93,11 +93,11 @@ sequenceDiagram
     Note over Browser,VM: Prefer https://relay-name.2n6.me/bootstrap/metadata when active.<br/>Otherwise fall back to the temporary setup endpoint.
   end
 
-  Setup->>Registry: publish relay-bootstrap POST with guest publisher identity
+  Setup->>Registry: publish relay-bootstrap-v2 POST with guest publisher identity
   Browser->>Registry: wait for guest registration by registrationId + peerId
 
   alt guest registration is delayed
-    Browser->>Registry: publish browser fallback relay-bootstrap POST
+    Browser->>Registry: publish browser fallback relay-bootstrap-v2 POST
     Browser->>Registry: wait for fallback registration visibility
     Note over Browser,Registry: This safety path keeps browser discovery usable even when the guest<br/>registration arrives late.
   end
@@ -189,7 +189,7 @@ sequenceDiagram
     Deploy->>Guest: run reachability verification
     Guest-->>Deploy: transports reachable
     Deploy->>Deploy: verify guest peerId matches preseeded publisher identity
-    Deploy->>Registry: publish relay-bootstrap POST with relay proof + owner authorization
+    Deploy->>Registry: publish relay-bootstrap-v2 POST with relay proof + owner authorization
     Deploy->>Registry: wait for visible current registration
     Deploy->>Registry: reconcile owner registrations and forget stale records
     Relay->>Registry: bootstrap refresh timer republishes current metadata later
@@ -221,7 +221,7 @@ sequenceDiagram
 
   Note right of Operator: Starts deployment from CI, CLI, or UI and supplies<br/>service domain, admin DID, and bootstrap package inputs.
   Note right of Action: Derives optional UCAN bootstrap package data,<br/>deploys the VM, configures the guest, and emits metadata outputs.
-  Note right of Aleph: Stores the VM INSTANCE and optional domain aggregate.<br/>No relay-bootstrap POST is expected for this profile.
+  Note right of Aleph: Stores the VM INSTANCE and optional domain aggregate.<br/>No relay-bootstrap-v2 POST is expected for this profile.
   Note right of CRN: Hosts the upload service VM and exposes mapped setup,<br/>SSH, and HTTPS ports.
   Note right of Guest: Temporary setup endpoint that validates input,<br/>persists bootstrap material, writes env, and starts services.
   Note right of Service: Local ucan-store upload API worker on 127.0.0.1:8787<br/>with a persisted service signer.
@@ -257,7 +257,7 @@ sequenceDiagram
     Action->>Aleph: link instance domain to the VM
   end
 
-  Note over Action,Aleph: No relay-bootstrap POST is published for ucan-store.
+  Note over Action,Aleph: No relay-bootstrap-v2 POST is published for ucan-store.
   PWA->>Guard: fetch /.well-known/ucan-store.json or /service-manifest.json
   Guard-->>PWA: runtime service DID/origin + delegation issuance policy
 ```
@@ -312,7 +312,7 @@ sequenceDiagram
   Note right of Browser: Finds linked or orphaned bootstrap records and keeps<br/>the UI state aligned after deletion.
   Note right of Wallet: Signs FORGET messages for VM instances and bootstrap records.
   Note right of Aleph: Processes FORGET messages for instances and aggregate history.
-  Note right of Registry: Stores relay-bootstrap POST records that can be<br/>linked to a VM or orphaned after VM cleanup.
+  Note right of Registry: Stores relay-bootstrap-v2 POST records that can be<br/>linked to a VM or orphaned after VM cleanup.
 
   alt deleting a live instance
     Browser->>Wallet: sign FORGET for instance + linked registration hashes
