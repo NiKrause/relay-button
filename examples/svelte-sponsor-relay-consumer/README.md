@@ -1,4 +1,4 @@
-# Svelte Sponsor Relay Consumer
+# Svelte Relay Button Consumer
 
 Minimal Svelte usage:
 

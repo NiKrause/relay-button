@@ -1,4 +1,4 @@
-# React Sponsor Relay Consumer
+# React Relay Button Consumer
 
 Minimal React usage:
 

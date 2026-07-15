@@ -19,7 +19,7 @@ Current shared producers:
 
 - GitHub Action VM deploy path in
   [`relay-button`](https://github.com/NiKrause/relay-button)
-- Sponsor Relay browser UI path in
+- Relay Button browser UI path in
   [`relay-button`](https://github.com/NiKrause/relay-button)
 
 Current shared consumers:

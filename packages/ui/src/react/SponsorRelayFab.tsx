@@ -156,7 +156,7 @@ function supportsBootstrapUi(state: SponsorRelayState): boolean {
 function deploymentPanelTitle(state: SponsorRelayState): string {
   return stateDeploymentProfile(state) === "ucan-store"
     ? "Sponsor Service"
-    : "Sponsor Relay";
+    : "Relay Button";
 }
 
 function deploymentLauncherLabel(

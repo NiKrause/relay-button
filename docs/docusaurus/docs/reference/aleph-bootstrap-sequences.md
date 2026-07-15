@@ -2,7 +2,7 @@
 
 This page ties together the real implementation paths across:
 
-- the browser Sponsor Relay UI
+- the browser Relay Button UI
 - the guest VM bootstrap publisher
 - the reusable UC rootfs workflow
 - the shared `@le-space/node` deploy and site runners
@@ -210,7 +210,7 @@ profiles:
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Operator as CLI / GitHub Action / Sponsor Relay UI
+  participant Operator as CLI / GitHub Action / Relay Button UI
   participant Action as action-runner + deploy executor
   participant Aleph as Aleph API
   participant CRN as Scheduler / selected CRN
@@ -298,7 +298,7 @@ If you are debugging a broken rollout, read the system in this order:
 
 ## Delete And Orphan Cleanup
 
-The registration lifecycle does not end at publish time. The Sponsor Relay UI
+The registration lifecycle does not end at publish time. The Relay Button UI
 also cleans up linked and orphaned registrations explicitly.
 
 ```mermaid

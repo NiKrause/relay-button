@@ -51,7 +51,7 @@ export let apiHosts = undefined
   }
 
   function deploymentTitle() {
-    return deploymentProfile() === 'ucan-store' ? 'Sponsor Service' : 'Sponsor Relay'
+    return deploymentProfile() === 'ucan-store' ? 'Service Button' : 'Relay Button'
   }
 
   function deploymentInstanceFallbackLabel() {

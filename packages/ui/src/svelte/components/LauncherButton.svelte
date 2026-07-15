@@ -5,7 +5,7 @@
 </script>
 
 <button class={`launcher ${mode} ${open ? 'open' : ''}`} type="button" on:click={onToggle}>
-  <span>Sponsor Relay</span>
+  <span>Relay Button</span>
 </button>
 
 <style>

@@ -130,7 +130,7 @@ Current responsibilities:
 - reusable React components
 - reusable Svelte components
 - shared presentation helpers for deployment state and relay setup
-- Sponsor Relay browser deployment UI integration
+- Relay Button browser deployment UI integration
 
 Keep local to apps for now:
 
