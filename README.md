@@ -1,19 +1,47 @@
-# The relay-button
+# Relay Button
 
-Relay Button is reusable Aleph Cloud deployment tooling for projects that need to:
+*Local-first apps you can keep, share, and use without depending on a permanent
+cloud backend.*
 
-- build and publish RootFS images
-- deploy Aleph VM instances
-- publish static sites through Aleph/IPFS
-- verify deployed relays and bootstrap addresses
-- clean up older Aleph deployment records
+Thirty years ago, software came on a CD. You owned a copy, installed it locally,
+and could continue using it without asking a vendor's server for permission.
 
-This repository is the implementation layer behind the Aleph deployment flows
-used by consumer projects such as `universal-connectivity`.
+Relay Button brings this idea to modern web applications. A local-first
+Progressive Web App (PWA) can be hosted on IPFS, downloaded directly, or even
+shared on a USB drive. The application and its primary data remain on the
+user's device instead of living exclusively in a cloud database.
 
-This first rebrand phase keeps the published `@le-space/*` package scope and
-existing Aleph-specific package names stable for consumer compatibility while
-introducing `relay-button` as the new product and CLI name.
+When people want to collaborate, their apps exchange and replicate data over
+peer-to-peer connections. A chat, shared todo list, or collaborative workspace
+therefore does not need a conventional central application server.
+
+Real-world peer-to-peer networks still need some supporting infrastructure.
+Devices behind firewalls or changing networks need help finding and reaching
+each other. Teams may also want an online IPFS node that keeps shared data
+available while individual devices are offline.
+
+This is what the Relay Button is for: start a signaling and bootstrap relay
+when collaboration or automatic IPFS pinning needs it. Keep it running for a
+meeting, a project, or for years—and stop it when it is no longer useful.
+
+Today, Relay Button deploys OrbitDB and libp2p relay services on Aleph Cloud.
+The relay helps peers connect and can pin shared data, but it does not become
+the owner of the application or its primary data. For longer-term retention,
+decentralized archival storage such as Filecoin can be added separately.
+
+## What Happens When You Press the Button?
+
+1. The PWA and its data already work locally on the user's device.
+2. Relay Button starts an internet-reachable OrbitDB and libp2p relay.
+3. Peers use the relay to discover each other and establish communication.
+4. The applications replicate their data peer-to-peer in real time.
+5. The relay can pin shared IPFS data while team devices are offline.
+6. When the shared infrastructure is no longer needed, it can be stopped.
+
+The current repository contains the reusable UI, browser libraries, deployment
+runners, and automation behind this flow. The implementation currently targets
+Aleph Cloud while keeping the local-first application independent from a
+permanent cloud backend.
 
 ## What It Contains
 
@@ -41,7 +69,7 @@ Packages use the `@le-space/*` scope.
   browser EVM helpers, and prepaid vault protocol helpers.
 - `@le-space/ui`
   Shared React and Svelte UI components for relay deployment and status flows,
-  including the Sponsor Relay browser integration surface.
+  including the Relay Button browser integration surface.
 
 ### GitHub Automation
 
@@ -51,6 +79,14 @@ Packages use the `@le-space/*` scope.
   Package release workflow.
 - [`.github/workflows/aleph-rootfs-build-publish-deploy.yml`](./.github/workflows/aleph-rootfs-build-publish-deploy.yml)
   Relay Button workflow entrypoint.
+- [`.github/workflows/aleph-rs-llm-review.yml`](./.github/workflows/aleph-rs-llm-review.yml)
+  Optional LLM-assisted comparison of selected Relay Button integrations with
+  the current upstream `aleph-rs` Rust client. The workflow is manual-only for
+  now, so it does not run on pushes or on a schedule. It can be activated from
+  the GitHub Actions **Run workflow** menu after configuring the
+  `OPENAI_COMPAT_API_KEY` secret and the `OPENAI_COMPAT_BASE_URL` and
+  `OPENAI_COMPAT_MODEL` repository variables. Scheduled or path-based drift
+  monitoring can be restored later by adding `schedule` or `push` triggers.
 
 ## How Consumer Repos Use It
 
