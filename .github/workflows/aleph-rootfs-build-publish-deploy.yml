@@ -746,6 +746,7 @@ jobs:
           ${{
             inputs.deploy_vm &&
             (
+              inputs.profile == 'uc-go-peer' ||
               inputs.relay_probe_required_families_json != '[]' ||
               inputs.relay_probe_best_effort_families_json != '[]'
             )
@@ -754,6 +755,7 @@ jobs:
         working-directory: shared-aleph-tooling
         env:
           ALEPH_VM_MODE: relay-probe
+          ALEPH_RELAY_PROFILE: ${{ inputs.profile }}
           ALEPH_RELAY_PROBE_REQUIRED_FAMILIES_JSON: ${{ inputs.relay_probe_required_families_json }}
           ALEPH_RELAY_PROBE_BEST_EFFORT_FAMILIES_JSON: ${{ inputs.relay_probe_best_effort_families_json }}
           ALEPH_RELAY_PROBE_PROXY_WSS_HOST_MATCHERS_JSON: ${{ inputs.relay_probe_proxy_wss_host_matchers_json }}
@@ -790,6 +792,7 @@ jobs:
           VM_VERIFICATION_JSON: ${{ steps.deploy_vm.outputs.verification_json }}
           VM_BROWSER_BOOTSTRAP_MULTIADDRS_JSON: ${{ steps.deploy_vm.outputs.browser_bootstrap_multiaddrs_json }}
           VM_PROTOCOL_PROBE_JSON: ${{ steps.protocol_probe.outputs.json }}
+          VM_CERTHASH_VERIFICATION_JSON: ${{ steps.protocol_probe.outputs.certhash_verification_json }}
           RETENTION_RESULT_JSON: ${{ steps.retention.outputs.retention_result_json }}
           ROOTFS_CID: ${{ steps.run_rootfs.outputs.rootfs_cid }}
           ROOTFS_ITEM_HASH: ${{ steps.run_rootfs.outputs.rootfs_item_hash }}
@@ -841,6 +844,7 @@ jobs:
               echo "- VM SSH command: \`${{ steps.deploy_vm.outputs.ssh_command }}\`"
               echo "- VM verification ok: \`${{ steps.deploy_vm.outputs.verification_ok }}\`"
               echo "- VM protocol probe ok: \`${{ steps.protocol_probe.outputs.ok }}\`"
+              echo "- WebTransport/WebRTC certhash verification: \`${{ steps.protocol_probe.outputs.certhash_verification_ok }}\`"
               echo
               echo '```json'
               printf '%s\n' "${VM_VERIFICATION_JSON}"
@@ -859,6 +863,14 @@ jobs:
                 echo
                 echo '```json'
                 printf '%s\n' "${VM_PROTOCOL_PROBE_JSON}"
+                echo '```'
+              fi
+              if [[ -n "${VM_CERTHASH_VERIFICATION_JSON}" ]]; then
+                echo
+                echo "#### Browser Transport Certhash Verification"
+                echo
+                echo '```json'
+                printf '%s\n' "${VM_CERTHASH_VERIFICATION_JSON}"
                 echo '```'
               fi
               if [[ -n "${RETENTION_RESULT_JSON}" ]]; then

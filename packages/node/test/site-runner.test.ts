@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { cidV0ToV1, computeStaticSiteDirectoryCid, parseLastJsonObject, runBootstrapEnvMode, runDomainLinkMode, runProbeMode, runSitePublishMode as runSitePublishModeCar } from "../src/site-runner.ts"
+import { cidV0ToV1, computeStaticSiteDirectoryCid, parseLastJsonObject, runBootstrapEnvMode, runDomainLinkMode, runProbeMode, runSitePublishMode as runSitePublishModeCar, verifyBrowserTransportCerthashes } from "../src/site-runner.ts"
 
 const TWO_FILE_SITE_CID = 'bafybeibijbzrkewear2lkoylctlf6v4atsukit4c36dsxpeq4ndj66gqzi'
 const TWO_FILE_SITE_CID_V0 = 'QmR3u6JNpvpoGEKfepbKQ6QRpDma6kwbg1e6aa4yoW9gzM'
@@ -62,6 +62,48 @@ test('runProbeMode merges unique probe addresses and emits outputs', async () =>
   assert.match(outputs, /ok=true/)
   assert.match(outputs, /merged_multiaddrs_json=/)
   assert.match(outputs, /dns4\/example.com/)
+})
+
+test('verifyBrowserTransportCerthashes requires uc-go-peer direct transports with certhashes', () => {
+  const peerId = '12D3KooWPeer'
+  const valid = verifyBrowserTransportCerthashes([
+    `/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/certhash/uEiWebTransport/p2p/${peerId}`,
+    `/ip4/203.0.113.10/udp/9095/webrtc-direct/certhash/uEiWebRtc/p2p/${peerId}`,
+  ], 'uc-go-peer')
+  assert.equal(valid.ok, true)
+
+  const invalid = verifyBrowserTransportCerthashes([
+    `/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/p2p/${peerId}`,
+  ], 'uc-go-peer')
+  assert.equal(invalid.ok, false)
+  assert.equal(invalid.missingCerthash.length, 1)
+  assert.match(invalid.errors.join(' '), /WebRTC Direct/)
+  assert.match(invalid.errors.join(' '), /missing \/certhash\//)
+})
+
+test('runProbeMode fails before dialing invalid uc-go-peer browser transports', async () => {
+  const { outputFile, summaryFile } = await createOutputEnv('site-probe-certhash-')
+  let probeCalled = false
+  await assert.rejects(
+    runProbeMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_RELAY_PROFILE: 'uc-go-peer',
+      PROBE_MULTIADDRS_JSON: '[]',
+      BROWSER_BOOTSTRAP_MULTIADDRS_JSON: JSON.stringify([
+        '/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/p2p/12D3KooWPeer',
+      ]),
+    }, {
+      probe: async () => {
+        probeCalled = true
+        return []
+      },
+    }),
+    /certhash verification failed/,
+  )
+  assert.equal(probeCalled, false)
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, /certhash_verification_ok=false/)
 })
 
 test('runDomainLinkMode detaches and attaches the production domain', async () => {

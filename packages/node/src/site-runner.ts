@@ -468,6 +468,52 @@ function mergedAddrs(env: NodeJS.ProcessEnv = process.env): string[] {
   return Array.from(new Set(combined))
 }
 
+export interface BrowserTransportCerthashVerification {
+  ok: boolean
+  profile: string
+  webtransport: string[]
+  webrtcDirect: string[]
+  missingCerthash: string[]
+  errors: string[]
+}
+
+export function verifyBrowserTransportCerthashes(
+  addrs: string[],
+  profile = '',
+): BrowserTransportCerthashVerification {
+  const normalizedProfile = profile.trim().toLowerCase()
+  const webtransport = addrs.filter((addr) => addr.toLowerCase().includes('/webtransport/'))
+  const webrtcDirect = addrs.filter((addr) => addr.toLowerCase().includes('/webrtc-direct/'))
+  const directBrowserAddrs = [...webtransport, ...webrtcDirect]
+  const missingCerthash = directBrowserAddrs.filter(
+    (addr) => !addr.toLowerCase().includes('/certhash/'),
+  )
+  const errors: string[] = []
+
+  if (normalizedProfile === 'uc-go-peer') {
+    if (webtransport.length === 0) {
+      errors.push('uc-go-peer did not advertise a WebTransport multiaddress.')
+    }
+    if (webrtcDirect.length === 0) {
+      errors.push('uc-go-peer did not advertise a WebRTC Direct multiaddress.')
+    }
+  }
+  if (missingCerthash.length > 0) {
+    errors.push(
+      `${missingCerthash.length} WebTransport/WebRTC Direct multiaddress(es) are missing /certhash/.`,
+    )
+  }
+
+  return {
+    ok: errors.length === 0,
+    profile: normalizedProfile,
+    webtransport,
+    webrtcDirect,
+    missingCerthash,
+    errors,
+  }
+}
+
 function defaultHasher(payload: string): string {
   return createHash('sha256').update(payload).digest('hex')
 }
@@ -881,6 +927,15 @@ export async function runProbeMode(
 ): Promise<void> {
   const addrs = mergedAddrs(env)
   if (addrs.length === 0) throw new Error('No relay probe or browser bootstrap multiaddrs were supplied.')
+  const certhashVerification = verifyBrowserTransportCerthashes(
+    addrs,
+    env.ALEPH_RELAY_PROFILE ?? env.ALEPH_ROOTFS_PROFILE ?? '',
+  )
+  await appendGithubOutput('certhash_verification_json', JSON.stringify(certhashVerification), env)
+  await appendGithubOutput('certhash_verification_ok', String(certhashVerification.ok), env)
+  if (!certhashVerification.ok) {
+    throw new Error(`Browser transport certhash verification failed: ${certhashVerification.errors.join(' ')}`)
+  }
   const probe = options.probe ?? (await import('./relay-probe.ts')).probeRelayAddrs
   const rows = await probe(addrs, env)
   if (rows.length === 0) throw new Error('Relay probe produced no JSON output.')

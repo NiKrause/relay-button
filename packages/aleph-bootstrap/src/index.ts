@@ -128,9 +128,7 @@ export interface CreateRelayBootstrapPostOptions {
   hasher: (payload: string) => Promise<string> | string;
 }
 
-export type RelayBootstrapTrustMode =
-  | "wallet-signed"
-  | "dual-key-attested";
+export type RelayBootstrapTrustMode = "wallet-signed" | "dual-key-attested";
 
 function serializeOwnerAuthorizationPayload(
   payload: RelayBootstrapAuthorizationPayload,
@@ -148,7 +146,9 @@ function serializeOwnerAuthorizationPayload(
   });
 }
 
-function serializeRelayProofPayload(payload: RelayBootstrapProofPayload): string {
+function serializeRelayProofPayload(
+  payload: RelayBootstrapProofPayload,
+): string {
   return JSON.stringify({
     peerId: payload.peerId,
     multiaddrs: payload.multiaddrs
@@ -184,7 +184,8 @@ function browserMultiaddrTransport(addr: string): string {
   const normalized = addr.toLowerCase();
   if (normalized.includes("/webtransport/")) return "webtransport";
   if (normalized.includes("/webrtc-direct/")) return "webrtc";
-  if (normalized.includes("/ws") || normalized.includes("/wss")) return "websocket";
+  if (normalized.includes("/ws") || normalized.includes("/wss"))
+    return "websocket";
   return "other";
 }
 
@@ -202,7 +203,8 @@ export function selectCompactRelayBootstrapMultiaddrs(
 
   entries.sort((left, right) => {
     const preference =
-      browserMultiaddrPreference(left.addr) - browserMultiaddrPreference(right.addr);
+      browserMultiaddrPreference(left.addr) -
+      browserMultiaddrPreference(right.addr);
     return preference !== 0 ? preference : left.index - right.index;
   });
 
@@ -313,12 +315,13 @@ function hasPeerId(addr: string): boolean {
 
 function isBrowserDialableMultiaddr(addr: string): boolean {
   const normalized = addr.toLowerCase();
-  return (
-    normalized.includes("/ws") ||
-    normalized.includes("/wss") ||
+  if (
     normalized.includes("/webtransport") ||
     normalized.includes("/webrtc-direct")
-  );
+  ) {
+    return normalized.includes("/certhash/");
+  }
+  return normalized.includes("/ws") || normalized.includes("/wss");
 }
 
 export function dedupeMultiaddrs(addrs: readonly string[]): string[] {
@@ -372,7 +375,9 @@ export function filterPublicMultiaddrs(
   });
 }
 
-function normalizeRelayBootstrapContent(value: unknown): RelayBootstrapContent | null {
+function normalizeRelayBootstrapContent(
+  value: unknown,
+): RelayBootstrapContent | null {
   if (!value || typeof value !== "object") return null;
   const content = value as Record<string, unknown>;
   const peerId = asTrimmedString(content.peerId);
@@ -380,10 +385,14 @@ function normalizeRelayBootstrapContent(value: unknown): RelayBootstrapContent |
   if (!peerId || updatedAt == null) return null;
 
   const multiaddrs = Array.isArray(content.multiaddrs)
-    ? content.multiaddrs.filter((entry): entry is string => typeof entry === "string")
+    ? content.multiaddrs.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
     : [];
   const browserMultiaddrs = Array.isArray(content.browserMultiaddrs)
-    ? content.browserMultiaddrs.filter((entry): entry is string => typeof entry === "string")
+    ? content.browserMultiaddrs.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
     : undefined;
 
   return {
@@ -398,8 +407,10 @@ function normalizeRelayBootstrapContent(value: unknown): RelayBootstrapContent |
     ownerAddress: asTrimmedString(content.ownerAddress) ?? undefined,
     publisherAddress: asTrimmedString(content.publisherAddress) ?? undefined,
     authorization:
-      normalizeRelayBootstrapAuthorizationRecord(content.authorization) ?? undefined,
-    relayProof: normalizeRelayBootstrapProofRecord(content.relayProof) ?? undefined,
+      normalizeRelayBootstrapAuthorizationRecord(content.authorization) ??
+      undefined,
+    relayProof:
+      normalizeRelayBootstrapProofRecord(content.relayProof) ?? undefined,
     updatedAt,
   };
 }
@@ -452,15 +463,20 @@ function normalizeRelayBootstrapProofPayload(
   const updatedAt = asNumber(payload.updatedAt);
   if (!peerId || updatedAt == null) return null;
   const multiaddrs = Array.isArray(payload.multiaddrs)
-    ? payload.multiaddrs.filter((entry): entry is string => typeof entry === "string")
+    ? payload.multiaddrs.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
     : [];
   const browserMultiaddrs = Array.isArray(payload.browserMultiaddrs)
-    ? payload.browserMultiaddrs.filter((entry): entry is string => typeof entry === "string")
+    ? payload.browserMultiaddrs.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
     : undefined;
 
   return {
     peerId,
-    multiaddrs: multiaddrs.length > 0 ? dedupeMultiaddrs(multiaddrs) : undefined,
+    multiaddrs:
+      multiaddrs.length > 0 ? dedupeMultiaddrs(multiaddrs) : undefined,
     browserMultiaddrs: browserMultiaddrs
       ? dedupeMultiaddrs(browserMultiaddrs)
       : undefined,
@@ -486,7 +502,9 @@ function normalizeRelayBootstrapProofRecord(
   return { scheme, signature, payload };
 }
 
-function normalizeRelayBootstrapPostRecord(value: unknown): RelayBootstrapPostRecord | null {
+function normalizeRelayBootstrapPostRecord(
+  value: unknown,
+): RelayBootstrapPostRecord | null {
   if (!value || typeof value !== "object") return null;
   const entry = value as Record<string, unknown>;
   return {
@@ -700,7 +718,9 @@ export async function verifyRelayBootstrapAuthorization(
   }
 
   if (authorization.scheme !== RELAY_BOOTSTRAP_SIGNATURE_SCHEME) {
-    errors.push(`Unsupported owner authorization scheme: ${authorization.scheme}`);
+    errors.push(
+      `Unsupported owner authorization scheme: ${authorization.scheme}`,
+    );
     return { ok: false, errors };
   }
 
@@ -711,8 +731,12 @@ export async function verifyRelayBootstrapAuthorization(
       serialized,
       authorization.signature,
     );
-    if (normalizeAddress(recovered) !== normalizeAddress(payload.ownerAddress)) {
-      errors.push("Owner authorization signature does not recover the owner address.");
+    if (
+      normalizeAddress(recovered) !== normalizeAddress(payload.ownerAddress)
+    ) {
+      errors.push(
+        "Owner authorization signature does not recover the owner address.",
+      );
     }
   } catch (error) {
     errors.push(
@@ -751,13 +775,19 @@ export async function verifyRelayBootstrapProof(
   const payload = proof.payload;
   const serialized = serializeRelayProofPayload(payload);
   try {
-    const recovered = await recoverAddressForSignature(serialized, proof.signature);
+    const recovered = await recoverAddressForSignature(
+      serialized,
+      proof.signature,
+    );
 
     if (
       options.expectedPublisherAddress &&
-      normalizeAddress(recovered) !== normalizeAddress(options.expectedPublisherAddress)
+      normalizeAddress(recovered) !==
+        normalizeAddress(options.expectedPublisherAddress)
     ) {
-      errors.push("Relay proof signature does not recover the expected publisher address.");
+      errors.push(
+        "Relay proof signature does not recover the expected publisher address.",
+      );
     }
   } catch (error) {
     errors.push(
@@ -804,7 +834,9 @@ export async function verifyRelayBootstrapDualKeyContent(
       normalizeAddress(content.ownerAddress) !==
       normalizeAddress(content.authorization.payload.ownerAddress)
     ) {
-      errors.push("Content ownerAddress does not match the owner authorization payload.");
+      errors.push(
+        "Content ownerAddress does not match the owner authorization payload.",
+      );
     }
   }
 
@@ -819,14 +851,21 @@ export async function verifyRelayBootstrapDualKeyContent(
     }
   }
 
-  if (content.authorization && content.authorization.payload.peerId !== content.peerId) {
-    errors.push("Owner authorization peer ID does not match the bootstrap content peer ID.");
+  if (
+    content.authorization &&
+    content.authorization.payload.peerId !== content.peerId
+  ) {
+    errors.push(
+      "Owner authorization peer ID does not match the bootstrap content peer ID.",
+    );
   }
 
   const proofPayload = content.relayProof?.payload;
   if (proofPayload) {
     if (proofPayload.registrationId !== content.registrationId) {
-      errors.push("Relay proof registrationId does not match the bootstrap content.");
+      errors.push(
+        "Relay proof registrationId does not match the bootstrap content.",
+      );
     }
     if (proofPayload.profile !== content.profile) {
       errors.push("Relay proof profile does not match the bootstrap content.");
@@ -835,14 +874,18 @@ export async function verifyRelayBootstrapDualKeyContent(
       errors.push("Relay proof version does not match the bootstrap content.");
     }
     if (proofPayload.updatedAt !== content.updatedAt) {
-      errors.push("Relay proof updatedAt does not match the bootstrap content.");
+      errors.push(
+        "Relay proof updatedAt does not match the bootstrap content.",
+      );
     }
     if (proofPayload.multiaddrsHash) {
       if (
         proofPayload.multiaddrsHash !==
         relayBootstrapMultiaddrsHash(content.multiaddrs)
       ) {
-        errors.push("Relay proof multiaddrs hash does not match the bootstrap content.");
+        errors.push(
+          "Relay proof multiaddrs hash does not match the bootstrap content.",
+        );
       }
     } else if (
       JSON.stringify(dedupeMultiaddrs(proofPayload.multiaddrs ?? [])) !==
@@ -859,15 +902,15 @@ export async function verifyRelayBootstrapDualKeyContent(
           "Relay proof browserMultiaddrs hash does not match the bootstrap content.",
         );
       }
-    } else if (
-      proofPayload.browserMultiaddrs ||
-      content.browserMultiaddrs
-    ) {
+    } else if (proofPayload.browserMultiaddrs || content.browserMultiaddrs) {
       if (
-        JSON.stringify(dedupeMultiaddrs(proofPayload.browserMultiaddrs ?? [])) !==
-        JSON.stringify(dedupeMultiaddrs(content.browserMultiaddrs ?? []))
+        JSON.stringify(
+          dedupeMultiaddrs(proofPayload.browserMultiaddrs ?? []),
+        ) !== JSON.stringify(dedupeMultiaddrs(content.browserMultiaddrs ?? []))
       ) {
-        errors.push("Relay proof browserMultiaddrs do not match the bootstrap content.");
+        errors.push(
+          "Relay proof browserMultiaddrs do not match the bootstrap content.",
+        );
       }
     }
   }
@@ -947,7 +990,9 @@ function compareRelayBootstrapPostRecency(
   return leftTime - rightTime;
 }
 
-function relayBootstrapRecordIdentity(post: RelayBootstrapPostRecord): string | null {
+function relayBootstrapRecordIdentity(
+  post: RelayBootstrapPostRecord,
+): string | null {
   const content = post.content;
   if (!content) return null;
   if (content.registrationId) return `registration:${content.registrationId}`;
@@ -975,16 +1020,13 @@ export function selectCurrentRelayBootstrapPosts(
     if (!identity) continue;
 
     const previous = selected.get(identity);
-    if (
-      !previous ||
-      compareRelayBootstrapPostRecency(post, previous) > 0
-    ) {
+    if (!previous || compareRelayBootstrapPostRecency(post, previous) > 0) {
       selected.set(identity, post);
     }
   }
 
-  return [...selected.values()].sort(
-    (left, right) => compareRelayBootstrapPostRecency(right, left),
+  return [...selected.values()].sort((left, right) =>
+    compareRelayBootstrapPostRecency(right, left),
   );
 }
 

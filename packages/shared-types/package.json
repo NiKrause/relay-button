@@ -1,6 +1,6 @@
 {
   "name": "@le-space/shared-types",
-  "version": "0.6.25",
+  "version": "0.6.26",
   "description": "Shared type contracts for the Relay Button tooling monorepo.",
   "license": "MIT",
   "private": true,

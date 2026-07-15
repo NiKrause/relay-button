@@ -70,10 +70,9 @@ def has_peer_id(addr: str) -> bool:
 
 def is_browser_dialable(addr: str) -> bool:
     normalized = addr.lower()
-    return any(
-        token in normalized
-        for token in ("/ws", "/wss", "/webtransport", "/webrtc-direct")
-    )
+    if "/webtransport" in normalized or "/webrtc-direct" in normalized:
+        return "/certhash/" in normalized
+    return "/ws" in normalized or "/wss" in normalized
 
 
 def is_public_multiaddr(addr: str) -> bool:

@@ -38,14 +38,15 @@ test("filterPublicMultiaddrs can keep only browser dialable addresses", () => {
     [
       "/ip4/203.0.113.10/tcp/9095/p2p/12D3KooWTcp",
       "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWWs",
-      "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/p2p/12D3KooWWt",
+      "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/certhash/uEiWebTransport/p2p/12D3KooWWt",
+      "/ip4/203.0.113.10/udp/9096/webrtc-direct/p2p/12D3KooWInvalid",
     ],
     { browserDialableOnly: true },
   );
 
   assert.deepEqual(addrs, [
     "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWWs",
-    "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/p2p/12D3KooWWt",
+    "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/certhash/uEiWebTransport/p2p/12D3KooWWt",
   ]);
 });
 
@@ -74,13 +75,13 @@ test("buildRelayBootstrapPostContent emits only compact v2 browser addresses", (
 
 test("buildRelayBootstrapPostContent limits compact v2 addresses per transport", () => {
   const browserAddrs = [
-    "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/p2p/12D3KooWPublic",
+    "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/certhash/uEiWebTransport/p2p/12D3KooWPublic",
     "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
     "/dns6/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
     "/dns4/relay.example.com/tcp/9095/tls/ws/p2p/12D3KooWPublic",
     "/dns6/relay.example.com/tcp/9095/tls/ws/p2p/12D3KooWPublic",
-    "/ip4/203.0.113.10/udp/9096/webrtc-direct/p2p/12D3KooWPublic",
-    "/ip6/2001:db8::10/udp/9096/webrtc-direct/p2p/12D3KooWPublic",
+    "/ip4/203.0.113.10/udp/9096/webrtc-direct/certhash/uEiWebRtc/p2p/12D3KooWPublic",
+    "/ip6/2001:db8::10/udp/9096/webrtc-direct/certhash/uEiWebRtc/p2p/12D3KooWPublic",
   ];
   const content = buildRelayBootstrapPostContent({
     sender: "0xabc",
@@ -95,17 +96,17 @@ test("buildRelayBootstrapPostContent limits compact v2 addresses per transport",
     "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
     "/dns6/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
     "/dns4/relay.example.com/tcp/9095/tls/ws/p2p/12D3KooWPublic",
-    "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/p2p/12D3KooWPublic",
-    "/ip4/203.0.113.10/udp/9096/webrtc-direct/p2p/12D3KooWPublic",
-    "/ip6/2001:db8::10/udp/9096/webrtc-direct/p2p/12D3KooWPublic",
+    "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/certhash/uEiWebTransport/p2p/12D3KooWPublic",
+    "/ip4/203.0.113.10/udp/9096/webrtc-direct/certhash/uEiWebRtc/p2p/12D3KooWPublic",
+    "/ip6/2001:db8::10/udp/9096/webrtc-direct/certhash/uEiWebRtc/p2p/12D3KooWPublic",
   ]);
   assert.equal(content.content.browserMultiaddrs, undefined);
   assert.deepEqual(selectCompactRelayBootstrapMultiaddrs(browserAddrs, 2), [
     "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
     "/dns6/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
-    "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/p2p/12D3KooWPublic",
-    "/ip4/203.0.113.10/udp/9096/webrtc-direct/p2p/12D3KooWPublic",
-    "/ip6/2001:db8::10/udp/9096/webrtc-direct/p2p/12D3KooWPublic",
+    "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/certhash/uEiWebTransport/p2p/12D3KooWPublic",
+    "/ip4/203.0.113.10/udp/9096/webrtc-direct/certhash/uEiWebRtc/p2p/12D3KooWPublic",
+    "/ip6/2001:db8::10/udp/9096/webrtc-direct/certhash/uEiWebRtc/p2p/12D3KooWPublic",
   ]);
 });
 
@@ -137,7 +138,9 @@ test("buildRelayBootstrapPostContent can carry dual-key authorization metadata",
       signature: "0xrelay",
       payload: {
         peerId: "12D3KooWPublic",
-        multiaddrs: ["/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic"],
+        multiaddrs: [
+          "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWPublic",
+        ],
         registrationId: "relay:demo",
         profile: "orbitdb-relay",
         version: "0.4.0",
@@ -191,8 +194,12 @@ test("discoverAlephBootstrapMultiaddrs accepts posts carrying dual-key proof met
   const relayProof = await signRelayBootstrapProof({
     publisherAddress: publisher.address,
     peerId: "12D3KooWProof",
-    multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
-    browserMultiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    multiaddrs: [
+      "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+    ],
+    browserMultiaddrs: [
+      "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+    ],
     updatedAt: now,
     signer,
   });
@@ -213,7 +220,9 @@ test("discoverAlephBootstrapMultiaddrs accepts posts carrying dual-key proof met
               ownerAddress: owner.address,
               publisherAddress: publisher.address,
               updatedAt: now,
-              multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+              multiaddrs: [
+                "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+              ],
               authorization,
               relayProof,
             },
@@ -248,8 +257,12 @@ test("discoverAlephBootstrapMultiaddrs ignores invalid dual-key proof records", 
               ownerAddress: "0xowner",
               publisherAddress: "0xpublisher",
               updatedAt: now,
-              multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
-              browserMultiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+              multiaddrs: [
+                "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+              ],
+              browserMultiaddrs: [
+                "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+              ],
               authorization: {
                 scheme: "personal_sign",
                 signature: "0xdeadbeef",
@@ -265,8 +278,12 @@ test("discoverAlephBootstrapMultiaddrs ignores invalid dual-key proof records", 
                 signature: "0xbeefdead",
                 payload: {
                   peerId: "12D3KooWProof",
-                  multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
-                  browserMultiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+                  multiaddrs: [
+                    "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+                  ],
+                  browserMultiaddrs: [
+                    "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+                  ],
                   updatedAt: now,
                 },
               },
@@ -296,8 +313,12 @@ test("discoverAlephBootstrapMultiaddrs dedupes and skips stale entries", async (
             content: {
               peerId: "12D3KooWFresh",
               updatedAt: now,
-              multiaddrs: ["/dns4/relay-a.example.com/tcp/443/tls/ws/p2p/12D3KooWFresh"],
-              browserMultiaddrs: ["/dns4/relay-a.example.com/tcp/443/tls/ws/p2p/12D3KooWFresh"],
+              multiaddrs: [
+                "/dns4/relay-a.example.com/tcp/443/tls/ws/p2p/12D3KooWFresh",
+              ],
+              browserMultiaddrs: [
+                "/dns4/relay-a.example.com/tcp/443/tls/ws/p2p/12D3KooWFresh",
+              ],
             },
           },
           {
@@ -307,7 +328,9 @@ test("discoverAlephBootstrapMultiaddrs dedupes and skips stale entries", async (
             content: {
               peerId: "12D3KooWStale",
               updatedAt: now - 9 * 24 * 60 * 60 * 1000,
-              multiaddrs: ["/dns4/relay-b.example.com/tcp/443/tls/ws/p2p/12D3KooWStale"],
+              multiaddrs: [
+                "/dns4/relay-b.example.com/tcp/443/tls/ws/p2p/12D3KooWStale",
+              ],
             },
           },
           {
@@ -317,7 +340,9 @@ test("discoverAlephBootstrapMultiaddrs dedupes and skips stale entries", async (
             content: {
               peerId: "12D3KooWFresh2",
               updatedAt: now,
-              multiaddrs: ["/dns4/relay-a.example.com/tcp/443/tls/ws/p2p/12D3KooWFresh"],
+              multiaddrs: [
+                "/dns4/relay-a.example.com/tcp/443/tls/ws/p2p/12D3KooWFresh",
+              ],
             },
           },
         ],
@@ -361,7 +386,9 @@ test("discoverAlephBootstrapMultiaddrs scans later pages when page 1 has no usab
                   peerId: "12D3KooWLocalOnly",
                   updatedAt: now,
                   multiaddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWLocalOnly"],
-                  browserMultiaddrs: ["/dns4/localhost/tcp/443/tls/ws/p2p/12D3KooWLocalOnly"],
+                  browserMultiaddrs: [
+                    "/dns4/localhost/tcp/443/tls/ws/p2p/12D3KooWLocalOnly",
+                  ],
                 },
               },
             ],
@@ -377,8 +404,12 @@ test("discoverAlephBootstrapMultiaddrs scans later pages when page 1 has no usab
               content: {
                 peerId: "12D3KooWPage2",
                 updatedAt: now,
-                multiaddrs: ["/dns4/relay-page-2.example.com/tcp/443/tls/ws/p2p/12D3KooWPage2"],
-                browserMultiaddrs: ["/dns4/relay-page-2.example.com/tcp/443/tls/ws/p2p/12D3KooWPage2"],
+                multiaddrs: [
+                  "/dns4/relay-page-2.example.com/tcp/443/tls/ws/p2p/12D3KooWPage2",
+                ],
+                browserMultiaddrs: [
+                  "/dns4/relay-page-2.example.com/tcp/443/tls/ws/p2p/12D3KooWPage2",
+                ],
               },
             },
           ],
@@ -420,7 +451,9 @@ test("discoverAlephBootstrapMultiaddrs rejects legacy v1 records", async () => {
               content: {
                 peerId: "12D3KooWLegacy",
                 updatedAt: now,
-                multiaddrs: ["/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy"],
+                multiaddrs: [
+                  "/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy",
+                ],
               },
             },
           ],
@@ -449,7 +482,9 @@ test("selectCurrentRelayBootstrapPosts keeps only the newest record per sender i
       content: {
         peerId: "12D3KooWOld",
         updatedAt: now - 1_000,
-        multiaddrs: ["/dns4/relay-old.example.com/tcp/443/tls/ws/p2p/12D3KooWOld"],
+        multiaddrs: [
+          "/dns4/relay-old.example.com/tcp/443/tls/ws/p2p/12D3KooWOld",
+        ],
       },
     },
     {
@@ -462,7 +497,9 @@ test("selectCurrentRelayBootstrapPosts keeps only the newest record per sender i
       content: {
         peerId: "12D3KooWNew",
         updatedAt: now,
-        multiaddrs: ["/dns4/relay-new.example.com/tcp/443/tls/ws/p2p/12D3KooWNew"],
+        multiaddrs: [
+          "/dns4/relay-new.example.com/tcp/443/tls/ws/p2p/12D3KooWNew",
+        ],
       },
     },
     {
@@ -475,7 +512,9 @@ test("selectCurrentRelayBootstrapPosts keeps only the newest record per sender i
       content: {
         peerId: "12D3KooWOther",
         updatedAt: now,
-        multiaddrs: ["/dns4/relay-other.example.com/tcp/443/tls/ws/p2p/12D3KooWOther"],
+        multiaddrs: [
+          "/dns4/relay-other.example.com/tcp/443/tls/ws/p2p/12D3KooWOther",
+        ],
       },
     },
   ]);
@@ -490,7 +529,9 @@ test("relayBootstrapTrustMode distinguishes wallet-signed and dual-key records",
   assert.equal(
     relayBootstrapTrustMode({
       peerId: "12D3KooWWallet",
-      multiaddrs: ["/dns4/relay-wallet.example.com/tcp/443/tls/ws/p2p/12D3KooWWallet"],
+      multiaddrs: [
+        "/dns4/relay-wallet.example.com/tcp/443/tls/ws/p2p/12D3KooWWallet",
+      ],
       updatedAt: 1,
     }),
     "wallet-signed",
@@ -499,7 +540,9 @@ test("relayBootstrapTrustMode distinguishes wallet-signed and dual-key records",
   assert.equal(
     relayBootstrapTrustMode({
       peerId: "12D3KooWProof",
-      multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+      multiaddrs: [
+        "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+      ],
       ownerAddress: "0xowner",
       publisherAddress: "0xpublisher",
       authorization: {
@@ -517,7 +560,9 @@ test("relayBootstrapTrustMode distinguishes wallet-signed and dual-key records",
         signature: "0xrelay",
         payload: {
           peerId: "12D3KooWProof",
-          multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+          multiaddrs: [
+            "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+          ],
           updatedAt: 2,
         },
       },
@@ -544,8 +589,12 @@ test("discoverAlephBootstrapMultiaddrs can require dual-key attestation", async 
             content: {
               peerId: "12D3KooWWallet",
               updatedAt: now,
-              multiaddrs: ["/dns4/relay-wallet.example.com/tcp/443/tls/ws/p2p/12D3KooWWallet"],
-              browserMultiaddrs: ["/dns4/relay-wallet.example.com/tcp/443/tls/ws/p2p/12D3KooWWallet"],
+              multiaddrs: [
+                "/dns4/relay-wallet.example.com/tcp/443/tls/ws/p2p/12D3KooWWallet",
+              ],
+              browserMultiaddrs: [
+                "/dns4/relay-wallet.example.com/tcp/443/tls/ws/p2p/12D3KooWWallet",
+              ],
             },
           },
         ],
@@ -554,7 +603,10 @@ test("discoverAlephBootstrapMultiaddrs can require dual-key attestation", async 
   });
 
   assert.deepEqual(
-    await discoverAlephBootstrapMultiaddrs({ fetch, requireDualKeyAttestation: true }),
+    await discoverAlephBootstrapMultiaddrs({
+      fetch,
+      requireDualKeyAttestation: true,
+    }),
     [],
   );
 });
@@ -586,8 +638,12 @@ test("dual-key authorization and relay proof can be signed and verified", async 
   const proof = await signRelayBootstrapProof({
     publisherAddress: publisher.address,
     peerId: "12D3KooWProof",
-    multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
-    browserMultiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    multiaddrs: [
+      "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+    ],
+    browserMultiaddrs: [
+      "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+    ],
     registrationId: "relay:proof",
     profile: "orbitdb-relay",
     version: "0.4.0",
@@ -595,7 +651,10 @@ test("dual-key authorization and relay proof can be signed and verified", async 
     signer,
   });
 
-  assert.equal((await verifyRelayBootstrapAuthorization(authorization)).ok, true);
+  assert.equal(
+    (await verifyRelayBootstrapAuthorization(authorization)).ok,
+    true,
+  );
   assert.equal(
     (
       await verifyRelayBootstrapProof(proof, {
@@ -608,7 +667,9 @@ test("dual-key authorization and relay proof can be signed and verified", async 
 
   const verified = await verifyRelayBootstrapDualKeyContent({
     peerId: "12D3KooWProof",
-    multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    multiaddrs: [
+      "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+    ],
     registrationId: "relay:proof",
     profile: "orbitdb-relay",
     version: "0.4.0",
@@ -663,7 +724,10 @@ test("compact relay proofs verify against signed multiaddr hashes", async () => 
 
   assert.equal(proof.payload.multiaddrs, undefined);
   assert.equal(proof.payload.browserMultiaddrs, undefined);
-  assert.equal(proof.payload.multiaddrsHash, relayBootstrapMultiaddrsHash(addrs));
+  assert.equal(
+    proof.payload.multiaddrsHash,
+    relayBootstrapMultiaddrsHash(addrs),
+  );
 
   const verified = await verifyRelayBootstrapProof(proof, {
     expectedPublisherAddress: publisher.address,
@@ -718,14 +782,18 @@ test("dual-key verification fails when relay proof publisher does not match", as
   const wrongProof = await signRelayBootstrapProof({
     publisherAddress: wrongPublisher.address,
     peerId: "12D3KooWProof",
-    multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    multiaddrs: [
+      "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+    ],
     updatedAt: 200,
     signer,
   });
 
   const verified = await verifyRelayBootstrapDualKeyContent({
     peerId: "12D3KooWProof",
-    multiaddrs: ["/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof"],
+    multiaddrs: [
+      "/dns4/relay-proof.example.com/tcp/443/tls/ws/p2p/12D3KooWProof",
+    ],
     ownerAddress: owner.address,
     publisherAddress: publisher.address,
     authorization,

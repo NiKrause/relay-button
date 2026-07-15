@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -46,6 +48,44 @@ def dedupe(values: list[str]) -> list[str]:
 
 def append_peer_id(addr: str, peer_id: str) -> str:
     return addr if "/p2p/" in addr else f"{addr}/p2p/{peer_id}"
+
+
+def browser_transport_suffixes(listening_addrs: list[str], transport: str) -> list[str]:
+    """Return dial-critical transport suffixes advertised by the live libp2p host.
+
+    WebTransport and WebRTC Direct addresses include a certificate hash generated
+    by libp2p.  Reconstructing these addresses from only the public IP and port
+    drops that hash and produces addresses browsers cannot dial.
+    """
+    marker = f"/{transport}/"
+    suffixes: list[str] = []
+    for addr in listening_addrs:
+        normalized = addr.lower()
+        marker_index = normalized.find(marker)
+        if marker_index < 0:
+            continue
+        suffix = addr[marker_index:]
+        if "/certhash/" not in suffix.lower():
+            continue
+        suffixes.append(suffix)
+    return dedupe(suffixes)
+
+
+def public_udp_multiaddrs(
+    public_ipv4: str,
+    public_ipv6: str,
+    udp_port: str,
+    suffixes: list[str],
+    peer_id: str,
+) -> list[str]:
+    result: list[str] = []
+    for suffix in suffixes:
+        suffix_with_peer = append_peer_id(suffix, peer_id)
+        if public_ipv4:
+            result.append(f"/ip4/{public_ipv4}/udp/{udp_port}{suffix_with_peer}")
+        if public_ipv6:
+            result.append(f"/ip6/{public_ipv6}/udp/{udp_port}{suffix_with_peer}")
+    return dedupe(result)
 
 
 def parse_logs() -> tuple[str | None, list[str]]:
@@ -121,12 +161,24 @@ def build_probe_multiaddrs(env_values: dict[str, str], peer_id: str, listening_a
     public_ipv6 = env_values.get("PUBLIC_IPV6", "").strip()
     udp_port = env_values.get("EXTERNAL_RELAY_UDP_PORT", "").strip()
     if udp_port:
-        if public_ipv4:
-            webtransport_multiaddrs.append(f"/ip4/{public_ipv4}/udp/{udp_port}/quic-v1/webtransport/p2p/{peer_id}")
-            webrtc_direct_multiaddrs.append(f"/ip4/{public_ipv4}/udp/{udp_port}/webrtc-direct/p2p/{peer_id}")
-        if public_ipv6:
-            webtransport_multiaddrs.append(f"/ip6/{public_ipv6}/udp/{udp_port}/quic-v1/webtransport/p2p/{peer_id}")
-            webrtc_direct_multiaddrs.append(f"/ip6/{public_ipv6}/udp/{udp_port}/webrtc-direct/p2p/{peer_id}")
+        webtransport_multiaddrs.extend(
+            public_udp_multiaddrs(
+                public_ipv4,
+                public_ipv6,
+                udp_port,
+                browser_transport_suffixes(listening_addrs, "quic-v1/webtransport"),
+                peer_id,
+            )
+        )
+        webrtc_direct_multiaddrs.extend(
+            public_udp_multiaddrs(
+                public_ipv4,
+                public_ipv6,
+                udp_port,
+                browser_transport_suffixes(listening_addrs, "webrtc-direct"),
+                peer_id,
+            )
+        )
 
     probe_multiaddrs.extend(direct_tcp_multiaddrs)
     probe_multiaddrs.extend(autotls_multiaddrs)
