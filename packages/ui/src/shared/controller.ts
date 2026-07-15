@@ -71,9 +71,7 @@ import type {
   UcanStoreBootstrapPackage,
   UcanStoreBootstrapValidationResult,
 } from "../../../shared-types/src/index.ts";
-import {
-  validateUcanStoreBootstrapPackage,
-} from "../../../shared-types/src/index.ts";
+import { validateUcanStoreBootstrapPackage } from "../../../shared-types/src/index.ts";
 import type {
   CompactBootstrapRegistrationRecord,
   CompactInstanceDetails,
@@ -94,7 +92,9 @@ import type { VmBootstrapConfigRecord } from "../../../shared-types/src/bootstra
 type DeploymentProfile = "uc-go-peer" | "orbitdb-relay" | "ucan-store";
 type BootstrapRelayProfile = "uc-go-peer" | "orbitdb-relay";
 
-function deploymentNoun(profile: DeploymentProfile | null): "relay" | "service" {
+function deploymentNoun(
+  profile: DeploymentProfile | null,
+): "relay" | "service" {
   return profile === "ucan-store" ? "service" : "relay";
 }
 
@@ -106,10 +106,12 @@ function asJsonFetch(
     ok: response.ok,
     status: response.status,
     json: async () => await response.json(),
-  }))
+  }));
 }
 
-function isConfirmedGuestSetupResult(value: unknown): value is { status: "configured" } {
+function isConfirmedGuestSetupResult(
+  value: unknown,
+): value is { status: "configured" } {
   return Boolean(
     value &&
       typeof value === "object" &&
@@ -136,7 +138,8 @@ function defaultUcanStoreBootstrapInput(
     maxUserDelegationExpiration:
       props.ucanStoreBootstrap?.maxUserDelegationExpiration ??
       DEFAULT_UCAN_STORE_MAX_DELEGATION_EXPIRATION_SECONDS,
-    pwaOrigin: props.ucanStoreBootstrap?.pwaOrigin ?? DEFAULT_UCAN_STORE_PWA_ORIGIN,
+    pwaOrigin:
+      props.ucanStoreBootstrap?.pwaOrigin ?? DEFAULT_UCAN_STORE_PWA_ORIGIN,
     serviceOrigin:
       props.ucanStoreBootstrap?.serviceOrigin ??
       DEFAULT_UCAN_STORE_SERVICE_ORIGIN,
@@ -177,7 +180,9 @@ function draftUcanStoreBootstrapErrors(args: {
   const { input } = args;
 
   if (!args.operatorAddress) {
-    errors.push("Connect MetaMask before configuring the ucan-store bootstrap package.");
+    errors.push(
+      "Connect MetaMask before configuring the ucan-store bootstrap package.",
+    );
   }
   if (!input.adminDid.trim().startsWith("did:")) {
     errors.push("Admin DID must be a non-empty DID string.");
@@ -242,7 +247,9 @@ function buildUcanStoreBootstrapPackage(args: {
     serviceDid: args.input.serviceDid.trim() || null,
     spaceDid: args.input.spaceDid.trim(),
     rootDelegationProof: args.input.rootDelegationProof.trim(),
-    allowedCapabilities: parseAllowedCapabilities(args.input.allowedCapabilities),
+    allowedCapabilities: parseAllowedCapabilities(
+      args.input.allowedCapabilities,
+    ),
     defaultUserDelegationExpiration: parseOptionalExpiration(
       args.input.defaultUserDelegationExpiration,
     ),
@@ -291,7 +298,9 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     instanceName: props.instanceName ?? DEFAULT_INSTANCE_NAME,
     ucanStoreBootstrap: defaultUcanStoreBootstrapInput(props),
     tierId: DEFAULT_TIER_ID,
-    showAdvanced: Boolean(props.manifestJson?.trim() || props.sshPublicKey?.trim()),
+    showAdvanced: Boolean(
+      props.manifestJson?.trim() || props.sshPublicKey?.trim(),
+    ),
     showInstances: props.showInstances ?? true,
     showPasteManifest: Boolean(props.manifestJson?.trim()),
     busy: {
@@ -375,10 +384,13 @@ function mappedPorts(
 }
 
 function runtimeMappedPorts(
-  mappedPortsRecord: Record<
-    string,
-    { host?: number | null; tcp?: boolean | null; udp?: boolean | null }
-  > | null | undefined,
+  mappedPortsRecord:
+    | Record<
+        string,
+        { host?: number | null; tcp?: boolean | null; udp?: boolean | null }
+      >
+    | null
+    | undefined,
 ): CompactInstanceDetails["mappedPorts"] {
   return Object.entries(mappedPortsRecord ?? {}).map(([port, mapping]) => ({
     label: `${port}/${mapping.udp ? "udp" : "tcp"}`,
@@ -498,9 +510,7 @@ function supportsBootstrapRegistrationsForManifest(
   return bootstrapRelayProfileForManifest(manifest) != null;
 }
 
-function deploymentReadyLabel(
-  profile: DeploymentProfile | null,
-): string {
+function deploymentReadyLabel(profile: DeploymentProfile | null): string {
   return profile === "ucan-store" ? "Service ready" : "Relay ready";
 }
 
@@ -528,20 +538,23 @@ function registrationIdInstanceItemHash(
 }
 
 function relayBootstrapInstanceItemHash(
-  entry: {
-    content?: {
-      registrationId?: string;
-      ownerAddress?: string;
-      publisherAddress?: string;
-      authorization?: {
-        payload?: {
-          instanceItemHash?: string;
+  entry:
+    | {
+        content?: {
+          registrationId?: string;
           ownerAddress?: string;
           publisherAddress?: string;
-        };
-      };
-    } | null;
-  } | null | undefined,
+          authorization?: {
+            payload?: {
+              instanceItemHash?: string;
+              ownerAddress?: string;
+              publisherAddress?: string;
+            };
+          };
+        } | null;
+      }
+    | null
+    | undefined,
 ): string | null {
   const authorizedInstanceItemHash =
     typeof entry?.content?.authorization?.payload?.instanceItemHash === "string"
@@ -554,21 +567,24 @@ function relayBootstrapInstanceItemHash(
 }
 
 function relayBootstrapMatchesCurrentWallet(
-  entry: {
-    address?: string | null;
-    content?: {
-      ownerAddress?: string;
-      publisherAddress?: string;
-      registrationId?: string;
-      authorization?: {
-        payload?: {
+  entry:
+    | {
+        address?: string | null;
+        content?: {
           ownerAddress?: string;
           publisherAddress?: string;
-          instanceItemHash?: string;
-        };
-      };
-    } | null;
-  } | null | undefined,
+          registrationId?: string;
+          authorization?: {
+            payload?: {
+              ownerAddress?: string;
+              publisherAddress?: string;
+              instanceItemHash?: string;
+            };
+          };
+        } | null;
+      }
+    | null
+    | undefined,
   normalizedWalletAddress: string,
   activeInstanceHashes: Set<string>,
 ): boolean {
@@ -587,7 +603,8 @@ function relayBootstrapMatchesCurrentWallet(
 
   return candidateAddresses.some(
     (value) =>
-      typeof value === "string" && value.trim().toLowerCase() === normalizedWalletAddress,
+      typeof value === "string" &&
+      value.trim().toLowerCase() === normalizedWalletAddress,
   );
 }
 
@@ -903,7 +920,9 @@ export class SponsorRelayController {
     if (!profile && deploymentProfile !== "ucan-store") return;
 
     if (profile && !this.state.wallet.address) {
-      throw new Error("A connected wallet is required to register relay bootstrap addresses.");
+      throw new Error(
+        "A connected wallet is required to register relay bootstrap addresses.",
+      );
     }
     const runtimeHostIpv4 = args.runtime.hostIpv4;
     if (!runtimeHostIpv4) {
@@ -933,7 +952,9 @@ export class SponsorRelayController {
       }
       const walletAddress = this.state.wallet.address;
       if (!walletAddress) {
-        throw new Error("A connected wallet is required to configure the ucan-store bootstrap package.");
+        throw new Error(
+          "A connected wallet is required to configure the ucan-store bootstrap package.",
+        );
       }
       const bootstrapValidation = buildUcanStoreBootstrapPackage({
         input: this.state.ucanStoreBootstrap,
@@ -954,7 +975,8 @@ export class SponsorRelayController {
         progress: 93,
         status: "info",
         itemHash: args.itemHash,
-        detail: "Waiting for the guest setup endpoint before applying the upload service configuration.",
+        detail:
+          "Waiting for the guest setup endpoint before applying the upload service configuration.",
       });
 
       const setupHealth = await waitForSetupEndpoint({
@@ -989,7 +1011,8 @@ export class SponsorRelayController {
         progress: 94,
         status: "info",
         itemHash: args.itemHash,
-        detail: "Publishing the public HTTPS origin into the guest upload service configuration.",
+        detail:
+          "Publishing the public HTTPS origin into the guest upload service configuration.",
       });
 
       const configureResult = await configureUcanStore({
@@ -1033,7 +1056,7 @@ export class SponsorRelayController {
           const metadata =
             (payload as { metadata?: unknown }).metadata &&
             typeof (payload as { metadata?: unknown }).metadata === "object"
-              ? ((payload as { metadata: Record<string, unknown> }).metadata)
+              ? (payload as { metadata: Record<string, unknown> }).metadata
               : null;
           const pwaEnv =
             metadata?.pwa_env && typeof metadata.pwa_env === "object"
@@ -1049,7 +1072,9 @@ export class SponsorRelayController {
         onAttempt: ({ ready, attempt, attempts, requestUrl }) => {
           this.emitProgress({
             stage: "deployment-confirmed",
-            label: ready ? "Service metadata ready" : "Waiting for service metadata",
+            label: ready
+              ? "Service metadata ready"
+              : "Waiting for service metadata",
             progress: 95,
             status: ready ? "success" : "info",
             itemHash: args.itemHash,
@@ -1067,8 +1092,8 @@ export class SponsorRelayController {
       if (
         !metadata ||
         typeof metadata !== "object" ||
-        typeof (metadata as { upload_service_did?: unknown }).upload_service_did !==
-          "string"
+        typeof (metadata as { upload_service_did?: unknown })
+          .upload_service_did !== "string"
       ) {
         throw new Error(
           "Service metadata did not include the public upload service DID.",
@@ -1081,7 +1106,9 @@ export class SponsorRelayController {
     if (!profile) return;
     const walletAddress = this.state.wallet.address;
     if (!walletAddress) {
-      throw new Error("A connected wallet is required to register relay bootstrap addresses.");
+      throw new Error(
+        "A connected wallet is required to register relay bootstrap addresses.",
+      );
     }
 
     let bootstrapSignalRelayMetadata: {
@@ -1097,7 +1124,8 @@ export class SponsorRelayController {
         progress: 93,
         status: "info",
         itemHash: args.itemHash,
-        detail: "Waiting for the guest setup endpoint before collecting relay metadata.",
+        detail:
+          "Waiting for the guest setup endpoint before collecting relay metadata.",
       });
 
       const setupHealth = await waitForSetupEndpoint({
@@ -1132,13 +1160,16 @@ export class SponsorRelayController {
         progress: 93,
         status: "info",
         itemHash: args.itemHash,
-        detail: "Publishing the host port mapping into the guest relay configuration.",
+        detail:
+          "Publishing the host port mapping into the guest relay configuration.",
       });
 
       const tcpPort = mappedPorts["9091"]?.host ?? 0;
       const wsPort = mappedPorts["9092"]?.host ?? mappedPorts["443"]?.host ?? 0;
       if (!tcpPort || !wsPort) {
-        throw new Error("OrbitDB relay runtime is missing required mapped TCP/WS ports.");
+        throw new Error(
+          "OrbitDB relay runtime is missing required mapped TCP/WS ports.",
+        );
       }
 
       const configureResult = await configureOrbitdbRelaySetup({
@@ -1162,7 +1193,9 @@ export class SponsorRelayController {
       }
     } else {
       if (!args.deploymentToken) {
-        throw new Error("Missing deployment token for Aleph bootstrap config handoff.");
+        throw new Error(
+          "Missing deployment token for Aleph bootstrap config handoff.",
+        );
       }
 
       if (runtime.proxyUrl && runtime.webAccess?.active !== true) {
@@ -1177,7 +1210,11 @@ export class SponsorRelayController {
         });
 
         let latestRuntime = runtime;
-        for (let attempt = 0; attempt < UI_RUNTIME_WAIT_ATTEMPTS; attempt += 1) {
+        for (
+          let attempt = 0;
+          attempt < UI_RUNTIME_WAIT_ATTEMPTS;
+          attempt += 1
+        ) {
           if (latestRuntime.webAccess?.active === true) {
             break;
           }
@@ -1237,7 +1274,8 @@ export class SponsorRelayController {
         progress: 93,
         status: "info",
         itemHash: args.itemHash,
-        detail: "Publishing runtime networking into the Aleph guest bootstrap config aggregate.",
+        detail:
+          "Publishing runtime networking into the Aleph guest bootstrap config aggregate.",
       });
 
       const record: VmBootstrapConfigRecord = {
@@ -1379,7 +1417,8 @@ export class SponsorRelayController {
       relayMetadata = await fetchRelayMetadataForRuntime({
         runtime,
         fetch: (url, init) => fetch(url, init),
-        preferSecureMetadata: profile === "uc-go-peer" && Boolean(runtime.proxyUrl),
+        preferSecureMetadata:
+          profile === "uc-go-peer" && Boolean(runtime.proxyUrl),
         attempts: 80,
         delayMs: 3000,
         timeoutMs: 240000,
@@ -1405,7 +1444,9 @@ export class SponsorRelayController {
             ready: result.ready,
             error: result.error ?? null,
             payloadStatus:
-              payload && typeof payload.status === "string" ? payload.status : null,
+              payload && typeof payload.status === "string"
+                ? payload.status
+                : null,
             peerId:
               metadata && typeof metadata.peer_id === "string"
                 ? metadata.peer_id
@@ -1448,7 +1489,24 @@ export class SponsorRelayController {
         return;
       }
 
-      throw new Error("Relay metadata did not include a peer ID and public multiaddrs.");
+      throw new Error(
+        "Relay metadata did not include a peer ID and public multiaddrs.",
+      );
+    }
+
+    if (profile === "uc-go-peer") {
+      const browserDialableMultiaddrs =
+        relayMetadata.browserBootstrapMultiaddrs.filter(
+          (multiaddr) =>
+            /\/(?:tls\/ws|wss)\/p2p\//.test(multiaddr) ||
+            (/\/(?:webtransport|webrtc-direct)\//.test(multiaddr) &&
+              /\/certhash\//.test(multiaddr)),
+        );
+      if (browserDialableMultiaddrs.length === 0) {
+        throw new Error(
+          "Relay metadata did not include a browser-dialable WSS address or a WebTransport/WebRTC Direct address with certhash.",
+        );
+      }
     }
 
     const { peerId } = relayMetadata;
@@ -1464,7 +1522,8 @@ export class SponsorRelayController {
       progress: 97,
       status: "info",
       itemHash: args.itemHash,
-      detail: "Waiting for the relay VM to publish its own bootstrap registration to Aleph.",
+      detail:
+        "Waiting for the relay VM to publish its own bootstrap registration to Aleph.",
     });
 
     const visibleRegistration = await waitForRelayBootstrapRegistration({
@@ -1535,27 +1594,28 @@ export class SponsorRelayController {
         fallbackPublication,
       });
 
-      const fallbackVisibleRegistration = await waitForRelayBootstrapRegistration({
-        sender: walletAddress,
-        registrationId,
-        peerId,
-        fetch: asJsonFetch,
-        apiHost: this.client.apiHost,
-        attempts: 24,
-        delayMs: 2500,
-        onAttempt: (match, attempt, attempts) => {
-          this.emitProgress({
-            stage: "publishing-bootstrap",
-            label: "Waiting for bootstrap fallback",
-            progress: 98,
-            status: match ? "success" : "warning",
-            itemHash: args.itemHash,
-            detail: match
-              ? `Bootstrap fallback ${attempt}/${attempts}: visible on Aleph.`
-              : `Bootstrap fallback ${attempt}/${attempts}: waiting for the browser-published registration on Aleph.`,
-          });
-        },
-      });
+      const fallbackVisibleRegistration =
+        await waitForRelayBootstrapRegistration({
+          sender: walletAddress,
+          registrationId,
+          peerId,
+          fetch: asJsonFetch,
+          apiHost: this.client.apiHost,
+          attempts: 24,
+          delayMs: 2500,
+          onAttempt: (match, attempt, attempts) => {
+            this.emitProgress({
+              stage: "publishing-bootstrap",
+              label: "Waiting for bootstrap fallback",
+              progress: 98,
+              status: match ? "success" : "warning",
+              itemHash: args.itemHash,
+              detail: match
+                ? `Bootstrap fallback ${attempt}/${attempts}: visible on Aleph.`
+                : `Bootstrap fallback ${attempt}/${attempts}: waiting for the browser-published registration on Aleph.`,
+            });
+          },
+        });
       this.trace("deploy:bootstrap-registration-fallback-visible", {
         itemHash: args.itemHash,
         registrationId,
@@ -1656,7 +1716,8 @@ export class SponsorRelayController {
     await forgetAlephMessages({
       sender: this.state.wallet.address,
       hashes: staleHashes,
-      reason: "Prune stale vm-bootstrap-config aggregate history older than 6 hours",
+      reason:
+        "Prune stale vm-bootstrap-config aggregate history older than 6 hours",
       signer: personalSign,
       hasher: sha256Hex,
       fetch: asJsonFetch,
@@ -1791,9 +1852,10 @@ export class SponsorRelayController {
     }
 
     const currentProfile = deploymentProfileForManifest(this.state.manifest);
-    const hasConfirmedBootstrapRegistration = this.state.bootstrapRegistrations.some(
-      (entry) => entry.instanceItemHash === itemHash && entry.confirmed,
-    );
+    const hasConfirmedBootstrapRegistration =
+      this.state.bootstrapRegistrations.some(
+        (entry) => entry.instanceItemHash === itemHash && entry.confirmed,
+      );
 
     if (currentProfile === "ucan-store") {
       this.emitProgress({
@@ -1966,7 +2028,8 @@ export class SponsorRelayController {
     this.patch({
       manifestJson,
       showAdvanced: this.state.showAdvanced || Boolean(manifestJson.trim()),
-      showPasteManifest: this.state.showPasteManifest || Boolean(manifestJson.trim()),
+      showPasteManifest:
+        this.state.showPasteManifest || Boolean(manifestJson.trim()),
     });
     this.queueManifestRefresh();
   }
@@ -2139,40 +2202,42 @@ export class SponsorRelayController {
       let balance = this.state.balance;
       let instances: CompactInstanceRecord[] = [];
       let bootstrapRegistrations: CompactBootstrapRegistrationRecord[] = [];
-      let orphanBootstrapRegistrations: CompactBootstrapRegistrationRecord[] = [];
+      let orphanBootstrapRegistrations: CompactBootstrapRegistrationRecord[] =
+        [];
       if (this.state.wallet.address) {
-        const [nextBalance, rawInstances, rawBootstrapPosts] = await Promise.all([
-          this.client.fetchBalance(this.state.wallet.address),
-          this.state.showInstances
-            ? this.client.fetchInstances(this.state.wallet.address)
-            : Promise.resolve([]),
-          bootstrapEnabled
-            ? fetchAlephBootstrapPosts({
-                apiHost: this.client.apiHost,
-                fetch,
-              })
-            : Promise.resolve([]),
-        ]);
+        const [nextBalance, rawInstances, rawBootstrapPosts] =
+          await Promise.all([
+            this.client.fetchBalance(this.state.wallet.address),
+            this.state.showInstances
+              ? this.client.fetchInstances(this.state.wallet.address)
+              : Promise.resolve([]),
+            bootstrapEnabled
+              ? fetchAlephBootstrapPosts({
+                  apiHost: this.client.apiHost,
+                  fetch,
+                })
+              : Promise.resolve([]),
+          ]);
         balance = nextBalance;
         instances = await Promise.all(
           rawInstances.map(async (instance: InstanceMessage) => {
             const inspected = this.canSkipRuntimeRefresh(instance)
               ? {
                   details: {
-                  messageStatus: String(
-                    instance.status ??
-                      (instance.confirmed ? "processed" : "pending"),
-                  ).toLowerCase(),
-                  allocationSource: null,
-                  crnUrl: null,
-                  hostIpv4: null,
-                  ipv6: null,
-                  vmIpv4: null,
-                  webUrl: null,
-                  sshCommand: null,
-                  mappedPorts: [],
-                  execution: null,
-                  error: null,
+                    messageStatus: String(
+                      instance.status ??
+                        (instance.confirmed ? "processed" : "pending"),
+                    ).toLowerCase(),
+                    allocationSource: null,
+                    crnUrl: null,
+                    hostIpv4: null,
+                    ipv6: null,
+                    vmIpv4: null,
+                    webUrl: null,
+                    sshCommand: null,
+                    mappedPorts: [],
+                    execution: null,
+                    error: null,
                   },
                   lookup: {
                     allocationFound: false,
@@ -2223,14 +2288,15 @@ export class SponsorRelayController {
         const activeInstanceHashes = new Set(
           instances.map((entry) => entry.instance.item_hash),
         );
-        bootstrapRegistrations = selectCurrentRelayBootstrapPosts(rawBootstrapPosts)
-          .filter(
-            (entry): boolean =>
-              relayBootstrapMatchesCurrentWallet(
-                entry,
-                normalizedWalletAddress,
-                activeInstanceHashes,
-              ),
+        bootstrapRegistrations = selectCurrentRelayBootstrapPosts(
+          rawBootstrapPosts,
+        )
+          .filter((entry): boolean =>
+            relayBootstrapMatchesCurrentWallet(
+              entry,
+              normalizedWalletAddress,
+              activeInstanceHashes,
+            ),
           )
           .map((entry): CompactBootstrapRegistrationRecord => {
             const instanceItemHash = relayBootstrapInstanceItemHash(entry);
@@ -2252,7 +2318,9 @@ export class SponsorRelayController {
                     multiaddrs: Array.isArray(entry.content.multiaddrs)
                       ? entry.content.multiaddrs
                       : [],
-                    browserMultiaddrs: Array.isArray(entry.content.browserMultiaddrs)
+                    browserMultiaddrs: Array.isArray(
+                      entry.content.browserMultiaddrs,
+                    )
                       ? entry.content.browserMultiaddrs
                       : [],
                     ownerAddress:
@@ -2400,7 +2468,9 @@ export class SponsorRelayController {
       ].slice(0, 5);
 
       if (orderedCrns.length === 0) {
-        throw new Error("No compatible CRN is currently available for this tier.");
+        throw new Error(
+          "No compatible CRN is currently available for this tier.",
+        );
       }
 
       const attemptErrors: string[] = [];
@@ -2409,7 +2479,8 @@ export class SponsorRelayController {
       for (const [candidateIndex, candidateCrn] of orderedCrns.entries()) {
         let attemptItemHash: string | null = null;
         let attemptDeploymentToken: string | null = null;
-        let attemptProfile: ReturnType<typeof deploymentProfileForManifest> = null;
+        let attemptProfile: ReturnType<typeof deploymentProfileForManifest> =
+          null;
         const crnAttemptLabel = `CRN ${candidateIndex + 1}/${orderedCrns.length}`;
         const crnDisplayName = candidateCrn.name ?? candidateCrn.hash;
 
@@ -2603,7 +2674,9 @@ export class SponsorRelayController {
                 return;
               }
 
-              if (runtime.diagnostics?.state === "execution-invalid-public-ipv6") {
+              if (
+                runtime.diagnostics?.state === "execution-invalid-public-ipv6"
+              ) {
                 this.emitProgress({
                   stage: "deployment-confirmed",
                   label: "Rejecting unusable runtime",
@@ -2641,9 +2714,7 @@ export class SponsorRelayController {
             messageStatus: "processed",
             allocationSource: runtime.allocation?.source ?? null,
             crnUrl:
-              runtime.allocation?.crnUrl ??
-              runtime.execution?.crnUrl ??
-              null,
+              runtime.allocation?.crnUrl ?? runtime.execution?.crnUrl ?? null,
             hostIpv4: runtime.hostIpv4 ?? null,
             ipv6: runtime.ipv6 ?? null,
             vmIpv4: runtime.execution?.networking?.ipv4_ip ?? null,
@@ -2696,7 +2767,8 @@ export class SponsorRelayController {
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
           const attemptLabel = crnDisplayName;
-          const failedDueToInvalidIpv6 = /not globally routable|public guest IPv6/i.test(lastError.message);
+          const failedDueToInvalidIpv6 =
+            /not globally routable|public guest IPv6/i.test(lastError.message);
           attemptErrors.push(`${attemptLabel}: ${lastError.message}`);
           this.trace("deploy:crn-attempt-error", {
             crnHash: candidateCrn.hash,
@@ -2722,16 +2794,17 @@ export class SponsorRelayController {
               });
 
               if (latestRuntime.diagnostics?.state === "ready") {
-                const reconciledRelayMetadata = await fetchRelayMetadataForRuntime({
-                  runtime: latestRuntime,
-                  fetch: (url, init) => fetch(url, init),
-                  preferSecureMetadata:
-                    attemptProfile === "uc-go-peer" &&
-                    Boolean(latestRuntime.proxyUrl),
-                  attempts: 3,
-                  delayMs: 1000,
-                  timeoutMs: 15000,
-                }).catch(() => null);
+                const reconciledRelayMetadata =
+                  await fetchRelayMetadataForRuntime({
+                    runtime: latestRuntime,
+                    fetch: (url, init) => fetch(url, init),
+                    preferSecureMetadata:
+                      attemptProfile === "uc-go-peer" &&
+                      Boolean(latestRuntime.proxyUrl),
+                    attempts: 3,
+                    delayMs: 1000,
+                    timeoutMs: 15000,
+                  }).catch(() => null);
 
                 if (reconciledRelayMetadata) {
                   const registrationId = createRelayBootstrapRegistrationId(
@@ -2758,14 +2831,16 @@ export class SponsorRelayController {
                     });
                     this.rememberRuntimeDetails(attemptItemHash, {
                       messageStatus: "processed",
-                      allocationSource: latestRuntime.allocation?.source ?? null,
+                      allocationSource:
+                        latestRuntime.allocation?.source ?? null,
                       crnUrl:
                         latestRuntime.allocation?.crnUrl ??
                         latestRuntime.execution?.crnUrl ??
                         null,
                       hostIpv4: latestRuntime.hostIpv4 ?? null,
                       ipv6: latestRuntime.ipv6 ?? null,
-                      vmIpv4: latestRuntime.execution?.networking?.ipv4_ip ?? null,
+                      vmIpv4:
+                        latestRuntime.execution?.networking?.ipv4_ip ?? null,
                       webUrl:
                         latestRuntime.webAccessUrl ??
                         latestRuntime.proxyUrl ??
@@ -2810,10 +2885,11 @@ export class SponsorRelayController {
             }
 
             await this.refresh().catch(() => undefined);
-            const recoveredRegistration = this.state.bootstrapRegistrations.some(
-              (entry) =>
-                entry.instanceItemHash === attemptItemHash && entry.confirmed,
-            );
+            const recoveredRegistration =
+              this.state.bootstrapRegistrations.some(
+                (entry) =>
+                  entry.instanceItemHash === attemptItemHash && entry.confirmed,
+              );
 
             if (recoveredRegistration) {
               this.trace("deploy:recovered-from-refresh-state", {
@@ -2842,7 +2918,9 @@ export class SponsorRelayController {
           if (attemptItemHash) {
             this.emitProgress({
               stage: "deployment-confirmed",
-              label: failedDueToInvalidIpv6 ? "Rejecting unusable runtime" : "Cleaning up failed attempt",
+              label: failedDueToInvalidIpv6
+                ? "Rejecting unusable runtime"
+                : "Cleaning up failed attempt",
               progress: failedDueToInvalidIpv6 ? 91 : 16,
               status: "warning",
               itemHash: attemptItemHash,
@@ -3036,7 +3114,8 @@ export class SponsorRelayController {
         apiHost: this.client.apiHost,
         crnUrl: knownInstance?.details.crnUrl,
         crnHash:
-          knownInstance?.instance.content?.requirements?.node?.node_hash ?? null,
+          knownInstance?.instance.content?.requirements?.node?.node_hash ??
+          null,
         crnListUrl: this.props.crnListUrl,
         schedulerAllocationUrl: this.client.schedulerApiHost
           ? `${this.client.schedulerApiHost.replace(/\/+$/u, "")}/api/v0/allocation`
@@ -3177,7 +3256,8 @@ export class SponsorRelayController {
         progress: 100,
         status: "success",
         itemHash: registrationHash,
-        detail: "Orphan relay bootstrap registration forgotten and state refreshed.",
+        detail:
+          "Orphan relay bootstrap registration forgotten and state refreshed.",
         error: null,
       });
     } catch (error) {
