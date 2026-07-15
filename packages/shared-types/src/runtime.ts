@@ -32,7 +32,7 @@ export interface CrnRecord {
   system_usage?: CrnSystemUsage | null
 }
 
-export type ReferenceStatus = 'processed' | 'pending' | 'rejected' | 'unknown' | 'missing'
+export type ReferenceStatus = 'processed' | 'pending' | 'rejected' | 'removing' | 'removed' | 'unknown' | 'missing'
 
 export interface RuntimeMetadata {
   hostIpv4?: string | null
@@ -116,7 +116,7 @@ export interface RuntimeDiagnostics {
 }
 
 export interface InstanceRuntimeDetails {
-  messageStatus: 'processed' | 'pending' | 'rejected' | 'unknown'
+  messageStatus: 'processed' | 'pending' | 'rejected' | 'removing' | 'removed' | 'unknown'
   allocation: InstanceAllocation | null
   execution: InstanceExecution | null
   webAccess?: InstanceWebAccess | null

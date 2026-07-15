@@ -48,7 +48,7 @@ export interface PrepaidVaultSnapshot {
   currentReservation: PrepaidReservation | null
 }
 
-export type MessageStatus = 'processed' | 'pending' | 'rejected' | 'unknown'
+export type MessageStatus = 'processed' | 'pending' | 'rejected' | 'removing' | 'removed' | 'unknown'
 export type ReferenceStatus = MessageStatus | 'missing'
 export type AlephSenderChain = 'ETH'
 export type AlephMessageType = 'INSTANCE' | 'FORGET' | 'AGGREGATE'

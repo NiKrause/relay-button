@@ -62,6 +62,12 @@ export let apiHosts = undefined
     return deploymentProfile() === 'ucan-store' ? 'Deploy Service' : 'Deploy Relay'
   }
 
+  function deploymentCallToAction() {
+    if (state.busy.deploying) return 'Deploying…'
+    if (state.rootfsHealth.tone === 'error') return 'Deployment blocked — Rootfs unavailable'
+    return deploymentButtonLabel()
+  }
+
   function bootstrapUiEnabled() {
     return deploymentProfile() !== 'ucan-store'
   }
@@ -264,10 +270,28 @@ export let apiHosts = undefined
       </div>
     </div>
 
+    {#if state.rootfsHealth.tone === 'error'}
+      <div class="rootfs-blocker" id="relay-rootfs-deployment-blocker" role="alert">
+        <strong>Rootfs unavailable — deployment blocked</strong>
+        <p>{state.rootfsHealth.detail}</p>
+        <small>This is separate from the connected MetaMask balance. The manifest must reference an Aleph rootfs STORE with status <code>processed</code>.</small>
+        {#if state.manifest?.rootfsItemHash}
+          <code class="rootfs-reference">Rootfs: {state.manifest.rootfsItemHash}{state.rootfsResolution?.messageStatus ? ` · Aleph status: ${state.rootfsResolution.messageStatus}` : ''}</code>
+        {/if}
+        <div class="rootfs-actions">
+          <button class="refresh" type="button" on:click={() => controller.refresh()} disabled={state.busy.refreshing}>{state.busy.refreshing ? 'Checking…' : 'Retry validation'}</button>
+          <button class="refresh" type="button" on:click={() => controller.setShowAdvanced(true)}>Edit manifest URL</button>
+          {#if /^https?:\/\//.test(state.manifestUrl)}
+            <a href={state.manifestUrl} target="_blank" rel="noreferrer">Open manifest</a>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
     <div class="actions">
       {#if state.wallet.connected}
-        <button class="primary" type="button" on:click={() => controller.deploy()} disabled={state.busy.deploying || state.rootfsHealth.tone !== 'ok'}>
-          {state.busy.deploying ? 'Deploying…' : deploymentButtonLabel()}
+        <button class:blocked={state.rootfsHealth.tone === 'error'} class="primary" type="button" aria-describedby={state.rootfsHealth.tone === 'error' ? 'relay-rootfs-deployment-blocker' : undefined} on:click={() => controller.deploy()} disabled={state.busy.deploying || state.rootfsHealth.tone !== 'ok'}>
+          {deploymentCallToAction()}
         </button>
       {:else}
         <button class="primary" type="button" on:click={() => controller.connectWallet()} disabled={state.busy.connectingWallet}>
@@ -469,6 +493,25 @@ export let apiHosts = undefined
     color: var(--relay-text-dim);
     line-height: 1.35;
   }
+
+  .rootfs-blocker {
+    display: grid;
+    gap: 0.55rem;
+    margin-top: 1rem;
+    padding: 0.9rem;
+    border: 1px solid rgba(248, 113, 113, 0.58);
+    border-radius: 1rem;
+    background: rgba(127, 29, 29, 0.34);
+    color: #fee2e2;
+  }
+
+  .rootfs-blocker p,
+  .rootfs-blocker small { margin: 0; line-height: 1.45; }
+  .rootfs-reference { overflow-wrap: anywhere; font-size: 0.7rem; }
+  .rootfs-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .rootfs-actions .refresh { padding: 0.55rem 0.7rem; }
+  .rootfs-actions a { color: #bfdbfe; font-size: 0.78rem; }
+  .primary.blocked { border-color: rgba(248, 113, 113, 0.45); background: rgba(148, 163, 184, 0.22); color: #fee2e2; box-shadow: none; cursor: not-allowed; }
 
   .eyebrow,
   .field span,

@@ -142,7 +142,7 @@ export interface DeploymentIntentEnvelope {
 }
 
 export interface MessageInspectionResult {
-  status: "processed" | "pending" | "rejected" | "unknown";
+  status: "processed" | "pending" | "rejected" | "removing" | "removed" | "unknown";
   errorCode: number | null;
   details: Record<string, unknown> | null;
   rejectionReason: string | null;

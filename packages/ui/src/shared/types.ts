@@ -64,6 +64,7 @@ export interface SponsorRelayRootfsHealth {
   tone: SponsorRelayHealthTone
   label: string
   detail: string | null
+  code?: 'manifest-invalid' | 'rootfs-not-found' | 'rootfs-verifying' | 'rootfs-pending' | 'rootfs-unavailable' | 'rootfs-ready'
 }
 
 export interface CompactInstanceDetails {

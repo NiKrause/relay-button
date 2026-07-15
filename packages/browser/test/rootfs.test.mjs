@@ -159,3 +159,16 @@ test('resolveRootfsReference resolves CID and Aleph status from a store message'
     globalThis.fetch = originalFetch
   }
 })
+
+test('resolveRootfsReference preserves removing status and publisher-credit reason', async () => {
+  const originalFetch = globalThis.fetch
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ status: 'removing', type: 'STORE', reason: 'balance_insufficient' }), { status: 200 })
+    const result = await resolveRootfsReference('f'.repeat(64))
+    assert.equal(result?.messageStatus, 'removing')
+    assert.match(result?.rejectionReason ?? '', /publisher no longer has enough Aleph credits/i)
+    assert.match(result?.rejectionReason ?? '', /connected MetaMask balance may be sufficient/i)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
