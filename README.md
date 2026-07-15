@@ -1,15 +1,21 @@
 # Relay Button
 
-*Local-first apps you can keep, share, and use without depending on a permanent
-cloud backend.*
+*Local-first peer-to-peer apps you can keep, share, and use without depending
+on a permanent cloud backend.*
 
 Thirty years ago, software came on a CD. You owned a copy, installed it locally,
 and could continue using it without asking a vendor's server for permission.
 
 Relay Button brings this idea to modern web applications. A local-first
-Progressive Web App (PWA) can be hosted on IPFS, downloaded directly, or even
-shared on a USB drive. The application and its primary data remain on the
-user's device instead of living exclusively in a cloud database.
+peer-to-peer Progressive Web App (PWA) can be hosted on IPFS, downloaded
+directly, or even shared on a USB drive. The application and its primary data
+remain on the user's device instead of living exclusively in a cloud database.
+
+> **Terminology:** "Local-first" alone does not imply peer-to-peer or
+> server-free operation. Many local-first applications still use central
+> servers for synchronization and collaboration. Relay Button specifically
+> targets **local-first peer-to-peer applications**, where primary data stays
+> local and collaboration data can replicate directly between peers.
 
 When people want to collaborate, their apps exchange and replicate data over
 peer-to-peer connections. A chat, shared todo list, or collaborative workspace
@@ -40,8 +46,8 @@ decentralized archival storage such as Filecoin can be added separately.
 
 The current repository contains the reusable UI, browser libraries, deployment
 runners, and automation behind this flow. The implementation currently targets
-Aleph Cloud while keeping the local-first application independent from a
-permanent cloud backend.
+Aleph Cloud while keeping the local-first peer-to-peer application independent
+from a permanent cloud backend.
 
 ## What It Contains
 

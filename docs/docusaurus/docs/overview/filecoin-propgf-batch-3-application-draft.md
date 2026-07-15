@@ -10,9 +10,9 @@ as product and architecture notes rather than as a verbatim grant form export.
 
 ## Proposal At A Glance
 
-We want to build a customer-facing product that helps local-first applications
-use Filecoin-backed archival without falling back to a traditional centralized
-backend.
+We want to build a customer-facing product that helps local-first peer-to-peer
+applications use Filecoin-backed archival without falling back to a traditional
+centralized backend.
 
 The proposed product combines:
 
@@ -85,7 +85,7 @@ usable as an application feature.
 
 Instead of treating Filecoin as something hidden behind an infrastructure
 provider, the product makes archival part of the normal workflow for local-first
-applications:
+peer-to-peer applications:
 
 - upload content from an IPFS-hosted PWA
 - preserve durable references and archival visibility
@@ -121,7 +121,7 @@ into a usable product shape:
 ### Stage 2
 
 Extend the gateway with OrbitDB and IPFS pinning plus relay continuity for
-local-first applications.
+local-first peer-to-peer applications.
 
 This stage focuses on application availability when original peers are offline.
 It uses OrbitDB Voyager and orbitdb-relay as technical reference points
@@ -137,8 +137,8 @@ while keeping the end result focused on a coherent product:
 Integrate passkey-based peer replication, recovery authorization, and disaster
 re-hydration with the archival and pinning stack.
 
-This stage is about making local-first applications more recoverable and
-multi-device friendly without abandoning user ownership:
+This stage is about making local-first peer-to-peer applications more
+recoverable and multi-device friendly without abandoning user ownership:
 
 - passkey-based recovery and replication patterns
 - re-deploy and re-hydrate flows for failed gateway nodes on fresh
@@ -168,8 +168,8 @@ The proposal is guided by a few simple constraints:
 By the end of the grant period, the intended outcome is not just a set of
 components but a usable application layer path for builders:
 
-- local-first applications can use an IPFS-hosted upload PWA with UCAN-based
-  authorization
+- local-first peer-to-peer applications can use an IPFS-hosted upload PWA with
+  UCAN-based authorization
 - uploaded content has visible Filecoin archival information
 - OrbitDB and IPFS application data can remain available when browser peers are
   offline
@@ -180,8 +180,8 @@ components but a usable application layer path for builders:
 
 In short, the product should help move Filecoin-backed archival from hidden
 infrastructure into an understandable, user-facing feature for real local-first
-applications, including a practical recovery path when gateway infrastructure
-fails.
+peer-to-peer applications, including a practical recovery path when gateway
+infrastructure fails.
 
 ## Public Reference Projects
 

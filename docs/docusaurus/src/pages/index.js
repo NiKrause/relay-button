@@ -52,7 +52,7 @@ export default function Home() {
   return (
     <Layout
       title="Relay Button"
-      description="Local-first apps work on their own. Relay Button starts peer-to-peer collaboration and IPFS infrastructure only when it is needed."
+      description="Local-first peer-to-peer apps work on their own. Relay Button starts collaboration and IPFS infrastructure only when it is needed."
     >
       <header className="hero hero--shared">
         <div className="container">
@@ -62,10 +62,10 @@ export default function Home() {
             Your app works locally. Start shared infrastructure only when collaboration needs it.
           </p>
           <p className="hero__description">
-            Distribute a local-first PWA through IPFS, a normal download, or even a USB drive.
-            Users keep their primary data on their own devices and exchange changes peer to peer.
-            When they need help finding each other—or an online node to pin shared data—they press
-            the Relay Button.
+            Distribute a local-first peer-to-peer PWA through IPFS, a normal download, or even a
+            USB drive. Users keep their primary data on their own devices and exchange changes peer
+            to peer. When they need help finding each other—or an online node to pin shared
+            data—they press the Relay Button.
           </p>
           <div className="hero__actions">
             <Link className="button button--primary button--lg" to="/docs/overview">
@@ -88,9 +88,10 @@ export default function Home() {
               <p className="shared-cli__eyebrow">Application first</p>
               <h2>Software that stays with its users</h2>
               <p>
-                Like software once distributed on a CD, a local-first PWA can remain usable without
-                a permanent connection to its original publisher. The interface and working data
-                live with the user, not exclusively behind a provider account.
+                Like software once distributed on a CD, a local-first peer-to-peer PWA can remain
+                usable without a permanent connection to its original publisher. Local-first alone
+                can still rely on central servers; Relay Button is specifically designed for apps
+                that also replicate collaboration data peer to peer.
               </p>
               <Link className="button button--secondary" to="/docs/overview">
                 Read the full story

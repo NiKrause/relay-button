@@ -9,13 +9,24 @@ Thirty years ago, software came on a CD. You owned a copy, installed it locally,
 and could continue using it without asking a vendor's server for permission.
 
 Relay Button brings this idea to modern web applications. A local-first
-Progressive Web App (PWA) can be hosted on IPFS, downloaded from another
-source, or passed from one person to another on offline media such as a USB
-drive. The application and its primary working data stay on the user's device.
+peer-to-peer Progressive Web App (PWA) can be hosted on IPFS, downloaded from
+another source, or passed from one person to another on offline media such as a
+USB drive. The application and its primary working data stay on the user's
+device.
 
 Apps such as chats, shared todo lists, and collaborative workspaces can then
 exchange and replicate changes directly over peer-to-peer connections. They do
 not need to send every interaction through a central cloud database.
+
+:::note Terminology
+
+"Local-first" alone does not mean peer-to-peer or server-free. Many local-first
+applications still depend on central servers for synchronization and
+collaboration. These docs use **local-first peer-to-peer application** for the
+specific combination Relay Button supports: primary data stays local, while
+collaboration data can replicate directly between peers.
+
+:::
 
 ## Why a Peer-to-Peer App Still Needs a Relay
 
@@ -43,8 +54,9 @@ permanent backend and do not have to own its primary data.
    is no longer needed.
 
 The current implementation deploys this relay infrastructure on Aleph Cloud.
-The local-first PWA remains distributable through IPFS, a normal download, or
-offline media and is not tied to that deployment for its basic local use.
+The local-first peer-to-peer PWA remains distributable through IPFS, a normal
+download, or offline media and is not tied to that deployment for its basic
+local use.
 
 ## From Local Data to a Durable Archive
 
@@ -56,8 +68,8 @@ archival storage such as Filecoin.
 This creates a layered model:
 
 - **local-first:** the working copy belongs to the user and remains usable
-  locally
-- **peer-to-peer:** collaborators exchange and replicate changes directly
+  locally, whether or not an application also uses servers
+- **peer-to-peer:** collaborators can exchange and replicate changes directly
 - **relay on demand:** temporary infrastructure helps peers connect and keeps
   selected data online
 - **decentralized archive:** optional long-term storage preserves data beyond
