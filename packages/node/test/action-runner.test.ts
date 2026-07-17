@@ -158,7 +158,7 @@ test('runActionMode does not retry deploy mode across configured Aleph API hosts
         ALEPH_VM_SSH_PUBLIC_KEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest key@example',
         ALEPH_VM_ROOTFS_ITEM_HASH: 'a'.repeat(64),
         ALEPH_VM_API_HOST: 'https://api2.aleph.im',
-        ALEPH_VM_API_HOSTS: 'https://api2.aleph.im, https://api3.aleph.im'
+        ALEPH_VM_API_HOSTS: 'https://api2.aleph.im, https://api.aleph.im'
       },
       {
         deployExecutor: async (plan) => {
@@ -313,7 +313,7 @@ test('runActionMode retries retention across configured Aleph API hosts', async 
       ALEPH_VM_MODE: 'retain-successful-deployments',
       ALEPH_VM_PRIVATE_KEY: '0xabc',
       ALEPH_VM_API_HOST: 'https://api.aleph.im',
-      ALEPH_VM_API_HOSTS: 'https://api.aleph.im, https://api3.aleph.im',
+      ALEPH_VM_API_HOSTS: 'https://api.aleph.im, https://api2.aleph.im',
       ALEPH_VM_RETENTION_KEEP_COUNT: '2',
       ALEPH_VM_RETENTION_CURRENT_RECORD_JSON: JSON.stringify({
         instance_item_hash: 'instanceHash'
@@ -352,7 +352,7 @@ test('runActionMode retries retention across configured Aleph API hosts', async 
   const outputs = await readFile(outputFile, 'utf8')
   assert.deepEqual(attemptedHosts, [
     'https://api.aleph.im',
-    'https://api3.aleph.im'
+    'https://api2.aleph.im'
   ])
   assert.match(outputs, /retention_retained_count=1/)
 })
@@ -424,7 +424,7 @@ test('runActionMode retries bootstrap refresh across configured Aleph API hosts'
       ALEPH_VM_NAME: 'relay-demo',
       ALEPH_VM_PROFILE: 'uc-go-peer',
       ALEPH_VM_API_HOST: 'https://api.aleph.im',
-      ALEPH_VM_API_HOSTS: 'https://api.aleph.im, https://api3.aleph.im',
+      ALEPH_VM_API_HOSTS: 'https://api.aleph.im, https://api2.aleph.im',
       ALEPH_VM_RELAY_PEER_ID: '12D3KooWRefreshFallback',
       ALEPH_VM_PROBE_MULTIADDRS_JSON: JSON.stringify([
         '/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWRefreshFallback'
@@ -455,7 +455,7 @@ test('runActionMode retries bootstrap refresh across configured Aleph API hosts'
   const outputs = await readFile(outputFile, 'utf8')
   assert.deepEqual(attemptedHosts, [
     'https://api.aleph.im',
-    'https://api3.aleph.im'
+    'https://api2.aleph.im'
   ])
   assert.match(outputs, /bootstrap_registration_item_hash=bootstrapFallbackHash/)
 })

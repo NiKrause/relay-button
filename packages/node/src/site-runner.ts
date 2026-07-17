@@ -10,6 +10,7 @@ import { broadcastAlephMessage, DEFAULT_ALEPH_CHANNEL, forgetAlephMessages, norm
 import { inspectMessageResult, isTransientMessageLookupError } from "../../core/src/deployment-inspection.ts"
 
 import { optionalEnv, requiredEnv } from "./env.ts"
+import { normalizeAlephApiHost } from "./aleph-api-hosts.ts"
 import { appendGithubOutput, appendGithubSummary } from "./github-outputs.ts"
 import type { RelayProbeResult } from "./relay-probe.ts"
 import { createPrivateKeyIdentity } from "./signer.ts"
@@ -48,7 +49,9 @@ function siteAlephApiHosts(env: NodeJS.ProcessEnv = process.env): string[] {
   const rawHosts =
     optionalEnv('ALEPH_SITE_ALEPH_API_HOSTS', '', env).trim() ||
     optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api2.aleph.im', env).trim()
-  const hosts = uniqueNonEmptyValues(parseCsvOrWhitespaceList(rawHosts))
+  const hosts = uniqueNonEmptyValues(
+    parseCsvOrWhitespaceList(rawHosts).map((host) => normalizeAlephApiHost(host)),
+  )
   if (hosts.length === 0) {
     throw new Error('ALEPH_SITE_ALEPH_API_HOSTS did not contain any API host URLs.')
   }
@@ -71,7 +74,10 @@ function siteEndpointPairs(env: NodeJS.ProcessEnv = process.env): SiteEndpointPa
       if (typeof record.ipfsGateway !== 'string' || typeof record.apiHost !== 'string') {
         throw new Error(`ALEPH_SITE_ENDPOINT_PAIRS[${index}] requires string ipfsGateway and apiHost values.`)
       }
-      return { ipfsGateway: normalizeUrl(record.ipfsGateway), apiHost: normalizeUrl(record.apiHost) }
+      return {
+        ipfsGateway: normalizeUrl(record.ipfsGateway),
+        apiHost: normalizeAlephApiHost(record.apiHost),
+      }
     })
     if (pairs.length === 0) throw new Error('ALEPH_SITE_ENDPOINT_PAIRS must contain at least one endpoint pair.')
     return pairs

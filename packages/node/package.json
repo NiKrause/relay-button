@@ -48,7 +48,7 @@
     "undici": "^6.27.0"
   },
   "scripts": {
-    "build": "node --check ./src/index.ts && node --check ./src/env.ts && node --check ./src/github-outputs.ts && node --check ./src/signer.ts && node --check ./src/deploy-outputs.ts && node --check ./src/deploy-plan.ts && node --check ./src/deploy-executor.ts && node --check ./src/action-runner.ts && node --check ./src/rootfs-runner.ts && node --check ./src/relay-probe.ts && node --check ./src/site-runner.ts && node --check ./src/ucan-store-bootstrap.ts",
+    "build": "node --check ./src/index.ts && node --check ./src/env.ts && node --check ./src/aleph-api-hosts.ts && node --check ./src/github-outputs.ts && node --check ./src/signer.ts && node --check ./src/deploy-outputs.ts && node --check ./src/deploy-plan.ts && node --check ./src/deploy-executor.ts && node --check ./src/action-runner.ts && node --check ./src/rootfs-runner.ts && node --check ./src/relay-probe.ts && node --check ./src/site-runner.ts && node --check ./src/ucan-store-bootstrap.ts",
     "build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json",
     "test": "node --test ./test/**/*.test.ts",
     "lint": "echo \"node lint placeholder\""
