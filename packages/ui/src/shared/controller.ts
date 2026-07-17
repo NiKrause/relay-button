@@ -298,9 +298,7 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     instanceName: props.instanceName ?? DEFAULT_INSTANCE_NAME,
     ucanStoreBootstrap: defaultUcanStoreBootstrapInput(props),
     tierId: DEFAULT_TIER_ID,
-    showAdvanced: Boolean(
-      props.manifestJson?.trim() || props.sshPublicKey?.trim(),
-    ),
+    showAdvanced: false,
     showInstances: props.showInstances ?? true,
     showPasteManifest: Boolean(props.manifestJson?.trim()),
     busy: {

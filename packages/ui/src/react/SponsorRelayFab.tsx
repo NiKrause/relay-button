@@ -17,7 +17,13 @@ const basePanelStyle: React.CSSProperties = {
   position: "fixed",
   zIndex: 9999,
   width: "min(28rem, calc(100vw - 2rem))",
-  overflow: "auto",
+  maxWidth: "calc(100vw - 2rem)",
+  minWidth: 0,
+  boxSizing: "border-box",
+  overflowX: "hidden",
+  overflowY: "auto",
+  overflowWrap: "anywhere",
+  wordBreak: "break-word",
   border:
     "1px solid var(--le-space-sponsor-relay-panel-border, rgba(199, 210, 254, 0.22))",
   borderRadius: "1.4rem",
@@ -32,6 +38,8 @@ const basePanelStyle: React.CSSProperties = {
 
 const fieldStyle: React.CSSProperties = {
   width: "100%",
+  minWidth: 0,
+  boxSizing: "border-box",
   borderRadius: "0.8rem",
   border: "1px solid rgba(255,255,255,0.16)",
   background: "rgba(248,250,252,0.98)",
@@ -57,6 +65,7 @@ const secondaryButtonStyle: React.CSSProperties = {
 };
 
 const primaryButtonStyle: React.CSSProperties = {
+  boxSizing: "border-box",
   borderRadius: "0.95rem",
   border: "1px solid rgba(251, 191, 36, 0.42)",
   background: "linear-gradient(135deg, #f6c453 0%, #f59e0b 100%)",
@@ -67,6 +76,15 @@ const primaryButtonStyle: React.CSSProperties = {
   fontWeight: 800,
   lineHeight: 1.1,
   boxShadow: "0 10px 24px rgba(245, 158, 11, 0.24)",
+};
+
+const containedContentStyle: React.CSSProperties = {
+  minWidth: 0,
+  maxWidth: "100%",
+  boxSizing: "border-box",
+  overflowWrap: "anywhere",
+  wordBreak: "break-word",
+  whiteSpace: "normal",
 };
 
 const dangerButtonStyle: React.CSSProperties = {
@@ -1188,7 +1206,12 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
 
             {state.showInstances ? (
               <div
-                style={{ marginTop: "1rem", display: "grid", gap: "0.7rem" }}
+                style={{
+                  ...containedContentStyle,
+                  marginTop: "1rem",
+                  display: "grid",
+                  gap: "0.7rem",
+                }}
               >
                 {state.instances.map((entry) => {
                   const confirmedRegistration =
@@ -1196,8 +1219,12 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                       entry.instance.item_hash,
                     ) ?? null;
                   return (
-                    <details key={entry.instance.item_hash} open>
-                      <summary>
+                    <details
+                      key={entry.instance.item_hash}
+                      open
+                      style={containedContentStyle}
+                    >
+                      <summary style={containedContentStyle}>
                         <span
                           style={{
                             display: "inline-flex",
@@ -1242,6 +1269,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                       </summary>
                       <div
                         style={{
+                          ...containedContentStyle,
                           display: "grid",
                           gap: "0.35rem",
                           marginTop: "0.55rem",
@@ -1294,6 +1322,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                 {bootstrapUiEnabled && orphanRegistrations.length > 0 ? (
                   <div
                     style={{
+                      ...containedContentStyle,
                       display: "grid",
                       gap: "0.7rem",
                       padding: "0.85rem",
@@ -1321,6 +1350,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                             `orphan-${entry.content?.peerId ?? "unknown"}`
                           }
                           style={{
+                            ...containedContentStyle,
                             display: "grid",
                             gap: "0.35rem",
                             padding: "0.75rem",
@@ -1329,7 +1359,12 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                             border: "1px solid rgba(255,255,255,0.08)",
                           }}
                         >
-                          <div style={{ fontWeight: 700 }}>
+                          <div
+                            style={{
+                              ...containedContentStyle,
+                              fontWeight: 700,
+                            }}
+                          >
                             {(entry.content?.registrationId ?? "registration") +
                               " · " +
                               shortHash(registrationHash ?? "unknown")}

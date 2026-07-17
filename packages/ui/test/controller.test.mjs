@@ -32,6 +32,15 @@ test("controller pre-fills safe ucan-store bootstrap defaults", () => {
   assert.equal(bootstrap.rootDelegationProof, "");
 });
 
+test("controller keeps advanced settings collapsed when values are prefilled", () => {
+  const controller = createSponsorRelayController({
+    manifestJson: '{"rootfs":"prefilled"}',
+    sshPublicKey: "ssh-ed25519 prefilled",
+  });
+
+  assert.equal(controller.getState().showAdvanced, false);
+});
+
 test("controller waits for active 2n6 web access before publishing guest proxyUrl", async () => {
   const originalFetch = globalThis.fetch;
   const originalWindow = globalThis.window;
