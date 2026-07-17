@@ -91,6 +91,7 @@ test('playwright-runner reference includes auth, version, and TTL units', async 
     readFile(new URL('build-rootfs-image.sh', `file://${root}/`), 'utf8'),
   ])
   assert.match(caddy, /Authorization "Bearer \{\$PLAYWRIGHT_RUNNER_SECRET\}"/)
+  assert.match(caddy, /admin off/)
   assert.match(caddy, /playwrightVersion/)
   assert.match(bootstrap, /PLAYWRIGHT_VERSION:-.*1\.61\.1/)
   assert.match(timer, /OnActiveSec=45min/)
