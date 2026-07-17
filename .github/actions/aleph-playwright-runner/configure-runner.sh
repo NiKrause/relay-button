@@ -7,6 +7,10 @@ set -euo pipefail
 : "${RUNNER_SECRET:?}"
 : "${RUNNER_CA_CERT:?}"
 
+ACTION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CADDY_FILE="${ACTION_DIR}/../../../packages/rootfs/reference/playwright-runner/rootfs/Caddyfile"
+test -s "${CADDY_FILE}"
+
 echo "::add-mask::${RUNNER_SECRET}"
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
   -subj '/CN=aleph-playwright-runner' \
@@ -31,6 +35,7 @@ trap 'rm -f "$env_file" "${RUNNER_CA_CERT}.key"' EXIT
 chmod 600 "$env_file"
 printf 'PLAYWRIGHT_VERSION=1.61.1\nPLAYWRIGHT_RUNNER_SECRET=%s\n' "$RUNNER_SECRET" >"$env_file"
 scp "${scp_opts[@]}" "$env_file" root@"$RUNNER_HOST":/etc/default/playwright-runner
+scp "${scp_opts[@]}" "$CADDY_FILE" root@"$RUNNER_HOST":/etc/playwright-runner/Caddyfile
 scp "${scp_opts[@]}" "$RUNNER_CA_CERT" root@"$RUNNER_HOST":/etc/playwright-runner/tls.crt
 scp "${scp_opts[@]}" "${RUNNER_CA_CERT}.key" root@"$RUNNER_HOST":/etc/playwright-runner/tls.key
 if ! ssh "${ssh_opts[@]}" root@"$RUNNER_HOST" \
