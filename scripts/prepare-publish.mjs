@@ -38,6 +38,9 @@ const publishTargets = [
     dir: 'browser'
   },
   {
+    dir: 'playwright'
+  },
+  {
     dir: 'ui'
   },
   {
