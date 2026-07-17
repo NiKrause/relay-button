@@ -42,6 +42,7 @@ virt-customize \
   -a "${IMAGE}" \
   --network \
   --mkdir /opt/playwright-runner \
+  --mkdir /opt/playwright-browsers \
   --mkdir /etc/playwright-runner \
   --mkdir /etc/systemd/journald.conf.d \
   --mkdir /var/lib/playwright-runner \
@@ -58,8 +59,8 @@ virt-customize \
   --run-command "useradd --system --home /var/lib/playwright-runner --shell /usr/sbin/nologin playwright-runner" \
   --run-command "useradd --system --home /var/lib/playwright-runner --shell /usr/sbin/nologin playwright-proxy" \
   --run-command "cd /opt/playwright-runner && npm init -y && npm install --omit=dev --no-audit --no-fund playwright@${PLAYWRIGHT_VERSION}" \
-  --run-command "cd /opt/playwright-runner && ./node_modules/.bin/playwright install --with-deps --only-shell chromium" \
-  --run-command "chown -R playwright-runner:playwright-runner /opt/playwright-runner /var/lib/playwright-runner" \
+  --run-command "cd /opt/playwright-runner && PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers ./node_modules/.bin/playwright install --with-deps --only-shell chromium" \
+  --run-command "chown -R playwright-runner:playwright-runner /opt/playwright-runner /opt/playwright-browsers /var/lib/playwright-runner" \
   --run-command "chown -R root:playwright-proxy /etc/playwright-runner && chmod 0750 /etc/playwright-runner" \
   --run-command "chmod 0755 /usr/local/sbin/playwright-runner-bootstrap.sh" \
   --run-command "printf '[Journal]\\nSystemMaxUse=128M\\nRuntimeMaxUse=64M\\nMaxRetentionSec=2day\\n' >/etc/systemd/journald.conf.d/playwright-runner.conf" \
