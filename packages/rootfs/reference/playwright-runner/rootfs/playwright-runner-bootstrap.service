@@ -1,0 +1,13 @@
+[Unit]
+Description=Validate and start the injected Playwright runner configuration
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/default/playwright-runner
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/playwright-runner-bootstrap.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

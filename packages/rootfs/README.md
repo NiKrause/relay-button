@@ -11,6 +11,8 @@ Shared rootfs contract parsing, reference profile assets, and build helpers.
   including the delayed first-start, setup endpoint, Caddy, and AutoTLS flow
 - added a `ucan-store` reference contract scaffold with documented service
   ports and consumer env expectations
+- added an ephemeral `playwright-runner` profile with Node.js 24, exact
+  Playwright/Chromium `1.61.1`, authenticated WSS, bounded logs, and a guest TTL
 
 ## Reference assets
 
@@ -22,3 +24,5 @@ Current shared reference profiles live under:
 - `reference/orbitdb-relay/rootfs/*`
 - `reference/ucan-store/contract.json`
 - `reference/ucan-store/rootfs/*`
+- `reference/playwright-runner/contract.json`
+- `reference/playwright-runner/rootfs/*`

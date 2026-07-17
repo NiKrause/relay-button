@@ -15,10 +15,9 @@ import {
 
 test("rootfsSourceSizeBytesFromIpfsAddResponse extracts the final IPFS add size", () => {
   const size = rootfsSourceSizeBytesFromIpfsAddResponse(
-    [
-      '{"Name":"chunk-a","Size":"1024"}',
-      '{"Name":"aleph-uc-go-peer.qcow2","Hash":"bafytest","Size":"987654"}',
-    ].join("\n"),
+    ['{"Name":"chunk-a","Size":"1024"}', '{"Name":"aleph-uc-go-peer.qcow2","Hash":"bafytest","Size":"987654"}'].join(
+      "\n",
+    ),
   );
   assert.equal(size, 987654);
 });
@@ -75,6 +74,21 @@ test("validateRootfsManifest accepts a complete manifest", () => {
   assert.deepEqual(result.errors, []);
 });
 
+test("playwright-runner manifest exposes the exact protocol version", async () => {
+  const contract = await readRootfsContractFile(referenceProfileContractPath("playwright-runner"));
+  const plan = createRootfsBuildPlan(contract, {
+    projectDir: "/workspace/relay-button",
+    rootfsVersion: "playwright-runner-1.61.1",
+  });
+  const manifest = createRootfsManifest(plan, contract, {
+    rootfsItemHash: "a".repeat(64),
+    createdAt: "2026-07-17T00:00:00.000Z",
+  });
+
+  assert.equal(manifest.playwrightVersion, "1.61.1");
+  assert.equal(validateRootfsManifest(manifest).valid, true);
+});
+
 test("validateRootfsManifest rejects invalid port-forward and hash declarations", () => {
   const result = validateRootfsManifest({
     profile: "orbitdb-relay",
@@ -115,7 +129,8 @@ test("resolveRootfsManifestOutputPaths follows the UC latest and versioned manif
   assert.deepEqual(resolveRootfsManifestOutputPaths(plan), {
     primaryPath: "/workspace/universal-connectivity/go-peer/aleph/dist-rootfs/rootfs-manifest.json",
     copyTargetPath: "/workspace/universal-connectivity/js-peer/public/rootfs/uc-go-peer/latest.json",
-    versionedTargetPath: "/workspace/universal-connectivity/js-peer/public/rootfs/uc-go-peer/uc-go-peer-git-20260516-deadbee.json",
+    versionedTargetPath:
+      "/workspace/universal-connectivity/js-peer/public/rootfs/uc-go-peer/uc-go-peer-git-20260516-deadbee.json",
   });
 });
 

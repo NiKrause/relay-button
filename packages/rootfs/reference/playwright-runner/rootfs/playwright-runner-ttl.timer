@@ -1,0 +1,10 @@
+[Unit]
+Description=Maximum lifetime for an ephemeral Playwright runner
+
+[Timer]
+OnActiveSec=45min
+AccuracySec=1min
+Unit=playwright-runner-ttl.service
+
+[Install]
+WantedBy=timers.target

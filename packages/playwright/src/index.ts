@@ -2,32 +2,20 @@ import { createHash } from 'node:crypto'
 import { appendFile, mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-import {
-  fetchAlephBootstrapPosts,
-  type RelayBootstrapContent,
-  type RelayBootstrapPostRecord,
-} from '@le-space/aleph-bootstrap'
+import { fetchAlephBootstrapPosts, type RelayBootstrapContent, type RelayBootstrapPostRecord } from '@le-space/aleph-bootstrap'
 import { eraseInstanceOnCrn, forgetAlephMessages } from '@le-space/core'
-import {
-  test as playwrightTest,
-  type BrowserContext,
-  type Locator,
-  type Page,
-} from '@playwright/test'
+import { type Browser, test as playwrightTest, type BrowserContext, type Locator, type Page } from '@playwright/test'
 
-export const SUPPORTED_ALEPH_API_HOSTS = [
-  'https://api2.aleph.im',
-  'https://api.aleph.im',
-] as const
+export const PLAYWRIGHT_RUNNER_VERSION = '1.61.1'
+
+export const SUPPORTED_ALEPH_API_HOSTS = ['https://api2.aleph.im', 'https://api.aleph.im'] as const
 export const DEFAULT_ALEPH_SCHEDULER_URL = 'https://scheduler.api.aleph.cloud'
 
 const API3_HOST_PATTERN = /(^|\.)api3\.aleph\.im$/iu
 
 export interface RelayWalletAccount {
   address: string
-  signMessage(args: {
-    message: string | { raw: `0x${string}` }
-  }): Promise<string>
+  signMessage(args: { message: string | { raw: `0x${string}` } }): Promise<string>
 }
 
 export interface RelayEvidenceStep {
@@ -45,6 +33,65 @@ export interface RelayEvidence {
   steps: Record<string, RelayEvidenceStep>
   error?: string
   [key: string]: unknown
+}
+
+export interface AlephChromiumConnector {
+  connect(wsEndpoint: string, options?: { headers?: Record<string, string>; timeout?: number }): Promise<Browser>
+}
+
+export interface AlephRemoteBrowserOptions {
+  chromium: AlephChromiumConnector
+  wsEndpoint: string
+  versionUrl: string
+  secret: string
+  expectedVersion?: string
+  timeoutMs?: number
+  fetch?: typeof fetch
+}
+
+export interface AlephCreditBalanceSnapshot {
+  capturedAt: string
+  apiHost: string
+  creditBalance: number
+  lockedAmount: number
+}
+
+export interface AlephPricingSnapshot {
+  capturedAt: string
+  apiHost: string
+  unitCredit: number
+  computeUnits: number
+  vcpus: number
+  memoryMiB: number
+  diskMiB: number
+}
+
+export interface AlephCostEvidence {
+  paymentType: 'credit'
+  startedAt: string
+  finishedAt: string
+  runtimeSeconds: number
+  pricing: AlephPricingSnapshot
+  before: AlephCreditBalanceSnapshot
+  after: AlephCreditBalanceSnapshot
+  requiredCredits: number
+  netAccountCreditDelta: number
+  creditsConsumed: number
+  creditsReturned: number
+  accountingNote: string
+}
+
+export interface AlephRunnerInstanceCandidate {
+  itemHash: string
+  ownerAddress: string
+  instanceName: string
+  createdAt: string
+  status: string
+}
+
+export interface AlephRunnerJanitorSelection {
+  expired: AlephRunnerInstanceCandidate[]
+  retained: Array<AlephRunnerInstanceCandidate & { reason: string }>
 }
 
 export interface RelayAddressPolicy {
@@ -86,10 +133,7 @@ export interface ProvisionRelayOptions {
   addressPolicy?: RelayAddressPolicy
   fetch?: typeof fetch
   onDeploymentSubmitted?: () => void
-  onPhase?: (
-    phase: 'wallet-and-manifest-ready' | 'deployment-submitted' | 'instance-resolved' | 'bootstrap-resolved',
-    detail?: string,
-  ) => void
+  onPhase?: (phase: 'wallet-and-manifest-ready' | 'deployment-submitted' | 'instance-resolved' | 'bootstrap-resolved', detail?: string) => void
 }
 
 export interface ProvisionedRelay {
@@ -158,19 +202,139 @@ function normalizeApiOrigin(value: string): string | null {
 }
 
 export function resolveAlephApiHosts(candidates?: readonly string[]): string[] {
-  const allowed = new Set(
-    (candidates ?? SUPPORTED_ALEPH_API_HOSTS)
-      .map(normalizeApiOrigin)
-      .filter((value): value is string => value != null),
-  )
+  const allowed = new Set((candidates ?? SUPPORTED_ALEPH_API_HOSTS).map(normalizeApiOrigin).filter((value): value is string => value != null))
   const selected = SUPPORTED_ALEPH_API_HOSTS.filter((host) => allowed.has(host))
   return selected.length > 0 ? [...selected] : [...SUPPORTED_ALEPH_API_HOSTS]
 }
 
-export async function waitForPubsubSubscriber(
-  page: Page,
-  options: WaitForPubsubSubscriberOptions,
-): Promise<string[]> {
+function requireFiniteNumber(value: unknown, label: string): number {
+  const number = Number(value)
+  if (!Number.isFinite(number)) throw new Error(`${label} must be a finite number`)
+  return number
+}
+
+export async function connectAlephChromium(options: AlephRemoteBrowserOptions): Promise<Browser> {
+  const expectedVersion = options.expectedVersion ?? PLAYWRIGHT_RUNNER_VERSION
+  const secret = options.secret.trim()
+  if (!secret) throw new Error('Aleph Playwright secret is required')
+  if (!options.wsEndpoint.startsWith('wss://')) {
+    throw new Error('Aleph Playwright endpoint must use authenticated WSS')
+  }
+  if (!options.versionUrl.startsWith('https://')) {
+    throw new Error('Aleph Playwright version endpoint must use HTTPS')
+  }
+  const fetchImpl = options.fetch ?? globalThis.fetch?.bind(globalThis)
+  if (!fetchImpl) throw new Error('A fetch implementation is required for version verification')
+  const authorization = `Bearer ${secret}`
+  const response = await fetchImpl(options.versionUrl, {
+    headers: { Authorization: authorization },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
+  })
+  if (!response.ok) {
+    throw new Error(`Aleph Playwright version endpoint returned HTTP ${response.status}`)
+  }
+  const payload = (await response.json()) as { playwrightVersion?: unknown }
+  const actualVersion = String(payload.playwrightVersion ?? '')
+  if (actualVersion !== expectedVersion) {
+    throw new Error(`Playwright client/server version mismatch: client ${expectedVersion}, guest ${actualVersion || 'unknown'}`)
+  }
+  return options.chromium.connect(options.wsEndpoint, {
+    headers: { Authorization: authorization },
+    timeout: options.timeoutMs ?? 30_000,
+  })
+}
+
+export function buildAlephCostEvidence(options: {
+  startedAt: string
+  finishedAt: string
+  pricing: AlephPricingSnapshot
+  before: AlephCreditBalanceSnapshot
+  after: AlephCreditBalanceSnapshot
+}): AlephCostEvidence {
+  const startedAtMs = Date.parse(options.startedAt)
+  const finishedAtMs = Date.parse(options.finishedAt)
+  if (!Number.isFinite(startedAtMs) || !Number.isFinite(finishedAtMs) || finishedAtMs < startedAtMs) {
+    throw new Error('Aleph cost evidence requires ordered ISO start/finish timestamps')
+  }
+  const unitCredit = requireFiniteNumber(options.pricing.unitCredit, 'unitCredit')
+  const computeUnits = requireFiniteNumber(options.pricing.computeUnits, 'computeUnits')
+  const beforeCredits = requireFiniteNumber(options.before.creditBalance, 'before.creditBalance')
+  const afterCredits = requireFiniteNumber(options.after.creditBalance, 'after.creditBalance')
+  const netAccountCreditDelta = afterCredits - beforeCredits
+
+  return {
+    paymentType: 'credit',
+    startedAt: options.startedAt,
+    finishedAt: options.finishedAt,
+    runtimeSeconds: Math.ceil((finishedAtMs - startedAtMs) / 1_000),
+    pricing: options.pricing,
+    before: options.before,
+    after: options.after,
+    requiredCredits: unitCredit * computeUnits,
+    netAccountCreditDelta,
+    creditsConsumed: Math.max(0, -netAccountCreditDelta),
+    creditsReturned: Math.max(0, netAccountCreditDelta),
+    accountingNote:
+      'Required credits are Aleph credit-payment capacity, not a time-pro-rated charge. The balance delta is the authoritative account observation for this interval and is attributable to this test only when the deployment account is not used concurrently.',
+  }
+}
+
+export function formatAlephCostGithubSummary(cost: AlephCostEvidence): string {
+  return (
+    `## Aleph remote browser cost\n\n` +
+    `| Field | Value |\n| --- | ---: |\n` +
+    `| Payment type | ${cost.paymentType} |\n` +
+    `| Runtime | ${cost.runtimeSeconds} s |\n` +
+    `| Hardware | ${cost.pricing.vcpus} vCPU · ${cost.pricing.memoryMiB} MiB RAM · ${cost.pricing.diskMiB} MiB disk |\n` +
+    `| Compute units | ${cost.pricing.computeUnits} |\n` +
+    `| Unit credit requirement | ${cost.pricing.unitCredit} credits |\n` +
+    `| Required credit capacity | ${cost.requiredCredits} credits |\n` +
+    `| Balance before | ${cost.before.creditBalance} credits |\n` +
+    `| Balance after cleanup | ${cost.after.creditBalance} credits |\n` +
+    `| Net account delta | ${cost.netAccountCreditDelta} credits |\n` +
+    `| Credits consumed | ${cost.creditsConsumed} credits |\n` +
+    `| Credits returned | ${cost.creditsReturned} credits |\n\n` +
+    `Pricing source: \`${cost.pricing.apiHost}\` at ${cost.pricing.capturedAt}. ` +
+    `Balance sources: \`${cost.before.apiHost}\` and \`${cost.after.apiHost}\`.\n\n` +
+    `> ${cost.accountingNote}\n`
+  )
+}
+
+export function selectExpiredAlephPlaywrightRunners(options: {
+  candidates: readonly AlephRunnerInstanceCandidate[]
+  ownerAddress: string
+  repository: string
+  now?: number
+  ttlMs?: number
+}): AlephRunnerJanitorSelection {
+  const owner = options.ownerAddress.trim().toLowerCase()
+  const repository = options.repository.trim().toLowerCase().replace(/[^a-z0-9]+/gu, '-')
+  if (!/^0x[a-f0-9]{40}$/u.test(owner)) throw new Error('Janitor requires an exact EVM owner address')
+  if (!repository) throw new Error('Janitor requires a repository name')
+  const prefix = `playwright-${repository}-`
+  const now = options.now ?? Date.now()
+  const ttlMs = options.ttlMs ?? 60 * 60_000
+  if (!Number.isFinite(ttlMs) || ttlMs < 15 * 60_000) throw new Error('Janitor TTL must be at least 15 minutes')
+  const selection: AlephRunnerJanitorSelection = { expired: [], retained: [] }
+
+  for (const candidate of options.candidates) {
+    let reason = ''
+    const createdAt = Date.parse(candidate.createdAt)
+    if (!/^[a-f0-9]{64}$/iu.test(candidate.itemHash)) reason = 'invalid exact INSTANCE hash'
+    else if (candidate.ownerAddress.toLowerCase() !== owner) reason = 'different owner'
+    else if (!candidate.instanceName.toLowerCase().startsWith(prefix)) reason = 'name outside repository scope'
+    else if (!Number.isFinite(createdAt)) reason = 'invalid creation timestamp'
+    else if (now - createdAt < ttlMs) reason = 'within TTL'
+    else if (!['processed', 'pending'].includes(candidate.status.toLowerCase())) reason = `terminal status ${candidate.status}`
+
+    if (reason) selection.retained.push({ ...candidate, reason })
+    else selection.expired.push(candidate)
+  }
+  return selection
+}
+
+export async function waitForPubsubSubscriber(page: Page, options: WaitForPubsubSubscriberOptions): Promise<string[]> {
   const timeoutMs = options.timeoutMs ?? 30_000
   const pollIntervalMs = options.pollIntervalMs ?? 250
   const stableForMs = options.stableForMs ?? 1_000
@@ -214,12 +378,12 @@ export async function waitForPubsubSubscriber(
   )
 }
 
-export async function installEip1193WalletMock(
-  context: BrowserContext,
-  account: RelayWalletAccount,
-): Promise<void> {
+export async function installEip1193WalletMock(context: BrowserContext, account: RelayWalletAccount): Promise<void> {
   await context.exposeBinding('__relayE2eWalletRequest', async (_source, request: unknown) => {
-    const { method, params = [] } = request as { method?: string; params?: unknown[] }
+    const { method, params = [] } = request as {
+      method?: string
+      params?: unknown[]
+    }
     switch (method) {
       case 'eth_requestAccounts':
       case 'eth_accounts':
@@ -227,16 +391,13 @@ export async function installEip1193WalletMock(
       case 'eth_chainId':
         return '0x1'
       case 'personal_sign': {
-        const payload = params.find(
-          (value) =>
-            typeof value === 'string' &&
-            value.startsWith('0x') &&
-            value.toLowerCase() !== account.address.toLowerCase(),
-        )
+        const payload = params.find((value) => typeof value === 'string' && value.startsWith('0x') && value.toLowerCase() !== account.address.toLowerCase())
         if (typeof payload !== 'string') {
           throw new Error('personal_sign did not contain a payload')
         }
-        return account.signMessage({ message: { raw: payload as `0x${string}` } })
+        return account.signMessage({
+          message: { raw: payload as `0x${string}` },
+        })
       }
       default:
         throw new Error(`Unsupported E2E wallet method: ${method ?? 'missing'}`)
@@ -272,10 +433,7 @@ export class RelayButtonDriver {
   readonly page: Page
   readonly options: Required<RelayButtonDriverOptions>
 
-  constructor(
-    page: Page,
-    options: RelayButtonDriverOptions = {},
-  ) {
+  constructor(page: Page, options: RelayButtonDriverOptions = {}) {
     this.page = page
     this.options = {
       launcherName: options.launcherName ?? /(?:Sponsor Relay|Relay Button|Relay)/,
@@ -289,7 +447,9 @@ export class RelayButtonDriver {
   }
 
   deployButton(): Locator {
-    return this.page.getByRole('button', { name: this.options.deployButtonName })
+    return this.page.getByRole('button', {
+      name: this.options.deployButtonName,
+    })
   }
 
   instance(instanceName: string): Locator {
@@ -297,14 +457,19 @@ export class RelayButtonDriver {
   }
 
   async prepare(options: { instanceName: string; sshPublicKey: string }): Promise<void> {
-    const launcher = this.page.getByRole('button', { name: this.options.launcherName })
+    const launcher = this.page.getByRole('button', {
+      name: this.options.launcherName,
+    })
     await launcher.waitFor({ state: 'visible', timeout: 60_000 })
     await launcher.click()
     await this.page.getByPlaceholder(this.options.instanceNamePlaceholder).fill(options.instanceName)
     await this.page.getByText('Advanced', { exact: true }).click()
     await this.page.getByPlaceholder(this.options.sshPublicKeyPlaceholder).fill(options.sshPublicKey)
     await this.page
-      .getByRole('button', { name: this.options.connectWalletName, exact: true })
+      .getByRole('button', {
+        name: this.options.connectWalletName,
+        exact: true,
+      })
       .click()
   }
 
@@ -315,9 +480,7 @@ export class RelayButtonDriver {
       .catch(() => {})
     const instance = this.instance(instanceName)
     await instance.waitFor({ state: 'visible', timeout: 60_000 })
-    await instance
-      .getByRole('button', { name: this.options.deleteButtonName, exact: true })
-      .click()
+    await instance.getByRole('button', { name: this.options.deleteButtonName, exact: true }).click()
   }
 }
 
@@ -340,35 +503,29 @@ export async function waitForDeployableManifest(
       const panelText = document.querySelector('aside')?.textContent ?? document.body.textContent ?? ''
       const failure = states.find((state) => panelText.includes(state))
       if (failure) return { status: 'error', message: failure }
-      const deployButton = [...document.querySelectorAll('button')].find(
-        (button) => button.textContent?.trim() === 'Deploy Relay',
-      ) as HTMLButtonElement | undefined
+      const deployButton = [...document.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Deploy Relay') as
+        | HTMLButtonElement
+        | undefined
       return deployButton && !deployButton.disabled ? { status: 'ready' } : null
     },
     { states: terminalStates },
     { timeout: options.timeoutMs ?? 120_000, polling: 500 },
   )
-  const result = (await outcome.jsonValue()) as { status?: string; message?: string } | null
+  const result = (await outcome.jsonValue()) as {
+    status?: string
+    message?: string
+  } | null
   if (result?.status === 'error') {
-    throw new Error(
-      `Relay Button manifest is not deployable: ${result.message}. Republish the rootfs and update the manifest before provisioning.`,
-    )
+    throw new Error(`Relay Button manifest is not deployable: ${result.message}. Republish the rootfs and update the manifest before provisioning.`)
   }
 }
 
-async function waitForDeploymentUi(
-  page: Page,
-  instanceName: string,
-  timeoutMs: number,
-): Promise<void> {
+async function waitForDeploymentUi(page: Page, instanceName: string, timeoutMs: number): Promise<void> {
   const outcome = await page.waitForFunction(
     (expectedName) => {
       const instance = [...document.querySelectorAll('details')].find(
         (element) =>
-          element.textContent?.includes(expectedName) &&
-          [...element.querySelectorAll('button')].some(
-            (button) => button.textContent?.trim() === 'Delete',
-          ),
+          element.textContent?.includes(expectedName) && [...element.querySelectorAll('button')].some((button) => button.textContent?.trim() === 'Delete'),
       )
       if (instance?.textContent?.includes('Aleph bootstrap registered')) {
         return { status: 'instance' }
@@ -376,9 +533,7 @@ async function waitForDeploymentUi(
       const error = document.querySelector('aside.panel .alert.error')?.textContent?.trim()
       if (error) return { status: 'error', message: error }
       const panelText = document.querySelector('aside')?.textContent ?? ''
-      const deployButton = [...document.querySelectorAll('button')].find((button) =>
-        button.textContent?.includes('Deploy'),
-      )
+      const deployButton = [...document.querySelectorAll('button')].find((button) => button.textContent?.includes('Deploy'))
       if (panelText.includes('Deployment failed') && !deployButton?.textContent?.includes('Deploying')) {
         return { status: 'error', message: panelText }
       }
@@ -387,7 +542,10 @@ async function waitForDeploymentUi(
     instanceName,
     { timeout: timeoutMs, polling: 500 },
   )
-  const result = (await outcome.jsonValue()) as { status?: string; message?: string } | null
+  const result = (await outcome.jsonValue()) as {
+    status?: string
+    message?: string
+  } | null
   if (result?.status === 'error') {
     throw new Error(`Relay Button deployment failed: ${result.message}`)
   }
@@ -428,14 +586,13 @@ export async function findAlephInstanceHash(options: {
           observations.push(`${apiHost}: HTTP ${response.status}`)
           continue
         }
-        const payload = (await response.json()) as { messages?: Record<string, unknown>[] }
+        const payload = (await response.json()) as {
+          messages?: Record<string, unknown>[]
+        }
         const instance = payload.messages?.find((message) => {
           const content = message.content as { metadata?: { name?: string } } | undefined
           const timestamp = Number(message.reception_time ?? message.time ?? 0) * 1000
-          return (
-            content?.metadata?.name === options.instanceName &&
-            timestamp >= options.startedAt - 60_000
-          )
+          return content?.metadata?.name === options.instanceName && timestamp >= options.startedAt - 60_000
         })
         if (typeof instance?.item_hash === 'string' && instance.item_hash) {
           return instance.item_hash
@@ -477,9 +634,7 @@ export async function waitForBootstrapRegistration(options: {
         const registration = posts.find(({ address, content }) => {
           if (!content) return false
           const owner = (content.ownerAddress ?? content.publisherAddress ?? address)?.toLowerCase()
-          const addresses = content.browserMultiaddrs?.length
-            ? content.browserMultiaddrs
-            : content.multiaddrs
+          const addresses = content.browserMultiaddrs?.length ? content.browserMultiaddrs : content.multiaddrs
           return (
             owner === options.ownerAddress.toLowerCase() &&
             content.registrationId?.includes(`:${options.instanceName}:`) &&
@@ -508,9 +663,7 @@ export function selectBrowserRelayAddresses(
     allowSecureWebSocket: policy.allowSecureWebSocket ?? true,
     requireCertificateHash: policy.requireCertificateHash ?? true,
   }
-  const candidates = content.browserMultiaddrs?.length
-    ? content.browserMultiaddrs
-    : content.multiaddrs
+  const candidates = content.browserMultiaddrs?.length ? content.browserMultiaddrs : content.multiaddrs
   const rank = (address: string) => {
     if (address.includes('/webtransport/')) return 0
     if (address.includes('/webrtc-direct/')) return 1
@@ -521,10 +674,7 @@ export function selectBrowserRelayAddresses(
 
   return [...new Set(candidates)]
     .filter((address) => {
-      if (
-        resolvedPolicy.allowSecureWebSocket &&
-        /\/(?:tls\/ws|wss)\/p2p\//u.test(address)
-      ) {
+      if (resolvedPolicy.allowSecureWebSocket && /\/(?:tls\/ws|wss)\/p2p\//u.test(address)) {
         return true
       }
       const hasPeer = /\/p2p\//u.test(address)
@@ -541,17 +691,16 @@ export function selectBrowserRelayAddresses(
     .sort((left, right) => rank(left) - rank(right))
 }
 
-export async function provisionRelay(
-  page: Page,
-  options: ProvisionRelayOptions,
-): Promise<ProvisionedRelay> {
+export async function provisionRelay(page: Page, options: ProvisionRelayOptions): Promise<ProvisionedRelay> {
   const startedAt = options.startedAt ?? Date.now()
   const driver = options.driver ?? new RelayButtonDriver(page)
   await driver.prepare({
     instanceName: options.instanceName,
     sshPublicKey: options.sshPublicKey,
   })
-  await waitForDeployableManifest(page, { timeoutMs: options.manifestTimeoutMs })
+  await waitForDeployableManifest(page, {
+    timeoutMs: options.manifestTimeoutMs,
+  })
   options.onPhase?.('wallet-and-manifest-ready')
   await driver.deployButton().click()
   options.onDeploymentSubmitted?.()
@@ -605,10 +754,7 @@ export async function waitForAlephInstanceDeletion(options: {
   if (!fetchImpl) throw new Error('A fetch implementation is required for cleanup verification')
   const deadline = Date.now() + (options.timeoutMs ?? 5 * 60_000)
   const hosts = resolveAlephApiHosts(options.apiHosts)
-  const schedulerUrl = new URL(
-    `/api/v0/allocation/${options.instanceHash}`,
-    options.schedulerUrl ?? DEFAULT_ALEPH_SCHEDULER_URL,
-  )
+  const schedulerUrl = new URL(`/api/v0/allocation/${options.instanceHash}`, options.schedulerUrl ?? DEFAULT_ALEPH_SCHEDULER_URL)
   let lastSummary = 'Deletion has not been observed yet.'
 
   while (Date.now() < deadline) {
@@ -616,18 +762,14 @@ export async function waitForAlephInstanceDeletion(options: {
     let replicasForgotten = true
     for (const apiHost of hosts) {
       try {
-        const response = await fetchImpl(
-          new URL(`/api/v0/messages/${options.instanceHash}`, apiHost),
-          { cache: 'no-cache' },
-        )
+        const response = await fetchImpl(new URL(`/api/v0/messages/${options.instanceHash}`, apiHost), { cache: 'no-cache' })
         const payload = (await response.json().catch(() => null)) as {
           status?: string
           forgotten_by?: string[]
         } | null
-        const forgotten =
-          payload?.status === 'forgotten' || Boolean(payload?.forgotten_by?.length)
+        const forgotten = payload?.status === 'forgotten' || Boolean(payload?.forgotten_by?.length)
         replicasForgotten &&= forgotten
-        observations.push(`${apiHost}: ${forgotten ? 'forgotten' : payload?.status ?? `HTTP ${response.status}`}`)
+        observations.push(`${apiHost}: ${forgotten ? 'forgotten' : (payload?.status ?? `HTTP ${response.status}`)}`)
       } catch (error) {
         replicasForgotten = false
         observations.push(`${apiHost}: ${error instanceof Error ? error.message : String(error)}`)
@@ -637,9 +779,10 @@ export async function waitForAlephInstanceDeletion(options: {
     let unallocated = false
     try {
       const response = await fetchImpl(schedulerUrl, { cache: 'no-cache' })
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null
-      unallocated =
-        response.status === 404 || payload?.error === 'VM is not allocated to any node'
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string
+      } | null
+      unallocated = response.status === 404 || payload?.error === 'VM is not allocated to any node'
       observations.push(`scheduler: ${unallocated ? 'unallocated' : `HTTP ${response.status}`}`)
     } catch (error) {
       observations.push(`scheduler: ${error instanceof Error ? error.message : String(error)}`)
@@ -649,9 +792,7 @@ export async function waitForAlephInstanceDeletion(options: {
     if (replicasForgotten && unallocated) return lastSummary
     await delay(options.pollIntervalMs ?? 2_000)
   }
-  throw new Error(
-    `Aleph INSTANCE ${options.instanceHash} was not deleted within ${options.timeoutMs ?? 5 * 60_000}ms: ${lastSummary}`,
-  )
+  throw new Error(`Aleph INSTANCE ${options.instanceHash} was not deleted within ${options.timeoutMs ?? 5 * 60_000}ms: ${lastSummary}`)
 }
 
 export async function cleanupRelay(options: CleanupRelayOptions): Promise<CleanupRelayResult> {
@@ -697,8 +838,7 @@ export async function cleanupRelay(options: CleanupRelayOptions): Promise<Cleanu
     }
   }
 
-  const signer = (_sender: string, payload: string) =>
-    options.account.signMessage({ message: payload })
+  const signer = (_sender: string, payload: string) => options.account.signMessage({ message: payload })
   let eraseSummary = 'CRN erase skipped by configuration'
   if (options.eraseFirst ?? true) {
     let lastError = 'No Aleph API host attempted.'
@@ -767,31 +907,16 @@ export async function cleanupRelay(options: CleanupRelayOptions): Promise<Cleanu
   }
 }
 
-export function createRelayEvidence(options: {
-  instanceName: string
-  ownerAddress: string
-  steps: Record<string, string>
-  startedAt?: number
-}): RelayEvidence {
+export function createRelayEvidence(options: { instanceName: string; ownerAddress: string; steps: Record<string, string>; startedAt?: number }): RelayEvidence {
   return {
     instanceName: options.instanceName,
     ownerAddress: options.ownerAddress,
     startedAt: new Date(options.startedAt ?? Date.now()).toISOString(),
-    steps: Object.fromEntries(
-      Object.entries(options.steps).map(([key, label]) => [
-        key,
-        { label, status: 'pending' as const },
-      ]),
-    ),
+    steps: Object.fromEntries(Object.entries(options.steps).map(([key, label]) => [key, { label, status: 'pending' as const }])),
   }
 }
 
-export function updateRelayEvidenceStep(
-  evidence: RelayEvidence,
-  step: string,
-  status: RelayEvidenceStep['status'],
-  detail = '',
-): void {
+export function updateRelayEvidenceStep(evidence: RelayEvidence, step: string, status: RelayEvidenceStep['status'], detail = ''): void {
   const current = evidence.steps[step]
   if (!current) throw new Error(`Unknown Relay evidence step: ${step}`)
   evidence.steps[step] = { ...current, status, detail }
@@ -803,10 +928,7 @@ export async function writeRelayEvidence(path: string, evidence: RelayEvidence):
   await writeFile(path, `${JSON.stringify(evidence, null, 2)}\n`)
 }
 
-export function formatRelayGithubSummary(
-  evidence: RelayEvidence,
-  title = 'Relay Button E2E',
-): string {
+export function formatRelayGithubSummary(evidence: RelayEvidence, title = 'Relay Button E2E'): string {
   const icons: Record<RelayEvidenceStep['status'], string> = {
     passed: '✅',
     failed: '❌',
@@ -814,7 +936,9 @@ export function formatRelayGithubSummary(
     skipped: '➖',
   }
   const rows = Object.values(evidence.steps).map((step) => {
-    const detail = String(step.detail ?? '').replaceAll('|', '\\|').replaceAll('\n', ' ')
+    const detail = String(step.detail ?? '')
+      .replaceAll('|', '\\|')
+      .replaceAll('\n', ' ')
     return `| ${icons[step.status]} | ${step.label} | ${detail || '—'} |`
   })
   const failed = Object.values(evidence.steps).some((step) => step.status === 'failed') || evidence.error
@@ -823,25 +947,23 @@ export function formatRelayGithubSummary(
     evidence.instanceHash ? `- Aleph INSTANCE: \`${evidence.instanceHash}\`` : '',
     evidence.error ? `- Error: ${evidence.error.replaceAll('\n', ' ')}` : '',
   ].filter(Boolean)
-  return [
-    `## ${title}`,
-    '',
-    `**Result:** ${failed ? '❌ Failed' : '✅ Passed'}`,
-    '',
-    '| Status | Test step | Details |',
-    '| --- | --- | --- |',
-    ...rows,
-    '',
-    ...metadata,
-    '',
-  ]
-    .join('\n') + '\n'
+  return (
+    [
+      `## ${title}`,
+      '',
+      `**Result:** ${failed ? '❌ Failed' : '✅ Passed'}`,
+      '',
+      '| Status | Test step | Details |',
+      '| --- | --- | --- |',
+      ...rows,
+      '',
+      ...metadata,
+      '',
+    ].join('\n') + '\n'
+  )
 }
 
-export async function appendRelayGithubSummary(
-  evidence: RelayEvidence,
-  options: { path?: string; title?: string } = {},
-): Promise<string> {
+export async function appendRelayGithubSummary(evidence: RelayEvidence, options: { path?: string; title?: string } = {}): Promise<string> {
   const summary = formatRelayGithubSummary(evidence, options.title)
   const path = options.path ?? process.env.GITHUB_STEP_SUMMARY
   if (path) await appendFile(path, summary)

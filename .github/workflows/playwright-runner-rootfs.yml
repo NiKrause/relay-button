@@ -1,0 +1,61 @@
+name: Playwright Runner RootFS
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the built image to Aleph IPFS and STORE
+        required: true
+        default: false
+        type: boolean
+      deploy_vm:
+        description: Deploy a validation VM after a successful publication
+        required: true
+        default: false
+        type: boolean
+      tooling_ref:
+        description: relay-button ref to build; empty uses this workflow ref
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build-publish:
+    uses: ./.github/workflows/aleph-rootfs-build-publish-deploy.yml
+    with:
+      profile: playwright-runner
+      publish: ${{ inputs.publish }}
+      deploy_vm: ${{ inputs.deploy_vm }}
+      rootfs_contract_path: packages/rootfs/reference/playwright-runner/contract.json
+      project_repository: NiKrause/relay-button
+      project_ref: ${{ inputs.tooling_ref || github.ref_name }}
+      rootfs_upload_driver: aleph-ipfs
+      tooling_repository: NiKrause/relay-button
+      tooling_ref: ${{ inputs.tooling_ref || github.ref_name }}
+    secrets: inherit
+
+  summarize:
+    runs-on: ubuntu-24.04
+    needs: build-publish
+    if: always()
+    steps:
+      - name: Write Playwright runner RootFS summary
+        shell: bash
+        run: |
+          {
+            echo '## Playwright Runner RootFS'
+            echo
+            echo '- result: ${{ needs.build-publish.result }}'
+            echo '- Playwright: `1.61.1`'
+            echo '- publish requested: `${{ inputs.publish }}`'
+            echo '- validation VM requested: `${{ inputs.deploy_vm }}`'
+            echo '- rootfs CID: `${{ needs.build-publish.outputs.rootfs_cid }}`'
+            echo '- rootfs item hash: `${{ needs.build-publish.outputs.rootfs_item_hash }}`'
+            echo '- manifest: ${{ needs.build-publish.outputs.rootfs_manifest_gateway_url }}'
+            echo '- artifact: ${{ needs.build-publish.outputs.rootfs_artifact_url }}'
+            echo '- validation INSTANCE: `${{ needs.build-publish.outputs.vm_instance_item_hash }}`'
+          } >> "$GITHUB_STEP_SUMMARY"

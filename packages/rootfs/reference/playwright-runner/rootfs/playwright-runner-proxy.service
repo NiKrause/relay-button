@@ -1,0 +1,28 @@
+[Unit]
+Description=Authenticated TLS proxy for the Playwright runner
+After=network-online.target playwright-runner.service
+Requires=playwright-runner.service
+ConditionPathExists=/etc/default/playwright-runner
+ConditionPathExists=/etc/playwright-runner/tls.crt
+ConditionPathExists=/etc/playwright-runner/tls.key
+
+[Service]
+Type=simple
+User=playwright-proxy
+Group=playwright-proxy
+EnvironmentFile=/etc/default/playwright-runner
+ExecStart=/usr/bin/caddy run --config /etc/playwright-runner/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/playwright-runner/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

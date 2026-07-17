@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "playwright-runner",
+  "displayName": "Ephemeral Playwright Chromium Runner",
+  "source": {
+    "repository": "NiKrause/relay-button",
+    "subdirectory": "packages/rootfs/reference/playwright-runner"
+  },
+  "rootfs": {
+    "profile": "playwright-runner",
+    "installMode": "prebaked",
+    "installDir": "/opt/playwright-runner",
+    "binaryPath": "/opt/playwright-runner/node_modules/.bin/playwright",
+    "dataDir": "/var/lib/playwright-runner",
+    "envFile": "/etc/default/playwright-runner"
+  },
+  "services": {
+    "bootstrap": "playwright-runner-bootstrap.service",
+    "main": "playwright-runner.service",
+    "autotlsRefresh": "playwright-runner-ttl.timer"
+  },
+  "ports": [
+    {
+      "port": 22,
+      "tcp": true,
+      "udp": false,
+      "purpose": "SSH bootstrap and diagnostics"
+    },
+    {
+      "port": 443,
+      "tcp": true,
+      "udp": false,
+      "purpose": "Authenticated Playwright WSS and version endpoint"
+    }
+  ],
+  "manifest": {
+    "copyTarget": "packages/rootfs/reference/playwright-runner/latest.json",
+    "notes": "Node.js 24 and Playwright 1.61.1 with matching Chromium are prebaked. A random bearer secret and per-run TLS material must be injected after boot. The image contains no reusable credential and shuts down through a bounded TTL timer."
+  }
+}

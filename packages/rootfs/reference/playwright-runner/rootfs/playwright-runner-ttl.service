@@ -1,0 +1,6 @@
+[Unit]
+Description=Stop an expired ephemeral Playwright runner
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl poweroff
