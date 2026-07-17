@@ -52,6 +52,7 @@ test('relay reference images deregister guest-owned bootstrap posts before shutd
   assert.match(orbitService, /ExecStop=.*orbitdb-relay-bootstrap-refresh\.py/u)
   assert.match(orbitService, /After=network-online\.target orbitdb-relay\.service/u)
   assert.match(orbitConfigure, /systemctl enable "\$\{BOOTSTRAP_DEREGISTER_SERVICE\}"/u)
+  assert.match(orbitConfigure, /systemctl restart --no-block "\$\{BOOTSTRAP_REFRESH_SERVICE\}"/u)
   assert.match(orbitRefresh, /deregister_all=True/u)
   assert.match(orbitBuilder, /orbitdb-relay-bootstrap-deregister\.service/u)
 })

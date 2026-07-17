@@ -249,6 +249,9 @@ What is implemented today:
   hash on both supported Aleph API replicas after VM cleanup
 - consumer-side discovery already collapses to the newest fresh record per
   relay identity
+- consumer-side discovery treats registrations older than 24 hours as stale;
+  both relay reference images refresh immediately after configuration and then
+  every six hours with up to 15 minutes of randomized delay
 
 Guest shutdown cleanup is deliberately best effort. A CRN crash or forced
 power-off can bypass `ExecStop`. Callers that know the registration hash should

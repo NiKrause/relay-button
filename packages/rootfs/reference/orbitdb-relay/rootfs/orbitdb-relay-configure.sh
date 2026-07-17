@@ -15,6 +15,7 @@ CADDY_UPSTREAM_HOST="${CADDY_UPSTREAM_HOST:-127.0.0.1}"
 CADDY_UPSTREAM_METRICS_PORT="${CADDY_UPSTREAM_METRICS_PORT:-9090}"
 AUTOTLS_REFRESH_SERVICE="${AUTOTLS_REFRESH_SERVICE:-orbitdb-relay-autotls-refresh.service}"
 BOOTSTRAP_REFRESH_TIMER="${BOOTSTRAP_REFRESH_TIMER:-orbitdb-relay-bootstrap-refresh.timer}"
+BOOTSTRAP_REFRESH_SERVICE="${BOOTSTRAP_REFRESH_SERVICE:-orbitdb-relay-bootstrap-refresh.service}"
 BOOTSTRAP_DEREGISTER_SERVICE="${BOOTSTRAP_DEREGISTER_SERVICE:-orbitdb-relay-bootstrap-deregister.service}"
 PUBLIC_IPV4=""
 PUBLIC_IPV6=""
@@ -282,6 +283,7 @@ if [ "${START_SERVICE}" -eq 1 ]; then
   systemctl enable "${BOOTSTRAP_DEREGISTER_SERVICE}"
   systemctl restart "${BOOTSTRAP_DEREGISTER_SERVICE}"
   systemctl start "${BOOTSTRAP_REFRESH_TIMER}"
+  systemctl restart --no-block "${BOOTSTRAP_REFRESH_SERVICE}" || true
   if [ -n "${PROXY_HOSTNAME}" ]; then
     write_caddyfile "${PROXY_HOSTNAME}"
     touch "${CADDY_READY_FILE}"
