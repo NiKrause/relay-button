@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${RUNNER_HOST:?}"
+: "${RUNNER_SSH_PORT:?}"
+: "${RUNNER_SSH_KEY:?}"
+: "${RUNNER_SECRET:?}"
+: "${RUNNER_CA_CERT:?}"
+
+echo "::add-mask::${RUNNER_SECRET}"
+openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
+  -subj '/CN=aleph-playwright-runner' \
+  -addext "subjectAltName=IP:${RUNNER_HOST}" \
+  -keyout "${RUNNER_CA_CERT}.key" -out "${RUNNER_CA_CERT}" 2>/dev/null
+chmod 600 "${RUNNER_CA_CERT}.key"
+
+ssh_opts=(-i "$RUNNER_SSH_KEY" -p "$RUNNER_SSH_PORT" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+scp_opts=(-i "$RUNNER_SSH_KEY" -P "$RUNNER_SSH_PORT" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+ready=false
+for _ in $(seq 1 60); do
+  if ssh "${ssh_opts[@]}" root@"$RUNNER_HOST" true 2>/dev/null; then ready=true; break; fi
+  sleep 5
+done
+if [ "$ready" != true ]; then
+  echo 'SSH endpoint did not become ready.' >&2
+  exit 1
+fi
+
+env_file="$(mktemp)"
+trap 'rm -f "$env_file" "${RUNNER_CA_CERT}.key"' EXIT
+chmod 600 "$env_file"
+printf 'PLAYWRIGHT_VERSION=1.61.1\nPLAYWRIGHT_RUNNER_SECRET=%s\n' "$RUNNER_SECRET" >"$env_file"
+scp "${scp_opts[@]}" "$env_file" root@"$RUNNER_HOST":/etc/default/playwright-runner
+scp "${scp_opts[@]}" "$RUNNER_CA_CERT" root@"$RUNNER_HOST":/etc/playwright-runner/tls.crt
+scp "${scp_opts[@]}" "${RUNNER_CA_CERT}.key" root@"$RUNNER_HOST":/etc/playwright-runner/tls.key
+ssh "${ssh_opts[@]}" root@"$RUNNER_HOST" \
+  'chmod 0600 /etc/default/playwright-runner /etc/playwright-runner/tls.key; systemctl start playwright-runner-bootstrap.service'
