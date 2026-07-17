@@ -54,6 +54,14 @@ export interface RelayAddressPolicy {
   requireCertificateHash?: boolean
 }
 
+export interface WaitForPubsubSubscriberOptions {
+  topic: string
+  peerId: string
+  timeoutMs?: number
+  pollIntervalMs?: number
+  stableForMs?: number
+}
+
 export interface RelayButtonDriverOptions {
   launcherName?: RegExp
   instanceNamePlaceholder?: string
@@ -157,6 +165,53 @@ export function resolveAlephApiHosts(candidates?: readonly string[]): string[] {
   )
   const selected = SUPPORTED_ALEPH_API_HOSTS.filter((host) => allowed.has(host))
   return selected.length > 0 ? [...selected] : [...SUPPORTED_ALEPH_API_HOSTS]
+}
+
+export async function waitForPubsubSubscriber(
+  page: Page,
+  options: WaitForPubsubSubscriberOptions,
+): Promise<string[]> {
+  const timeoutMs = options.timeoutMs ?? 30_000
+  const pollIntervalMs = options.pollIntervalMs ?? 250
+  const stableForMs = options.stableForMs ?? 1_000
+  const deadline = Date.now() + timeoutMs
+  let stableSince: number | null = null
+  let subscribers: string[] = []
+
+  while (Date.now() <= deadline) {
+    subscribers = await page.evaluate((topic) => {
+      const pubsub = (
+        window as unknown as {
+          libp2p?: {
+            services?: {
+              pubsub?: { getSubscribers(topic: string): unknown[] }
+            }
+          }
+        }
+      ).libp2p?.services?.pubsub
+      if (!pubsub) return []
+      try {
+        return pubsub.getSubscribers(topic).map(String)
+      } catch {
+        return []
+      }
+    }, options.topic)
+
+    if (subscribers.includes(options.peerId)) {
+      stableSince ??= Date.now()
+      if (Date.now() - stableSince >= stableForMs) return subscribers
+    } else {
+      stableSince = null
+    }
+
+    const remainingMs = deadline - Date.now()
+    if (remainingMs <= 0) break
+    await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remainingMs)))
+  }
+
+  throw new Error(
+    `PubSub subscriber ${options.peerId} was not stable on ${options.topic} within ${timeoutMs}ms; last subscribers: ${subscribers.join(', ') || 'none'}`,
+  )
 }
 
 export async function installEip1193WalletMock(

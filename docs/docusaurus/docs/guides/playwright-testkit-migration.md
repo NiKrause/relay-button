@@ -19,9 +19,16 @@ Run the live workflow until all of these are present in `result.json`:
 1. complete INSTANCE hash;
 2. bootstrap peer ID and authenticated browser addresses;
 3. browser A and browser B relay connections;
-4. messages A → B and B → A;
-5. forgotten state on api2 and api;
-6. scheduler deallocation.
+4. relay subscription readiness for the application PubSub topic in both
+   browsers;
+5. messages A → B and B → A;
+6. forgotten state on api2 and api;
+7. scheduler deallocation.
+
+Do not publish immediately after `libp2p.getConnections()` first reports the
+relay. WSS, WebTransport, and WebRTC Direct can expose the transport connection
+before Gossipsub finishes negotiating streams and subscriptions. Use
+`waitForPubsubSubscriber` for each browser and the consumer-owned topic.
 
 ## Svelte migration: Simple Todo
 
