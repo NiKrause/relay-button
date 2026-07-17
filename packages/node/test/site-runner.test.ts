@@ -355,12 +355,13 @@ test('runSitePublishMode uploads CAR and signed STORE metadata atomically by def
   await mkdir(siteDir, { recursive: true })
   await writeFile(join(siteDir, 'index.html'), '<!doctype html><title>blog</title>')
   let storeHash = ''
+  let firstStoreHash = ''
   const calls: string[] = []
   const originalFetch = globalThis.fetch
   globalThis.fetch = (async (input, init) => {
     const url = String(input)
     calls.push(url)
-    if (url === 'https://api2.aleph.im/api/v0/ipfs/add_car') {
+    if (url.endsWith('/api/v0/ipfs/add_car')) {
       assert.equal(init?.method, 'POST')
       assert.ok(init?.body instanceof FormData)
       const file = init.body.get('file')
@@ -379,9 +380,14 @@ test('runSitePublishMode uploads CAR and signed STORE metadata atomically by def
       assert.equal(content.item_hash, ONE_FILE_SITE_CID)
       assert.deepEqual(content.payment, { type: 'credit' })
       assert.equal('ref' in content, false)
+      if (url.startsWith('https://api2.aleph.im/')) {
+        firstStoreHash = storeHash
+        return new Response(JSON.stringify({ error: 'unavailable' }), { status: 503 })
+      }
+      assert.equal(storeHash, firstStoreHash)
       return new Response(JSON.stringify({ status: 'success', hash: ONE_FILE_SITE_CID, size: file.size }), { status: 200 })
     }
-    if (url === `https://api2.aleph.im/api/v0/messages/${storeHash}`) {
+    if (url === `https://api.aleph.im/api/v0/messages/${storeHash}`) {
       return new Response(JSON.stringify({ status: 'processed' }), { status: 200 })
     }
     if (url.includes('.ipfs.aleph.sh')) {
@@ -395,6 +401,10 @@ test('runSitePublishMode uploads CAR and signed STORE metadata atomically by def
       GITHUB_STEP_SUMMARY: summaryFile,
       ALEPH_SITE_DIRECTORY: siteDir,
       ALEPH_SITE_PIN: 'true',
+      ALEPH_SITE_ENDPOINT_PAIRS: JSON.stringify([
+        { ipfsGateway: 'https://ipfs-2.aleph.im', apiHost: 'https://api2.aleph.im' },
+        { ipfsGateway: 'https://ipfs.aleph.cloud', apiHost: 'https://api.aleph.im' },
+      ]),
       ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
     })
   } finally {
@@ -403,7 +413,8 @@ test('runSitePublishMode uploads CAR and signed STORE metadata atomically by def
   const outputs = await readFile(outputFile, 'utf8')
   assert.match(outputs, /site_upload_driver=authenticated-car/)
   assert.match(outputs, /store_processed=true/)
-  assert.equal(calls.filter((url) => url.endsWith('/api/v0/ipfs/add_car')).length, 1)
+  assert.match(outputs, /aleph_api_host=https:\/\/api\.aleph\.im/)
+  assert.equal(calls.filter((url) => url.endsWith('/api/v0/ipfs/add_car')).length, 2)
   assert.equal(calls.filter((url) => url.endsWith('/api/v0/messages')).length, 0)
 })
 

@@ -32,7 +32,15 @@ export interface CreateAlephBrowserClientOptions {
 
 function normalizeApiHost(value: string): string | null {
   const trimmed = value.trim().replace(/\/+$/u, '')
-  return trimmed ? trimmed : null
+  if (!trimmed) return null
+
+  try {
+    if (new URL(trimmed).hostname.toLowerCase() === 'api3.aleph.im') return null
+  } catch {
+    // Preserve the existing validation behavior for non-URL values.
+  }
+
+  return trimmed
 }
 
 function normalizeApiHosts(input: ApiHostInput | undefined, fallbackApiHost: string): string[] {

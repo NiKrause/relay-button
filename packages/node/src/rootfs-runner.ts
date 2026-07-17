@@ -37,6 +37,7 @@ import { broadcastAlephMessage, normalizeBroadcastStatus, signAlephMessage } fro
 import { inspectMessageResult, isTransientMessageLookupError } from "../../core/src/deployment-inspection.ts";
 
 import { booleanEnv, optionalEnv, requiredEnv } from "./env.ts";
+import { normalizeAlephApiHost } from "./aleph-api-hosts.ts";
 import { appendGithubOutput, appendGithubSummary } from "./github-outputs.ts";
 import { createPrivateKeyIdentity } from "./signer.ts";
 
@@ -113,9 +114,11 @@ function parseRootfsAlephApiHosts(
   const rawHosts =
     optionalEnv('ALEPH_ROOTFS_ALEPH_API_HOSTS', '', env).trim() ||
     optionalEnv('ALEPH_VM_API_HOSTS', '', env).trim()
-  if (!rawHosts) return [buildPlan.alephApiHost]
+  if (!rawHosts) return [normalizeAlephApiHost(buildPlan.alephApiHost)]
 
-  const hosts = uniqueNonEmptyValues(rawHosts.split(/[\s,]+/u))
+  const hosts = uniqueNonEmptyValues(
+    rawHosts.split(/[\s,]+/u).map((host) => normalizeAlephApiHost(host)),
+  )
   if (hosts.length === 0) {
     throw new Error('ALEPH_ROOTFS_ALEPH_API_HOSTS did not contain any API host URLs.')
   }

@@ -11,6 +11,7 @@ import {
 } from "../../core/src/index.ts";
 
 import { integerEnv, jsonEnv, optionalEnv, requiredEnv } from "./env.ts";
+import { normalizeAlephApiHost } from "./aleph-api-hosts.ts";
 import {
   emitDeployOutputs,
   emitGeocodedCrnOutputs,
@@ -39,15 +40,11 @@ function defaultHasher(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-function normalizeApiHost(host: string): string {
-  return host.trim().replace(/\/+$/u, "");
-}
-
 function uniqueNonEmptyValues(values: string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const raw of values) {
-    const value = normalizeApiHost(raw);
+    const value = normalizeAlephApiHost(raw);
     if (!value || seen.has(value)) continue;
     seen.add(value);
     result.push(value);
@@ -61,7 +58,7 @@ function parseApiHostCandidates(
 ): string[] {
   const rawHosts = optionalEnv("ALEPH_VM_API_HOSTS", "", env).trim();
   if (!rawHosts) {
-    return [normalizeApiHost(fallbackApiHost)];
+    return [normalizeAlephApiHost(fallbackApiHost)];
   }
 
   const explicitHosts = rawHosts.split(/[\s,]+/u);
@@ -115,7 +112,7 @@ async function executeDeployPlanWithApiHostFallback(args: {
   deployExecutor: typeof executeDeployPlan;
 }): Promise<DeployOutputResult> {
   const apiHosts = parseApiHostCandidates(args.plan.apiHost, args.env);
-  const apiHost = apiHosts[0] ?? normalizeApiHost(args.plan.apiHost);
+  const apiHost = apiHosts[0] ?? normalizeAlephApiHost(args.plan.apiHost);
   if (apiHosts.length > 1) {
     actionLog(
       "notice",

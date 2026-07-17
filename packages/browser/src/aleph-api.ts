@@ -20,11 +20,10 @@ import type {
 } from './types'
 
 export const DEFAULT_ALEPH_API_HOSTS: readonly string[] = [
-  'https://api3.aleph.im',
   'https://api2.aleph.im',
   'https://api.aleph.im'
 ]
-export const DEFAULT_ALEPH_API_HOST: string = DEFAULT_ALEPH_API_HOSTS[0] ?? 'https://api3.aleph.im'
+export const DEFAULT_ALEPH_API_HOST: string = DEFAULT_ALEPH_API_HOSTS[0] ?? 'https://api2.aleph.im'
 export const DEFAULT_CRN_LIST_URL = 'https://crns-list.aleph.sh/crns.json'
 export const DEFAULT_ALEPH_SCHEDULER_API_HOST = 'https://scheduler.api.aleph.cloud'
 export const DEFAULT_2N6_API_HOST = 'https://api.2n6.me'
