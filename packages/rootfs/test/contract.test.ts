@@ -101,9 +101,15 @@ test('playwright-runner reference includes auth, version, and TTL units', async 
 
 test('playwright-runner image installs only the Chromium headless shell and removes build caches', async () => {
   const root = referenceProfileRootfsDir('playwright-runner')
-  const buildScript = await readFile(new URL('build-rootfs-image.sh', `file://${root}/`), 'utf8')
+  const [buildScript, service] = await Promise.all([
+    readFile(new URL('build-rootfs-image.sh', `file://${root}/`), 'utf8'),
+    readFile(new URL('playwright-runner.service', `file://${root}/`), 'utf8'),
+  ])
 
   assert.match(buildScript, /playwright install --with-deps --only-shell chromium/u)
+  assert.match(buildScript, /PLAYWRIGHT_BROWSERS_PATH=\/opt\/playwright-browsers/u)
+  assert.match(buildScript, /chown -R playwright-runner:playwright-runner \/opt\/playwright-runner \/opt\/playwright-browsers/u)
+  assert.match(service, /Environment=PLAYWRIGHT_BROWSERS_PATH=\/opt\/playwright-browsers/u)
   assert.match(buildScript, /npm cache clean --force/u)
   assert.match(buildScript, /rm -rf \/var\/lib\/apt\/lists\/\*/u)
   assert.match(buildScript, /Compressed RootFS size:/u)

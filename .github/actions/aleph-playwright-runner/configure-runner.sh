@@ -33,5 +33,10 @@ printf 'PLAYWRIGHT_VERSION=1.61.1\nPLAYWRIGHT_RUNNER_SECRET=%s\n' "$RUNNER_SECRE
 scp "${scp_opts[@]}" "$env_file" root@"$RUNNER_HOST":/etc/default/playwright-runner
 scp "${scp_opts[@]}" "$RUNNER_CA_CERT" root@"$RUNNER_HOST":/etc/playwright-runner/tls.crt
 scp "${scp_opts[@]}" "${RUNNER_CA_CERT}.key" root@"$RUNNER_HOST":/etc/playwright-runner/tls.key
-ssh "${ssh_opts[@]}" root@"$RUNNER_HOST" \
-  'chmod 0600 /etc/default/playwright-runner /etc/playwright-runner/tls.key; systemctl start playwright-runner-bootstrap.service'
+if ! ssh "${ssh_opts[@]}" root@"$RUNNER_HOST" \
+  'chmod 0600 /etc/default/playwright-runner /etc/playwright-runner/tls.key; systemctl start playwright-runner-bootstrap.service; systemctl is-active --quiet playwright-runner.service playwright-runner-proxy.service'; then
+  echo 'Playwright runner services did not become active. Guest diagnostics follow.' >&2
+  ssh "${ssh_opts[@]}" root@"$RUNNER_HOST" \
+    'systemctl status --no-pager --full playwright-runner-bootstrap.service playwright-runner.service playwright-runner-proxy.service >&2 || true; journalctl --no-pager --lines=120 -u playwright-runner-bootstrap.service -u playwright-runner.service -u playwright-runner-proxy.service >&2 || true' || true
+  exit 1
+fi
