@@ -74,6 +74,7 @@ jobs:
             packages/core/dist/*.tgz
             packages/rootfs/dist/*.tgz
             packages/browser/dist/*.tgz
+            packages/playwright/dist/*.tgz
             packages/ui/dist/*.tgz
             packages/node/dist/*.tgz
 
