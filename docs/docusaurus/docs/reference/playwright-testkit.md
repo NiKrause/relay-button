@@ -87,6 +87,30 @@ teardown.
   WebTransport, and WebRTC Direct addresses. WebTransport and WebRTC Direct
   require a certificate hash by default.
 
+### Consumer protocol readiness
+
+- `waitForPubsubSubscriber(page, options)` waits until an expected relay peer
+  appears in `libp2p.services.pubsub.getSubscribers(options.topic)` and remains
+  visible for `stableForMs` (one second by default).
+
+A transport connection from `libp2p.getConnections()` is not sufficient proof
+that Gossipsub has exchanged subscriptions and joined the topic mesh. Consumers
+should call this helper for every browser before publishing an ephemeral test
+message:
+
+```ts
+await Promise.all([
+  waitForPubsubSubscriber(browserAPage, {
+    topic: 'consumer-topic',
+    peerId: relay.peerId,
+  }),
+  waitForPubsubSubscriber(browserBPage, {
+    topic: 'consumer-topic',
+    peerId: relay.peerId,
+  }),
+])
+```
+
 ### Cleanup
 
 - `cleanupRelay(options)` requests UI deletion first. If Aleph replicas and the
@@ -139,6 +163,9 @@ Do not move consumer page selectors or scenario state into this package.
 - **No browser addresses:** WebTransport and WebRTC Direct entries without
   `/certhash/` are deliberately rejected. Ensure the relay publishes complete
   addresses.
+- **First PubSub message is missing:** wait for topic-level readiness in every
+  browser with `waitForPubsubSubscriber`. PubSub does not replay a message that
+  was published before a consumer's subscription reached the relay.
 - **Replica disagreement:** teardown waits for both replicas. Preserve the
   INSTANCE hash and rerun cleanup rather than treating DOM disappearance as
   proof.

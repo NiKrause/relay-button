@@ -12,6 +12,7 @@ import {
   waitForAlephInstanceDeletion,
   waitForBootstrapRegistration,
   waitForDeployableManifest,
+  waitForPubsubSubscriber,
   type RelayButtonDriver,
   type RelayWalletAccount,
 } from '../src/index.ts'
@@ -151,6 +152,47 @@ test('waitForDeployableManifest reports terminal rootfs failures immediately', a
   await assert.rejects(
     waitForDeployableManifest(page as never),
     /manifest is not deployable: manifest invalid/,
+  )
+})
+
+test('waitForPubsubSubscriber waits for topic readiness after the transport connects', async () => {
+  const observations = [[], ['12D3KooWRelay']]
+  let attempts = 0
+  const page = {
+    evaluate: async (_callback: unknown, topic: string) => {
+      assert.equal(topic, 'consumer-topic')
+      const subscribers = observations[Math.min(attempts, observations.length - 1)]
+      attempts += 1
+      return subscribers
+    },
+  }
+
+  const subscribers = await waitForPubsubSubscriber(page as never, {
+    topic: 'consumer-topic',
+    peerId: '12D3KooWRelay',
+    timeoutMs: 1_000,
+    pollIntervalMs: 0,
+    stableForMs: 0,
+  })
+
+  assert.deepEqual(subscribers, ['12D3KooWRelay'])
+  assert.equal(attempts, 2)
+})
+
+test('waitForPubsubSubscriber reports the last observed topic subscribers', async () => {
+  const page = {
+    evaluate: async () => ['12D3KooWOther'],
+  }
+
+  await assert.rejects(
+    waitForPubsubSubscriber(page as never, {
+      topic: 'consumer-topic',
+      peerId: '12D3KooWRelay',
+      timeoutMs: 5,
+      pollIntervalMs: 0,
+      stableForMs: 0,
+    }),
+    /last subscribers: 12D3KooWOther/,
   )
 })
 
