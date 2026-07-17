@@ -1,0 +1,17 @@
+{
+	auto_https disable_redirects
+}
+
+:443 {
+	tls /etc/playwright-runner/tls.crt /etc/playwright-runner/tls.key
+
+	@unauthorized not header Authorization "Bearer {$PLAYWRIGHT_RUNNER_SECRET}"
+	respond @unauthorized 401
+
+	handle /version {
+		header Content-Type application/json
+		respond `{\"playwrightVersion\":\"{$PLAYWRIGHT_VERSION}\"}` 200
+	}
+
+	reverse_proxy 127.0.0.1:3000
+}

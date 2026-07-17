@@ -1,0 +1,16 @@
+FROM debian:12
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LIBGUESTFS_BACKEND=direct
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    libguestfs-tools \
+    linux-image-amd64 \
+    qemu-system-x86 \
+    qemu-utils \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace/shared-rootfs

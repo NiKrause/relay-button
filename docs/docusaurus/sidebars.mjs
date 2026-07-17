@@ -5,17 +5,12 @@ const sidebars = {
     {
       type: 'category',
       label: 'Architecture',
-      items: [
-        'architecture/package-boundaries',
-        'architecture/deployment-lifecycle'
-      ]
+      items: ['architecture/package-boundaries', 'architecture/deployment-lifecycle', 'architecture/aleph-playwright-runner'],
     },
     {
       type: 'category',
       label: 'Guides',
-      items: [
-        'guides/playwright-testkit-migration'
-      ]
+      items: ['guides/playwright-testkit-migration'],
     },
     {
       type: 'category',
@@ -28,10 +23,10 @@ const sidebars = {
         'reference/playwright-testkit',
         'reference/ui',
         'reference/rootfs-contract',
-        'reference/reusable-workflow'
-      ]
-    }
-  ]
+        'reference/reusable-workflow',
+      ],
+    },
+  ],
 }
 
 export default sidebars

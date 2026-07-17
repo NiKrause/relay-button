@@ -1,0 +1,25 @@
+[Unit]
+Description=Ephemeral Playwright 1.61.1 browser server
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/default/playwright-runner
+
+[Service]
+Type=simple
+User=playwright-runner
+Group=playwright-runner
+EnvironmentFile=/etc/default/playwright-runner
+WorkingDirectory=/opt/playwright-runner
+ExecStart=/opt/playwright-runner/node_modules/.bin/playwright run-server --host 127.0.0.1 --port 3000
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/playwright-runner
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

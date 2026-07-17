@@ -16,6 +16,7 @@ export interface RootfsManifest {
   rootfsSizeMiB: number;
   createdAt: string;
   notes: string;
+  playwrightVersion?: string;
 }
 
 export interface RootfsManifestOptions {
@@ -47,6 +48,9 @@ export function validateRootfsManifest(manifest: RootfsManifest | null): RootfsM
   }
 
   if (!manifest.version) errors.push("Rootfs manifest version is missing.");
+  if (manifest.profile === "playwright-runner" && !/^\d+\.\d+\.\d+$/u.test(manifest.playwrightVersion ?? "")) {
+    errors.push("Playwright runner manifest must expose an exact Playwright version.");
+  }
   if (
     manifest.rootfsInstallStrategy != null &&
     manifest.rootfsInstallStrategy !== "thin" &&
@@ -54,10 +58,7 @@ export function validateRootfsManifest(manifest: RootfsManifest | null): RootfsM
   ) {
     errors.push('Rootfs install strategy must be "thin" or "prebaked" when provided.');
   }
-  if (
-    manifest.requiresBootstrapNetwork != null &&
-    typeof manifest.requiresBootstrapNetwork !== "boolean"
-  ) {
+  if (manifest.requiresBootstrapNetwork != null && typeof manifest.requiresBootstrapNetwork !== "boolean") {
     errors.push("Rootfs bootstrap network flag must be a boolean when provided.");
   }
   if (manifest.bootstrapSummary != null && !manifest.bootstrapSummary.trim()) {
@@ -113,7 +114,9 @@ export function rootfsSourceSizeBytesFromIpfsAddResponse(content: string): numbe
     return undefined;
   }
 
-  const payload = JSON.parse(lines.at(-1) ?? "{}") as { Size?: string | number };
+  const payload = JSON.parse(lines.at(-1) ?? "{}") as {
+    Size?: string | number;
+  };
   const size = payload.Size;
   if (typeof size === "number" && Number.isFinite(size) && size > 0) {
     return size;
@@ -140,6 +143,10 @@ export function createRootfsManifest(
     createdAt: options.createdAt ?? new Date().toISOString(),
     notes: contract.manifest.notes ?? "",
   };
+
+  if (contract.rootfs.profile === "playwright-runner") {
+    manifest.playwrightVersion = "1.61.1";
+  }
 
   if (
     typeof options.rootfsSourceSizeBytes === "number" &&
