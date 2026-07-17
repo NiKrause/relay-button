@@ -25,12 +25,12 @@ on:
       rootfs_item_hash:
         description: Existing Aleph STORE item hash to deploy instead of the newly published rootfs
         required: false
-        default: ''
+        default: ""
         type: string
       rootfs_version:
         description: Optional explicit version override for the generated rootfs manifest
         required: false
-        default: ''
+        default: ""
         type: string
       rootfs_contract_path:
         description: Path to the rootfs contract inside the caller repository
@@ -43,9 +43,14 @@ on:
         default: auto
         type: string
       rootfs_upload_driver:
-        description: Optional Aleph IPFS rootfs upload driver used only when publish=true. aleph-ipfs uploads through IPFS add endpoints and publishes a credit-paid Aleph STORE pin.
+        description: Optional Aleph IPFS rootfs upload driver used only when publish=true.
         required: false
         default: aleph-ipfs
+        type: string
+      rootfs_store_payment_type:
+        description: Aleph STORE payment type, credit or hold
+        required: false
+        default: credit
         type: string
       rootfs_require_processed_store:
         description: Require the rootfs STORE message to be processed before continuing. Defaults false so pending STORE messages can continue into deploy retries.
@@ -60,22 +65,22 @@ on:
       rootfs_helia_provider_keepalive_seconds:
         description: Seconds to keep the Helia provider online after the Aleph STORE message is accepted
         required: false
-        default: '300'
+        default: "300"
         type: string
       rootfs_helia_provide_timeout_ms:
         description: Timeout for announcing the rootfs CID on the public IPFS DHT
         required: false
-        default: '120000'
+        default: "120000"
         type: string
       rootfs_helia_bootstrap_dial_timeout_ms:
         description: Timeout for dialing public IPFS bootstrap peers before adding/providing the rootfs
         required: false
-        default: '30000'
+        default: "30000"
         type: string
       rootfs_helia_bootstrap_multiaddrs:
         description: Optional comma or whitespace-separated extra IPFS bootstrap multiaddrs for the Helia publisher
         required: false
-        default: ''
+        default: ""
         type: string
       vm_api_hosts:
         description: Comma-separated Aleph API hosts to try for rootfs STORE publication and VM deployment
@@ -95,17 +100,17 @@ on:
       vm_name:
         description: Aleph VM instance name. Defaults to the profile name when empty.
         required: false
-        default: ''
+        default: ""
         type: string
       vm_ssh_public_key:
         description: Optional SSH public key override for the deployed VM
         required: false
-        default: ''
+        default: ""
         type: string
       vm_crn_hash:
         description: Optional target CRN hash for the VM deployment
         required: false
-        default: ''
+        default: ""
         type: string
       vm_placement_strategy:
         description: scheduler or manual CRN selection strategy
@@ -115,17 +120,17 @@ on:
       vm_vcpus:
         description: Requested vCPU count for the VM
         required: false
-        default: '1'
+        default: "1"
         type: string
       vm_memory_mib:
         description: Requested memory in MiB for the VM
         required: false
-        default: '1024'
+        default: "1024"
         type: string
       vm_rootfs_size_mib:
         description: Rootfs disk size in MiB for the deployed VM
         required: false
-        default: '20480'
+        default: "20480"
         type: string
       vm_preferred_country_code:
         description: Preferred two-letter country code for automatic CRN selection
@@ -135,12 +140,12 @@ on:
       vm_geo_crn_limit:
         description: Maximum number of top-ranked CRNs to geolocate when preferring a country
         required: false
-        default: '30'
+        default: "30"
         type: string
       vm_max_crn_attempts:
         description: Maximum number of distinct CRNs to try when Aleph rejects a deployment
         required: false
-        default: '5'
+        default: "5"
         type: string
       vm_channel:
         description: Aleph channel for VM deployment and retention records
@@ -150,52 +155,52 @@ on:
       vm_seconds:
         description: Aleph runtime seconds value
         required: false
-        default: '30'
+        default: "30"
         type: string
       required_ports_json:
         description: JSON array of required internal port-forward declarations. Defaults to the rootfs contract ports.
         required: false
-        default: ''
+        default: ""
         type: string
       relay_probe_required_families_json:
         description: JSON array of relay protocol families that must probe successfully
         required: false
-        default: '[]'
+        default: "[]"
         type: string
       relay_probe_best_effort_families_json:
         description: JSON array of relay protocol families to probe without failing the run
         required: false
-        default: '[]'
+        default: "[]"
         type: string
       relay_probe_proxy_wss_host_matchers_json:
         description: JSON array of host/path snippets that identify proxy WSS multiaddrs
         required: false
-        default: '[]'
+        default: "[]"
         type: string
       probe_timeout_ms:
         description: Per-address protocol probe timeout in milliseconds
         required: false
-        default: '20000'
+        default: "20000"
         type: string
       probe_settle_ms:
         description: Delay after successful dial before protocol probe ping/settle checks
         required: false
-        default: '1500'
+        default: "1500"
         type: string
       retain_successful_deployments:
         description: Keep only the latest N successful published+deployed records. Use 0 to skip retention.
         required: false
-        default: '0'
+        default: "0"
         type: string
       project_repository:
         description: Repository that contains the project being packaged. Defaults to the workflow caller repository.
         required: false
-        default: ''
+        default: ""
         type: string
       project_ref:
         description: Ref of the project repository to checkout. Defaults to the workflow ref.
         required: false
-        default: ''
+        default: ""
         type: string
       project_checkout_path:
         description: Checkout path for the caller repository
@@ -380,7 +385,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
-          node-version: '24.x'
+          node-version: "24.x"
           cache: pnpm
           cache-dependency-path: ${{ inputs.tooling_checkout_path }}/pnpm-lock.yaml
 
@@ -476,6 +481,7 @@ jobs:
           ALEPH_ROOTFS_SKIP_BUILD: ${{ inputs.rootfs_skip_build }}
           ALEPH_ROOTFS_SKIP_UPLOAD: ${{ inputs.publish && 'false' || 'true' }}
           ALEPH_ROOTFS_REQUIRE_PROCESSED_STORE: ${{ inputs.rootfs_require_processed_store && 'true' || 'false' }}
+          ALEPH_ROOTFS_STORE_PAYMENT_TYPE: ${{ inputs.rootfs_store_payment_type }}
           ALEPH_ROOTFS_HELIA_PROVIDER_KEEPALIVE_SECONDS: ${{ inputs.rootfs_helia_provider_keepalive_seconds }}
           ALEPH_ROOTFS_HELIA_PROVIDE_TIMEOUT_MS: ${{ inputs.rootfs_helia_provide_timeout_ms }}
           ALEPH_ROOTFS_HELIA_BOOTSTRAP_DIAL_TIMEOUT_MS: ${{ inputs.rootfs_helia_bootstrap_dial_timeout_ms }}
@@ -528,8 +534,8 @@ jobs:
           MANIFEST_PATH: ${{ steps.run_rootfs.outputs.rootfs_manifest_path }}
           IPFS_ADD_URLS: ${{ inputs.ipfs_add_urls }}
           IPFS_GATEWAY_BASE_URLS: ${{ inputs.ipfs_gateway_urls }}
-          IPFS_GATEWAY_WAIT_ATTEMPTS: '30'
-          IPFS_GATEWAY_WAIT_DELAY_SECONDS: '10'
+          IPFS_GATEWAY_WAIT_ATTEMPTS: "30"
+          IPFS_GATEWAY_WAIT_DELAY_SECONDS: "10"
         shell: bash
         run: |
           if [[ -z "${MANIFEST_PATH}" || ! -f "${MANIFEST_PATH}" ]]; then
@@ -736,9 +742,9 @@ jobs:
           max_crn_attempts: ${{ inputs.vm_max_crn_attempts }}
           channel: ${{ inputs.vm_channel }}
           enable_caddy_proxy: ${{ inputs.enable_caddy_proxy && 'true' || 'false' }}
-          auto_configure: 'true'
-          verify_reachability: 'true'
-          publish_port_forwards: 'true'
+          auto_configure: "true"
+          verify_reachability: "true"
+          publish_port_forwards: "true"
           required_ports_json: ${{ steps.rootfs_contract.outputs.required_ports_json }}
 
       - name: Probe deployed relay protocols
@@ -781,7 +787,7 @@ jobs:
           ALEPH_VM_API_HOSTS: ${{ inputs.vm_api_hosts }}
           ALEPH_VM_CHANNEL: ${{ inputs.vm_channel }}
           ALEPH_VM_RETENTION_KEEP_COUNT: ${{ inputs.retain_successful_deployments }}
-          ALEPH_VM_RETENTION_EXTRA_FORGET_HASHES_JSON: '[]'
+          ALEPH_VM_RETENTION_EXTRA_FORGET_HASHES_JSON: "[]"
           ALEPH_VM_RETENTION_CURRENT_RECORD_JSON: >-
             {"instance_item_hash":"${{ steps.deploy_vm.outputs.instance_item_hash }}","rootfs_item_hash":"${{ inputs.rootfs_item_hash != '' && inputs.rootfs_item_hash || steps.run_rootfs.outputs.rootfs_item_hash }}","rootfs_cid":"${{ steps.run_rootfs.outputs.rootfs_cid }}","site_item_hash":"","site_url":"","relay_peer_id":"${{ steps.deploy_vm.outputs.relay_peer_id }}","rootfs_version":"${{ inputs.rootfs_version != '' && inputs.rootfs_version || steps.run_rootfs.outputs.rootfs_version }}","vm_name":"${{ inputs.vm_name != '' && inputs.vm_name || inputs.profile }}","deployed_at":"${{ github.run_id }}-${{ github.run_attempt }}"}
         run: node ./packages/node/src/action-runner.ts
