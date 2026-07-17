@@ -1,0 +1,111 @@
+name: Aleph Playwright Runner
+description: Deploy and configure an authenticated ephemeral Playwright runner
+
+inputs:
+  aleph_private_key:
+    required: true
+    description: Owner key used for the exact Aleph INSTANCE
+  rootfs_item_hash:
+    required: true
+    description: Processed playwright-runner RootFS STORE item hash
+  name:
+    required: true
+    description: Unique repository-run-attempt instance name
+  ssh_public_key:
+    required: true
+    description: Public half of the per-run SSH identity
+  ssh_private_key_path:
+    required: true
+    description: Filesystem path to the per-run SSH private key
+  secret:
+    required: true
+    description: Random per-run bearer secret (never emitted as output)
+  preferred_country_code:
+    required: false
+    default: DE
+  vcpus:
+    required: false
+    default: "2"
+  memory_mib:
+    required: false
+    default: "4096"
+
+outputs:
+  instance_item_hash:
+    value: ${{ steps.deploy.outputs.instance_item_hash }}
+  crn_hash:
+    value: ${{ steps.deploy.outputs.crn_hash }}
+  crn_name:
+    value: ${{ steps.deploy.outputs.crn_name }}
+  ws_endpoint:
+    value: ${{ steps.runtime.outputs.ws_endpoint }}
+  version_url:
+    value: ${{ steps.runtime.outputs.version_url }}
+  ca_cert_path:
+    value: ${{ steps.runtime.outputs.ca_cert_path }}
+  host_ipv4:
+    value: ${{ steps.deploy.outputs.host_ipv4 }}
+  ssh_port:
+    value: ${{ steps.runtime.outputs.ssh_port }}
+
+runs:
+  using: composite
+  steps:
+    - name: Deploy exact Playwright runner RootFS
+      id: deploy
+      uses: ./.github/actions/aleph-vm-deploy
+      with:
+        profile: playwright-runner
+        aleph_private_key: ${{ inputs.aleph_private_key }}
+        api_hosts: https://api2.aleph.im,https://api.aleph.im
+        name: ${{ inputs.name }}
+        ssh_public_key: ${{ inputs.ssh_public_key }}
+        rootfs_item_hash: ${{ inputs.rootfs_item_hash }}
+        rootfs_version: playwright-1.61.1
+        rootfs_size_mib: "20480"
+        preferred_country_code: ${{ inputs.preferred_country_code }}
+        vcpus: ${{ inputs.vcpus }}
+        memory_mib: ${{ inputs.memory_mib }}
+        auto_configure: "false"
+        verify_reachability: "false"
+        publish_port_forwards: "true"
+        required_ports_json: '[{"port":22,"tcp":true,"udp":false,"purpose":"SSH bootstrap and diagnostics"},{"port":443,"tcp":true,"udp":false,"purpose":"Authenticated Playwright WSS and version endpoint"}]'
+
+    - name: Resolve exact runtime ports
+      id: runtime
+      shell: bash
+      env:
+        RUNNER_HOST: ${{ steps.deploy.outputs.host_ipv4 }}
+        MAPPED_PORTS_JSON: ${{ steps.deploy.outputs.mapped_ports_json }}
+        CA_CERT_PATH: ${{ runner.temp }}/aleph-playwright-${{ github.run_id }}-${{ github.run_attempt }}.crt
+      run: node "${{ github.action_path }}/resolve-runtime.mjs"
+
+    - name: Inject one-time runner configuration
+      shell: bash
+      env:
+        RUNNER_HOST: ${{ steps.deploy.outputs.host_ipv4 }}
+        RUNNER_SSH_PORT: ${{ steps.runtime.outputs.ssh_port }}
+        RUNNER_TLS_PORT: ${{ steps.runtime.outputs.tls_port }}
+        RUNNER_SSH_KEY: ${{ inputs.ssh_private_key_path }}
+        RUNNER_SECRET: ${{ inputs.secret }}
+        RUNNER_CA_CERT: ${{ steps.runtime.outputs.ca_cert_path }}
+      run: bash "${{ github.action_path }}/configure-runner.sh"
+
+    - name: Verify authenticated Playwright version
+      shell: bash
+      env:
+        RUNNER_SECRET: ${{ inputs.secret }}
+        RUNNER_CA_CERT: ${{ steps.runtime.outputs.ca_cert_path }}
+        VERSION_URL: ${{ steps.runtime.outputs.version_url }}
+      run: |
+        for attempt in $(seq 1 60); do
+          payload="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 10 \
+            --cacert "$RUNNER_CA_CERT" -H "Authorization: Bearer $RUNNER_SECRET" \
+            "$VERSION_URL" || true)"
+          if [ "$payload" = '{"playwrightVersion":"1.61.1"}' ]; then
+            exit 0
+          fi
+          sleep 5
+        done
+        echo 'Authenticated Playwright 1.61.1 endpoint did not become ready.' >&2
+        exit 1

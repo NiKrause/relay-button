@@ -1,0 +1,100 @@
+name: Playwright Runner Live Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      rootfs_item_hash:
+        description: Processed Aleph STORE hash for the playwright-runner RootFS
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playwright-runner-live-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      INSTANCE_NAME: playwright-${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Create one-run SSH identity and bearer secret
+        shell: bash
+        run: |
+          secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$secret"
+          echo "PLAYWRIGHT_RUNNER_SECRET=$secret" >> "$GITHUB_ENV"
+          ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/playwright-runner-id"
+          echo "PLAYWRIGHT_RUNNER_SSH_KEY=$RUNNER_TEMP/playwright-runner-id" >> "$GITHUB_ENV"
+          echo "PLAYWRIGHT_RUNNER_SSH_PUBLIC_KEY=$(cat "$RUNNER_TEMP/playwright-runner-id.pub")" >> "$GITHUB_ENV"
+
+      - name: Deploy and configure authenticated runner
+        id: runner
+        uses: ./.github/actions/aleph-playwright-runner
+        with:
+          aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          rootfs_item_hash: ${{ inputs.rootfs_item_hash }}
+          name: ${{ env.INSTANCE_NAME }}
+          ssh_public_key: ${{ env.PLAYWRIGHT_RUNNER_SSH_PUBLIC_KEY }}
+          ssh_private_key_path: ${{ env.PLAYWRIGHT_RUNNER_SSH_KEY }}
+          secret: ${{ env.PLAYWRIGHT_RUNNER_SECRET }}
+
+      - name: Connect Chromium over authenticated WSS
+        env:
+          NODE_EXTRA_CA_CERTS: ${{ steps.runner.outputs.ca_cert_path }}
+          WS_ENDPOINT: ${{ steps.runner.outputs.ws_endpoint }}
+          RUNNER_SECRET: ${{ env.PLAYWRIGHT_RUNNER_SECRET }}
+        shell: bash
+        run: |
+          node --input-type=module - <<'NODE'
+          import { chromium } from '@playwright/test'
+          const browser = await chromium.connect(process.env.WS_ENDPOINT, {
+            headers: { Authorization: `Bearer ${process.env.RUNNER_SECRET}` },
+            timeout: 30_000,
+          })
+          const page = await browser.newPage()
+          await page.goto('data:text/html,<title>Aleph Playwright runner</title>')
+          if ((await page.title()) !== 'Aleph Playwright runner') throw new Error('Remote Chromium smoke assertion failed')
+          await browser.close()
+          NODE
+
+      - name: Record validation evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p test-results/playwright-runner
+          jq -n \
+            --arg instance '${{ steps.runner.outputs.instance_item_hash }}' \
+            --arg crn '${{ steps.runner.outputs.crn_hash }}' \
+            --arg ws '${{ steps.runner.outputs.ws_endpoint }}' \
+            --arg version '1.61.1' \
+            '{instanceHash:$instance,crnHash:$crn,wsEndpoint:$ws,playwrightVersion:$version}' \
+            > test-results/playwright-runner/validation.json
+
+      - name: Erase and FORGET exact INSTANCE
+        if: always() && steps.runner.outputs.instance_item_hash != ''
+        id: cleanup
+        uses: ./.github/actions/aleph-playwright-runner-cleanup
+        with:
+          aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          instance_item_hash: ${{ steps.runner.outputs.instance_item_hash }}
+
+      - name: Add cleanup evidence
+        if: always() && steps.cleanup.outputs.evidence_path != ''
+        shell: bash
+        run: cp '${{ steps.cleanup.outputs.evidence_path }}' test-results/playwright-runner/cleanup.json
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-runner-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/playwright-runner
+          if-no-files-found: warn
+          retention-days: 14
