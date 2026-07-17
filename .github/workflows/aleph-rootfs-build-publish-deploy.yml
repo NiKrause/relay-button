@@ -17,6 +17,16 @@ on:
         required: false
         default: false
         type: boolean
+      cleanup_after_run:
+        description: Erase and forget the deployed VM and forget the newly published rootfs STORE after verification
+        required: false
+        default: false
+        type: boolean
+      artifact_retention_days:
+        description: Number of days to retain generated rootfs GitHub artifacts
+        required: false
+        default: 90
+        type: number
       enable_caddy_proxy:
         description: Configure the guest with proxy-backed Caddy HTTPS/WSS when deploying a VM
         required: false
@@ -629,6 +639,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rootfs-${{ inputs.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: ${{ inputs.artifact_retention_days }}
           if-no-files-found: ignore
           path: |
             ${{ steps.run_rootfs.outputs.rootfs_manifest_path }}
@@ -786,6 +797,29 @@ jobs:
             {"instance_item_hash":"${{ steps.deploy_vm.outputs.instance_item_hash }}","rootfs_item_hash":"${{ inputs.rootfs_item_hash != '' && inputs.rootfs_item_hash || steps.run_rootfs.outputs.rootfs_item_hash }}","rootfs_cid":"${{ steps.run_rootfs.outputs.rootfs_cid }}","site_item_hash":"","site_url":"","relay_peer_id":"${{ steps.deploy_vm.outputs.relay_peer_id }}","rootfs_version":"${{ inputs.rootfs_version != '' && inputs.rootfs_version || steps.run_rootfs.outputs.rootfs_version }}","vm_name":"${{ inputs.vm_name != '' && inputs.vm_name || inputs.profile }}","deployed_at":"${{ github.run_id }}-${{ github.run_attempt }}"}
         run: node ./packages/node/src/action-runner.ts
 
+      - name: Clean up smoke-test deployment and rootfs STORE
+        if: >-
+          ${{
+            always() &&
+            inputs.cleanup_after_run &&
+            (
+              steps.deploy_vm.outputs.instance_item_hash != '' ||
+              steps.run_rootfs.outputs.rootfs_item_hash != ''
+            )
+          }}
+        id: cleanup
+        working-directory: shared-aleph-tooling
+        env:
+          ALEPH_VM_MODE: cleanup-deployment
+          ALEPH_VM_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          ALEPH_VM_NAME: ${{ inputs.vm_name != '' && inputs.vm_name || inputs.profile }}
+          ALEPH_VM_CHANNEL: ${{ inputs.vm_channel }}
+          ALEPH_VM_API_HOSTS: ${{ inputs.vm_api_hosts }}
+          ALEPH_VM_CLEANUP_INSTANCE_ITEM_HASH: ${{ steps.deploy_vm.outputs.instance_item_hash }}
+          ALEPH_VM_CLEANUP_DEPENDENT_HASHES_JSON: >-
+            ["${{ steps.run_rootfs.outputs.rootfs_item_hash }}"]
+        run: node ./packages/node/src/action-runner.ts
+
       - name: Summarize rootfs deployment
         if: ${{ always() }}
         env:
@@ -810,6 +844,7 @@ jobs:
             echo "- Derived version: \`${{ steps.run_rootfs.outputs.rootfs_version }}\`"
             echo "- Publish rootfs to Aleph IPFS/STORE: \`${{ inputs.publish }}\`"
             echo "- Deploy VM after publish: \`${{ inputs.deploy_vm }}\`"
+            echo "- Cleanup after run: \`${{ inputs.cleanup_after_run }}\`"
             echo "- Enable proxy-backed Caddy/WSS: \`${{ inputs.enable_caddy_proxy }}\`"
             echo "- Keep successful deployments: \`${{ inputs.retain_successful_deployments }}\`"
             if [[ -n "${ROOTFS_CID}" && -n "${ROOTFS_ITEM_HASH}" ]]; then
