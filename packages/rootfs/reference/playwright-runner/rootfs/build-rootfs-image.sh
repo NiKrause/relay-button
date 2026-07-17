@@ -57,12 +57,14 @@ virt-customize \
   --run-command "apt-get install -y --no-install-recommends nodejs" \
   --run-command "useradd --system --home /var/lib/playwright-runner --shell /usr/sbin/nologin playwright-runner" \
   --run-command "useradd --system --home /var/lib/playwright-runner --shell /usr/sbin/nologin playwright-proxy" \
-  --run-command "cd /opt/playwright-runner && npm init -y && npm install --omit=dev playwright@${PLAYWRIGHT_VERSION}" \
-  --run-command "cd /opt/playwright-runner && ./node_modules/.bin/playwright install --with-deps chromium" \
+  --run-command "cd /opt/playwright-runner && npm init -y && npm install --omit=dev --no-audit --no-fund playwright@${PLAYWRIGHT_VERSION}" \
+  --run-command "cd /opt/playwright-runner && ./node_modules/.bin/playwright install --with-deps --only-shell chromium" \
   --run-command "chown -R playwright-runner:playwright-runner /opt/playwright-runner /var/lib/playwright-runner" \
   --run-command "chown -R root:playwright-proxy /etc/playwright-runner && chmod 0750 /etc/playwright-runner" \
   --run-command "chmod 0755 /usr/local/sbin/playwright-runner-bootstrap.sh" \
   --run-command "printf '[Journal]\\nSystemMaxUse=128M\\nRuntimeMaxUse=64M\\nMaxRetentionSec=2day\\n' >/etc/systemd/journald.conf.d/playwright-runner.conf" \
+  --run-command "npm cache clean --force" \
+  --run-command "apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /root/.npm /tmp/* /var/tmp/*" \
   --run-command "systemctl enable playwright-runner-bootstrap.service"
 
 if command -v virt-sparsify >/dev/null 2>&1; then
@@ -77,4 +79,5 @@ if [ -n "${HOST_UID}" ] && [ -n "${HOST_GID}" ]; then
   chown -R "${HOST_UID}:${HOST_GID}" "${OUT_DIR}"
 fi
 
+echo "Compressed RootFS size: $(stat -c '%s bytes' "${IMAGE}") ($(du -h "${IMAGE}" | cut -f1) on disk)"
 echo "Playwright ${PLAYWRIGHT_VERSION} RootFS ready: ${IMAGE}"
