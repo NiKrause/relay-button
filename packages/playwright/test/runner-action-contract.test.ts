@@ -43,3 +43,17 @@ test("cleanup action requires exact INSTANCE input and is documented under alway
   assert.match(cleanup, /waitForAlephInstanceDeletion/);
   assert.match(readme, /if: always\(\)/);
 });
+
+test("live validation performs a real remote connect and exact cleanup under always", async () => {
+  const workflow = await readFile(
+    new URL(".github/workflows/playwright-runner-live-validation.yml", root),
+    "utf8",
+  );
+  assert.match(workflow, /chromium\.connect/);
+  assert.match(
+    workflow,
+    /if: always\(\) && steps\.runner\.outputs\.instance_item_hash != ''/,
+  );
+  assert.match(workflow, /aleph-playwright-runner-cleanup/);
+  assert.match(workflow, /playwright-\$\{\{ github\.repository_owner \}\}/);
+});
