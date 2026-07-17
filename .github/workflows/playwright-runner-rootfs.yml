@@ -13,6 +13,14 @@ on:
         required: true
         default: false
         type: boolean
+      payment_type:
+        description: Aleph STORE payment type
+        required: true
+        default: credit
+        type: choice
+        options:
+          - credit
+          - hold
       tooling_ref:
         description: relay-button ref to build; empty uses this workflow ref
         required: false
@@ -34,6 +42,7 @@ jobs:
       project_repository: NiKrause/relay-button
       project_ref: ${{ inputs.tooling_ref || github.ref_name }}
       rootfs_upload_driver: aleph-ipfs
+      rootfs_store_payment_type: ${{ inputs.payment_type }}
       tooling_repository: NiKrause/relay-button
       tooling_ref: ${{ inputs.tooling_ref || github.ref_name }}
     secrets: inherit
@@ -52,6 +61,7 @@ jobs:
             echo '- result: ${{ needs.build-publish.result }}'
             echo '- Playwright: `1.61.1`'
             echo '- publish requested: `${{ inputs.publish }}`'
+            echo '- STORE payment: `${{ inputs.payment_type }}`'
             echo '- validation VM requested: `${{ inputs.deploy_vm }}`'
             echo '- rootfs CID: `${{ needs.build-publish.outputs.rootfs_cid }}`'
             echo '- rootfs item hash: `${{ needs.build-publish.outputs.rootfs_item_hash }}`'
