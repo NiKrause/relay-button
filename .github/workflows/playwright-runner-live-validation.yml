@@ -51,6 +51,7 @@ jobs:
           WS_ENDPOINT: ${{ steps.runner.outputs.ws_endpoint }}
           RUNNER_SECRET: ${{ env.PLAYWRIGHT_RUNNER_SECRET }}
         shell: bash
+        working-directory: packages/playwright
         run: |
           node --input-type=module - <<'NODE'
           import { chromium } from '@playwright/test'
