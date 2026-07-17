@@ -1,4 +1,5 @@
 {
+	admin off
 	auto_https disable_redirects
 }
 
@@ -10,7 +11,7 @@
 
 	handle /version {
 		header Content-Type application/json
-		respond `{\"playwrightVersion\":\"{$PLAYWRIGHT_VERSION}\"}` 200
+		respond `{"playwrightVersion":"{$PLAYWRIGHT_VERSION}"}` 200
 	}
 
 	reverse_proxy 127.0.0.1:3000
