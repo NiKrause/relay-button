@@ -238,8 +238,23 @@ What is implemented today:
   records when a stable `registrationId` is available
 - the external `refresh-bootstrap` mode also forgets older self-owned records
   for the same `registrationId` by default
+- the `uc-go-peer` and `orbitdb-relay` reference images keep their guest
+  publisher key locally and run a systemd `ExecStop` hook before the relay and
+  network are stopped; that hook forgets every current bootstrap record owned
+  by that publisher
+- Relay Button owner cleanup only includes bootstrap records published by the
+  connected owner wallet; guest-published records remain the guest's
+  responsibility
+- the Playwright lifecycle fixture can verify the exact guest registration
+  hash on both supported Aleph API replicas after VM cleanup
 - consumer-side discovery already collapses to the newest fresh record per
   relay identity
+
+Guest shutdown cleanup is deliberately best effort. A CRN crash or forced
+power-off can bypass `ExecStop`. Callers that know the registration hash should
+therefore pass it as `registrationHash` to `cleanupRelay` and treat a failed
+replica verification as leaked-registration evidence, not as successful
+cleanup.
 
 Questions still worth answering:
 

@@ -33,6 +33,29 @@ test('reference profile helpers resolve the copied uc-go-peer asset set', async 
   assert.match(referenceProfileRootfsDir('uc-go-peer'), /reference\/uc-go-peer\/rootfs\/?$/)
 })
 
+test('relay reference images deregister guest-owned bootstrap posts before shutdown', async () => {
+  const ucRoot = referenceProfileRootfsDir('uc-go-peer')
+  const orbitRoot = referenceProfileRootfsDir('orbitdb-relay')
+  const [ucService, ucConfigure, orbitService, orbitConfigure, orbitRefresh, orbitBuilder] = await Promise.all([
+    readFile(new URL('uc-go-peer-bootstrap-deregister.service', `file://${ucRoot}/`), 'utf8'),
+    readFile(new URL('uc-go-peer-configure.sh', `file://${ucRoot}/`), 'utf8'),
+    readFile(new URL('orbitdb-relay-bootstrap-deregister.service', `file://${orbitRoot}/`), 'utf8'),
+    readFile(new URL('orbitdb-relay-configure.sh', `file://${orbitRoot}/`), 'utf8'),
+    readFile(new URL('orbitdb-relay-bootstrap-refresh.py', `file://${orbitRoot}/`), 'utf8'),
+    readFile(new URL('build-rootfs-image.sh', `file://${orbitRoot}/`), 'utf8'),
+  ])
+
+  assert.match(ucService, /ExecStop=.*uc-go-peer-bootstrap-deregister\.py/u)
+  assert.match(ucService, /After=network-online\.target uc-go-peer\.service/u)
+  assert.match(ucConfigure, /systemctl enable "\$\{BOOTSTRAP_DEREGISTER_SERVICE\}"/u)
+  assert.match(orbitService, /ALEPH_BOOTSTRAP_DEREGISTER_ONLY=1/u)
+  assert.match(orbitService, /ExecStop=.*orbitdb-relay-bootstrap-refresh\.py/u)
+  assert.match(orbitService, /After=network-online\.target orbitdb-relay\.service/u)
+  assert.match(orbitConfigure, /systemctl enable "\$\{BOOTSTRAP_DEREGISTER_SERVICE\}"/u)
+  assert.match(orbitRefresh, /deregister_all=True/u)
+  assert.match(orbitBuilder, /orbitdb-relay-bootstrap-deregister\.service/u)
+})
+
 test('validateRootfsContract accepts the shared ucan-store reference contract', async () => {
   const raw = await readFile(referenceProfileContractPath('ucan-store'), 'utf8')
   const result = validateRootfsContract(JSON.parse(raw))

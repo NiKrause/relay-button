@@ -118,7 +118,12 @@ await Promise.all([
   awaited owner-signed CRN erase and FORGET fallback.
 - `waitForAlephInstanceDeletion(options)` succeeds only after both stable Aleph
   replicas report forgotten state and the scheduler reports deallocation.
+- Pass the guest-published POST hash as `registrationHash` to `cleanupRelay` to
+  additionally require `waitForAlephMessageForgotten(options)` confirmation on
+  `api2.aleph.im` and `api.aleph.im`.
 - `createRelayTest(options)` provides the auto-cleanup lifecycle fixture.
+  Registrations returned by `provisionRelay` are tracked automatically and
+  verified during fixture teardown.
 
 ### Evidence
 

@@ -944,6 +944,16 @@ test("controller erases the VM on the CRN before broadcasting FORGET", async () 
           confirmed: true,
           content: null,
         },
+        {
+          messageHash: "guest-registration-hash",
+          hash: "guest-registration-hash",
+          itemHash: "guest-registration-hash",
+          address: "0x9999000000000000000000000000000000000000",
+          time: Date.now(),
+          instanceItemHash: itemHash,
+          confirmed: true,
+          content: null,
+        },
       ],
     });
 
