@@ -95,8 +95,18 @@ test('playwright-runner reference includes auth, version, and TTL units', async 
   assert.match(bootstrap, /PLAYWRIGHT_VERSION:-.*1\.61\.1/)
   assert.match(timer, /OnActiveSec=45min/)
   assert.match(builder, /playwright@\$\{PLAYWRIGHT_VERSION\}/)
-  assert.match(builder, /playwright install --with-deps chromium/)
+  assert.match(builder, /playwright install --with-deps --only-shell chromium/)
   assert.doesNotMatch(builder, /PLAYWRIGHT_RUNNER_SECRET=/)
+})
+
+test('playwright-runner image installs only the Chromium headless shell and removes build caches', async () => {
+  const root = referenceProfileRootfsDir('playwright-runner')
+  const buildScript = await readFile(new URL('build-rootfs-image.sh', `file://${root}/`), 'utf8')
+
+  assert.match(buildScript, /playwright install --with-deps --only-shell chromium/u)
+  assert.match(buildScript, /npm cache clean --force/u)
+  assert.match(buildScript, /rm -rf \/var\/lib\/apt\/lists\/\*/u)
+  assert.match(buildScript, /Compressed RootFS size:/u)
 })
 
 test('validateRootfsContract rejects malformed contracts', () => {

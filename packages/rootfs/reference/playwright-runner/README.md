@@ -1,8 +1,9 @@
 # Playwright runner RootFS
 
-This profile prebakes Node.js 24, Playwright `1.61.1`, matching Chromium, Caddy,
-and systemd units. It intentionally contains no endpoint credential or TLS
-private key.
+This profile prebakes Node.js 24, Playwright `1.61.1`, its matching Chromium
+headless shell, Caddy, and systemd units. It intentionally contains no endpoint
+credential or TLS private key. The full headed Chromium bundle is omitted
+because this remote CI runner only launches headless browsers.
 
 After Aleph allocates the VM, the reusable action must inject:
 
