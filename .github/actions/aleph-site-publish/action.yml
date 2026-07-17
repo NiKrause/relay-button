@@ -1,0 +1,133 @@
+name: Aleph Site Publish
+description: Publish a static site through the shared @le-space/node Aleph site runner
+
+inputs:
+  directory:
+    description: Static site directory, absolute or relative to project_dir
+    required: true
+  project_dir:
+    description: Base directory used to resolve a relative site directory
+    required: false
+    default: '.'
+  aleph_private_key:
+    description: Hex EVM private key used to sign the Aleph STORE message
+    required: true
+  site_ref:
+    description: Stable site identifier used to scope retention cleanup
+    required: false
+    default: ''
+  site_name:
+    description: Optional website name stored in Aleph metadata
+    required: false
+    default: ''
+  retention_keep_count:
+    description: Number of current STORE messages to keep for site_ref; zero disables retention
+    required: false
+    default: '0'
+  pin:
+    description: Upload and pin the static site through Aleph
+    required: false
+    default: 'true'
+  upload_driver:
+    description: authenticated-car (recommended) or gateway-relay (legacy diagnostics)
+    required: false
+    default: authenticated-car
+  endpoint_pairs:
+    description: Ordered JSON array of coupled ipfsGateway and apiHost fallback pairs
+    required: false
+    default: '[{"ipfsGateway":"https://ipfs-2.aleph.im","apiHost":"https://api2.aleph.im"},{"ipfsGateway":"https://ipfs.aleph.cloud","apiHost":"https://api.aleph.im"}]'
+  channel:
+    description: Aleph message channel
+    required: false
+    default: TEST
+  message_wait_attempts:
+    description: Attempts while waiting for the STORE to become processed
+    required: false
+    default: '60'
+  message_wait_delay_ms:
+    description: Delay between STORE status checks in milliseconds
+    required: false
+    default: '5000'
+  gateway_wait_attempts:
+    description: Attempts while waiting for the direct CID gateway
+    required: false
+    default: '60'
+  gateway_wait_delay_ms:
+    description: Delay between direct CID gateway checks in milliseconds
+    required: false
+    default: '5000'
+  allow_pending_store:
+    description: Allow an accepted but pending STORE; never enable before domain linking
+    required: false
+    default: 'false'
+
+outputs:
+  ipfs_cid:
+    description: Browser-friendly CIDv1 root
+    value: ${{ steps.publish.outputs.ipfs_cid }}
+  ipfs_cid_v0:
+    description: CIDv0 root stored by Aleph
+    value: ${{ steps.publish.outputs.ipfs_cid_v0 }}
+  ipfs_cid_v1:
+    description: CIDv1 root used by gateways
+    value: ${{ steps.publish.outputs.ipfs_cid_v1 }}
+  url:
+    description: Direct Aleph IPFS gateway URL
+    value: ${{ steps.publish.outputs.url }}
+  item_hash:
+    description: Aleph STORE message hash
+    value: ${{ steps.publish.outputs.item_hash }}
+  store_status:
+    description: Final Aleph STORE status
+    value: ${{ steps.publish.outputs.store_status }}
+  store_processed:
+    description: true when the STORE is processed and safe to link
+    value: ${{ steps.publish.outputs.store_processed }}
+  aleph_api_host:
+    description: Aleph API host that accepted the upload
+    value: ${{ steps.publish.outputs.aleph_api_host }}
+  ipfs_gateway:
+    description: IPFS gateway paired with the successful Aleph API host
+    value: ${{ steps.publish.outputs.ipfs_gateway }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 10.33.0
+
+    - name: Set up Node
+      uses: actions/setup-node@v6
+      with:
+        node-version: 24.x
+
+    - name: Install shared site publisher dependencies
+      shell: bash
+      run: pnpm --dir "${{ github.action_path }}/../../.." --filter @le-space/node... install --frozen-lockfile
+
+    - name: Publish static site through @le-space/node
+      id: publish
+      shell: bash
+      env:
+        ALEPH_PRIVATE_KEY: ${{ inputs.aleph_private_key }}
+        ALEPH_VM_MODE: site-publish
+        ALEPH_SITE_PROJECT_DIR: ${{ inputs.project_dir }}
+        ALEPH_SITE_DIRECTORY: ${{ inputs.directory }}
+        ALEPH_SITE_REF: ${{ inputs.site_ref }}
+        ALEPH_SITE_NAME: ${{ inputs.site_name }}
+        ALEPH_SITE_RETENTION_KEEP_COUNT: ${{ inputs.retention_keep_count }}
+        ALEPH_SITE_PIN: ${{ inputs.pin }}
+        ALEPH_SITE_UPLOAD_DRIVER: ${{ inputs.upload_driver }}
+        ALEPH_SITE_ENDPOINT_PAIRS: ${{ inputs.endpoint_pairs }}
+        ALEPH_SITE_CHANNEL: ${{ inputs.channel }}
+        ALEPH_SITE_ALEPH_MESSAGE_WAIT_ATTEMPTS: ${{ inputs.message_wait_attempts }}
+        ALEPH_SITE_ALEPH_MESSAGE_WAIT_DELAY_MS: ${{ inputs.message_wait_delay_ms }}
+        ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS: ${{ inputs.gateway_wait_attempts }}
+        ALEPH_SITE_GATEWAY_WAIT_DELAY_MS: ${{ inputs.gateway_wait_delay_ms }}
+        ALEPH_SITE_ALLOW_PENDING_STORE: ${{ inputs.allow_pending_store }}
+      run: >-
+        node --input-type=module -e
+        "import('${{ github.action_path }}/../../../packages/node/src/index.ts')
+        .then((module) => module.runSiteMode())"

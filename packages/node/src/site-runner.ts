@@ -730,10 +730,8 @@ async function pinIpfsCidOnAleph(cidV0: string, apiHost: string, env: NodeJS.Pro
 async function uploadStaticSiteCarAuthenticated(args: {
   car: StaticSiteCar
   apiHost: string
-  env?: NodeJS.ProcessEnv
+  message: Awaited<ReturnType<typeof buildSiteStoreMessage>>
 }): Promise<{ itemHash: string; apiHost: string }> {
-  const env = args.env ?? process.env
-  const message = await buildSiteStoreMessage(args.car.rootCidV1, env)
   const form = new FormData()
   const carBuffer = args.car.bytes.buffer.slice(
     args.car.bytes.byteOffset,
@@ -741,7 +739,7 @@ async function uploadStaticSiteCarAuthenticated(args: {
   ) as ArrayBuffer
   form.append('file', new File([carBuffer], 'upload.car', { type: 'application/vnd.ipld.car' }))
   form.append('metadata', new Blob([
-    JSON.stringify({ message, sync: true }),
+    JSON.stringify({ message: args.message, sync: true }),
   ], { type: 'application/json' }))
 
   const response = await fetch(new URL('/api/v0/ipfs/add_car', args.apiHost), {
@@ -762,7 +760,45 @@ async function uploadStaticSiteCarAuthenticated(args: {
   if (serverCid !== args.car.rootCidV1) {
     throw new Error(`Authenticated Aleph CAR upload root mismatch: expected ${args.car.rootCidV1}, received ${serverCid || '<missing>'}.`)
   }
-  return { itemHash: message.item_hash, apiHost: args.apiHost }
+  return { itemHash: args.message.item_hash, apiHost: args.apiHost }
+}
+
+async function uploadStaticSiteCarAuthenticatedWithFallback(args: {
+  car: StaticSiteCar
+  env: NodeJS.ProcessEnv
+}): Promise<{ pinned: { itemHash: string; apiHost: string }; endpointPair: SiteEndpointPair }> {
+  const endpointPairs = siteEndpointPairs(args.env)
+  const message = await buildSiteStoreMessage(args.car.rootCidV1, args.env)
+  let lastError: unknown = null
+
+  for (const [index, endpointPair] of endpointPairs.entries()) {
+    try {
+      if (endpointPairs.length > 1) {
+        console.warn(
+          `Aleph authenticated CAR upload attempt ${index + 1}/${endpointPairs.length}: ${endpointPair.apiHost}`,
+        )
+      }
+      const pinned = await uploadStaticSiteCarAuthenticated({
+        car: args.car,
+        apiHost: endpointPair.apiHost,
+        message,
+      })
+      return { pinned, endpointPair }
+    } catch (error) {
+      lastError = error
+      if (index < endpointPairs.length - 1) {
+        const detail = error instanceof Error ? error.message : String(error)
+        console.warn(
+          `Aleph authenticated CAR upload through ${endpointPair.apiHost} failed; retrying with ${endpointPairs[index + 1]!.apiHost}. ${detail}`,
+        )
+      }
+    }
+  }
+
+  const detail = lastError instanceof Error ? lastError.message : String(lastError)
+  throw new Error(
+    `Aleph authenticated CAR upload failed through all configured endpoint pairs (${endpointPairs.map((pair) => pair.apiHost).join(', ')}). Last error: ${detail}`,
+  )
 }
 
 export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): Promise<void> {
@@ -780,8 +816,9 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
   let publish: SitePublishResult
   let endpointPair: SiteEndpointPair
   if (pin && uploadDriver === 'authenticated-car') {
-    endpointPair = siteEndpointPairs(env)[0]!
-    pinned = await uploadStaticSiteCarAuthenticated({ car, apiHost: endpointPair.apiHost, env })
+    const uploaded = await uploadStaticSiteCarAuthenticatedWithFallback({ car, env })
+    endpointPair = uploaded.endpointPair
+    pinned = uploaded.pinned
     publish = expected
   } else {
     const legacy = await uploadStaticSiteDirectoryWithGatewayFallback(

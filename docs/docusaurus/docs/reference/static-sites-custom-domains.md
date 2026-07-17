@@ -34,18 +34,14 @@ jobs:
       store_processed: ${{ steps.publish.outputs.store_processed }}
     steps:
       - uses: actions/checkout@v6
-      - run: npm install --prefix /tmp/relay-button @le-space/node@0.6.22
       - id: publish
-        env:
-          ALEPH_VM_MODE: site-publish
-          ALEPH_SITE_DIRECTORY: ${{ github.workspace }}/build
-          ALEPH_SITE_PIN: 'true'
-          ALEPH_SITE_REF: my-site
-          ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
-        run: >-
-          node --input-type=module -e
-          "import('/tmp/relay-button/node_modules/@le-space/node/index.js')
-          .then((module) => module.runSiteMode())"
+        uses: NiKrause/relay-button/.github/actions/aleph-site-publish@main
+        with:
+          directory: build
+          project_dir: ${{ github.workspace }}
+          aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          site_ref: my-site
+          retention_keep_count: '2'
 
   link-domain:
     needs: publish
@@ -65,6 +61,11 @@ jobs:
           "import('/tmp/relay-button/node_modules/@le-space/node/index.js')
           .then((module) => module.runSiteMode())"
 ```
+
+The composite action is the recommended consumer interface. It runs the
+`@le-space/node` implementation from the pinned `relay-button` ref and keeps
+dependency installation, API fallback, polling, gateway verification, outputs,
+and retention behavior in one shared place.
 
 The `if` condition documents the dependency in the workflow. The domain-link
 runner still performs its own STORE check, so bypassing the condition cannot
@@ -99,8 +100,14 @@ race inherent in separate Kubo upload and STORE broadcast. Configure CCN
 fallbacks as coupled `ALEPH_SITE_ENDPOINT_PAIRS` JSON:
 
 ```json
-[{ "ipfsGateway": "https://ipfs-2.aleph.im", "apiHost": "https://api2.aleph.im" }]
+[
+  { "ipfsGateway": "https://ipfs-2.aleph.im", "apiHost": "https://api2.aleph.im" },
+  { "ipfsGateway": "https://ipfs.aleph.cloud", "apiHost": "https://api.aleph.im" }
+]
 ```
+
+The same signed STORE envelope is reused across endpoint fallback attempts.
+`api3.aleph.im` is unsupported and rejected before any request is made.
 
 Set `ALEPH_SITE_UPLOAD_DRIVER=gateway-relay` only for legacy diagnostics.
 Legacy gateway and API lists are accepted only with matching lengths. This
