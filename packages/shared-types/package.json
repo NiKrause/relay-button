@@ -1,16 +1,16 @@
 {
-  "name": "@le-space/shared-types",
-  "version": "0.6.29",
-  "description": "Shared type contracts for the Relay Button tooling monorepo.",
-  "license": "MIT",
-  "private": true,
-  "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
-  "scripts": {
-    "build": "node --check ./src/index.ts",
-    "build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json",
-    "test": "node --test ./test/**/*.test.ts",
-    "lint": "echo \"shared-types lint placeholder\""
-  }
+	"name": "@le-space/shared-types",
+	"version": "0.6.31",
+	"description": "Shared type contracts for the Relay Button tooling monorepo.",
+	"license": "MIT",
+	"private": true,
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"scripts": {
+		"build": "node --check ./src/index.ts",
+		"build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json",
+		"test": "node --test ./test/**/*.test.ts",
+		"lint": "echo \"shared-types lint placeholder\""
+	}
 }

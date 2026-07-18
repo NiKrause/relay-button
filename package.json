@@ -1,44 +1,44 @@
 {
-  "name": "relay-button",
-  "private": true,
-  "version": "0.6.29",
-  "description": "Relay Button deployment, rootfs, and automation tooling monorepo.",
-  "license": "MIT",
-  "bin": {
-    "relay-button": "./scripts/aleph-cli.mjs"
-  },
-  "packageManager": "pnpm@10.33.0",
-  "engines": {
-    "node": ">=20"
-  },
-  "pnpm": {
-    "overrides": {
-      "@babel/core": "^7.29.6",
-      "protons-runtime": "^7.0.0",
-      "qs": "^6.15.2",
-      "serialize-javascript": "^7.0.5",
-      "ws": "^8.20.1"
-    }
-  },
-  "devDependencies": {
-    "@types/node": "^24.10.1",
-    "tsup": "^8.5.0",
-    "typescript": "^5.9.2"
-  },
-  "scripts": {
-    "aleph": "node ./scripts/aleph-cli.mjs",
-    "relay-button": "node ./scripts/aleph-cli.mjs",
-    "review:aleph-rs-llm": "node ./scripts/review-aleph-rs-with-llm.mjs",
-    "build": "pnpm -r build",
-    "build:publishable": "pnpm -r --filter './packages/*' --if-present run build:publish",
-    "publish:prepare": "pnpm build:publishable && node ./scripts/prepare-publish.mjs",
-    "publish:prepare:npm": "NPM_SCOPE=${NPM_SCOPE:-le-space} pnpm publish:prepare",
-    "release:preview": "pnpm publish:prepare && node ./scripts/publish-from-dist.mjs --dry-run --tag next",
-    "repo:setup:print": "node ./scripts/print-repo-setup-commands.mjs",
-    "test:aleph-bootstrap:live": "node ./scripts/test-aleph-bootstrap-live.mjs",
-    "test": "pnpm -r --filter './packages/*' --if-present run test",
-    "lint": "pnpm -r lint",
-    "docs:dev": "pnpm --dir docs/docusaurus start",
-    "docs:build": "pnpm --dir docs/docusaurus build"
-  }
+	"name": "relay-button",
+	"private": true,
+	"version": "0.6.31",
+	"description": "Relay Button deployment, rootfs, and automation tooling monorepo.",
+	"license": "MIT",
+	"bin": {
+		"relay-button": "./scripts/aleph-cli.mjs"
+	},
+	"packageManager": "pnpm@10.33.0",
+	"engines": {
+		"node": ">=20"
+	},
+	"pnpm": {
+		"overrides": {
+			"@babel/core": "^7.29.6",
+			"protons-runtime": "^7.0.0",
+			"qs": "^6.15.2",
+			"serialize-javascript": "^7.0.5",
+			"ws": "^8.20.1"
+		}
+	},
+	"devDependencies": {
+		"@types/node": "^24.10.1",
+		"tsup": "^8.5.0",
+		"typescript": "^5.9.2"
+	},
+	"scripts": {
+		"aleph": "node ./scripts/aleph-cli.mjs",
+		"relay-button": "node ./scripts/aleph-cli.mjs",
+		"review:aleph-rs-llm": "node ./scripts/review-aleph-rs-with-llm.mjs",
+		"build": "pnpm -r build",
+		"build:publishable": "pnpm -r --filter './packages/*' --if-present run build:publish",
+		"publish:prepare": "pnpm build:publishable && node ./scripts/prepare-publish.mjs",
+		"publish:prepare:npm": "NPM_SCOPE=${NPM_SCOPE:-le-space} pnpm publish:prepare",
+		"release:preview": "pnpm publish:prepare && node ./scripts/publish-from-dist.mjs --dry-run --tag next",
+		"repo:setup:print": "node ./scripts/print-repo-setup-commands.mjs",
+		"test:aleph-bootstrap:live": "node ./scripts/test-aleph-bootstrap-live.mjs",
+		"test": "pnpm -r --filter './packages/*' --if-present run test",
+		"lint": "pnpm -r lint",
+		"docs:dev": "pnpm --dir docs/docusaurus start",
+		"docs:build": "pnpm --dir docs/docusaurus build"
+	}
 }

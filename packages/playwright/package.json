@@ -1,25 +1,25 @@
 {
-  "name": "@le-space/playwright",
-  "version": "0.6.29",
-  "description": "Reusable Playwright fixtures and Relay Button lifecycle helpers.",
-  "license": "MIT",
-  "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
-  "dependencies": {
-    "@le-space/aleph-bootstrap": "workspace:*",
-    "@le-space/core": "workspace:*"
-  },
-  "peerDependencies": {
-    "@playwright/test": ">=1.61.1 <1.62.0"
-  },
-  "devDependencies": {
-    "@playwright/test": "1.61.1"
-  },
-  "scripts": {
-    "build": "node --check ./src/index.ts",
-    "build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json --external @playwright/test",
-    "test": "node --test ./test/**/*.test.ts",
-    "lint": "echo \"playwright lint placeholder\""
-  }
+	"name": "@le-space/playwright",
+	"version": "0.6.31",
+	"description": "Reusable Playwright fixtures and Relay Button lifecycle helpers.",
+	"license": "MIT",
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"dependencies": {
+		"@le-space/aleph-bootstrap": "workspace:*",
+		"@le-space/core": "workspace:*"
+	},
+	"peerDependencies": {
+		"@playwright/test": ">=1.61.1 <1.62.0"
+	},
+	"devDependencies": {
+		"@playwright/test": "1.61.1"
+	},
+	"scripts": {
+		"build": "node --check ./src/index.ts",
+		"build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json --external @playwright/test",
+		"test": "node --test ./test/**/*.test.ts",
+		"lint": "echo \"playwright lint placeholder\""
+	}
 }
