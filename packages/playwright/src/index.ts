@@ -436,7 +436,7 @@ export class RelayButtonDriver {
   constructor(page: Page, options: RelayButtonDriverOptions = {}) {
     this.page = page
     this.options = {
-      launcherName: options.launcherName ?? /(?:Sponsor Relay|Relay Button|Relay)/,
+      launcherName: options.launcherName ?? 'Relay Button',
       instanceNamePlaceholder: options.instanceNamePlaceholder ?? 'Instance name',
       sshPublicKeyPlaceholder: options.sshPublicKeyPlaceholder ?? 'SSH public key',
       connectWalletName: options.connectWalletName ?? 'Connect MetaMask',
