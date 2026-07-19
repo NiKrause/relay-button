@@ -1,0 +1,20 @@
+[Unit]
+Description=Best-effort Aleph bootstrap deregistration on shutdown for orbitdb-relay
+After=network-online.target orbitdb-relay.service
+Wants=network-online.target
+ConditionPathExists=/etc/default/orbitdb-relay.ready
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=ENV_FILE=/etc/default/orbitdb-relay
+Environment=DESCRIBE_SCRIPT=/usr/local/sbin/orbitdb-relay-describe.py
+Environment=ALEPH_BOOTSTRAP_DEREGISTER_ONLY=1
+ExecStart=/bin/true
+ExecStop=/usr/bin/python3 /usr/local/sbin/orbitdb-relay-bootstrap-refresh.py
+StandardOutput=journal
+StandardError=journal
+TimeoutStopSec=25
+
+[Install]
+WantedBy=multi-user.target

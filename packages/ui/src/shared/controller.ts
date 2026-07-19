@@ -3067,7 +3067,12 @@ export class SponsorRelayController {
     const linkedRegistrationHashes = Array.from(
       new Set(
         this.state.bootstrapRegistrations
-          .filter((entry) => entry.instanceItemHash === instanceHash)
+          .filter(
+            (entry) =>
+              entry.instanceItemHash === instanceHash &&
+              entry.address?.toLowerCase() ===
+                this.state.wallet.address?.toLowerCase(),
+          )
           .map(
             (entry) =>
               entry.messageHash?.trim() ??

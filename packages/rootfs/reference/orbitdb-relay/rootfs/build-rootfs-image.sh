@@ -243,6 +243,7 @@ case "${ROOTFS_PROFILE}" in
       --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap.service:/etc/systemd/system"
       --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap-refresh.service:/etc/systemd/system"
       --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap-refresh.timer:/etc/systemd/system"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap-deregister.service:/etc/systemd/system"
       --copy-in "${SCRIPT_DIR}/orbitdb-relay-autotls-refresh.service:/etc/systemd/system"
       --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap.conf:/etc/systemd/system/orbitdb-relay.service.d"
       --run-command "tar -xf /opt/$(basename "${APP_TAR}") -C /opt/orbitdb-relay"
