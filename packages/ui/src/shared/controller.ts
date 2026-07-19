@@ -981,7 +981,11 @@ export class SponsorRelayController {
         hostIpv4: serviceHostIpv4,
         setupPort,
         fetch: (url, init) => fetch(url, init),
-        attempts: 15,
+        // 15 attempts (~1 min) regularly expired while a freshly booted VM
+        // was still starting its setup service (ERR_CONNECTION_REFUSED in
+        // simple-todo E2E run #42); the Actions path reaches the same guest
+        // successfully because it arrives minutes later. Allow ~3 minutes.
+        attempts: 45,
         delayMs: 4000,
         httpTimeoutMs: 10000,
         onAttempt: (result, attempt, attempts) => {
@@ -1130,7 +1134,11 @@ export class SponsorRelayController {
         hostIpv4: runtimeHostIpv4,
         setupPort,
         fetch: (url, init) => fetch(url, init),
-        attempts: 15,
+        // 15 attempts (~1 min) regularly expired while a freshly booted VM
+        // was still starting its setup service (ERR_CONNECTION_REFUSED in
+        // simple-todo E2E run #42); the Actions path reaches the same guest
+        // successfully because it arrives minutes later. Allow ~3 minutes.
+        attempts: 45,
         delayMs: 4000,
         httpTimeoutMs: 10000,
         onAttempt: (result, attempt, attempts) => {
