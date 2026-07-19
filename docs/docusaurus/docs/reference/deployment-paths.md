@@ -95,6 +95,45 @@ sequenceDiagram
    discarded the allocation-notify result until then, so a full CRN —
    NodeCity3 at capacity, HTTP 503 — silently produced ghost deployments).
 
+## A/B evidence: same image, same CRN, two outcomes (2026-07-19)
+
+orbitdb-relay run [29696456560](https://github.com/NiKrause/orbitdb-relay/actions/runs/29696456560)
+deployed the exact rootfs (`orbitdb-relay-v0.9.7`, `f50d5005…`) that the
+browser E2E had been failing with — after 3 CRN attempts it landed on
+Free To Link Moonlight5 (host 62.141.40.252, the same CRN/host where the
+browser-path guest had appeared dead in simple-todo runs #37–#42) and
+**every probe passed**. The infrastructure is fine; the difference is who
+publishes the bootstrap registration:
+
+```mermaid
+flowchart TD
+    IMG[rootfs orbitdb-relay-v0.9.7<br/>f50d5005…] --> A
+    IMG --> B
+    subgraph B[Browser path result]
+        B1[VM runs on Moonlight5] --> B2[waits for GUEST self-registration]
+        B2 --> B3[v0.9.7 image never publishes the<br/>expected guest registration]
+        B3 --> B4[fallback registration + false 'Relay ready'<br/>→ E2E guard aborts]
+    end
+    subgraph A[Actions path result]
+        A1[VM runs on Moonlight5] --> A2[deployer reads VM metadata<br/>after /configure]
+        A2 --> A3[deployer publishes owner-authorized<br/>registration itself]
+        A3 --> A4[probes tcp + proxy-wss: all green ✔]
+    end
+```
+
+Conclusion: the guest self-registration services that the 0.6.30+ browser
+controller waits for (deregister service, reworked refresh) exist in the git
+tree but **were never built into a published rootfs image** — the deployed
+v0.9.7 image predates them. The Actions path never depended on guest
+self-registration (the deployer publishes from real VM metadata), which is
+why it keeps working. Two remedies, not mutually exclusive:
+
+1. Short term: make the browser controller publish the final registration
+   from real VM metadata after a confirmed `/configure` (same as the Actions
+   path) instead of treating that as a degraded "fallback".
+2. Long term: build + publish a new rootfs image containing the guest
+   self-registration services, then update consumer manifests.
+
 ## Known gaps (both paths)
 
 - `notifyCrnAllocationWithRetry` results are still ignored in
