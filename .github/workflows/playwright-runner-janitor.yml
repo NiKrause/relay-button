@@ -39,9 +39,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
+      # Explicit repository: when called as a reusable workflow from another
+      # repository, a bare checkout would fetch the CALLER's repo, which has
+      # neither this script nor the workspace. That made every janitor run a
+      # silent no-op (MODULE_NOT_FOUND masked by the tee pipeline below).
       - uses: actions/checkout@v6
+        with:
+          repository: NiKrause/relay-button
+          ref: main
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.33.0
 
@@ -59,11 +66,14 @@ jobs:
           ALEPH_PLAYWRIGHT_JANITOR_REPOSITORY: ${{ inputs.repository_scope }}
           ALEPH_PLAYWRIGHT_JANITOR_TTL_MS: ${{ inputs.ttl_ms }}
           ALEPH_VM_API_HOSTS: https://api2.aleph.im,https://api.aleph.im
+        # shell: bash runs with -o pipefail so a node failure is not masked
+        # by tee's exit code.
+        shell: bash
         run: node scripts/playwright-runner-janitor.mjs | tee playwright-runner-janitor.json
 
       - name: Upload janitor evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-runner-janitor-${{ github.run_id }}-${{ github.run_attempt }}
           path: playwright-runner-janitor.json
