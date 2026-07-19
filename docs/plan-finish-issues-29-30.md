@@ -46,6 +46,20 @@ Order matters — this is where yesterday's cascade started. One PR per step, E2
 11. **Phase C integration**: switch its remote-replication workflow from Phase A SSH bootstrap to the Phase B composite actions + runner RootFS (mirror of step 8), evidence + cleanup verification identical.
 12. **Close out**: Docusaurus docs for testkit usage in both consumers → tick remaining #29 checkboxes → close #29; note #30 remnants done in the issue.
 
+## Open investigation: relay VM dead on arrival (run simple-todo #37, 2026-07-19)
+
+Facts: image orbitdb-relay-v0.9.7 (f50d5005…, built Jul 13) is the same one that was green on Jul 14; the 0.6.30 rootfs source changes were never built into an image (Build Publish Deploy workflow: 0 runs). In run #37 the VM was submitted to CRN NodeCity3, but showed zero guest signals: the bootstrap registration was published by the BROWSER fallback (publisher = E2E wallet, registrationId embeds a non-instance hash cd41d9cc…), and all three relay endpoints refused connections for the full 8-minute dial window. Deploy-side delta since the last green run: @le-space/ui 0.6.23 → 0.6.30 (guest configured via HTTP POST to VM:80/configure with runtime IPv4 from the CRN).
+
+RESOLVED (run #38 live probes, 2026-07-19): hypothesis (a) confirmed and root-caused.
+- Scheduler: "VM is not allocated to any node"; CRN executions list did not contain the instance.
+- Manual POST to NodeCity3 /control/allocation/notify for the live instance returned **503 "This CRN cannot host the requested instance at this time"** - the CRN is at capacity (13 running executions, none owned by the E2E wallet, some since April).
+- The UI treats the failed notify as non-fatal: no "Deployment failed" surfaces, the browser-fallback registration is published anyway, and consumers burn the dial window against a VM that never existed.
+- Jul 14 was green simply because NodeCity3 still had capacity.
+
+Fixes: (1) ui/browser: treat allocation-notify 503 as a hard deployment failure surfaced in the panel (the E2E already detects panel errors and would fail in seconds); (2) CRN selection should skip full CRNs / retry the next deployable CRN from the list instead of pinning the first candidate; (3) simple-todo guard branch fix/e2e-guest-registration-guard (fail fast on fallback-only registration) as defense in depth.
+
+Hardening ideas from this run: the E2E should fail fast (or at least warn) when the found registration's publisher is the test wallet (fallback ≠ guest alive); check scheduler allocation before dialing; the browser fallback masks guest death in tests.
+
 ## Standing risks
 
 - **Release ordering**: testkit/ui/core publish together (0.6.31); consumers pin exact versions in lockfiles — bump deliberately, not `@main`/`latest`.
