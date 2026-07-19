@@ -1,6 +1,6 @@
 [Unit]
 Description=Best-effort Aleph bootstrap deregistration on shutdown for uc-go-peer
-After=network-online.target
+After=network-online.target uc-go-peer.service
 Wants=network-online.target
 ConditionPathExists=/etc/default/uc-go-peer.ready
 

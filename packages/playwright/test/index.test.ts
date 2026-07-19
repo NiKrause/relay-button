@@ -14,6 +14,7 @@ import {
   selectBrowserRelayAddresses,
   updateRelayEvidenceStep,
   waitForAlephInstanceDeletion,
+  waitForAlephMessageForgotten,
   waitForBootstrapRegistration,
   waitForDeployableManifest,
   waitForPubsubSubscriber,
@@ -238,6 +239,25 @@ test('waitForAlephInstanceDeletion waits for replica agreement and scheduler dea
   assert.equal(api2Observations, 2)
   assert.match(summary, /api2\.aleph\.im: forgotten/)
   assert.match(summary, /scheduler: unallocated/)
+})
+
+test('waitForAlephMessageForgotten requires agreement from both Aleph replicas', async () => {
+  let api2Observations = 0
+  const summary = await waitForAlephMessageForgotten({
+    messageHash: 'c'.repeat(64),
+    timeoutMs: 1_000,
+    pollIntervalMs: 0,
+    fetch: async (input) => {
+      const url = new URL(String(input))
+      if (url.hostname === 'api2.aleph.im') api2Observations += 1
+      const forgotten = url.hostname !== 'api2.aleph.im' || api2Observations > 1
+      return Response.json({ status: forgotten ? 'forgotten' : 'processed' })
+    },
+  })
+
+  assert.equal(api2Observations, 2)
+  assert.match(summary, /api2\.aleph\.im: forgotten/u)
+  assert.match(summary, /api\.aleph\.im: forgotten/u)
 })
 
 test('waitForDeployableManifest reports terminal rootfs failures immediately', async () => {

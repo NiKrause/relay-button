@@ -81,6 +81,22 @@ async function assertNpmPublishAuth() {
   }
 }
 
+async function isVersionPublished(name, version) {
+  return new Promise((resolve) => {
+    const child = spawn('npm', ['view', `${name}@${version}`, 'version'], {
+      cwd: repoRoot,
+      env: { ...process.env, npm_config_cache: join(repoRoot, '.npm-cache') },
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
+    let output = ''
+    child.stdout.on('data', (chunk) => {
+      output += chunk
+    })
+    child.on('exit', () => resolve(output.trim() === version))
+    child.on('error', () => resolve(false))
+  })
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2))
 
@@ -98,6 +114,11 @@ async function main() {
 
     if (options.dryRun) {
       await runCommand('npm', ['pack'], distDir)
+      continue
+    }
+
+    if (await isVersionPublished(manifest.name, manifest.version)) {
+      console.log(`Skipping ${manifest.name}@${manifest.version}: already published.`)
       continue
     }
 

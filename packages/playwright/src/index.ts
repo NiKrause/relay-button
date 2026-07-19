@@ -156,6 +156,8 @@ export interface CleanupRelayOptions {
   account: RelayWalletAccount
   instanceName: string
   instanceHash: string
+  /** Guest-published relay-bootstrap POST to verify after graceful VM shutdown. */
+  registrationHash?: string
   driver?: RelayButtonDriver
   apiHosts?: readonly string[]
   schedulerUrl?: string
@@ -175,6 +177,7 @@ export interface CleanupRelayResult {
   eraseSummary: string
   forgetSummary: string
   verificationSummary: string
+  registrationVerificationSummary?: string
 }
 
 export interface CleanupRelayHooks {
@@ -726,6 +729,46 @@ export async function provisionRelay(page: Page, options: ProvisionRelayOptions)
   }
 }
 
+export async function waitForAlephMessageForgotten(options: {
+  messageHash: string
+  apiHosts?: readonly string[]
+  timeoutMs?: number
+  pollIntervalMs?: number
+  fetch?: typeof fetch
+}): Promise<string> {
+  const fetchImpl = options.fetch ?? globalThis.fetch?.bind(globalThis)
+  if (!fetchImpl) throw new Error('A fetch implementation is required for cleanup verification')
+  const hosts = resolveAlephApiHosts(options.apiHosts)
+  const deadline = Date.now() + (options.timeoutMs ?? 2 * 60_000)
+  let lastSummary = 'Bootstrap deregistration has not been observed yet.'
+
+  while (Date.now() < deadline) {
+    let forgottenOnAllReplicas = true
+    const observations: string[] = []
+    for (const apiHost of hosts) {
+      try {
+        const response = await fetchImpl(new URL(`/api/v0/messages/${options.messageHash}`, apiHost), { cache: 'no-cache' })
+        const payload = (await response.json().catch(() => null)) as {
+          status?: string
+          forgotten_by?: string[]
+        } | null
+        const forgotten = payload?.status === 'forgotten' || Boolean(payload?.forgotten_by?.length)
+        forgottenOnAllReplicas &&= forgotten
+        observations.push(`${apiHost}: ${forgotten ? 'forgotten' : (payload?.status ?? `HTTP ${response.status}`)}`)
+      } catch (error) {
+        forgottenOnAllReplicas = false
+        observations.push(`${apiHost}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    lastSummary = observations.join('; ')
+    if (forgottenOnAllReplicas) return lastSummary
+    await delay(options.pollIntervalMs ?? 2_000)
+  }
+  throw new Error(
+    `Aleph bootstrap registration ${options.messageHash} was not deregistered within ${options.timeoutMs ?? 2 * 60_000}ms: ${lastSummary}`,
+  )
+}
+
 export async function cleanupRelay(options: CleanupRelayOptions): Promise<CleanupRelayResult> {
   if (!/^[a-f0-9]{64}$/iu.test(options.instanceHash)) {
     throw new Error(`Invalid Aleph INSTANCE hash: ${options.instanceHash}`)
@@ -756,6 +799,15 @@ export async function cleanupRelay(options: CleanupRelayOptions): Promise<Cleanu
         pollIntervalMs: options.pollIntervalMs,
         fetch: fetchImpl,
       })
+      const registrationVerificationSummary = options.registrationHash
+        ? await waitForAlephMessageForgotten({
+            messageHash: options.registrationHash,
+            apiHosts: hosts,
+            timeoutMs: options.timeoutMs,
+            pollIntervalMs: options.pollIntervalMs,
+            fetch: fetchImpl,
+          })
+        : undefined
       return {
         instanceHash: options.instanceHash,
         uiDeleteRequested,
@@ -763,6 +815,7 @@ export async function cleanupRelay(options: CleanupRelayOptions): Promise<Cleanu
         eraseSummary: 'Relay Button UI requested runtime erase',
         forgetSummary: 'Relay Button UI submitted FORGET',
         verificationSummary,
+        registrationVerificationSummary,
       }
     } catch {
       // Continue with an awaited owner-signed fallback.
@@ -828,6 +881,15 @@ export async function cleanupRelay(options: CleanupRelayOptions): Promise<Cleanu
     pollIntervalMs: options.pollIntervalMs,
     fetch: fetchImpl,
   })
+  const registrationVerificationSummary = options.registrationHash
+    ? await waitForAlephMessageForgotten({
+        messageHash: options.registrationHash,
+        apiHosts: hosts,
+        timeoutMs: options.timeoutMs,
+        pollIntervalMs: options.pollIntervalMs,
+        fetch: fetchImpl,
+      })
+    : undefined
   return {
     instanceHash: options.instanceHash,
     uiDeleteRequested,
@@ -835,6 +897,7 @@ export async function cleanupRelay(options: CleanupRelayOptions): Promise<Cleanu
     eraseSummary,
     forgetSummary,
     verificationSummary,
+    registrationVerificationSummary,
   }
 }
 
@@ -958,6 +1021,8 @@ export function createRelayTest(options: CreateRelayTestOptions) {
                   account: options.account,
                   instanceName: relay.instanceName,
                   instanceHash: relay.instanceHash,
+                  registrationHash:
+                    relay.registration.itemHash ?? relay.registration.hash ?? undefined,
                   driver: relay.driver,
                 }),
               )
