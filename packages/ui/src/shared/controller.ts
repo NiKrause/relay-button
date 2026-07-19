@@ -2630,7 +2630,7 @@ export class SponsorRelayController {
               crnHash: candidateCrn.hash,
               crnUrl: candidateCrn.address,
             });
-            await notifyCrnAllocationWithRetry({
+            const notifyResult = await notifyCrnAllocationWithRetry({
               crnUrl: candidateCrn.address,
               itemHash: result.itemHash,
               fetch: (url, init) => fetch(url, init),
@@ -2638,6 +2638,17 @@ export class SponsorRelayController {
                 this.emitProgress(event);
               },
             });
+            // A rejected allocation (e.g. 503 "This CRN cannot host the
+            // requested instance at this time") previously fell through to
+            // "deployment confirmed": the VM never started, only the browser
+            // fallback bootstrap registration existed, and consumers dialed a
+            // relay that never existed. Throwing here routes the attempt into
+            // the existing per-CRN failover (cleanup + next candidate).
+            if (notifyResult.status === "unconfirmed") {
+              throw new Error(
+                `CRN ${crnDisplayName} did not accept the allocation for ${result.itemHash}: ${notifyResult.reason ?? "allocation notify was not confirmed"}`,
+              );
+            }
           }
 
           this.emitProgress({
