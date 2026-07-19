@@ -19,6 +19,7 @@ const sidebars = {
         'reference/aleph-bootstrap',
         'reference/aleph-bootstrap-sequences',
         'reference/aleph-bootstrap-operations',
+        'reference/deployment-paths',
         'reference/github-action',
         'reference/playwright-testkit',
         'reference/ui',
