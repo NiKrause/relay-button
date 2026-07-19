@@ -110,7 +110,7 @@ export interface WaitForPubsubSubscriberOptions {
 }
 
 export interface RelayButtonDriverOptions {
-  launcherName?: RegExp
+  launcherName?: string | RegExp
   instanceNamePlaceholder?: string
   sshPublicKeyPlaceholder?: string
   connectWalletName?: string
