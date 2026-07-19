@@ -10,6 +10,9 @@
 		"@le-space/aleph-bootstrap": "workspace:*",
 		"@le-space/core": "workspace:*"
 	},
+	"bin": {
+		"playwright-runner-cleanup": "./dist/cleanup-cli.js"
+	},
 	"peerDependencies": {
 		"@playwright/test": ">=1.61.1 <1.62.0"
 	},
@@ -17,8 +20,8 @@
 		"@playwright/test": "1.61.1"
 	},
 	"scripts": {
-		"build": "node --check ./src/index.ts",
-		"build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json --external @playwright/test",
+		"build": "node --check ./src/index.ts && node --check ./src/cleanup-cli.ts",
+		"build:publish": "tsup src/index.ts src/cleanup-cli.ts --format esm --dts --clean --tsconfig tsconfig.publish.json --external @playwright/test",
 		"test": "node --test ./test/**/*.test.ts",
 		"lint": "echo \"playwright lint placeholder\""
 	}

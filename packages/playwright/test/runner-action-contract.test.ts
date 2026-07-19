@@ -18,7 +18,7 @@ test("runner action pins API order, exact version, and never outputs its bearer 
 });
 
 test("cleanup action requires exact INSTANCE input and is documented under always", async () => {
-  const [action, cleanup, readme] = await Promise.all([
+  const [action, cli, readme] = await Promise.all([
     readFile(
       new URL(
         ".github/actions/aleph-playwright-runner-cleanup/action.yml",
@@ -26,21 +26,17 @@ test("cleanup action requires exact INSTANCE input and is documented under alway
       ),
       "utf8",
     ),
-    readFile(
-      new URL(
-        ".github/actions/aleph-playwright-runner-cleanup/cleanup-exact.mjs",
-        root,
-      ),
-      "utf8",
-    ),
+    readFile(new URL("../src/cleanup-cli.ts", import.meta.url), "utf8"),
     readFile(
       new URL(".github/actions/aleph-playwright-runner/README.md", root),
       "utf8",
     ),
   ]);
   assert.match(action, /instance_item_hash:/);
-  assert.match(cleanup, /\^\[a-f0-9\]\{64\}\$/);
-  assert.match(cleanup, /waitForAlephInstanceDeletion/);
+  assert.match(action, /playwright-runner-cleanup/);
+  assert.match(action, /--package=@le-space\/playwright/);
+  assert.match(cli, /\^\[a-f0-9\]\{64\}\$/);
+  assert.match(cli, /waitForAlephInstanceDeletion/);
   assert.match(readme, /if: always\(\)/);
 });
 
