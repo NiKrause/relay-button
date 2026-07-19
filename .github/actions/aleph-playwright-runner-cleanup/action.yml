@@ -1,11 +1,15 @@
 name: Aleph Playwright Runner Cleanup
-description: Erase, owner-FORGET, and verify one exact runner INSTANCE
+description: Erase, owner-FORGET, and verify one exact runner INSTANCE via the published playwright-runner-cleanup CLI
 
 inputs:
   aleph_private_key:
     required: true
   instance_item_hash:
     required: true
+  testkit_version:
+    description: Version of @le-space/playwright providing the playwright-runner-cleanup bin
+    required: false
+    default: latest
 
 outputs:
   evidence_path:
@@ -22,4 +26,8 @@ runs:
         ALEPH_PLAYWRIGHT_INSTANCE_HASH: ${{ inputs.instance_item_hash }}
         ALEPH_VM_API_HOSTS: https://api2.aleph.im,https://api.aleph.im
         EVIDENCE_PATH: ${{ runner.temp }}/aleph-playwright-cleanup-${{ github.run_id }}-${{ github.run_attempt }}.json
-      run: node "${{ github.action_path }}/cleanup-exact.mjs"
+      run: >-
+        npx --yes
+        --package=@le-space/playwright@${{ inputs.testkit_version }}
+        --package=ethers@^6
+        playwright-runner-cleanup

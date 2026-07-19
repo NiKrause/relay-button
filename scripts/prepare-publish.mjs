@@ -80,6 +80,14 @@ function normalizeDependencies(dependencies, versionsByName) {
   return Object.keys(normalized).length > 0 ? normalized : undefined
 }
 
+function normalizeBin(bin) {
+  if (!bin) return undefined
+  const normalized = Object.fromEntries(
+    Object.entries(bin).map(([name, path]) => [name, path.replace(/^\.\/dist\//, './')])
+  )
+  return Object.keys(normalized).length > 0 ? normalized : undefined
+}
+
 function toPublishedPackageName(name) {
   if (!publishScope) return name
   if (!name.startsWith('@')) return name
@@ -143,6 +151,7 @@ async function main() {
                 import: './index.js'
               }
             },
+      bin: normalizeBin(packageJson.bin),
       publishConfig: {
         access: 'public'
       },
