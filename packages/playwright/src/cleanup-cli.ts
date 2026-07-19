@@ -67,17 +67,40 @@ export function parseCleanupCliArgs(argv: readonly string[], env: NodeJS.Process
   }
 }
 
+interface EthersWalletModule {
+  Wallet: new (privateKey: string) => {
+    getAddress(): Promise<string>
+    signMessage(payload: string): Promise<string>
+  }
+}
+
+interface ViemAccountsModule {
+  privateKeyToAccount: (privateKey: `0x${string}`) => {
+    address: string
+    signMessage(args: { message: string }): Promise<string>
+  }
+}
+
+/**
+ * ethers and viem are optional signing backends, intentionally not declared as
+ * dependencies. The specifier is typed as string so the type checker does not
+ * try to resolve modules that may be absent at build time.
+ */
+function importOptional(specifier: string): Promise<unknown> {
+  return import(specifier)
+}
+
 async function createSigner(privateKey: string): Promise<CleanupSigner> {
   const normalizedKey = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`
   try {
-    const { Wallet } = await import('ethers')
+    const { Wallet } = (await importOptional('ethers')) as EthersWalletModule
     const wallet = new Wallet(normalizedKey)
     return { address: await wallet.getAddress(), sign: (payload) => wallet.signMessage(payload) }
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code !== 'ERR_MODULE_NOT_FOUND') throw error
   }
   try {
-    const { privateKeyToAccount } = await import('viem/accounts')
+    const { privateKeyToAccount } = (await importOptional('viem/accounts')) as ViemAccountsModule
     const account = privateKeyToAccount(normalizedKey as `0x${string}`)
     return { address: account.address, sign: (payload) => account.signMessage({ message: payload }) }
   } catch (error) {
