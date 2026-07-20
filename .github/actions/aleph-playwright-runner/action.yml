@@ -53,7 +53,12 @@ runs:
   steps:
     - name: Deploy exact Playwright runner RootFS
       id: deploy
-      uses: ./.github/actions/aleph-vm-deploy
+      # Explicit repo ref, NOT `./`: in a consumer repo the relative path
+      # resolves against the *consumer's* checkout. universal-connectivity has
+      # its own older `.github/actions/aleph-vm-deploy` (no `profile` /
+      # `publish_port_forwards` inputs), which shadowed this one — the runner
+      # then warned "Unexpected input(s)" and the profile fell back to uc-go-peer.
+      uses: NiKrause/relay-button/.github/actions/aleph-vm-deploy@main
       with:
         profile: playwright-runner
         aleph_private_key: ${{ inputs.aleph_private_key }}
