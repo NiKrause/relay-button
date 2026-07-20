@@ -369,6 +369,69 @@ export async function waitForPubsubSubscriber(page: Page, options: WaitForPubsub
   )
 }
 
+/**
+ * Default console filter for libp2p connectivity diagnostics — keeps the
+ * relay/dial/peer/webrtc/circuit/reservation/connect lines plus errors/warnings
+ * and drops the rest of the (very chatty) browser console.
+ */
+export const LIBP2P_DIAGNOSTIC_CONSOLE_FILTER = /error|warn|relay|dial|peer|webrtc|circuit|reservation|connect/i
+
+export interface ProgressLogger {
+  /** Log a free-form progress line: `[label HH:MM:SS.mmm] message`. */
+  progress(message: string): void
+  /** Log a stage marker: `[label HH:MM:SS.mmm] stage: name (detail)`. */
+  stage(name: string, detail?: string): void
+}
+
+/**
+ * A tiny timestamped stage/progress logger so consumers stream what a remote
+ * E2E is doing instead of going silent for minutes. Mirrors simple-todo's
+ * `[remote-e2e] stage: …` format so both consumers read the same way.
+ */
+export function createProgressLogger(options: { label?: string; log?: (line: string) => void } = {}): ProgressLogger {
+  const label = options.label ?? 'e2e'
+  const log = options.log ?? ((line: string) => console.log(line))
+  const stamp = () => new Date().toISOString().slice(11, 23)
+  return {
+    progress(message) {
+      log(`[${label} ${stamp()}] ${message}`)
+    },
+    stage(name, detail) {
+      log(`[${label} ${stamp()}] stage: ${name}${detail ? ` (${detail})` : ''}`)
+    },
+  }
+}
+
+export interface ForwardBrowserConsoleOptions {
+  /** Prefix identifying the browser, e.g. `local` or `aleph-remote`. */
+  label: string
+  log?: (line: string) => void
+  /** Only forward matching lines. Defaults to {@link LIBP2P_DIAGNOSTIC_CONSOLE_FILTER}; pass `null` to forward everything. */
+  filter?: RegExp | ((text: string) => boolean) | null
+  /** Truncate each forwarded line to this length (default 300). */
+  maxLength?: number
+}
+
+/**
+ * Forward a page's browser console + page errors into the test log so libp2p
+ * connection/discovery activity is visible in CI. Filtered by default to the
+ * connectivity-relevant lines.
+ */
+export function forwardBrowserConsole(page: Page, options: ForwardBrowserConsoleOptions): void {
+  const log = options.log ?? ((line: string) => console.log(line))
+  const maxLength = options.maxLength ?? 300
+  const filter = options.filter === undefined ? LIBP2P_DIAGNOSTIC_CONSOLE_FILTER : options.filter
+  const matches = (text: string) => {
+    if (!filter) return true
+    return filter instanceof RegExp ? filter.test(text) : filter(text)
+  }
+  page.on('console', (message) => {
+    const text = message.text()
+    if (matches(text)) log(`[${options.label} ${message.type()}] ${text}`.slice(0, maxLength))
+  })
+  page.on('pageerror', (error) => log(`[${options.label} pageerror] ${error.message}`.slice(0, maxLength)))
+}
+
 export async function installEip1193WalletMock(context: BrowserContext, account: RelayWalletAccount): Promise<void> {
   await context.exposeBinding('__relayE2eWalletRequest', async (_source, request: unknown) => {
     const { method, params = [] } = request as {
