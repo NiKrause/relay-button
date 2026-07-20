@@ -60,6 +60,25 @@ Fixes: (1) ui/browser: treat allocation-notify 503 as a hard deployment failure 
 
 Hardening ideas from this run: the E2E should fail fast (or at least warn) when the found registration's publisher is the test wallet (fallback ≠ guest alive); check scheduler allocation before dialing; the browser fallback masks guest death in tests.
 
+## RESOLVED — remote-replication `candidates: 0` = profile-blind relay discovery (2026-07-20)
+
+Root cause of simple-todo remote-replication failing at `connecting-browser-peers` (runs on main since ~2026-07-19 18:00, e.g. run 29701742830): **two relay implementations register `relay-bootstrap-v2` posts in the same Aleph channel `simple-todo`**, and `discoverAlephBootstrapMultiaddrs` filtered by channel/type/trust/age but **never by `profile`**.
+
+- `profile: "orbitdb-relay"` → simple-todo's relay (`orbitdb-relay/aleph/contract.json`).
+- `profile: "uc-go-peer"` → universal-connectivity's go-peer relay (`go-peer/aleph/uc-go-peer.json`).
+- **Rule going forward: simple-todo works ONLY through `orbitdb-relay`; universal-connectivity works ONLY through `uc-go-peer`.** Both registered in one channel → discovery mixes them → an orbitdb browser connects to a `uc-go-peer` relay, no shared circuit, `candidates: 0`.
+
+Evidence (2026-07-20): live channel `simple-todo` held **2 `orbitdb-relay` vs 29 `uc-go-peer`** posts. The failing run's build (`resolve-aleph-bootstrap.mjs`) baked in a mix — `ignore-jaguar-scene-pole.2n6.me` (orbitdb ✓) + `37-114-50-44…libp2p.direct` (uc-go-peer ✗); both passed the ping probe. The lone live `orbitdb-relay` was probed directly and **grants a working browser circuit-relay reservation** (two libp2p nodes connected through it, ping 115 ms) — so the relay is fine; only discovery scoping was wrong.
+
+Correction to earlier notes: this is **not** a 0.6.32→0.6.33 regression. That bump's only functional change was `SponsorRelayController` guest-setup retry 15→45 (`ac65fc0`); core/browser/aleph-bootstrap source is byte-identical between 0.6.32 and 0.6.33. The clean green→red version boundary was coincidental with relay-mix flakiness. The stale `pill-execute` PROD pin in `.env.example` is also a non-issue for CI (the build overwrites `VITE_RELAY_BOOTSTRAP_ADDR_PROD` from the live snapshot).
+
+Fix (in flight):
+- **relay-button PR #49** (`fix/relay-bootstrap-profile-scope`, bumps to **0.6.34**): optional `profile?: string | string[]` on `DiscoverAlephBootstrapOptions`, applied via new `filterRelayBootstrapPostsByProfile`. Backward compatible; live-validated. Unit tests 18/18.
+- **Release 0.6.34**: merge PR #49 → run `Release Packages` (`workflow_dispatch`, `dry_run=false`, `npm_tag=latest`, `npm_scope=le-space`). npm is never auto-published.
+- **simple-todo** (wired, pending 0.6.34 publish + dep bump): `resolve-aleph-bootstrap.mjs` and `ManualConnectForm.svelte` now pass `profile: 'orbitdb-relay'` (env-overridable via `RELAY_BOOTSTRAP_PROFILE` / `VITE_RELAY_BOOTSTRAP_PROFILE`). Bump `@le-space/aleph-bootstrap` + `@le-space/ui` 0.6.33 → 0.6.34, then push to re-run remote-replication.
+- **Phase 4 — universal-connectivity mirror (TODO):** scope its build/runtime relay discovery to `profile: 'uc-go-peer'` (mirror of simple-todo). Same shared-channel confusion applies in reverse. Also consider: give each project its own Aleph channel instead of the shared `DEFAULT_ALEPH_BOOTSTRAP_CHANNEL = "simple-todo"` default, as belt-and-suspenders.
+- **Second, separate bug (relay-button E2E, run 29701742716):** the freshly-provisioned relay's browser WSS fails the TLS handshake (`net::ERR_SSL_PROTOCOL_ERROR` on the AutoTLS `libp2p.direct` address) — flaky across 0.6.32/0.6.33, an AutoTLS/cert-timing issue on the relay image, to be tackled after this one.
+
 ## Standing risks
 
 - **Release ordering**: testkit/ui/core publish together (0.6.31); consumers pin exact versions in lockfiles — bump deliberately, not `@main`/`latest`.
