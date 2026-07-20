@@ -101,6 +101,15 @@ export interface DiscoverAlephBootstrapOptions {
   browserDialableOnly?: boolean;
   requireDualKeyAttestation?: boolean;
   verifyDualKeyAttestation?: boolean;
+  /**
+   * Restrict discovery to registrations published under this relay profile
+   * (e.g. `"orbitdb-relay"`). Multiple relay implementations register in the
+   * same Aleph channel; without this scope a consumer would pick up relays it
+   * cannot use (an orbitdb app connecting to a `uc-go-peer` relay never gets a
+   * shared circuit → `candidates: 0`). Accepts a single profile or a list.
+   * When omitted, posts of every profile are returned (previous behaviour).
+   */
+  profile?: string | readonly string[];
   fetch?: typeof fetch;
 }
 
@@ -1030,6 +1039,24 @@ export function selectCurrentRelayBootstrapPosts(
   );
 }
 
+/**
+ * Keep only posts whose registration profile matches the requested profile(s).
+ * A missing/empty filter is a no-op so existing callers are unaffected.
+ */
+export function filterRelayBootstrapPostsByProfile(
+  posts: readonly RelayBootstrapPostRecord[],
+  profile?: string | readonly string[],
+): RelayBootstrapPostRecord[] {
+  const wanted = (typeof profile === "string" ? [profile] : (profile ?? []))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (wanted.length === 0) return [...posts];
+  const allowed = new Set(wanted);
+  return posts.filter(
+    (post) => post.content != null && allowed.has(String(post.content.profile)),
+  );
+}
+
 async function filterTrustedRelayBootstrapPosts(
   posts: readonly RelayBootstrapPostRecord[],
   options: Pick<
@@ -1085,9 +1112,12 @@ export async function discoverAlephBootstrapMultiaddrs(
     });
     collectedPosts.push(...pagePosts);
 
-    const selectedPosts = selectCurrentRelayBootstrapPosts(collectedPosts, {
-      maxAgeMs: options.maxAgeMs,
-    });
+    const selectedPosts = filterRelayBootstrapPostsByProfile(
+      selectCurrentRelayBootstrapPosts(collectedPosts, {
+        maxAgeMs: options.maxAgeMs,
+      }),
+      options.profile,
+    );
     const trustedPosts = await filterTrustedRelayBootstrapPosts(selectedPosts, {
       requireDualKeyAttestation: options.requireDualKeyAttestation,
       verifyDualKeyAttestation: options.verifyDualKeyAttestation,

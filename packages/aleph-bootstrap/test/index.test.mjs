@@ -363,6 +363,62 @@ test("discoverAlephBootstrapMultiaddrs dedupes and skips stale entries", async (
   );
 });
 
+test("discoverAlephBootstrapMultiaddrs scopes discovery to a relay profile", async () => {
+  const now = Date.now();
+  const fetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return {
+        posts: [
+          {
+            hash: "hash-orbitdb",
+            type: "relay-bootstrap-v2",
+            ref: "simple-todo-bootstrap",
+            content: {
+              peerId: "12D3KooWOrbit",
+              profile: "orbitdb-relay",
+              updatedAt: now,
+              browserMultiaddrs: [
+                "/dns4/orbitdb.example.com/tcp/443/tls/ws/p2p/12D3KooWOrbit",
+              ],
+            },
+          },
+          {
+            hash: "hash-gopeer",
+            type: "relay-bootstrap-v2",
+            ref: "simple-todo-bootstrap",
+            content: {
+              peerId: "12D3KooWGoPeer",
+              profile: "uc-go-peer",
+              updatedAt: now,
+              browserMultiaddrs: [
+                "/dns4/gopeer.example.com/tcp/443/tls/ws/p2p/12D3KooWGoPeer",
+              ],
+            },
+          },
+        ],
+      };
+    },
+  });
+
+  const scoped = await discoverAlephBootstrapMultiaddrs({
+    fetch,
+    profile: "orbitdb-relay",
+  });
+  assert.deepEqual(scoped, [
+    "/dns4/orbitdb.example.com/tcp/443/tls/ws/p2p/12D3KooWOrbit",
+  ]);
+
+  const unscoped = await discoverAlephBootstrapMultiaddrs({ fetch });
+  assert.equal(unscoped.length, 2, "no profile filter returns every relay");
+  assert.ok(
+    unscoped.includes(
+      "/dns4/gopeer.example.com/tcp/443/tls/ws/p2p/12D3KooWGoPeer",
+    ),
+  );
+});
+
 test("discoverAlephBootstrapMultiaddrs scans later pages when page 1 has no usable addrs", async () => {
   const now = Date.now();
   const requestedPages = [];
