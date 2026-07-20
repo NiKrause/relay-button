@@ -18,6 +18,9 @@ import {
   waitForBootstrapRegistration,
   waitForDeployableManifest,
   waitForPubsubSubscriber,
+  createProgressLogger,
+  forwardBrowserConsole,
+  LIBP2P_DIAGNOSTIC_CONSOLE_FILTER,
   type RelayButtonDriver,
   type RelayWalletAccount,
 } from '../src/index.ts'
@@ -377,4 +380,43 @@ test('evidence helpers render a reusable GitHub summary', () => {
   assert.match(summary, /Consumer Relay E2E/)
   assert.match(summary, /✅ \| Relay provisioned/)
   assert.match(summary, /➖ \| Relay removed/)
+})
+
+test('createProgressLogger formats timestamped progress and stage lines', () => {
+  const lines = []
+  const logger = createProgressLogger({ label: 'remote-repl', log: (line) => lines.push(line) })
+  logger.progress('opening browsers')
+  logger.stage('connecting-browser-peers')
+  logger.stage('deploying', 'provider=aleph')
+  assert.match(lines[0], /^\[remote-repl \d{2}:\d{2}:\d{2}\.\d{3}\] opening browsers$/)
+  assert.match(lines[1], /^\[remote-repl \d{2}:\d{2}:\d{2}\.\d{3}\] stage: connecting-browser-peers$/)
+  assert.match(lines[2], /stage: deploying \(provider=aleph\)$/)
+})
+
+test('forwardBrowserConsole forwards matching console + page errors, filters the rest', () => {
+  const handlers = {}
+  const lines = []
+  const page = { on: (event, handler) => (handlers[event] = handler) }
+  forwardBrowserConsole(page, { label: 'aleph-remote', log: (line) => lines.push(line) })
+
+  handlers.console({ type: () => 'log', text: () => 'dialing pubsub-discovered peer 12D3KooW' })
+  handlers.console({ type: () => 'debug', text: () => 'rendering a react component' }) // filtered out
+  handlers.console({ type: () => 'warning', text: () => 'Failed to dial peer' })
+  handlers.pageerror(new Error('boom'))
+
+  assert.equal(lines.length, 3)
+  assert.match(lines[0], /^\[aleph-remote log\] dialing pubsub-discovered peer/)
+  assert.match(lines[1], /^\[aleph-remote warning\] Failed to dial peer$/)
+  assert.match(lines[2], /^\[aleph-remote pageerror\] boom$/)
+})
+
+test('forwardBrowserConsole with filter null forwards everything and truncates', () => {
+  const handlers = {}
+  const lines = []
+  const page = { on: (event, handler) => (handlers[event] = handler) }
+  forwardBrowserConsole(page, { label: 'x', log: (line) => lines.push(line), filter: null, maxLength: 20 })
+  handlers.console({ type: () => 'log', text: () => 'a totally unrelated but very long line' })
+  assert.equal(lines.length, 1)
+  assert.equal(lines[0].length, 20)
+  assert.ok(LIBP2P_DIAGNOSTIC_CONSOLE_FILTER.test('circuit reservation'))
 })
