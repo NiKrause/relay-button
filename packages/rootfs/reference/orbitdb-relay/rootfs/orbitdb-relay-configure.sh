@@ -13,6 +13,17 @@ CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 CADDY_UPSTREAM_WSS_PORT="${CADDY_UPSTREAM_WSS_PORT:-9092}"
 CADDY_UPSTREAM_HOST="${CADDY_UPSTREAM_HOST:-127.0.0.1}"
 CADDY_UPSTREAM_METRICS_PORT="${CADDY_UPSTREAM_METRICS_PORT:-9090}"
+# Internal libp2p listen ports. On the Aleph VM, IPv4 is NAT/port-mapped (so it
+# is announced on the externally assigned host ports), but IPv6 is globally
+# routed with NO NAT — the VM is reachable directly on the real listen ports,
+# and the mapped host ports are closed over IPv6. IPv6 must therefore be
+# announced on these internal ports, otherwise AutoNAT/AutoTLS dial-backs to the
+# IPv6 address hit a closed mapped port, the address is never confirmed, and
+# `*.libp2p.direct` AutoTLS never provisions a certificate over IPv6.
+RELAY_TCP_LISTEN_PORT="${RELAY_TCP_LISTEN_PORT:-9091}"
+RELAY_WS_LISTEN_PORT="${RELAY_WS_LISTEN_PORT:-${CADDY_UPSTREAM_WSS_PORT}}"
+RELAY_WEBRTC_LISTEN_PORT="${RELAY_WEBRTC_LISTEN_PORT:-9093}"
+RELAY_QUIC_LISTEN_PORT="${RELAY_QUIC_LISTEN_PORT:-9094}"
 AUTOTLS_REFRESH_SERVICE="${AUTOTLS_REFRESH_SERVICE:-orbitdb-relay-autotls-refresh.service}"
 BOOTSTRAP_REFRESH_TIMER="${BOOTSTRAP_REFRESH_TIMER:-orbitdb-relay-bootstrap-refresh.timer}"
 PUBLIC_IPV4=""
@@ -201,7 +212,7 @@ announce=(
 
 if [ -n "${PUBLIC_IPV6}" ]; then
   announce+=(
-    "/ip6/${PUBLIC_IPV6}/tcp/${TCP_PORT}"
+    "/ip6/${PUBLIC_IPV6}/tcp/${RELAY_TCP_LISTEN_PORT}"
   )
 fi
 
@@ -212,20 +223,20 @@ fi
 
 announce+=("/ip4/${PUBLIC_IPV4}/tcp/${WS_PORT}/ws")
 if [ -n "${PUBLIC_IPV6}" ]; then
-  announce+=("/ip6/${PUBLIC_IPV6}/tcp/${WS_PORT}/ws")
+  announce+=("/ip6/${PUBLIC_IPV6}/tcp/${RELAY_WS_LISTEN_PORT}/ws")
 fi
 
 if [ -n "${WEBRTC_PORT}" ]; then
   announce+=("/ip4/${PUBLIC_IPV4}/udp/${WEBRTC_PORT}/webrtc-direct")
   if [ -n "${PUBLIC_IPV6}" ]; then
-    announce+=("/ip6/${PUBLIC_IPV6}/udp/${WEBRTC_PORT}/webrtc-direct")
+    announce+=("/ip6/${PUBLIC_IPV6}/udp/${RELAY_WEBRTC_LISTEN_PORT}/webrtc-direct")
   fi
 fi
 
 if [ -n "${QUIC_PORT}" ]; then
   announce+=("/ip4/${PUBLIC_IPV4}/udp/${QUIC_PORT}/quic-v1")
   if [ -n "${PUBLIC_IPV6}" ]; then
-    announce+=("/ip6/${PUBLIC_IPV6}/udp/${QUIC_PORT}/quic-v1")
+    announce+=("/ip6/${PUBLIC_IPV6}/udp/${RELAY_QUIC_LISTEN_PORT}/quic-v1")
   fi
 fi
 
