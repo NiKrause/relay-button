@@ -117,6 +117,13 @@ write_env_var "RELAY_WS_PORT" "9092"
 write_env_var "RELAY_WEBRTC_PORT" "9093"
 write_env_var "RELAY_QUIC_PORT" "9094"
 write_env_var "RELAY_DISABLE_WEBRTC" "1"
-write_env_var "RELAY_DISABLE_BOOTSTRAP" "1"
+# Bootstrap MUST stay enabled. The relay needs public IPFS/DHT peers so libp2p
+# AutoNAT can confirm a public address — the precondition for AutoTLS to fetch
+# the `*.libp2p.direct` certificate. With bootstrap disabled the relay comes up
+# isolated (0 peers, empty DHT routing table), AutoNAT never confirms, and
+# AutoTLS silently stops serving certs ("no public addresses"), so browsers can
+# only reach it through the Caddy `2n6.me` proxy. RELAY_DISABLE_BOOTSTRAP=1 is
+# for tests / deliberately isolated deployments only.
+write_env_var "RELAY_DISABLE_BOOTSTRAP" "0"
 write_env_var "ENABLE_GENERAL_LOGS" "1"
 write_env_var "DEBUG" "'libp2p:websockets:listener'"
