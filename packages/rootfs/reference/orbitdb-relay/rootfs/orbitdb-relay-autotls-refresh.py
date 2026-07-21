@@ -129,6 +129,13 @@ def build_secure_addrs(env_values: dict[str, str], zone: str) -> list[str]:
     if not ws_port:
         raise RuntimeError("missing EXTERNAL_RELAY_WS_PORT in environment file")
 
+    # IPv4 is NAT/port-mapped, so it is advertised on the externally assigned
+    # host port. IPv6 is globally routed with no NAT on the Aleph VM — reachable
+    # directly on the internal listen port, while the mapped host port is closed
+    # over IPv6. Advertise the IPv6 libp2p.direct AutoTLS addresses on the
+    # internal WS port so AutoNAT/AutoTLS dial-backs actually reach the relay.
+    ws_port_ipv6 = env_values.get("RELAY_WS_PORT", "").strip() or ws_port
+
     addrs: list[str] = []
 
     public_ipv4 = env_values.get("PUBLIC_IPV4", "").strip()
@@ -140,8 +147,8 @@ def build_secure_addrs(env_values: dict[str, str], zone: str) -> list[str]:
     public_ipv6 = env_values.get("PUBLIC_IPV6", "").strip()
     if public_ipv6:
         host6 = ipv6_domain(public_ipv6, zone)
-        addrs.append(f"/ip6/{public_ipv6}/tcp/{ws_port}/tls/sni/{host6}/ws")
-        addrs.append(f"/dns6/{host6}/tcp/{ws_port}/tls/ws")
+        addrs.append(f"/ip6/{public_ipv6}/tcp/{ws_port_ipv6}/tls/sni/{host6}/ws")
+        addrs.append(f"/dns6/{host6}/tcp/{ws_port_ipv6}/tls/ws")
 
     if not addrs:
         raise RuntimeError("missing PUBLIC_IPV4/PUBLIC_IPV6 in environment file")
