@@ -115,12 +115,17 @@ export interface WaitForPubsubSubscriberOptions {
 
 export interface RelayButtonDriverOptions {
   launcherName?: string | RegExp
+  /** Accessible label of the instance-name field (@le-space/ui's Svelte form labels it, no placeholder). */
+  instanceNameLabel?: string
   instanceNamePlaceholder?: string
+  /** Accessible label of the SSH-key field (@le-space/ui's Svelte form labels it, no placeholder). */
+  sshPublicKeyLabel?: string
   sshPublicKeyPlaceholder?: string
   connectWalletName?: string
   deployButtonName?: string
   deleteButtonName?: string
   refreshButtonName?: string
+  advancedToggleName?: string
 }
 
 export interface ProvisionRelayOptions {
@@ -491,12 +496,15 @@ export class RelayButtonDriver {
     this.page = page
     this.options = {
       launcherName: options.launcherName ?? 'Relay Button',
+      instanceNameLabel: options.instanceNameLabel ?? 'Instance Name',
       instanceNamePlaceholder: options.instanceNamePlaceholder ?? 'Instance name',
+      sshPublicKeyLabel: options.sshPublicKeyLabel ?? 'SSH Public Key',
       sshPublicKeyPlaceholder: options.sshPublicKeyPlaceholder ?? 'SSH public key',
       connectWalletName: options.connectWalletName ?? 'Connect MetaMask',
       deployButtonName: options.deployButtonName ?? 'Deploy Relay',
       deleteButtonName: options.deleteButtonName ?? 'Delete',
       refreshButtonName: options.refreshButtonName ?? 'Refresh',
+      advancedToggleName: options.advancedToggleName ?? 'Advanced',
     }
   }
 
@@ -510,15 +518,36 @@ export class RelayButtonDriver {
     return this.page.locator('details').filter({ hasText: instanceName }).first()
   }
 
+  /**
+   * The instance-name field, matched by accessible label OR placeholder so the
+   * driver works for both @le-space/ui builds: the Svelte form labels the field
+   * (`<label><span>Instance Name</span><input>`) with no placeholder, while the
+   * React build renders a `placeholder="Instance name"`.
+   */
+  instanceNameField(): Locator {
+    return this.page
+      .getByLabel(this.options.instanceNameLabel)
+      .or(this.page.getByPlaceholder(this.options.instanceNamePlaceholder))
+      .first()
+  }
+
+  /** The SSH-key field, matched by accessible label OR placeholder (see {@link instanceNameField}). */
+  sshPublicKeyField(): Locator {
+    return this.page
+      .getByLabel(this.options.sshPublicKeyLabel)
+      .or(this.page.getByPlaceholder(this.options.sshPublicKeyPlaceholder))
+      .first()
+  }
+
   async prepare(options: { instanceName: string; sshPublicKey: string }): Promise<void> {
     const launcher = this.page.getByRole('button', {
       name: this.options.launcherName,
     })
     await launcher.waitFor({ state: 'visible', timeout: 60_000 })
     await launcher.click()
-    await this.page.getByPlaceholder(this.options.instanceNamePlaceholder).fill(options.instanceName)
-    await this.page.getByText('Advanced', { exact: true }).click()
-    await this.page.getByPlaceholder(this.options.sshPublicKeyPlaceholder).fill(options.sshPublicKey)
+    await this.instanceNameField().fill(options.instanceName)
+    await this.page.getByText(this.options.advancedToggleName, { exact: true }).click()
+    await this.sshPublicKeyField().fill(options.sshPublicKey)
     await this.page
       .getByRole('button', {
         name: this.options.connectWalletName,

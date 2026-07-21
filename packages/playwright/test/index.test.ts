@@ -21,7 +21,7 @@ import {
   createProgressLogger,
   forwardBrowserConsole,
   LIBP2P_DIAGNOSTIC_CONSOLE_FILTER,
-  type RelayButtonDriver,
+  RelayButtonDriver,
   type RelayWalletAccount,
 } from '../src/index.ts'
 
@@ -419,4 +419,64 @@ test('forwardBrowserConsole with filter null forwards everything and truncates',
   assert.equal(lines.length, 1)
   assert.equal(lines[0].length, 20)
   assert.ok(LIBP2P_DIAGNOSTIC_CONSOLE_FILTER.test('circuit reservation'))
+})
+
+test('RelayButtonDriver.prepare fills the deploy form by label OR placeholder (Svelte + React parity)', async () => {
+  const calls = {
+    getByLabel: [] as string[],
+    getByPlaceholder: [] as string[],
+    getByText: [] as string[],
+    getByRole: [] as (string | RegExp | undefined)[],
+    fills: [] as string[],
+    clicks: 0,
+    waited: false,
+  }
+  const makeLocator = () => {
+    const locator: Record<string, unknown> = {}
+    locator.or = () => locator
+    locator.first = () => locator
+    locator.fill = async (value: string) => {
+      calls.fills.push(value)
+    }
+    locator.click = async () => {
+      calls.clicks += 1
+    }
+    locator.waitFor = async () => {
+      calls.waited = true
+    }
+    return locator
+  }
+  const page = {
+    getByLabel: (name: string) => {
+      calls.getByLabel.push(name)
+      return makeLocator()
+    },
+    getByPlaceholder: (name: string) => {
+      calls.getByPlaceholder.push(name)
+      return makeLocator()
+    },
+    getByText: (name: string) => {
+      calls.getByText.push(name)
+      return makeLocator()
+    },
+    getByRole: (_role: string, options?: { name?: string | RegExp }) => {
+      calls.getByRole.push(options?.name)
+      return makeLocator()
+    },
+  }
+
+  const driver = new RelayButtonDriver(page as never)
+  await driver.prepare({ instanceName: 'demo-instance', sshPublicKey: 'ssh-ed25519 AAAA' })
+
+  // Each field is looked up by BOTH label and placeholder so the driver works
+  // for @le-space/ui's Svelte build (labels, no placeholder) and its React
+  // build (placeholders) without per-consumer overrides.
+  assert.deepEqual(calls.getByLabel, ['Instance Name', 'SSH Public Key'])
+  assert.deepEqual(calls.getByPlaceholder, ['Instance name', 'SSH public key'])
+  assert.deepEqual(calls.getByText, ['Advanced'])
+  assert.deepEqual(calls.getByRole, ['Relay Button', 'Connect MetaMask'])
+  assert.deepEqual(calls.fills, ['demo-instance', 'ssh-ed25519 AAAA'])
+  assert.equal(calls.waited, true)
+  // launcher click + Advanced toggle + Connect wallet
+  assert.equal(calls.clicks, 3)
 })
