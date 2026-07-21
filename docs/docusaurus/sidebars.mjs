@@ -1,7 +1,6 @@
 const sidebars = {
   docsSidebar: [
     'overview/index',
-    'overview/filecoin-propgf-batch-3-application-draft',
     {
       type: 'category',
       label: 'Architecture',

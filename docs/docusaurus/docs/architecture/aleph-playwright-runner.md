@@ -28,7 +28,7 @@ flowchart TD
     A[Browser A: GitHub Chromium]
     Scenario[Provider-neutral consumer scenario]
     Evidence[Upload screenshots, result, logs, metadata and cost evidence]
-    Always[always(): exact cleanup]
+    Always["always(): exact cleanup"]
   end
 
   subgraph Aleph[Trust boundary: ephemeral Aleph VM]
@@ -106,7 +106,7 @@ flowchart LR
 
   subgraph Failure[Failure branches]
     Logs[Collect journal and service state]
-    Cleanup[always(): erase + FORGET + verify]
+    Cleanup["always(): erase + FORGET + verify"]
   end
 
   SSH -. failure .-> Logs --> Cleanup
