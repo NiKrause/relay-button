@@ -1,6 +1,6 @@
 {
 	"name": "@le-space/node",
-	"version": "0.6.34",
+	"version": "0.6.35",
 	"description": "Node and GitHub Actions adapters for Relay Button deployment tooling.",
 	"license": "MIT",
 	"private": true,
