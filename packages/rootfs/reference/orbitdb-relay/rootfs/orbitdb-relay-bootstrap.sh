@@ -125,5 +125,17 @@ write_env_var "RELAY_DISABLE_WEBRTC" "1"
 # only reach it through the Caddy `2n6.me` proxy. RELAY_DISABLE_BOOTSTRAP=1 is
 # for tests / deliberately isolated deployments only.
 write_env_var "RELAY_DISABLE_BOOTSTRAP" "0"
+# The kad-DHT must stay OFF on these 2 GB Aleph VMs. With it enabled the relay
+# announces itself into the public DHT and is then flooded with inbound
+# WebSocket connections: sockets pile up in CLOSE-WAIT (hundreds within
+# minutes), the single-threaded Node event loop saturates, and the process
+# hangs — /health, metrics and every libp2p transport stop responding while the
+# VM, Caddy and the TCP listeners still look healthy. `connectionManager
+# .maxConnections` does not prevent this: it bounds established connections,
+# not the inbound churn. Bootstrap above stays enabled, which gives AutoNAT the
+# handful of public peers it needs to confirm an address so AutoTLS can still
+# fetch its `*.libp2p.direct` certificate. Set RELAY_DISABLE_DHT=0 only on a
+# host that can absorb full DHT server load.
+write_env_var "RELAY_DISABLE_DHT" "1"
 write_env_var "ENABLE_GENERAL_LOGS" "1"
 write_env_var "DEBUG" "'libp2p:websockets:listener'"
