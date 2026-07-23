@@ -51,6 +51,29 @@ def normalize_multiaddrs(payload: dict) -> list[str]:
     return [entry for entry in values if isinstance(entry, str) and entry.strip()]
 
 
+def bootstrap_publisher_address(env_values: dict[str, str]) -> str | None:
+    """Address of the key this relay signs its own Aleph registrations with.
+
+    The guest generates that key itself, so the deployer cannot know the
+    address up front. Reporting it here lets the deployer bind an owner
+    authorization to the relay's real publisher identity instead of having to
+    send the key to the guest over the plain-HTTP setup endpoint.
+    """
+    private_key = env_values.get("ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY", "").strip()
+    if not private_key:
+        return None
+
+    try:
+        from eth_account import Account
+    except ImportError:
+        return None
+
+    try:
+        return Account.from_key(private_key).address
+    except (ValueError, TypeError):
+        return None
+
+
 def build_grouped_multiaddrs(env_values: dict[str, str], all_multiaddrs: list[str], peer_id: str) -> dict[str, list[str]]:
     proxy_hostname = env_values.get("PROXY_HOSTNAME", "").strip().lower()
     direct_tcp_multiaddrs = [addr for addr in all_multiaddrs if "/tcp/" in addr and "/ws" not in addr]
@@ -148,6 +171,7 @@ def main() -> None:
     env_values = parse_env_file(ENV_FILE)
     payload = {
         "peer_id": peer_id,
+        "bootstrap_publisher_address": bootstrap_publisher_address(env_values),
         "announce_addrs": [
             entry.strip()
             for entry in env_values.get("VITE_APPEND_ANNOUNCE", "").split(",")
