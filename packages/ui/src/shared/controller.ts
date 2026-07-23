@@ -1374,7 +1374,13 @@ export class SponsorRelayController {
         instanceItemHash: args.itemHash,
         fetch: asJsonFetch,
         apiHost: this.client.apiHost,
-        attempts: 40,
+        // The guest publishes this signal only after its describe step has a
+        // browser-dialable address, which waits on AutoTLS for up to ~240 s.
+        // Wait comfortably longer than that (100 × 3 s = 300 s) so the complete
+        // signal arrives instead of timing out — a timeout here drops into the
+        // recovery path, which used to poll the guest over plain HTTP (mixed
+        // content on an HTTPS origin).
+        attempts: 100,
         delayMs: 3000,
       });
 
@@ -1442,6 +1448,26 @@ export class SponsorRelayController {
           relayMetadata.browserBootstrapMultiaddrs.length,
       });
     } else {
+      // The only HTTPS-safe way to read this metadata is over the proxy
+      // (uc-go-peer serves it there). orbitdb-relay has no such endpoint, so
+      // for an aggregate-handoff image its metadata must come from the signal
+      // — never from a plain-HTTP guest fetch, which a HTTPS page blocks as
+      // mixed content. With the extended signal wait above the signal should
+      // always be present here; refuse the insecure fetch rather than break an
+      // HTTPS deploy silently.
+      const canReadMetadataSecurely =
+        profile === "uc-go-peer" && Boolean(runtime.proxyUrl);
+      if (
+        usesBootstrapConfigAggregate(this.state.manifest) &&
+        !canReadMetadataSecurely
+      ) {
+        throw new Error(
+          "The relay applied its bootstrap config but the acknowledgement did not carry its final multiaddrs, " +
+            "and this image exposes no HTTPS metadata endpoint. Reading them over plain HTTP would be blocked as " +
+            "mixed content on an HTTPS origin, so the deployment cannot be completed.",
+        );
+      }
+
       this.emitProgress({
         stage: "publishing-bootstrap",
         label: "Waiting for secure relay metadata",
@@ -1455,8 +1481,7 @@ export class SponsorRelayController {
       relayMetadata = await fetchRelayMetadataForRuntime({
         runtime,
         fetch: (url, init) => fetch(url, init),
-        preferSecureMetadata:
-          profile === "uc-go-peer" && Boolean(runtime.proxyUrl),
+        preferSecureMetadata: canReadMetadataSecurely,
         attempts: 80,
         delayMs: 3000,
         timeoutMs: 240000,
@@ -2841,14 +2866,25 @@ export class SponsorRelayController {
                 requirePublicGuestIpv6ForProxy: true,
               });
 
-              if (latestRuntime.diagnostics?.state === "ready") {
+              // This CRN-error recovery reconciles a registration from a
+              // fresh metadata read. Only do that read when it can be HTTPS
+              // safe: uc-go-peer serves metadata over its proxy; an
+              // aggregate-handoff image (orbitdb-relay) has no HTTPS metadata
+              // endpoint, so reading it here would be a plain-HTTP guest fetch
+              // — blocked as mixed content on an HTTPS origin. Skip it; the
+              // primary signal path is the metadata source for those images.
+              const canReconcileMetadataSecurely =
+                attemptProfile === "uc-go-peer" &&
+                Boolean(latestRuntime.proxyUrl);
+              const mayReadMetadata =
+                canReconcileMetadataSecurely ||
+                !usesBootstrapConfigAggregate(this.state.manifest);
+              if (latestRuntime.diagnostics?.state === "ready" && mayReadMetadata) {
                 const reconciledRelayMetadata =
                   await fetchRelayMetadataForRuntime({
                     runtime: latestRuntime,
                     fetch: (url, init) => fetch(url, init),
-                    preferSecureMetadata:
-                      attemptProfile === "uc-go-peer" &&
-                      Boolean(latestRuntime.proxyUrl),
+                    preferSecureMetadata: canReconcileMetadataSecurely,
                     attempts: 3,
                     delayMs: 1000,
                     timeoutMs: 15000,

@@ -1,6 +1,6 @@
 {
   "name": "@le-space/aleph-bootstrap",
-  "version": "0.6.37",
+  "version": "0.6.38",
   "description": "Aleph-backed libp2p bootstrap discovery and relay registration helpers.",
   "license": "MIT",
   "type": "module",
