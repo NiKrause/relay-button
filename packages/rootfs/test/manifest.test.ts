@@ -41,6 +41,7 @@ test("createRootfsManifest mirrors the UC rootfs manifest shape", async () => {
     version: "uc-go-peer-git-20260516-deadbee",
     rootfsInstallStrategy: "prebaked",
     requiresBootstrapNetwork: false,
+    supportsBootstrapConfigAggregate: true,
     bootstrapSummary: "Dependencies are preinstalled in the image.",
     rootfsSourceSizeBytes: 123456789,
     requiredPortForwards: contract.ports,
