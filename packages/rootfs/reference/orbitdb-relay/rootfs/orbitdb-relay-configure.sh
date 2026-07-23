@@ -40,6 +40,7 @@ QUIC_PORT=""
 BOOTSTRAP_PUBLISHER_PRIVATE_KEY=""
 BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_HEX=""
 BOOTSTRAP_OWNER_PRIVATE_KEY=""
+BOOTSTRAP_OWNER_ADDRESS=""
 BOOTSTRAP_OWNER_AUTHORIZATION_B64=""
 BOOTSTRAP_REGISTRATION_ID=""
 START_SERVICE=1
@@ -60,6 +61,7 @@ Usage:
     [--bootstrap-publisher-private-key <hex>] \
     [--bootstrap-publisher-libp2p-identity-hex <hex>] \
     [--bootstrap-owner-private-key <hex>] \
+    [--bootstrap-owner-address <0x…>] \
     [--bootstrap-owner-authorization-b64 <base64>] \
     [--bootstrap-registration-id <id>] \
     [--no-start]
@@ -67,6 +69,33 @@ Usage:
 Writes VITE_APPEND_ANNOUNCE for the externally assigned Aleph host ports,
 marks the relay as ready, and optionally starts the relay plus Caddy services.
 EOF
+}
+
+current_bootstrap_publisher_private_key() {
+  local existing
+  existing="$(grep -E '^[#[:space:]]*ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY=' "${ENV_FILE}" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+  if [ -n "${existing}" ]; then
+    printf '%s\n' "${existing}"
+    return
+  fi
+  printf '\n'
+}
+
+# The bootstrap publisher key signs this relay's own Aleph registrations, so
+# it never has to leave the guest. Generating it here means the deployer does
+# not have to send a secret to the plain-HTTP setup endpoint, which runs
+# before Caddy/TLS exists and would otherwise put the key on the wire in the
+# clear. An already-provisioned key is reused so the relay keeps its identity
+# across reconfigurations.
+generate_bootstrap_publisher_private_key() {
+  while true; do
+    local candidate
+    candidate="$(openssl rand -hex 32)"
+    if [ -n "${candidate}" ] && [ "${candidate}" != "0000000000000000000000000000000000000000000000000000000000000000" ]; then
+      printf '0x%s\n' "${candidate}"
+      return
+    fi
+  done
 }
 
 write_env_var() {
@@ -176,6 +205,10 @@ while [ "$#" -gt 0 ]; do
       BOOTSTRAP_OWNER_PRIVATE_KEY="${2:-}"
       shift 2
       ;;
+    --bootstrap-owner-address)
+      BOOTSTRAP_OWNER_ADDRESS="${2:-}"
+      shift 2
+      ;;
     --bootstrap-owner-authorization-b64)
       BOOTSTRAP_OWNER_AUTHORIZATION_B64="${2:-}"
       shift 2
@@ -267,6 +300,12 @@ fi
 if [ -n "${QUIC_PORT}" ]; then
   write_env_var "EXTERNAL_RELAY_QUIC_PORT" "${QUIC_PORT}"
 fi
+if [ -z "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}" ]; then
+  BOOTSTRAP_PUBLISHER_PRIVATE_KEY="$(current_bootstrap_publisher_private_key)"
+fi
+if [ -z "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}" ]; then
+  BOOTSTRAP_PUBLISHER_PRIVATE_KEY="$(generate_bootstrap_publisher_private_key)"
+fi
 if [ -n "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}" ]; then
   write_env_var "ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY" "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}"
 fi
@@ -275,6 +314,9 @@ if [ -n "${BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_HEX}" ]; then
 fi
 if [ -n "${BOOTSTRAP_OWNER_PRIVATE_KEY}" ]; then
   write_env_var "ALEPH_BOOTSTRAP_OWNER_PRIVATE_KEY" "${BOOTSTRAP_OWNER_PRIVATE_KEY}"
+fi
+if [ -n "${BOOTSTRAP_OWNER_ADDRESS}" ]; then
+  write_env_var "ALEPH_BOOTSTRAP_OWNER_ADDRESS" "${BOOTSTRAP_OWNER_ADDRESS}"
 fi
 if [ -n "${BOOTSTRAP_OWNER_AUTHORIZATION_B64}" ]; then
   write_env_var "ALEPH_BOOTSTRAP_OWNER_AUTHORIZATION_B64" "${BOOTSTRAP_OWNER_AUTHORIZATION_B64}"

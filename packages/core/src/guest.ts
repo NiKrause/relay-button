@@ -242,7 +242,6 @@ export async function configureUcGoPeer(args: {
   proxyUrl?: string | null;
   bootstrapPublisherPrivateKey?: string | null;
   bootstrapPublisherLibp2pIdentityBase64?: string | null;
-  bootstrapOwnerPrivateKey?: string | null;
   bootstrapOwnerAuthorizationBase64?: string | null;
   bootstrapRegistrationId?: string | null;
   noStart?: boolean;
@@ -268,7 +267,6 @@ export async function configureUcGoPeer(args: {
       args.bootstrapPublisherPrivateKey ?? undefined,
     bootstrap_publisher_libp2p_identity_b64:
       args.bootstrapPublisherLibp2pIdentityBase64 ?? undefined,
-    bootstrap_owner_private_key: args.bootstrapOwnerPrivateKey ?? undefined,
     bootstrap_owner_authorization_b64:
       args.bootstrapOwnerAuthorizationBase64 ?? undefined,
     bootstrap_registration_id: args.bootstrapRegistrationId ?? undefined,
@@ -314,7 +312,6 @@ export async function configureOrbitdbRelaySetup(args: {
   proxyUrl?: string | null;
   bootstrapPublisherPrivateKey?: string | null;
   bootstrapPublisherLibp2pIdentityHex?: string | null;
-  bootstrapOwnerPrivateKey?: string | null;
   bootstrapOwnerAuthorizationBase64?: string | null;
   bootstrapRegistrationId?: string | null;
   noStart?: boolean;
@@ -341,7 +338,6 @@ export async function configureOrbitdbRelaySetup(args: {
       args.bootstrapPublisherPrivateKey ?? undefined,
     bootstrap_publisher_libp2p_identity_hex:
       args.bootstrapPublisherLibp2pIdentityHex ?? undefined,
-    bootstrap_owner_private_key: args.bootstrapOwnerPrivateKey ?? undefined,
     bootstrap_owner_authorization_b64:
       args.bootstrapOwnerAuthorizationBase64 ?? undefined,
     bootstrap_registration_id: args.bootstrapRegistrationId ?? undefined,
