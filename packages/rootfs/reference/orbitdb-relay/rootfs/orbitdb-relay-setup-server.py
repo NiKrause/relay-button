@@ -143,7 +143,11 @@ class Handler(BaseHTTPRequestHandler):
             bootstrap_publisher_libp2p_identity_hex = payload.get(
                 "bootstrap_publisher_libp2p_identity_hex"
             )
-            bootstrap_owner_private_key = payload.get("bootstrap_owner_private_key")
+            # NOTE: `bootstrap_owner_private_key` is deliberately NOT accepted
+            # here. This endpoint is plain HTTP (it runs before Caddy/TLS
+            # exists), so anything sent to it crosses the network in the
+            # clear. The owner only ever needs to hand the guest a *signed
+            # authorization*, never the key itself.
             bootstrap_owner_authorization_b64 = payload.get("bootstrap_owner_authorization_b64")
             bootstrap_registration_id = payload.get("bootstrap_registration_id")
             no_start = bool(payload.get("no_start"))
@@ -182,8 +186,6 @@ class Handler(BaseHTTPRequestHandler):
                         str(bootstrap_publisher_libp2p_identity_hex),
                     ]
                 )
-            if bootstrap_owner_private_key is not None:
-                args.extend(["--bootstrap-owner-private-key", str(bootstrap_owner_private_key)])
             if bootstrap_owner_authorization_b64 is not None:
                 args.extend(
                     ["--bootstrap-owner-authorization-b64", str(bootstrap_owner_authorization_b64)]

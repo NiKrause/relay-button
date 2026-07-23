@@ -69,6 +69,33 @@ marks the relay as ready, and optionally starts the relay plus Caddy services.
 EOF
 }
 
+current_bootstrap_publisher_private_key() {
+  local existing
+  existing="$(grep -E '^[#[:space:]]*ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY=' "${ENV_FILE}" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+  if [ -n "${existing}" ]; then
+    printf '%s\n' "${existing}"
+    return
+  fi
+  printf '\n'
+}
+
+# The bootstrap publisher key signs this relay's own Aleph registrations, so
+# it never has to leave the guest. Generating it here means the deployer does
+# not have to send a secret to the plain-HTTP setup endpoint, which runs
+# before Caddy/TLS exists and would otherwise put the key on the wire in the
+# clear. An already-provisioned key is reused so the relay keeps its identity
+# across reconfigurations.
+generate_bootstrap_publisher_private_key() {
+  while true; do
+    local candidate
+    candidate="$(openssl rand -hex 32)"
+    if [ -n "${candidate}" ] && [ "${candidate}" != "0000000000000000000000000000000000000000000000000000000000000000" ]; then
+      printf '0x%s\n' "${candidate}"
+      return
+    fi
+  done
+}
+
 write_env_var() {
   local key="$1"
   local value="$2"
@@ -266,6 +293,12 @@ if [ -n "${WEBRTC_PORT}" ]; then
 fi
 if [ -n "${QUIC_PORT}" ]; then
   write_env_var "EXTERNAL_RELAY_QUIC_PORT" "${QUIC_PORT}"
+fi
+if [ -z "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}" ]; then
+  BOOTSTRAP_PUBLISHER_PRIVATE_KEY="$(current_bootstrap_publisher_private_key)"
+fi
+if [ -z "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}" ]; then
+  BOOTSTRAP_PUBLISHER_PRIVATE_KEY="$(generate_bootstrap_publisher_private_key)"
 fi
 if [ -n "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}" ]; then
   write_env_var "ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY" "${BOOTSTRAP_PUBLISHER_PRIVATE_KEY}"

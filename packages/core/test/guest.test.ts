@@ -118,7 +118,6 @@ test("configureUcGoPeer posts the expected payload to the guest", async () => {
     proxyUrl: "https://relay.example.com",
     bootstrapPublisherPrivateKey: "0xpublisher",
     bootstrapPublisherLibp2pIdentityBase64: "ZmFrZS1saWJwMnAtaWRlbnRpdHk=",
-    bootstrapOwnerPrivateKey: "0xowner",
     bootstrapOwnerAuthorizationBase64: "eyJhdXRoIjp0cnVlfQ==",
     bootstrapRegistrationId: "relay:uc-go-peer:demo",
     noStart: true,
@@ -136,7 +135,9 @@ test("configureUcGoPeer posts the expected payload to the guest", async () => {
     body,
     /"bootstrap_publisher_libp2p_identity_b64":"ZmFrZS1saWJwMnAtaWRlbnRpdHk="/,
   );
-  assert.match(body, /"bootstrap_owner_private_key":"0xowner"/);
+  // The setup endpoint is plain HTTP, so the owner's private key must never
+  // be part of the payload — only the signed authorization is.
+  assert.doesNotMatch(body, /bootstrap_owner_private_key/);
   assert.match(body, /"bootstrap_owner_authorization_b64":"eyJhdXRoIjp0cnVlfQ=="/);
   assert.match(body, /"bootstrap_registration_id":"relay:uc-go-peer:demo"/);
   assert.match(body, /"no_start":true/);
@@ -157,7 +158,6 @@ test("configureOrbitdbRelaySetup posts bootstrap key material to the guest", asy
     quicPort: 32094,
     bootstrapPublisherPrivateKey: "0xpublisher",
     bootstrapPublisherLibp2pIdentityHex: "deadbeef",
-    bootstrapOwnerPrivateKey: "0xowner",
     bootstrapOwnerAuthorizationBase64: "eyJhdXRoIjp0cnVlfQ==",
     bootstrapRegistrationId: "relay:orbitdb-relay:demo",
     noStart: true,
@@ -173,7 +173,9 @@ test("configureOrbitdbRelaySetup posts bootstrap key material to the guest", asy
   assert.match(body, /"ws_port":32443/);
   assert.match(body, /"bootstrap_publisher_private_key":"0xpublisher"/);
   assert.match(body, /"bootstrap_publisher_libp2p_identity_hex":"deadbeef"/);
-  assert.match(body, /"bootstrap_owner_private_key":"0xowner"/);
+  // The setup endpoint is plain HTTP, so the owner's private key must never
+  // be part of the payload — only the signed authorization is.
+  assert.doesNotMatch(body, /bootstrap_owner_private_key/);
   assert.match(body, /"bootstrap_owner_authorization_b64":"eyJhdXRoIjp0cnVlfQ=="/);
   assert.match(body, /"bootstrap_registration_id":"relay:orbitdb-relay:demo"/);
   assert.match(body, /"no_start":true/);
