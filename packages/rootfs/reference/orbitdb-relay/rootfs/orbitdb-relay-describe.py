@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import json
 import os
+import socket
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -8,9 +10,37 @@ import urllib.request
 
 ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay")
 METRICS_PORT = int(os.environ.get("METRICS_PORT", "9090"))
+CADDY_HTTPS_PORT = int(os.environ.get("CADDY_HTTPS_PORT", "443"))
 WAIT_TIMEOUT_SECONDS = int(os.environ.get("DESCRIBE_WAIT_TIMEOUT_SECONDS", "240"))
 WAIT_INTERVAL_SECONDS = float(os.environ.get("DESCRIBE_WAIT_INTERVAL_SECONDS", "2"))
 AUTOTLS_EXTRA_WAIT_SECONDS = int(os.environ.get("DESCRIBE_AUTOTLS_EXTRA_WAIT_SECONDS", "120"))
+
+
+def caddy_cert_serves(hostname: str) -> bool:
+    """True only once Caddy actually serves a publicly-trusted TLS certificate
+    for `hostname`.
+
+    Mode-B failure: describe.py used to advertise the 2n6 proxy-wss address as
+    soon as PROXY_HOSTNAME was configured, but Caddy acquires the Let's Encrypt
+    certificate asynchronously *after* it (re)starts (the caddy-ready file only
+    marks the restart). Browsers dialing before the cert is live got
+    net::ERR_SSL_PROTOCOL_ERROR. Verify the real browser-facing certificate with
+    a TLS handshake to the local Caddy (127.0.0.1:443) using the public
+    hostname as SNI — done locally so hairpin-NAT to the VM's own public IP is
+    irrelevant, and validated against the system CA store so Caddy's internal
+    self-signed fallback (served before ACME completes) is rejected.
+    """
+    if not hostname:
+        return False
+    context = ssl.create_default_context()
+    try:
+        with socket.create_connection(("127.0.0.1", CADDY_HTTPS_PORT), timeout=8) as raw:
+            with context.wrap_socket(raw, server_hostname=hostname) as tls:
+                # A validated peer cert here means the handshake a browser will
+                # perform to wss://<hostname>:443 succeeds too.
+                return bool(tls.getpeercert())
+    except (ssl.SSLError, OSError, ValueError):
+        return False
 
 
 def parse_env_file(path: str) -> dict[str, str]:
@@ -153,9 +183,28 @@ def main() -> None:
             all_multiaddrs = normalize_multiaddrs(multiaddrs_payload)
             grouped = build_grouped_multiaddrs(env_values, all_multiaddrs, peer_id)
             proxy_hostname = env_values.get("PROXY_HOSTNAME", "").strip()
+
+            # Only treat the 2n6 proxy-wss address as browser-dialable once
+            # Caddy actually serves a valid certificate for it. Until then, drop
+            # the synthetic (not-yet-serving) proxy address so the relay never
+            # advertises an endpoint that would fail a browser's TLS handshake.
+            proxy_cert_ready = bool(
+                proxy_hostname
+                and grouped["proxy_wss_multiaddrs"]
+                and caddy_cert_serves(proxy_hostname)
+            )
+            if grouped["proxy_wss_multiaddrs"] and not proxy_cert_ready:
+                proxy_set = set(grouped["proxy_wss_multiaddrs"])
+                grouped["browser_bootstrap_multiaddrs"] = [
+                    addr for addr in grouped["browser_bootstrap_multiaddrs"] if addr not in proxy_set
+                ]
+
+            # Break as soon as a genuinely dialable browser address exists:
+            # AutoTLS libp2p.direct (only announced once its cert is live) or a
+            # cert-verified 2n6 proxy address.
             if grouped["autotls_wss_multiaddrs"]:
                 break
-            if proxy_hostname and grouped["proxy_wss_multiaddrs"] and time.monotonic() - started_at >= AUTOTLS_EXTRA_WAIT_SECONDS:
+            if proxy_cert_ready:
                 break
             if not proxy_hostname and time.monotonic() - started_at >= AUTOTLS_EXTRA_WAIT_SECONDS:
                 break
