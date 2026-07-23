@@ -1693,6 +1693,41 @@ export class SponsorRelayController {
       }
     }
 
+    // Reachability gate (orbitdb-relay). The browser path historically
+    // declared success as soon as the registration was visible on Aleph,
+    // without ever checking the relay was actually dialable. A VM whose 2n6
+    // proxy never started forwarding — or whose Caddy 443 was down — therefore
+    // counted as a successful deploy, and consumers only discovered it was
+    // unreachable afterward, with no CRN failover. Probe the relay over its
+    // HTTPS proxy (the same Caddy :443 that fronts the browser WSS transport,
+    // so /health answering is a strong signal that WSS works too); if it never
+    // reports this relay's peerId, throw so the CRN loop fails over to another
+    // host instead of shipping an undialable relay.
+    if (profile === "orbitdb-relay") {
+      const proxyHostname = (() => {
+        try {
+          return runtime.proxyUrl ? new URL(runtime.proxyUrl).hostname : null;
+        } catch {
+          return null;
+        }
+      })();
+      if (proxyHostname) {
+        const reachable = await this.probeRelayReachableOverProxy({
+          proxyHostname,
+          peerId,
+          itemHash: args.itemHash,
+        });
+        if (!reachable) {
+          throw new Error(
+            `Relay ${peerId} never became reachable over its HTTPS proxy ` +
+              `(https://${proxyHostname}/health) within the readiness window — ` +
+              `the CRN's proxy is not forwarding to the relay. Failing this ` +
+              `attempt so another host can be tried.`,
+          );
+        }
+      }
+    }
+
     if (profile === "uc-go-peer" && args.deploymentToken) {
       let cleanupAggregateItemHash: string | null = null;
       await deleteVmBootstrapConfig({
@@ -1728,6 +1763,60 @@ export class SponsorRelayController {
         progress: 99,
       });
     }
+  }
+
+  private async probeRelayReachableOverProxy(args: {
+    proxyHostname: string;
+    peerId: string;
+    itemHash: string;
+  }): Promise<boolean> {
+    const healthUrl = `https://${args.proxyHostname}/health`;
+    const attempts = 30;
+    const delayMs = 4000;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const abort = new AbortController();
+        const timeout = globalThis.setTimeout(() => abort.abort(), 10000);
+        const response = await fetch(healthUrl, {
+          cache: "no-cache",
+          signal: abort.signal,
+        });
+        globalThis.clearTimeout(timeout);
+        if (response.ok) {
+          const payload = (await response.json().catch(() => null)) as {
+            peerId?: unknown;
+          } | null;
+          if (
+            typeof payload?.peerId === "string" &&
+            payload.peerId === args.peerId
+          ) {
+            this.emitProgress({
+              stage: "publishing-bootstrap",
+              label: "Relay reachable over HTTPS",
+              progress: 98,
+              status: "success",
+              itemHash: args.itemHash,
+              detail: `Relay answered on ${healthUrl} with its peer id (attempt ${attempt}/${attempts}).`,
+            });
+            return true;
+          }
+        }
+      } catch {
+        // network error / abort — retry below
+      }
+      this.emitProgress({
+        stage: "publishing-bootstrap",
+        label: "Waiting for relay to be reachable",
+        progress: 98,
+        status: "warning",
+        itemHash: args.itemHash,
+        detail: `Relay not yet reachable over ${healthUrl} (attempt ${attempt}/${attempts}).`,
+      });
+      if (attempt < attempts) {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
+      }
+    }
+    return false;
   }
 
   private async cleanupStaleVmBootstrapConfigHistory(args: {
