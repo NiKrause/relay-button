@@ -182,13 +182,16 @@ test('executeDeployPlan deploys, publishes port forwards, and waits for processi
   assert.equal(result.runtime?.sshCommand, 'ssh root@203.0.113.7 -p 32022')
   assert.equal(result.runtime?.setupHealth?.ok, true)
   assert.equal(result.configuration?.metadata?.peer_id, expectedRelayIdentity.peerId)
-  assert.equal(configureBodies.length, 1)
-  const configurePayload = JSON.parse(configureBodies[0] ?? '{}')
-  assert.equal(
-    configurePayload.bootstrap_publisher_libp2p_identity_b64,
-    expectedRelayIdentity.protobufBase64
-  )
-  assert.ok(typeof configurePayload.bootstrap_owner_authorization_b64 === 'string')
+  // No key material may reach the guest setup endpoint — it is plain HTTP.
+  // The authorization is no longer precomputed (it commits to the guest's
+  // real peerId), so it follows only once the registration is published.
+  assert.ok(configureBodies.length >= 1)
+  for (const body of configureBodies) {
+    const payload = JSON.parse(body || '{}')
+    assert.equal(payload.bootstrap_publisher_private_key, undefined)
+    assert.equal(payload.bootstrap_publisher_libp2p_identity_b64, undefined)
+    assert.equal(payload.bootstrap_owner_private_key, undefined)
+  }
   assert.ok(calls.some((entry) => entry.includes('/api/v0/aggregates/0x1234.json')))
   const notifyIndex = calls.findIndex((entry) => entry.includes('/control/allocation/notify'))
   const runtimeIndex = calls.findIndex((entry) => entry.includes('/v2/about/executions/list'))
@@ -1281,13 +1284,13 @@ test('executeDeployPlan configures orbitdb relay after mapped ports appear', asy
     metrics_https_port: 29443,
     webrtc_port: 29093,
     quic_port: 29094,
-    bootstrap_publisher_private_key: derivedBootstrapPublisherPrivateKey,
-    bootstrap_publisher_libp2p_identity_hex: Buffer.from(expectedRelayIdentity.protobuf).toString('hex'),
+    // No key material: the setup endpoint is plain HTTP, and the guest
+    // generates its own publisher key and libp2p identity.
     bootstrap_registration_id: 'relay:orbitdb-relay:orbitdb-relay',
   })
 })
 
-test('executeDeployPlan includes bootstrap owner authorization during the initial orbitdb guest configure call', async () => {
+test('executeDeployPlan pushes the bootstrap owner authorization after the guest reports metadata', async () => {
   const configureBodies: string[] = []
   const derivedBootstrapPublisherPrivateKey = deriveBootstrapPublisherPrivateKey({
     sourcePrivateKey: DEPLOY_PLAN.privateKey,
@@ -1445,15 +1448,28 @@ test('executeDeployPlan includes bootstrap owner authorization during the initia
   )
 
   assert.equal(result.itemHash, 'hash-d1')
-  assert.equal(configureBodies.length, 1)
-  const firstConfigure = JSON.parse(configureBodies[0] ?? '{}')
 
-  assert.equal(firstConfigure.bootstrap_owner_private_key, undefined)
-  assert.equal(firstConfigure.bootstrap_publisher_private_key, derivedBootstrapPublisherPrivateKey)
-  assert.ok(typeof firstConfigure.bootstrap_owner_authorization_b64 === 'string')
+  // Two calls now: networking first, then the authorization once the guest
+  // has reported the peerId it commits to. No call may carry key material —
+  // the endpoint is plain HTTP.
+  assert.equal(configureBodies.length, 2)
+  const payloads = configureBodies.map((body) => JSON.parse(body || '{}'))
+  for (const payload of payloads) {
+    assert.equal(payload.bootstrap_owner_private_key, undefined)
+    assert.equal(payload.bootstrap_publisher_private_key, undefined)
+    assert.equal(payload.bootstrap_publisher_libp2p_identity_hex, undefined)
+  }
+
+  const authorizationConfigure = payloads.find(
+    (payload) => typeof payload.bootstrap_owner_authorization_b64 === 'string'
+  )
+  assert.ok(authorizationConfigure, 'expected an authorization configure call')
 
   const authorization = JSON.parse(
-    Buffer.from(firstConfigure.bootstrap_owner_authorization_b64, 'base64').toString('utf8')
+    Buffer.from(
+      authorizationConfigure.bootstrap_owner_authorization_b64,
+      'base64'
+    ).toString('utf8')
   ) as {
     scheme?: string
     payload?: { peerId?: string; publisherAddress?: string; ownerAddress?: string; registrationId?: string }
@@ -1471,7 +1487,7 @@ test('executeDeployPlan includes bootstrap owner authorization during the initia
   assert.match(String(authorization.signature ?? ''), /^0x/i)
 })
 
-test('executeDeployPlan pre-seeds orbitdb relay identity from bootstrap publisher key when supplied', async () => {
+test('executeDeployPlan never sends key material to the plain-HTTP guest setup endpoint', async () => {
   const configureBodies: string[] = []
   const bootstrapPublisherPrivateKey =
     '0x59c6995e998f97a5a0044966f0945382d7d5d95f993dbf3b61e64d1d4438f3f0'
@@ -1588,14 +1604,24 @@ test('executeDeployPlan pre-seeds orbitdb relay identity from bootstrap publishe
   )
 
   assert.equal(result.itemHash, 'hash-s1')
-  assert.equal(configureBodies.length, 1)
-  const configurePayload = JSON.parse(configureBodies[0] ?? '{}')
-  assert.equal(configurePayload.bootstrap_publisher_private_key, bootstrapPublisherPrivateKey)
-  assert.equal(
-    configurePayload.bootstrap_publisher_libp2p_identity_hex,
-    Buffer.from(expectedRelayIdentity.protobuf).toString('hex')
-  )
-  assert.ok(typeof configurePayload.bootstrap_owner_authorization_b64 === 'string')
+
+  // The guest setup endpoint is plain HTTP, so no key material may ever be
+  // sent to it — not even when the plan supplies keys.
+  for (const body of configureBodies) {
+    const payload = JSON.parse(body || '{}')
+    assert.equal(payload.bootstrap_publisher_private_key, undefined)
+    assert.equal(payload.bootstrap_publisher_libp2p_identity_hex, undefined)
+    assert.equal(payload.bootstrap_publisher_libp2p_identity_b64, undefined)
+    assert.equal(payload.bootstrap_owner_private_key, undefined)
+  }
+
+  // The authorization commits to the guest's real peerId, so it can only be
+  // signed after the guest reports metadata — it arrives in a second pass.
+  // The authorization pass only runs once the registration is published and
+  // visible; this scenario stops earlier, so only networking was configured.
+  assert.ok(configureBodies.length >= 1)
+
+  // The reported peerId is the source of truth, not a preseeded prediction.
   assert.equal(result.configuration?.metadata?.peer_id, expectedRelayIdentity.peerId)
 })
 

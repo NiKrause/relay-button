@@ -456,14 +456,22 @@ export async function executeDeployPlan(
     ? await createPrivateKeyIdentity(plan.bootstrapOwnerPrivateKey)
     : null;
   const isOrbitdbRelayProfile = plan.profile === "orbitdb-relay";
-  const publisherDerivedRelayIdentity =
-    supportsRelayBootstrapProfile(plan.profile) &&
-    resolvedBootstrapPublisherPrivateKey
-      ? deriveLibp2pSecp256k1IdentityFromEvmKey(
-          resolvedBootstrapPublisherPrivateKey,
-        )
-      : null;
-
+  // Preseeding the relay's libp2p identity is deliberately disabled.
+  //
+  // It made the peerId predictable before the VM booted, which let us publish
+  // the bootstrap registration early — but only by sending the identity key
+  // (and the bootstrap publisher key) to the guest's setup endpoint, which is
+  // plain HTTP by design. Those secrets crossed the network in the clear on
+  // every deployment, and the publisher key is derived deterministically from
+  // the deploy wallet, so a single capture would compromise that publishing
+  // identity for good.
+  //
+  // The guest generates both keys itself now, so nothing has to be sent. The
+  // no-preseed path already existed as the fallback: a second /configure pass
+  // signs the owner authorization against the guest's real reported metadata.
+  // The runner never attested its own registration anyway — it passes no
+  // relayProof — so no attestation is lost; the guest's refresh remains the
+  // dual-key-attested source of truth.
   const placementCandidates = await deploymentPlacementsForPlan(plan, fetchImpl);
   if (placementCandidates.length === 0) {
     throw new Error("No compatible CRN was available for deployment.");
@@ -928,21 +936,11 @@ export async function executeDeployPlan(
         );
         const publisherAddress =
           bootstrapPublisherIdentity?.address ?? identity.address;
-        const precomputedOwnerAuthorization =
-          bootstrapOwnerIdentity != null &&
-          publisherDerivedRelayIdentity != null &&
-          supportsRelayBootstrapProfile(plan.profile)
-            ? await signRelayBootstrapAuthorization({
-                ownerAddress: bootstrapOwnerIdentity.address,
-                publisherAddress,
-                peerId: publisherDerivedRelayIdentity.peerId,
-                registrationId,
-                profile: plan.profile,
-                version: plan.rootfsVersion || "custom-rootfs",
-                issuedAt: Date.now(),
-                signer: bootstrapOwnerIdentity.signer,
-              })
-            : undefined;
+        // Cannot be precomputed any more: an owner authorization commits to a
+        // specific peerId, and the guest generates its own identity now, so
+        // the peerId is only known once the guest reports its metadata. It is
+        // signed below, against the real values, and pushed in a second pass.
+        const precomputedOwnerAuthorization = undefined;
         const ucanStoreProxyUrl = runtime.proxyUrl ?? proxyUrl ?? null;
         const ucanStorePublicOrigin =
           normalizeOrigin(plan.ucanStoreBootstrapPackage?.serviceOrigin) ??
@@ -962,14 +960,9 @@ export async function executeDeployPlan(
                 metricsHttpsPort: mappedPorts["443"]?.host ?? null,
                 webrtcPort: mappedPorts["9093"]?.host ?? null,
                 quicPort: mappedPorts["9094"]?.host ?? null,
-                bootstrapPublisherPrivateKey:
-                  resolvedBootstrapPublisherPrivateKey || null,
-                bootstrapPublisherLibp2pIdentityHex:
-                  publisherDerivedRelayIdentity?.protobuf
-                    ? Buffer.from(
-                        publisherDerivedRelayIdentity.protobuf,
-                      ).toString("hex")
-                    : null,
+                // No key material: this endpoint is plain HTTP. The guest
+                // generates its own bootstrap publisher key and libp2p
+                // identity.
                 bootstrapOwnerAuthorizationBase64: precomputedOwnerAuthorization
                   ? Buffer.from(
                       JSON.stringify(precomputedOwnerAuthorization),
@@ -1019,10 +1012,9 @@ export async function executeDeployPlan(
                     ? (mappedPorts["9095"]?.host ?? null)
                     : null,
                 proxyUrl,
-                bootstrapPublisherPrivateKey:
-                  resolvedBootstrapPublisherPrivateKey || null,
-                bootstrapPublisherLibp2pIdentityBase64:
-                  publisherDerivedRelayIdentity?.protobufBase64 ?? null,
+                // No key material: this endpoint is plain HTTP. The guest
+                // generates its own bootstrap publisher key and libp2p
+                // identity.
                 bootstrapOwnerAuthorizationBase64: precomputedOwnerAuthorization
                   ? Buffer.from(
                       JSON.stringify(precomputedOwnerAuthorization),
@@ -1196,29 +1188,10 @@ export async function executeDeployPlan(
         }
 
         const metadata = configuration?.metadata ?? null;
-        if (
-          publisherDerivedRelayIdentity &&
-          metadata?.peer_id &&
-          metadata.peer_id !== publisherDerivedRelayIdentity.peerId
-        ) {
-          log(
-            `[deploy] guest peerId ${metadata.peer_id} did not match preseeded publisher-derived peerId ${publisherDerivedRelayIdentity.peerId}; cleaning up`,
-          );
-          await cleanupFailedDeploymentForPlan(plan, log, {
-            sender: identity.address,
-            instanceItemHash: deployment.itemHash,
-            reason: "Relay peerId did not match the publisher-derived libp2p identity",
-            signer: identity.signer,
-            hasher,
-            fetch: fetchImpl,
-            channel: plan.channel,
-            apiHost: plan.apiHost,
-          });
-          lastError = new Error(
-            `Relay peerId ${metadata.peer_id} did not match the publisher-derived libp2p identity ${publisherDerivedRelayIdentity.peerId}.`,
-          );
-          continue;
-        }
+        // The peerId-match assertion that used to sit here compared the guest
+        // against a preseeded identity. With the guest generating its own,
+        // there is nothing to compare — the reported peerId *is* the source of
+        // truth, and it is what the registration and authorization now use.
         if (
           metadata?.peer_id &&
           Array.isArray(metadata.probe_multiaddrs) &&
@@ -1227,12 +1200,22 @@ export async function executeDeployPlan(
         ) {
           try {
             log(`[deploy] publishing relay bootstrap registration to Aleph`);
+            // The guest owns the key it signs its own registrations with, so
+            // the authorization has to name the guest's publisher address —
+            // otherwise the relayProof the guest attaches on refresh would not
+            // match what the owner authorized. Older images that do not report
+            // it fall back to the deployer-derived address.
+            const attestedPublisherAddress =
+              typeof metadata?.bootstrap_publisher_address === "string" &&
+              metadata.bootstrap_publisher_address.trim()
+                ? metadata.bootstrap_publisher_address.trim()
+                : publisherAddress;
             const ownerAuthorization =
               precomputedOwnerAuthorization ??
               (bootstrapOwnerIdentity != null
                 ? await signRelayBootstrapAuthorization({
                     ownerAddress: bootstrapOwnerIdentity.address,
-                    publisherAddress,
+                    publisherAddress: attestedPublisherAddress,
                     peerId: metadata.peer_id,
                     registrationId,
                     profile: plan.profile,
@@ -1251,7 +1234,7 @@ export async function executeDeployPlan(
               multiaddrs: metadata.probe_multiaddrs,
               browserMultiaddrs: metadata.browser_bootstrap_multiaddrs,
               ownerAddress: bootstrapOwnerIdentity?.address,
-              publisherAddress,
+              publisherAddress: attestedPublisherAddress,
               ownerAuthorization,
               publisherSigner:
                 bootstrapPublisherIdentity?.signer ?? undefined,
@@ -1310,11 +1293,15 @@ export async function executeDeployPlan(
                 )}`,
               );
             }
+            // Always runs now, and for every relay profile: the authorization
+            // commits to the guest's real peerId, so it can only be signed
+            // after the guest reports metadata. It used to be precomputed from
+            // a preseeded identity and sent in the first configure call, which
+            // is exactly what required shipping the identity key.
             if (
               ownerAuthorization &&
               runtime.hostIpv4 &&
-              isOrbitdbRelayProfile &&
-              !publisherDerivedRelayIdentity
+              supportsRelayBootstrapProfile(plan.profile)
             ) {
               const ownerAuthorizationBase64 = Buffer.from(
                 JSON.stringify(ownerAuthorization),
@@ -1322,20 +1309,24 @@ export async function executeDeployPlan(
               ).toString("base64");
 
               log(`[deploy] persisting relay bootstrap authorization in guest`);
-              await configureOrbitdbRelaySetup({
+              const persistAuthorization = isOrbitdbRelayProfile
+                ? configureOrbitdbRelaySetup
+                : configureUcGoPeer;
+              await persistAuthorization({
                 hostIpv4: runtime.hostIpv4,
                 publicIpv6: runtime.ipv6,
                 setupPort,
-                tcpPort: mappedPorts["9091"]?.host ?? 0,
-                wsPort:
-                  mappedPorts["9092"]?.host ?? mappedPorts["443"]?.host ?? 0,
+                tcpPort:
+                  mappedPorts[isOrbitdbRelayProfile ? "9091" : "9095"]?.host ?? 0,
+                wsPort: isOrbitdbRelayProfile
+                  ? (mappedPorts["9092"]?.host ?? mappedPorts["443"]?.host ?? 0)
+                  : (mappedPorts["9097"]?.host ?? 0),
                 proxyUrl,
                 metricsPort: mappedPorts["9090"]?.host ?? null,
                 metricsHttpsPort: mappedPorts["443"]?.host ?? null,
                 webrtcPort: mappedPorts["9093"]?.host ?? null,
                 quicPort: mappedPorts["9094"]?.host ?? null,
-                bootstrapPublisherPrivateKey:
-                  resolvedBootstrapPublisherPrivateKey || null,
+                // No key material: this endpoint is plain HTTP.
                 bootstrapOwnerAuthorizationBase64: ownerAuthorizationBase64,
                 bootstrapRegistrationId: registrationId,
                 noStart: true,
