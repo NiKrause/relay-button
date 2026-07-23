@@ -96,7 +96,16 @@ acknowledgement that never comes.
 | Profile | Handoff |
 | --- | --- |
 | `uc-go-peer` | pull |
-| `orbitdb-relay` | push (pull port in progress) |
+| `orbitdb-relay` | pull |
+
+:::note Known gap: the aggregate carries no owner authorization
+The controller does not populate `bootstrap.ownerAuthorizationBase64` in the
+record, for either profile. The guest therefore publishes its registration
+without one, which leaves it in `wallet-signed` trust mode rather than
+`dual-key-attested`. Connectivity is unaffected — this only lowers the
+attestation level, and it is pre-existing behaviour, not a regression of the
+pull handoff.
+:::
 
 ## What may cross the setup endpoint
 

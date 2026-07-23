@@ -40,6 +40,7 @@ QUIC_PORT=""
 BOOTSTRAP_PUBLISHER_PRIVATE_KEY=""
 BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_HEX=""
 BOOTSTRAP_OWNER_PRIVATE_KEY=""
+BOOTSTRAP_OWNER_ADDRESS=""
 BOOTSTRAP_OWNER_AUTHORIZATION_B64=""
 BOOTSTRAP_REGISTRATION_ID=""
 START_SERVICE=1
@@ -60,6 +61,7 @@ Usage:
     [--bootstrap-publisher-private-key <hex>] \
     [--bootstrap-publisher-libp2p-identity-hex <hex>] \
     [--bootstrap-owner-private-key <hex>] \
+    [--bootstrap-owner-address <0x…>] \
     [--bootstrap-owner-authorization-b64 <base64>] \
     [--bootstrap-registration-id <id>] \
     [--no-start]
@@ -203,6 +205,10 @@ while [ "$#" -gt 0 ]; do
       BOOTSTRAP_OWNER_PRIVATE_KEY="${2:-}"
       shift 2
       ;;
+    --bootstrap-owner-address)
+      BOOTSTRAP_OWNER_ADDRESS="${2:-}"
+      shift 2
+      ;;
     --bootstrap-owner-authorization-b64)
       BOOTSTRAP_OWNER_AUTHORIZATION_B64="${2:-}"
       shift 2
@@ -308,6 +314,9 @@ if [ -n "${BOOTSTRAP_PUBLISHER_LIBP2P_IDENTITY_HEX}" ]; then
 fi
 if [ -n "${BOOTSTRAP_OWNER_PRIVATE_KEY}" ]; then
   write_env_var "ALEPH_BOOTSTRAP_OWNER_PRIVATE_KEY" "${BOOTSTRAP_OWNER_PRIVATE_KEY}"
+fi
+if [ -n "${BOOTSTRAP_OWNER_ADDRESS}" ]; then
+  write_env_var "ALEPH_BOOTSTRAP_OWNER_ADDRESS" "${BOOTSTRAP_OWNER_ADDRESS}"
 fi
 if [ -n "${BOOTSTRAP_OWNER_AUTHORIZATION_B64}" ]; then
   write_env_var "ALEPH_BOOTSTRAP_OWNER_AUTHORIZATION_B64" "${BOOTSTRAP_OWNER_AUTHORIZATION_B64}"

@@ -158,9 +158,11 @@ export function createRootfsManifest(
   //
   // Only declare it for images that really implement the guest-side fetch —
   // announcing it early would make the browser publish the aggregate and
-  // then wait for an acknowledgement the guest never sends. `orbitdb-relay`
-  // joins once its setup server gains the same fetch (see #61).
-  if (contract.rootfs.profile === "uc-go-peer") {
+  // then wait for an acknowledgement the guest never sends.
+  if (
+    contract.rootfs.profile === "uc-go-peer" ||
+    contract.rootfs.profile === "orbitdb-relay"
+  ) {
     manifest.supportsBootstrapConfigAggregate = true;
   }
 
