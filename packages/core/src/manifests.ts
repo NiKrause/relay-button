@@ -44,6 +44,13 @@ export function validateRootfsManifest(manifest: RootfsManifest | null): RootfsM
   }
 
   if (
+    manifest.supportsBootstrapConfigAggregate != null &&
+    typeof manifest.supportsBootstrapConfigAggregate !== 'boolean'
+  ) {
+    errors.push('Rootfs bootstrap config aggregate flag must be a boolean when provided.')
+  }
+
+  if (
     manifest.bootstrapSummary != null &&
     (typeof manifest.bootstrapSummary !== 'string' || !manifest.bootstrapSummary.trim())
   ) {
