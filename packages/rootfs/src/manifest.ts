@@ -8,6 +8,8 @@ export interface RootfsManifest {
   version: string;
   rootfsInstallStrategy: string;
   requiresBootstrapNetwork: boolean;
+  /** Guest fetches its bootstrap config from the Aleph aggregate itself. */
+  supportsBootstrapConfigAggregate?: boolean;
   bootstrapSummary: string;
   rootfsSourceSizeBytes?: number;
   requiredPortForwards: RootfsContract["ports"];
@@ -146,6 +148,20 @@ export function createRootfsManifest(
 
   if (contract.rootfs.profile === "playwright-runner") {
     manifest.playwrightVersion = "1.61.1";
+  }
+
+  // Profiles whose guest setup server fetches its own bootstrap config from
+  // the Aleph aggregate (locating it via the deployment token in its SSH
+  // key) instead of waiting for the browser to POST it over plain HTTP.
+  // The browser needs this to deploy from an HTTPS origin at all, since a
+  // HTTPS page cannot call the guest's plain-HTTP setup endpoint.
+  //
+  // Only declare it for images that really implement the guest-side fetch —
+  // announcing it early would make the browser publish the aggregate and
+  // then wait for an acknowledgement the guest never sends. `orbitdb-relay`
+  // joins once its setup server gains the same fetch (see #61).
+  if (contract.rootfs.profile === "uc-go-peer") {
+    manifest.supportsBootstrapConfigAggregate = true;
   }
 
   if (
