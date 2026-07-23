@@ -327,6 +327,15 @@ export interface RootfsManifest {
   version: string
   rootfsInstallStrategy?: 'thin' | 'prebaked' | string
   requiresBootstrapNetwork?: boolean
+  /**
+   * When true, the guest fetches its own bootstrap configuration from the
+   * Aleph aggregate (using the deployment token embedded in its SSH key)
+   * instead of the browser pushing it to the guest's plain-HTTP setup
+   * endpoint. Required to deploy from an HTTPS origin at all: a HTTPS page
+   * cannot call `http://<vm-ip>:<port>/configure` (mixed content).
+   * Images that predate the guest-side fetch must leave this unset.
+   */
+  supportsBootstrapConfigAggregate?: boolean
   bootstrapSummary?: string
   requiredPortForwards?: RootfsRequiredPortForward[]
   rootfsItemHash: string

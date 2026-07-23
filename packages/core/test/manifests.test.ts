@@ -35,6 +35,26 @@ test('rejects a missing manifest', () => {
   assert.deepEqual(result.errors, ['Rootfs manifest is missing.'])
 })
 
+test('accepts an opt-in bootstrap config aggregate flag', () => {
+  const result = validateRootfsManifest({
+    ...validUcManifest,
+    supportsBootstrapConfigAggregate: true
+  })
+  assert.equal(result.valid, true)
+  assert.deepEqual(result.errors, [])
+})
+
+test('rejects a non-boolean bootstrap config aggregate flag', () => {
+  const result = validateRootfsManifest({
+    ...validUcManifest,
+    supportsBootstrapConfigAggregate: 'yes'
+  } as never)
+  assert.equal(result.valid, false)
+  assert.ok(
+    result.errors.includes('Rootfs bootstrap config aggregate flag must be a boolean when provided.')
+  )
+})
+
 test('rejects invalid rootfs item hashes', () => {
   const result = validateRootfsManifest({
     ...validUcManifest,

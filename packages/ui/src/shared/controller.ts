@@ -492,6 +492,24 @@ function deploymentProfileForManifest(
   return null;
 }
 
+/**
+ * Whether the guest fetches its bootstrap configuration from the Aleph
+ * aggregate itself instead of the browser pushing it to the guest's
+ * plain-HTTP setup endpoint.
+ *
+ * `uc-go-peer` has always worked this way. Other profiles opt in via the
+ * rootfs manifest, so a browser running on an HTTPS origin can deploy them:
+ * a HTTPS page can never reach `http://<vm-ip>:<port>/configure` (mixed
+ * content), and images predating the guest-side fetch must keep using the
+ * legacy push path.
+ */
+function usesBootstrapConfigAggregate(
+  manifest: RootfsManifest | null | undefined,
+): boolean {
+  if (deploymentProfileForManifest(manifest) === "uc-go-peer") return true;
+  return manifest?.supportsBootstrapConfigAggregate === true;
+}
+
 function bootstrapRelayProfileForManifest(
   manifest: RootfsManifest | null | undefined,
 ): BootstrapRelayProfile | null {
@@ -1119,7 +1137,21 @@ export class SponsorRelayController {
       browserBootstrapMultiaddrs: string[];
     } | null = null;
 
-    if (profile === "orbitdb-relay") {
+    if (profile === "orbitdb-relay" && !usesBootstrapConfigAggregate(this.state.manifest)) {
+      // Legacy push handoff: the browser talks to the guest's setup endpoint
+      // over plain HTTP. That is impossible from an HTTPS origin — the browser
+      // blocks it as mixed content — and previously burned every CRN candidate
+      // with a generic "did not become reachable" error. Fail immediately with
+      // an actionable message instead.
+      if (globalThis.location?.protocol === "https:") {
+        throw new Error(
+          "This rootfs image requires the browser to configure the guest over plain HTTP " +
+            `(http://${runtimeHostIpv4}:${setupPort}/configure), which a page served over HTTPS ` +
+            "cannot do (mixed content). Deploy from an HTTP origin, or use a rootfs image that " +
+            "supports the Aleph bootstrap config handoff (manifest: supportsBootstrapConfigAggregate).",
+        );
+      }
+
       this.emitProgress({
         stage: "deployment-confirmed",
         label: "Configuring relay",
@@ -2501,14 +2533,13 @@ export class SponsorRelayController {
         try {
           const profile = deploymentProfileForManifest(this.state.manifest);
           attemptProfile = profile;
-          const sshPublicKey =
-            profile === "uc-go-peer"
-              ? appendDeploymentTokenToSshPublicKey(
-                  this.state.sshPublicKey.trim(),
-                  this.state.wallet.address,
-                  (attemptDeploymentToken = createDeploymentToken()),
-                )
-              : this.state.sshPublicKey.trim();
+          const sshPublicKey = usesBootstrapConfigAggregate(this.state.manifest)
+            ? appendDeploymentTokenToSshPublicKey(
+                this.state.sshPublicKey.trim(),
+                this.state.wallet.address,
+                (attemptDeploymentToken = createDeploymentToken()),
+              )
+            : this.state.sshPublicKey.trim();
 
           const content = createInstanceContent({
             address: this.state.wallet.address,
