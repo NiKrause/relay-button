@@ -20,12 +20,20 @@
 
 <style>
   .copy-button {
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    border: 1px solid var(--relay-surface-border);
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.04);
-    color: var(--relay-text);
+    background: transparent;
+    color: var(--relay-muted);
     padding: 0.28rem 0.7rem;
-    font: 600 0.73rem/1 var(--relay-font-body);
+    font: 700 0.6563rem/1 var(--relay-font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
     cursor: pointer;
+    transition: color 150ms ease, border-color 150ms ease;
+  }
+
+  .copy-button:hover {
+    color: var(--relay-text);
+    border-color: var(--relay-cyan);
   }
 </style>

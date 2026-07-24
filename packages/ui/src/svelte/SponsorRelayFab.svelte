@@ -449,12 +449,14 @@ export let apiHosts = undefined
     max-height: calc(100vh - 12.5rem);
     overflow: auto;
     border: 1px solid var(--relay-panel-border);
-    border-radius: 1.6rem;
+    border-radius: 0.625rem;
     background: var(--relay-panel-bg);
     box-shadow: var(--relay-panel-shadow);
     color: var(--relay-text);
     padding: 1rem;
     font-family: var(--relay-font-body);
+    font-size: 0.8125rem;
+    line-height: 1.5;
   }
 
   .panel-head,
@@ -474,9 +476,9 @@ export let apiHosts = undefined
     gap: 0.28rem;
     margin: 0.25rem 0 0.8rem;
     padding: 0.7rem 0.85rem;
-    border-radius: 1rem;
-    background: linear-gradient(180deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.05));
-    border: 1px solid rgba(125, 211, 252, 0.18);
+    border-radius: 0.625rem;
+    background: rgba(88, 199, 243, 0.08);
+    border: 1px solid rgba(88, 199, 243, 0.22);
   }
 
   .polling-head {
@@ -486,12 +488,12 @@ export let apiHosts = undefined
   }
 
   .polling-row strong {
-    font-size: 0.88rem;
+    font-size: 0.8125rem;
   }
 
   .polling-row small {
-    color: var(--relay-text-dim);
-    line-height: 1.35;
+    color: var(--relay-muted);
+    line-height: 1.4;
   }
 
   .rootfs-blocker {
@@ -499,19 +501,30 @@ export let apiHosts = undefined
     gap: 0.55rem;
     margin-top: 1rem;
     padding: 0.9rem;
-    border: 1px solid rgba(248, 113, 113, 0.58);
-    border-radius: 1rem;
-    background: rgba(127, 29, 29, 0.34);
-    color: #fee2e2;
+    border: 1px solid rgba(255, 77, 106, 0.5);
+    border-radius: 0.625rem;
+    background: rgba(255, 77, 106, 0.1);
+    color: var(--relay-text);
+  }
+
+  .rootfs-blocker strong {
+    color: var(--relay-danger);
   }
 
   .rootfs-blocker p,
   .rootfs-blocker small { margin: 0; line-height: 1.45; }
-  .rootfs-reference { overflow-wrap: anywhere; font-size: 0.7rem; }
+  .rootfs-reference { overflow-wrap: anywhere; font-size: 0.6875rem; font-family: var(--relay-font-mono); }
   .rootfs-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-  .rootfs-actions .refresh { padding: 0.55rem 0.7rem; }
-  .rootfs-actions a { color: #bfdbfe; font-size: 0.78rem; }
-  .primary.blocked { border-color: rgba(248, 113, 113, 0.45); background: rgba(148, 163, 184, 0.22); color: #fee2e2; box-shadow: none; cursor: not-allowed; }
+  .rootfs-actions .refresh { padding: 0.5rem 0.7rem; }
+  .rootfs-actions a { color: var(--relay-link); font-size: 0.75rem; }
+
+  .primary.blocked {
+    border-color: rgba(255, 77, 106, 0.45);
+    background: var(--relay-surface);
+    color: var(--relay-muted);
+    box-shadow: none;
+    cursor: not-allowed;
+  }
 
   .eyebrow,
   .field span,
@@ -519,17 +532,25 @@ export let apiHosts = undefined
   .mono-block span,
   .instance-grid span,
   .section-head small {
-    color: var(--relay-muted);
-    font-size: 0.72rem;
+    color: var(--relay-comet);
+    font-family: var(--relay-font-mono);
+    font-weight: 700;
+    font-size: 0.6563rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
 
+  .eyebrow {
+    color: var(--relay-accent);
+  }
+
   .eyebrow-version {
-    font-size: 0.62rem;
+    font-family: var(--relay-font-mono);
+    font-weight: 400;
+    font-size: 0.625rem;
     letter-spacing: 0.04em;
     text-transform: none;
-    color: rgba(191, 219, 254, 0.82);
+    color: var(--relay-comet);
   }
 
   h2,
@@ -540,62 +561,80 @@ export let apiHosts = undefined
   }
 
   h2 {
-    font-size: 1.5rem;
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--relay-text);
+  }
+
+  h3 {
+    font-size: 0.9375rem;
+    font-weight: 600;
   }
 
   .refresh,
   .primary,
   .delete,
   .warning {
-    border-radius: 0.95rem;
-    padding: 0.7rem 0.9rem;
+    border-radius: 0.5rem;
+    padding: 0.65rem 0.9rem;
     cursor: pointer;
-    font-weight: 700;
+    font-family: var(--relay-font-body);
+    font-size: 0.8125rem;
+    font-weight: 600;
     line-height: 1.1;
+    transition: filter 150ms ease, border-color 150ms ease;
   }
 
   .refresh {
-    border: 1px solid rgba(255, 255, 255, 0.22);
+    border: 1px solid var(--relay-surface-border);
     color: var(--relay-text);
-    background: rgba(255, 255, 255, 0.1);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    backdrop-filter: blur(8px);
+    background: var(--relay-surface);
+  }
+
+  .refresh:hover:not(:disabled) {
+    border-color: var(--relay-cyan);
   }
 
   .primary {
     width: 100%;
-    border: 1px solid rgba(251, 191, 36, 0.42);
-    background: linear-gradient(135deg, #f6c453 0%, #f59e0b 100%);
-    color: #281606;
-    box-shadow: 0 10px 24px rgba(245, 158, 11, 0.24);
+    border: 1px solid transparent;
+    background: var(--relay-accent);
+    color: var(--relay-accent-contrast);
+    font-weight: 700;
+    box-shadow: 0 10px 24px rgba(255, 107, 91, 0.22);
+  }
+
+  .primary:hover:not(:disabled) {
+    filter: brightness(1.06);
   }
 
   .delete {
-    border: 1px solid rgba(248, 113, 113, 0.45);
-    background: rgba(239, 68, 68, 0.18);
-    color: #ffe2e2;
+    border: 1px solid rgba(255, 77, 106, 0.45);
+    background: transparent;
+    color: var(--relay-danger);
   }
 
   .warning {
-    border: 1px solid rgba(251, 146, 60, 0.4);
-    background: rgba(251, 146, 60, 0.16);
-    color: #fed7aa;
+    border: 1px solid rgba(255, 194, 75, 0.45);
+    background: transparent;
+    color: var(--relay-warning);
   }
 
   .chip-confirmed {
-    background: rgba(34, 197, 94, 0.16);
-    color: #86efac;
+    border-color: rgba(62, 220, 151, 0.45);
+    color: var(--relay-success);
     display: inline-flex;
     align-items: center;
     gap: 0.32rem;
   }
 
   .chip-dot-confirmed {
-    width: 0.45rem;
-    height: 0.45rem;
+    width: 0.42rem;
+    height: 0.42rem;
     border-radius: 999px;
-    background: #22c55e;
-    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+    background: var(--relay-success);
+    box-shadow: 0 0 0 3px rgba(62, 220, 151, 0.18);
   }
 
   .status-strip,
@@ -610,10 +649,10 @@ export let apiHosts = undefined
   .metric-card {
     display: grid;
     gap: 0.3rem;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 1rem;
+    border: 1px solid var(--relay-surface-border);
+    border-radius: 0.625rem;
     padding: 0.8rem;
-    background: rgba(255, 255, 255, 0.035);
+    background: var(--relay-surface);
   }
 
   .status-pill {
@@ -622,13 +661,25 @@ export let apiHosts = undefined
     gap: 0.7rem;
   }
 
+  .status-pill strong,
+  .metric-card strong {
+    font-size: 0.8125rem;
+  }
+
+  .status-pill small,
+  .metric-card small {
+    color: var(--relay-muted);
+    font-size: 0.6875rem;
+    line-height: 1.4;
+  }
+
   .orphan-box {
     display: grid;
     gap: 0.7rem;
     padding: 0.85rem;
-    border-radius: 1rem;
-    border: 1px solid rgba(248, 113, 113, 0.22);
-    background: linear-gradient(180deg, rgba(127, 29, 29, 0.18), rgba(69, 10, 10, 0.12));
+    border-radius: 0.625rem;
+    border: 1px solid rgba(255, 77, 106, 0.3);
+    background: rgba(255, 77, 106, 0.06);
   }
 
   .orphan-head {
@@ -636,18 +687,23 @@ export let apiHosts = undefined
     gap: 0.2rem;
   }
 
+  .orphan-head strong {
+    color: var(--relay-danger);
+  }
+
   .orphan-head small {
-    color: #fecaca;
-    line-height: 1.35;
+    color: var(--relay-muted);
+    line-height: 1.4;
   }
 
   .orphan-card {
     display: grid;
     gap: 0.35rem;
     padding: 0.75rem;
-    border-radius: 0.9rem;
-    background: rgba(15, 23, 42, 0.22);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.5rem;
+    background: var(--relay-surface);
+    border: 1px solid var(--relay-surface-border);
+    font-size: 0.75rem;
   }
 
   .orphan-title {
@@ -657,9 +713,10 @@ export let apiHosts = undefined
   .alert {
     margin: 0.8rem 0 0;
     padding: 0.75rem 0.85rem;
-    border-radius: 0.9rem;
-    background: rgba(233, 19, 21, 0.12);
-    color: #ffd9d9;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(255, 77, 106, 0.3);
+    background: rgba(255, 77, 106, 0.1);
+    color: var(--relay-danger);
   }
 
   .status-text {
@@ -681,8 +738,8 @@ export let apiHosts = undefined
 
   .field small {
     color: var(--relay-muted);
-    font-size: 0.72rem;
-    line-height: 1.35;
+    font-size: 0.6875rem;
+    line-height: 1.4;
   }
 
   .field.wide {
@@ -691,17 +748,17 @@ export let apiHosts = undefined
 
   .accordion {
     margin-top: 0.9rem;
-    border: 1px solid var(--relay-panel-border);
-    border-radius: 1rem;
-    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid var(--relay-surface-border);
+    border-radius: 0.625rem;
+    background: var(--relay-surface);
   }
 
   .accordion summary {
     cursor: pointer;
     list-style: none;
-    padding: 0.8rem 0.95rem;
+    padding: 0.75rem 0.9rem;
     color: var(--relay-text);
-    font: 700 0.8rem/1.1 var(--relay-font-heading);
+    font: 700 0.6875rem/1.1 var(--relay-font-mono);
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
@@ -711,7 +768,7 @@ export let apiHosts = undefined
   }
 
   .accordion-body {
-    padding: 0 0.95rem 0.95rem;
+    padding: 0 0.9rem 0.9rem;
   }
 
   .advanced-grid {
@@ -723,17 +780,29 @@ export let apiHosts = undefined
   select,
   textarea {
     width: 100%;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 0.95rem;
-    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--relay-surface-border);
+    border-radius: 0.5rem;
+    background: var(--relay-field-bg);
     color: var(--relay-text);
-    padding: 0.75rem 0.85rem;
-    font: 500 0.9rem/1.35 var(--relay-font-body);
+    padding: 0.65rem 0.8rem;
+    font: 500 0.8125rem/1.4 var(--relay-font-body);
+  }
+
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--relay-cyan);
+    outline-offset: 1px;
   }
 
   textarea,
   .mono-block strong {
     font-family: var(--relay-font-mono);
+  }
+
+  .mono-block strong {
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
   }
 
   .actions,
@@ -749,9 +818,19 @@ export let apiHosts = undefined
     gap: 0.3rem;
   }
 
+  .deployment-box strong {
+    font-family: var(--relay-font-mono);
+    font-size: 0.75rem;
+  }
+
   .instance-grid {
     grid-template-columns: 1fr 1fr;
     margin: 0.75rem 0;
+  }
+
+  .instance-grid strong {
+    font-size: 0.8125rem;
+    overflow-wrap: anywhere;
   }
 
   .chip-row {
@@ -761,11 +840,16 @@ export let apiHosts = undefined
   }
 
   .chip {
+    border: 1px solid var(--relay-surface-border);
     border-radius: 999px;
-    padding: 0.25rem 0.55rem;
-    background: rgba(255, 255, 255, 0.08);
-    color: var(--relay-text);
-    font-size: 0.72rem;
+    padding: 0.22rem 0.55rem;
+    background: transparent;
+    color: var(--relay-muted);
+    font-family: var(--relay-font-mono);
+    font-weight: 700;
+    font-size: 0.6563rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
 
   .link-row {
@@ -775,9 +859,14 @@ export let apiHosts = undefined
   }
 
   .link-row a {
-    color: #bde0ff;
+    color: var(--relay-link);
     text-decoration: none;
-    font-weight: 700;
+    font-weight: 600;
+    font-size: 0.8125rem;
+  }
+
+  .link-row a:hover {
+    text-decoration: underline;
   }
 
   .empty {

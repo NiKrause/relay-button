@@ -44,12 +44,23 @@ const config = {
   customFields: {
     packageVersion
   },
+  headTags: [
+    {
+      tagName: 'link',
+      attributes: { rel: 'icon', href: '/relay-button/favicon.ico', sizes: '48x48' }
+    },
+    {
+      tagName: 'link',
+      attributes: { rel: 'apple-touch-icon', href: '/relay-button/apple-touch-icon.png' }
+    }
+  ],
   themeConfig: {
     navbar: {
       title: 'Relay Button',
       logo: {
-        alt: 'Relay Button',
-        src: 'img/favicon.svg'
+        alt: 'Relay Button — Der erste Knoten mark',
+        src: 'img/relay-button-mark-light.svg',
+        srcDark: 'img/relay-button-mark-dark.svg'
       },
       items: [
         {
@@ -98,7 +109,7 @@ const config = {
       copyright: `Copyright ${new Date().getFullYear()} Relay Button · Current package version v${packageVersion}`
     },
     colorMode: {
-      defaultMode: 'light',
+      defaultMode: 'dark',
       disableSwitch: false,
       respectPrefersColorScheme: true
     },

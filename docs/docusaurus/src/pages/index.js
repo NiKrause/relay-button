@@ -1,7 +1,9 @@
 import clsx from 'clsx'
 import Link from '@docusaurus/Link'
+import useBaseUrl from '@docusaurus/useBaseUrl'
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
 import Layout from '@theme/Layout'
+import ThemedImage from '@theme/ThemedImage'
 
 const capabilities = [
   {
@@ -56,6 +58,14 @@ export default function Home() {
     >
       <header className="hero hero--shared">
         <div className="container">
+          <ThemedImage
+            className="hero__mark"
+            alt=""
+            sources={{
+              light: useBaseUrl('/img/relay-button-mark-light.svg'),
+              dark: useBaseUrl('/img/relay-button-mark-dark.svg')
+            }}
+          />
           <p className="hero__kicker">Local-first · Peer-to-peer · Infrastructure on demand</p>
           <h1 className="hero__title">Relay Button</h1>
           <p className="hero__subtitle">
