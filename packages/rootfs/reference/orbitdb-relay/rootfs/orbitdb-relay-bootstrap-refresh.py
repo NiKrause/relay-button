@@ -24,6 +24,20 @@ ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay")
 DESCRIBE_SCRIPT = os.environ.get(
     "DESCRIBE_SCRIPT", "/usr/local/sbin/orbitdb-relay-describe.py"
 )
+# The initial registration publish (triggered once by configure.sh) must not
+# give up before the browser path is dialable: Caddy's ACME can only complete
+# after the 2n6 DNS record propagates publicly (observed up to ~6-10 min under
+# load), while a single describe run waits at most its own 240 s window. The
+# next timer firing is 20 min away, so a one-shot publish leaves a dead zone
+# in which the registration advertises no browser-dialable address. Retry
+# describe+publish until a secure browser address exists or this deadline
+# passes (then publish whatever is available, matching the old behaviour).
+PUBLISH_RETRY_TIMEOUT_SECONDS = int(
+    os.environ.get("BOOTSTRAP_PUBLISH_RETRY_TIMEOUT_SECONDS", "900")
+)
+PUBLISH_RETRY_INTERVAL_SECONDS = int(
+    os.environ.get("BOOTSTRAP_PUBLISH_RETRY_INTERVAL_SECONDS", "15")
+)
 DEFAULT_API_HOST = os.environ.get("ALEPH_BOOTSTRAP_API_HOST", "https://api.aleph.im")
 DEFAULT_CHANNEL = os.environ.get("ALEPH_BOOTSTRAP_CHANNEL", "simple-todo")
 DEFAULT_REF = os.environ.get("ALEPH_BOOTSTRAP_REF", "simple-todo-bootstrap")
@@ -76,6 +90,20 @@ def is_browser_dialable(addr: str) -> bool:
         token in normalized
         for token in ("/ws", "/wss", "/webtransport", "/webrtc-direct")
     )
+
+
+def is_secure_browser_dialable(addr: str) -> bool:
+    """Mirror of the consumer-side address policy (testkit/app): a secure
+    websocket, or webtransport/webrtc-direct carrying a certhash. Plain /ws
+    does not count — an HTTPS page cannot dial it."""
+    normalized = addr.lower()
+    if "/tls/ws" in normalized or "/wss" in normalized:
+        return True
+    if (
+        "/webtransport" in normalized or "/webrtc-direct" in normalized
+    ) and "/certhash/" in normalized:
+        return True
+    return False
 
 
 def is_public_multiaddr(addr: str) -> bool:
@@ -603,6 +631,62 @@ def main() -> None:
         )
         return
 
+    deadline = time.monotonic() + PUBLISH_RETRY_TIMEOUT_SECONDS
+    result: dict[str, object] | None = None
+    while True:
+        result = attempt_publish(
+            env_values,
+            publisher_private_key,
+            publisher_address,
+            registration_id,
+            channel,
+            ref,
+            post_type,
+            api_host,
+            require_secure_browser_dialable=True,
+        )
+        if result is not None:
+            break
+        if time.monotonic() >= deadline:
+            # Deadline passed without a secure browser address — publish what
+            # exists anyway (probe addresses still serve the Actions path).
+            result = attempt_publish(
+                env_values,
+                publisher_private_key,
+                publisher_address,
+                registration_id,
+                channel,
+                ref,
+                post_type,
+                api_host,
+                require_secure_browser_dialable=False,
+            )
+            break
+        time.sleep(PUBLISH_RETRY_INTERVAL_SECONDS)
+
+    if result is None:
+        print(json_dumps({"status": "skipped", "reason": "no public browser multiaddrs"}))
+        return
+    print(json_dumps(result))
+
+
+def attempt_publish(
+    env_values: dict[str, str],
+    publisher_private_key: str,
+    publisher_address: str,
+    registration_id: str | None,
+    channel: str,
+    ref: str,
+    post_type: str,
+    api_host: str,
+    require_secure_browser_dialable: bool,
+) -> dict[str, object] | None:
+    """One describe→publish cycle. Returns the result record when a
+    registration was published, or None when the caller should retry (no
+    public addresses yet, or — while `require_secure_browser_dialable` — none
+    of them is dialable from an HTTPS page). Nothing is published on the
+    retry path: an early registration without a browser-dialable address
+    makes consumers resolve too soon and fail."""
     describe = subprocess.run([DESCRIBE_SCRIPT], check=True, capture_output=True, text=True)
     metadata = json.loads(describe.stdout.strip() or "{}")
     peer_id = metadata.get("peer_id")
@@ -614,14 +698,22 @@ def main() -> None:
         metadata.get("browser_bootstrap_multiaddrs") or [], browser_only=True
     )
 
+    now_ms = int(time.time() * 1000)
     now_seconds = now_ms / 1000
     profile = env_values.get("ALEPH_BOOTSTRAP_PROFILE", DEFAULT_PROFILE).strip() or DEFAULT_PROFILE
     version = env_values.get("ALEPH_BOOTSTRAP_VERSION", "").strip() or None
     published_multiaddrs = select_compact_multiaddrs(browser_multiaddrs or multiaddrs)
+    # Intentionally left empty: consumers read content.multiaddrs (fallback),
+    # and the relayProof signature is byte-order-sensitive — populating
+    # browserMultiaddrs would change the signed payload shape. Cadence, not
+    # wire format, is what this retry loop fixes.
     published_browser_multiaddrs: list[str] = []
     if not published_multiaddrs:
-        print(json_dumps({"status": "skipped", "reason": "no public browser multiaddrs"}))
-        return
+        return None
+    if require_secure_browser_dialable and not any(
+        is_secure_browser_dialable(addr) for addr in published_multiaddrs
+    ):
+        return None
 
     owner_authorization = load_owner_authorization(
         env_values,
@@ -684,24 +776,20 @@ def main() -> None:
         api_host, publisher_address, publisher_private_key, previous_hashes, channel
     )
 
-    print(
-        json_dumps(
-            {
-                "status": "published",
-                "httpStatus": http_status,
-                "itemHash": unsigned_message["item_hash"],
-                "sender": publisher_address,
-                "peerId": peer_id,
-                "publishedMultiaddrs": published_multiaddrs,
-                "publishedBrowserMultiaddrs": published_browser_multiaddrs or published_multiaddrs,
-                "forgottenHashes": previous_hashes,
-                "forgetStaleOlderThanSeconds": STALE_RECORD_MAX_AGE_SECONDS,
-                "ownerAuthorizationPresent": owner_authorization is not None,
-                "forgetResponse": forget_response[1] if forget_response else None,
-                "response": response,
-            }
-        )
-    )
+    return {
+        "status": "published",
+        "httpStatus": http_status,
+        "itemHash": unsigned_message["item_hash"],
+        "sender": publisher_address,
+        "peerId": peer_id,
+        "publishedMultiaddrs": published_multiaddrs,
+        "publishedBrowserMultiaddrs": published_browser_multiaddrs or published_multiaddrs,
+        "forgottenHashes": previous_hashes,
+        "forgetStaleOlderThanSeconds": STALE_RECORD_MAX_AGE_SECONDS,
+        "ownerAuthorizationPresent": owner_authorization is not None,
+        "forgetResponse": forget_response[1] if forget_response else None,
+        "response": response,
+    }
 
 
 if __name__ == "__main__":
