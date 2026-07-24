@@ -4,15 +4,57 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
+import ssl
 import subprocess
 import time
 
 
 ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/uc-go-peer")
 SERVICE_NAME = os.environ.get("SERVICE_NAME", "uc-go-peer.service")
+CADDY_HTTPS_PORT = int(os.environ.get("CADDY_HTTPS_PORT", "443"))
 WAIT_TIMEOUT_SECONDS = int(os.environ.get("DESCRIBE_WAIT_TIMEOUT_SECONDS", "240"))
 WAIT_INTERVAL_SECONDS = float(os.environ.get("DESCRIBE_WAIT_INTERVAL_SECONDS", "2"))
 AUTOTLS_EXTRA_WAIT_SECONDS = int(os.environ.get("DESCRIBE_AUTOTLS_EXTRA_WAIT_SECONDS", "120"))
+
+
+def tls_endpoint_serves(hostname: str, port: int) -> bool:
+    """True only once the local listener on `port` serves a publicly-trusted
+    TLS certificate for `hostname`.
+
+    Port of the orbitdb-relay fix (relay-button #74/#75): announcing a wss
+    address before its Let's Encrypt certificate actually serves makes
+    browsers fail the TLS handshake with net::ERR_SSL_PROTOCOL_ERROR. The
+    handshake runs against the local listener with the public hostname as
+    SNI — local, so hairpin-NAT to the VM's own public IP is irrelevant, and
+    CA-validated, so self-signed placeholders are rejected.
+    """
+    if not hostname:
+        return False
+    context = ssl.create_default_context()
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=8) as raw:
+            with context.wrap_socket(raw, server_hostname=hostname) as tls:
+                return bool(tls.getpeercert())
+    except (ssl.SSLError, OSError, ValueError):
+        return False
+
+
+def caddy_cert_serves(hostname: str) -> bool:
+    return tls_endpoint_serves(hostname, CADDY_HTTPS_PORT)
+
+
+def autotls_cert_serves(autotls_addrs: list[str]) -> bool:
+    """Verify the AutoTLS *.libp2p.direct certificate actually serves. Host
+    AND port come from the multiaddr — TLS is terminated on the announced
+    port; every candidate is tried until one verifies."""
+    for addr in autotls_addrs:
+        host_match = re.search(r"/dns[46]/([^/]+)/", addr) or re.search(r"/sni/([^/]+)/", addr)
+        port_match = re.search(r"/tcp/(\d+)/", addr)
+        if host_match and port_match:
+            if tls_endpoint_serves(host_match.group(1), int(port_match.group(1))):
+                return True
+    return False
 
 PEER_ID_PATTERNS = [
     re.compile(r"PeerID:\s+(\S+)"),
@@ -221,9 +263,42 @@ def main() -> None:
 
         grouped = build_probe_multiaddrs(env_values, peer_id, listening_addrs)
         proxy_hostname = env_values.get("PROXY_HOSTNAME", "").strip()
-        if grouped["autotls_wss_multiaddrs"]:
-            break
-        if proxy_hostname and grouped["proxy_wss_multiaddrs"] and time.monotonic() - started_at >= AUTOTLS_EXTRA_WAIT_SECONDS:
+
+        # Symmetric certificate gate (port of relay-button #74/#75): both wss
+        # paths — Caddy/2n6 proxy and libp2p AutoTLS — are only advertised
+        # once a CA-validated local TLS handshake proves their certificate
+        # serves; breaking on the mere presence of AutoTLS multiaddrs made
+        # the outcome a per-VM ACME race. certhash-bearing webtransport /
+        # webrtc-direct addresses need no ACME (the hash IS the
+        # authentication), so they count as browser-dialable immediately and
+        # end the wait on their own — unverified wss addresses join the
+        # registration on a later refresh cycle once their cert is live.
+        proxy_cert_ready = bool(
+            proxy_hostname
+            and grouped["proxy_wss_multiaddrs"]
+            and caddy_cert_serves(proxy_hostname)
+        )
+        autotls_cert_ready = bool(
+            grouped["autotls_wss_multiaddrs"]
+            and autotls_cert_serves(grouped["autotls_wss_multiaddrs"])
+        )
+        certhash_ready = bool(
+            grouped["webtransport_multiaddrs"] or grouped["webrtc_direct_multiaddrs"]
+        )
+
+        unverified: set[str] = set()
+        if grouped["proxy_wss_multiaddrs"] and not proxy_cert_ready:
+            unverified.update(grouped["proxy_wss_multiaddrs"])
+        if grouped["autotls_wss_multiaddrs"] and not autotls_cert_ready:
+            unverified.update(grouped["autotls_wss_multiaddrs"])
+        if unverified:
+            grouped["browser_bootstrap_multiaddrs"] = [
+                addr
+                for addr in grouped["browser_bootstrap_multiaddrs"]
+                if addr not in unverified
+            ]
+
+        if proxy_cert_ready or autotls_cert_ready or certhash_ready:
             break
         if not proxy_hostname and time.monotonic() - started_at >= AUTOTLS_EXTRA_WAIT_SECONDS:
             break
