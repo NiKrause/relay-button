@@ -12,10 +12,6 @@ import urllib.request
 ENV_FILE = os.environ.get("ENV_FILE", "/etc/default/orbitdb-relay")
 METRICS_PORT = int(os.environ.get("METRICS_PORT", "9090"))
 CADDY_HTTPS_PORT = int(os.environ.get("CADDY_HTTPS_PORT", "443"))
-# Internal libp2p WebSocket listener; AutoTLS terminates its *.libp2p.direct
-# TLS on this same listener (SNI-detected), so a local handshake against it
-# verifies the AutoTLS certificate the same way :443 verifies Caddy's.
-RELAY_WS_PORT = int(os.environ.get("RELAY_WS_PORT", "9092"))
 WAIT_TIMEOUT_SECONDS = int(os.environ.get("DESCRIBE_WAIT_TIMEOUT_SECONDS", "240"))
 WAIT_INTERVAL_SECONDS = float(os.environ.get("DESCRIBE_WAIT_INTERVAL_SECONDS", "2"))
 AUTOTLS_EXTRA_WAIT_SECONDS = int(os.environ.get("DESCRIBE_AUTOTLS_EXTRA_WAIT_SECONDS", "120"))
@@ -57,15 +53,19 @@ def caddy_cert_serves(hostname: str) -> bool:
 def autotls_cert_serves(autotls_addrs: list[str]) -> bool:
     """Verify the AutoTLS *.libp2p.direct certificate actually serves.
 
-    The libp2p WebSocket listener terminates the AutoTLS certificate itself
-    (SNI-detected on the same internal port that also speaks plain ws), so a
-    CA-validated handshake to 127.0.0.1:<ws-port> with the libp2p.direct
-    hostname as SNI proves what a browser's wss:// dial will experience.
+    The libp2p WebSocket listener terminates the AutoTLS certificate itself,
+    so a CA-validated handshake to 127.0.0.1:<port> with the libp2p.direct
+    hostname as SNI proves what a browser's wss:// dial will experience. Both
+    the hostname AND the port must come from the multiaddr — the TLS is
+    served on the announced port (e.g. .../tcp/24007/tls/ws/...), NOT on the
+    plain-ws upstream Caddy proxies to.
     """
     for addr in autotls_addrs:
-        match = re.search(r"/sni/([^/]+)/", addr) or re.search(r"/dns[46]/([^/]+)/", addr)
-        if match:
-            return tls_endpoint_serves(match.group(1), RELAY_WS_PORT)
+        host_match = re.search(r"/dns[46]/([^/]+)/", addr) or re.search(r"/sni/([^/]+)/", addr)
+        port_match = re.search(r"/tcp/(\d+)/", addr)
+        if host_match and port_match:
+            if tls_endpoint_serves(host_match.group(1), int(port_match.group(1))):
+                return True
     return False
 
 
