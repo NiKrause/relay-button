@@ -770,7 +770,13 @@ function compatibleCrnsForTier(crns: Crn[], state: SponsorRelayState): Crn[] {
 
 const UI_DEPLOY_WAIT_ATTEMPTS = 60;
 const UI_DEPLOY_WAIT_DELAY_MS = 5_000;
-const UI_RUNTIME_WAIT_ATTEMPTS = 40;
+// 2n6 web-access activation wait. Activation latency varies with service
+// load: observed fast (<1 min) on quiet evenings and >3.5 min under load —
+// a 40×5 s window gave up right before activation completed, leaving the
+// guest with a hostname whose DNS never resolved, so no ACME cert and no
+// browser-dialable address. 120×5 s (10 min) covers the observed slow case;
+// the loop exits early the moment activation flips to active.
+const UI_RUNTIME_WAIT_ATTEMPTS = 120;
 const UI_RUNTIME_WAIT_DELAY_MS = 5_000;
 
 type SponsorRelayStatePatch = Omit<
@@ -1557,7 +1563,13 @@ export class SponsorRelayController {
       );
     }
 
-    if (profile === "uc-go-peer") {
+    // Every relay profile, not just uc-go-peer: a deploy whose metadata has no
+    // browser-dialable address is a failed attempt, and throwing here lets the
+    // CRN loop clean up and fail over to another host. This used to be gated
+    // to uc-go-peer, so an orbitdb-relay whose 2n6 hostname never activated
+    // (guest correctly withheld the cert-less proxy address) sailed through as
+    // "deployed" and consumers discovered the undialable relay only afterward.
+    {
       const browserDialableMultiaddrs =
         relayMetadata.browserBootstrapMultiaddrs.filter(
           (multiaddr) =>
