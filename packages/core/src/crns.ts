@@ -101,6 +101,23 @@ function scoreSortedCrns<TCrn extends CrnRecord>(crns: ReadonlyArray<TCrn>): TCr
   })
 }
 
+// The network score measures generic node health, not our workload path: a
+// CRN can rank ~0.99 and still consistently fail the allocation-notify /
+// setup-endpoint flow. Always starting at rank 1 makes every deploy pay for
+// such a node first (observed: 12 minutes per attempt, every run). Shuffling
+// the top pool spreads first-pick across several near-equally-scored nodes
+// while failover still walks the full ordered tail.
+const TOP_CRN_POOL_SIZE = 5
+
+function shuffleTopPool<TCrn>(sorted: TCrn[], poolSize: number = TOP_CRN_POOL_SIZE): TCrn[] {
+  const pool = sorted.slice(0, poolSize)
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+  }
+  return [...pool, ...sorted.slice(poolSize)]
+}
+
 export function filterDeployableCrns<TCrn extends CrnRecord>(
   crns: ReadonlyArray<TCrn>,
   options: {
@@ -108,8 +125,10 @@ export function filterDeployableCrns<TCrn extends CrnRecord>(
     spec?: CrnCapacitySpec | null
   } = {}
 ): TCrn[] {
-  return scoreSortedCrns(
-    compatibleCrns(crns, options.excludedHashes).filter((crn) => hasCrnCapacity(crn, options.spec))
+  return shuffleTopPool(
+    scoreSortedCrns(
+      compatibleCrns(crns, options.excludedHashes).filter((crn) => hasCrnCapacity(crn, options.spec))
+    )
   )
 }
 
