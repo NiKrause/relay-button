@@ -120,7 +120,15 @@ write_caddyfile() {
 https://${hostname} {
   tls {
     issuer acme {
-      disable_tlsalpn_challenge
+      # Solve the ACME challenge over TLS-ALPN-01 on :443, NOT HTTP-01.
+      # HTTP-01 needs a plaintext listener on :80, but the guest's setup
+      # server frees :80 after configuration and Caddy only binds :443, so
+      # Let's Encrypt's HTTP-01 probe gets a 503 and no cert is ever issued —
+      # browsers then dial wss://.../443 and fail with ERR_SSL_PROTOCOL_ERROR.
+      # :443 is already bound and CRN-port-mapped, so TLS-ALPN-01 succeeds
+      # (verified live: cert issued in ~45 s). Do NOT flip this back to
+      # disable_tlsalpn_challenge — that was b8b8c53 and it broke provisioning.
+      disable_http_challenge
     }
   }
 
