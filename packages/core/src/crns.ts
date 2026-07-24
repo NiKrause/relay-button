@@ -106,7 +106,9 @@ function scoreSortedCrns<TCrn extends CrnRecord>(crns: ReadonlyArray<TCrn>): TCr
 // setup-endpoint flow. Always starting at rank 1 makes every deploy pay for
 // such a node first (observed: 12 minutes per attempt, every run). Shuffling
 // the top pool spreads first-pick across several near-equally-scored nodes
-// while failover still walks the full ordered tail.
+// while failover still walks the full ordered tail. Applied only on the
+// no-country-preference path: an explicit preference requests deterministic
+// geo-first ordering.
 const TOP_CRN_POOL_SIZE = 5
 
 function shuffleTopPool<TCrn>(sorted: TCrn[], poolSize: number = TOP_CRN_POOL_SIZE): TCrn[] {
@@ -125,10 +127,8 @@ export function filterDeployableCrns<TCrn extends CrnRecord>(
     spec?: CrnCapacitySpec | null
   } = {}
 ): TCrn[] {
-  return shuffleTopPool(
-    scoreSortedCrns(
-      compatibleCrns(crns, options.excludedHashes).filter((crn) => hasCrnCapacity(crn, options.spec))
-    )
+  return scoreSortedCrns(
+    compatibleCrns(crns, options.excludedHashes).filter((crn) => hasCrnCapacity(crn, options.spec))
   )
 }
 
@@ -302,7 +302,7 @@ export async function rankCandidateCrns(
     excludedHashes: options.excludedHashes
   })
   if (!preferredCountryCode || sortedCrns.length === 0) {
-    return sortedCrns
+    return shuffleTopPool(sortedCrns)
   }
 
   const enrichedTopCrns = await enrichCrnsWithGeo(sortedCrns.slice(0, geoLimit), options)
