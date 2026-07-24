@@ -181,4 +181,6 @@ on HTTPS. Covering it requires at least one test against an HTTPS origin.
 ## See also
 
 - [Deployment paths: Browser UI vs. GitHub Actions](./deployment-paths.md)
+- [Relay dialability timeline](./relay-dialability-timeline.md) — what
+  becomes browser-dialable when after the handoff completes
 - [Rootfs contract](./rootfs-contract.md)

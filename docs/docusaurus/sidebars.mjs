@@ -20,6 +20,7 @@ const sidebars = {
         'reference/aleph-bootstrap-operations',
         'reference/deployment-paths',
         'reference/guest-configuration-handoff',
+        'reference/relay-dialability-timeline',
         'reference/github-action',
         'reference/playwright-testkit',
         'reference/ui',
