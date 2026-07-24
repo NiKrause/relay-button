@@ -1,19 +1,19 @@
 {
-  "name": "@le-space/aleph-bootstrap",
-  "version": "0.6.40",
-  "description": "Aleph-backed libp2p bootstrap discovery and relay registration helpers.",
-  "license": "MIT",
-  "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
-  "dependencies": {
-    "@libp2p/bootstrap": "^11.0.46",
-    "viem": "^2.53.1"
-  },
-  "scripts": {
-    "build": "node --check ./src/index.ts",
-    "build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json",
-    "test": "pnpm run build:publish && node --test ./test/**/*.test.mjs",
-    "lint": "echo \"aleph-bootstrap lint placeholder\""
-  }
+	"name": "@le-space/aleph-bootstrap",
+	"version": "0.6.41",
+	"description": "Aleph-backed libp2p bootstrap discovery and relay registration helpers.",
+	"license": "MIT",
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"dependencies": {
+		"@libp2p/bootstrap": "^11.0.46",
+		"viem": "^2.53.1"
+	},
+	"scripts": {
+		"build": "node --check ./src/index.ts",
+		"build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json",
+		"test": "pnpm run build:publish && node --test ./test/**/*.test.mjs",
+		"lint": "echo \"aleph-bootstrap lint placeholder\""
+	}
 }
