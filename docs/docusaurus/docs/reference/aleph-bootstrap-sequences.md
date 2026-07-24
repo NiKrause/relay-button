@@ -93,6 +93,10 @@ sequenceDiagram
     Note over Browser,VM: Prefer https://relay-name.2n6.me/bootstrap/metadata when active.<br/>Otherwise fall back to the temporary setup endpoint.
   end
 
+  loop retry every 15 s, up to 15 min (v0.6.41+)
+    Setup->>Setup: collect addresses, verify wss certificates locally
+    Note over Setup: Publish only once a secure browser-dialable address exists.<br/>Never an intermediate address-less registration.
+  end
   Setup->>Registry: publish relay-bootstrap-v2 POST with guest publisher identity
   Browser->>Registry: wait for guest registration by registrationId + peerId
 

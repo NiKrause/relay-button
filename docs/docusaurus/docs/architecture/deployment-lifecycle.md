@@ -49,6 +49,19 @@ The current shared deploy executor supports:
 - multi-CRN retry when a deployment is rejected
 - cleanup of failed deployment attempts before moving to the next CRN
 
+Since `@le-space/ui` 0.6.40 the retry loop also enforces a
+**browser-dialable-address invariant for every relay profile**: an
+acknowledgement that carries no browser-dialable address (secure websocket
+or certhash transport) throws inside the CRN loop, the failed attempt is
+cleaned up (config aggregate, `INSTANCE` FORGET) and the next CRN is tried
+— instead of reporting a deploy as successful that browsers can never
+reach. The controller waits up to 10 minutes for the 2n6 hostname to
+activate and probes `https://<2n6-host>/health` before declaring the relay
+reachable. A single failed CRN attempt costs 7–13 minutes before failover
+moves on; see [Relay dialability
+timeline](../reference/relay-dialability-timeline.md) for the full
+activation model and budget guidance.
+
 This keeps the higher-level consumer workflows simpler because the retry
 behavior now lives in shared code instead of repo-local scripts.
 
