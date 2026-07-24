@@ -15,7 +15,11 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl gnupg python3 python3-pip build-essential caddy
+apt-get install -y ca-certificates curl gnupg python3 python3-pip build-essential caddy openssh-server
+# The CRN injects the deployer's SSH key via the INSTANCE message, but the key
+# is useless without a running sshd — image generations without openssh-server
+# made live debugging impossible (connection refused on the mapped port 22).
+systemctl enable ssh || true
 
 if ! command -v node >/dev/null 2>&1 || [ "$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0)" -lt "${NODE_MIN_MAJOR}" ]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -

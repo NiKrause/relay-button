@@ -148,8 +148,17 @@ def build_grouped_multiaddrs(env_values: dict[str, str], all_multiaddrs: list[st
             f"/dns6/{proxy_hostname}/tcp/443/tls/ws/p2p/{peer_id}",
         ]
     quic_multiaddrs = [addr for addr in all_multiaddrs if "/quic-v1" in addr and "/webtransport" not in addr]
-    webtransport_multiaddrs = [addr for addr in all_multiaddrs if "/webtransport" in addr]
-    webrtc_direct_multiaddrs = [addr for addr in all_multiaddrs if "/webrtc-direct" in addr]
+    # certhash defense (relay-button 102923e, orbitdb-relay #26): a
+    # webtransport/webrtc-direct address without /certhash/ is undialable
+    # from browsers — the hash IS the connection's authentication. The relay
+    # (0.10.1+) already enriches or drops these at its /multiaddrs endpoint;
+    # this filter protects registrations built from older relay versions.
+    webtransport_multiaddrs = [
+        addr for addr in all_multiaddrs if "/webtransport" in addr and "/certhash/" in addr
+    ]
+    webrtc_direct_multiaddrs = [
+        addr for addr in all_multiaddrs if "/webrtc-direct" in addr and "/certhash/" in addr
+    ]
 
     browser_bootstrap_multiaddrs = dedupe(
         proxy_wss_multiaddrs
