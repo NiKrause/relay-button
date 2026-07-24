@@ -12,17 +12,17 @@
 
 <style>
   .accordion {
-    border: 1px solid var(--relay-panel-border);
-    border-radius: 1rem;
-    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid var(--relay-surface-border);
+    border-radius: 0.625rem;
+    background: var(--relay-surface);
   }
 
   summary {
     cursor: pointer;
     list-style: none;
-    padding: 0.8rem 0.95rem;
+    padding: 0.75rem 0.9rem;
     color: var(--relay-text);
-    font: 700 0.8rem/1.1 var(--relay-font-heading);
+    font: 700 0.6875rem/1.1 var(--relay-font-mono);
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
@@ -32,6 +32,6 @@
   }
 
   .accordion-body {
-    padding: 0 0.95rem 0.95rem;
+    padding: 0 0.9rem 0.9rem;
   }
 </style>

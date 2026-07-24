@@ -1,21 +1,95 @@
+/*
+ * Relay Button widget theme — Le-Space brand system (Style Guide V1.0).
+ * Dark ("Deep Space") is the default. Light mode activates when the host
+ * page sets `data-theme="light"` (Docusaurus convention) or
+ * `data-relay-theme="light"` on any ancestor element.
+ *
+ * The widget uses a compact type scale (13px body) instead of the 16px web
+ * scale from the style guide — see docs/reference/branding for the rationale.
+ */
 :root {
+  /* Typography — Inter for UI text, JetBrains Mono for labels/status/code. */
   --relay-font-heading:
-    "Epilogue", "Avenir Next", "Segoe UI", sans-serif;
+    "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
   --relay-font-body:
-    "DM Sans", "Inter", "Segoe UI", sans-serif;
+    "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
   --relay-font-mono:
-    "DM Mono", "SFMono-Regular", "Menlo", monospace;
-  --relay-panel-bg: rgba(49, 46, 129, 0.94);
-  --relay-panel-border: rgba(199, 210, 254, 0.22);
-  --relay-panel-shadow: 0 28px 80px rgba(49, 46, 129, 0.34);
-  --relay-text: #f8fafc;
-  --relay-muted: #9fb2ca;
-  --relay-blue: #4f46e5;
-  --relay-red: #6366f1;
-  --relay-yellow: #ffc83f;
-  --relay-green: #37d67a;
-  --relay-launcher-border: rgba(199, 210, 254, 0.42);
-  --relay-launcher-badge-bg: rgba(49, 46, 129, 0.92);
-  --relay-launcher-badge-border: rgba(191, 219, 254, 0.24);
-  --relay-backdrop-accent: rgba(79, 70, 229, 0.2);
+    "JetBrains Mono", ui-monospace, "SFMono-Regular", "Noto Sans Mono", Menlo, monospace;
+
+  /* Core palette (dark) */
+  --relay-deep-space: #0b0e15;
+  --relay-nebula: #141926;
+  --relay-horizon: #232b3d;
+  --relay-starlight: #edf1f8;
+  --relay-stardust: #a8b3c7;
+  --relay-comet: #6b7690;
+  --relay-coral: #ff6b5b;
+  --relay-cyan: #58c7f3;
+
+  /* Semantic colors */
+  --relay-success: #3edc97;
+  --relay-warning: #ffc24b;
+  --relay-danger: #ff4d6a;
+  --relay-info: #58c7f3;
+
+  /* Component tokens */
+  --relay-panel-bg: rgba(20, 25, 38, 0.97);
+  --relay-panel-border: var(--relay-horizon);
+  --relay-panel-shadow: 0 28px 80px rgba(4, 6, 12, 0.55);
+  --relay-text: var(--relay-starlight);
+  --relay-muted: var(--relay-stardust);
+  --relay-text-dim: var(--relay-comet);
+  --relay-surface: rgba(11, 14, 21, 0.55);
+  --relay-surface-border: var(--relay-horizon);
+  --relay-field-bg: rgba(11, 14, 21, 0.85);
+  --relay-accent: var(--relay-coral);
+  --relay-accent-contrast: #0b0e15;
+  --relay-link: var(--relay-cyan);
+
+  /* Launcher: the brand lockup as a button — Deep Space pill. */
+  --relay-launcher-bg: linear-gradient(135deg, #10151f 0%, #0b0e15 100%);
+  --relay-launcher-border: var(--relay-horizon);
+  --relay-launcher-text: var(--relay-starlight);
+  --relay-launcher-shadow: 0 18px 40px rgba(4, 6, 12, 0.5);
+  --relay-launcher-badge-bg: rgba(20, 25, 38, 0.92);
+  --relay-launcher-badge-border: var(--relay-horizon);
+  --relay-backdrop-accent: rgba(255, 107, 91, 0.14);
+
+  /* Legacy status aliases (kept for host-page overrides) */
+  --relay-blue: var(--relay-info);
+  --relay-red: var(--relay-danger);
+  --relay-yellow: var(--relay-warning);
+  --relay-green: var(--relay-success);
+}
+
+:root[data-theme="light"],
+[data-theme="light"],
+[data-relay-theme="light"] {
+  --relay-coral: #e8503f;
+  --relay-cyan: #0e86c4;
+  --relay-success: #0f9d6a;
+  --relay-warning: #a8690a;
+  --relay-danger: #d5365a;
+  --relay-info: #0e86c4;
+
+  --relay-panel-bg: rgba(255, 255, 255, 0.98);
+  --relay-panel-border: #d9e0ec;
+  --relay-panel-shadow: 0 28px 80px rgba(20, 27, 46, 0.18);
+  --relay-text: #141b2e;
+  --relay-muted: #4d5a74;
+  --relay-text-dim: #6b7690;
+  --relay-surface: rgba(20, 27, 46, 0.04);
+  --relay-surface-border: #d9e0ec;
+  --relay-field-bg: #ffffff;
+  --relay-accent: var(--relay-coral);
+  --relay-accent-contrast: #ffffff;
+  --relay-link: var(--relay-cyan);
+
+  --relay-launcher-bg: linear-gradient(135deg, #ffffff 0%, #f2f5fa 100%);
+  --relay-launcher-border: #d9e0ec;
+  --relay-launcher-text: #141b2e;
+  --relay-launcher-shadow: 0 18px 40px rgba(20, 27, 46, 0.16);
+  --relay-launcher-badge-bg: rgba(20, 27, 46, 0.05);
+  --relay-launcher-badge-border: #d9e0ec;
+  --relay-backdrop-accent: rgba(232, 80, 63, 0.1);
 }

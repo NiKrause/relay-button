@@ -13,6 +13,65 @@ import {
 } from "../shared/index";
 import { useSponsorRelayController } from "./hooks/useSponsorRelayController";
 
+/*
+ * Relay Button widget theme — Le-Space brand system (Style Guide V1.0).
+ * Dark ("Deep Space") is the default; light mode activates below any
+ * ancestor with `data-theme="light"` or `data-relay-theme="light"`.
+ * Host pages may still override via the public
+ * `--le-space-sponsor-relay-*` custom properties.
+ */
+const THEME_CSS = `
+:root {
+  --rb-font-body: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --rb-font-heading: var(--rb-font-body);
+  --rb-font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", "Noto Sans Mono", Menlo, monospace;
+  --rb-border: #232b3d;
+  --rb-text: #edf1f8;
+  --rb-muted: #a8b3c7;
+  --rb-comet: #6b7690;
+  --rb-coral: #ff6b5b;
+  --rb-cyan: #58c7f3;
+  --rb-success: #3edc97;
+  --rb-warning: #ffc24b;
+  --rb-danger: #ff4d6a;
+  --rb-panel-bg: rgba(20, 25, 38, 0.97);
+  --rb-panel-shadow: 0 28px 80px rgba(4, 6, 12, 0.55);
+  --rb-surface: rgba(11, 14, 21, 0.55);
+  --rb-field-bg: rgba(11, 14, 21, 0.85);
+  --rb-accent: var(--rb-coral);
+  --rb-accent-contrast: #0b0e15;
+  --rb-link: var(--rb-cyan);
+  --rb-launcher-start: #10151f;
+  --rb-launcher-end: #0b0e15;
+  --rb-launcher-text: #edf1f8;
+  --rb-launcher-badge-bg: rgba(20, 25, 38, 0.92);
+  --rb-backdrop-accent: rgba(255, 107, 91, 0.14);
+}
+[data-theme="light"],
+[data-relay-theme="light"] {
+  --rb-border: #d9e0ec;
+  --rb-text: #141b2e;
+  --rb-muted: #4d5a74;
+  --rb-comet: #6b7690;
+  --rb-coral: #e8503f;
+  --rb-cyan: #0e86c4;
+  --rb-success: #0f9d6a;
+  --rb-warning: #a8690a;
+  --rb-danger: #d5365a;
+  --rb-panel-bg: rgba(255, 255, 255, 0.98);
+  --rb-panel-shadow: 0 28px 80px rgba(20, 27, 46, 0.18);
+  --rb-surface: rgba(20, 27, 46, 0.04);
+  --rb-field-bg: #ffffff;
+  --rb-accent-contrast: #ffffff;
+  --rb-launcher-start: #ffffff;
+  --rb-launcher-end: #f2f5fa;
+  --rb-launcher-text: #141b2e;
+  --rb-launcher-badge-bg: rgba(20, 27, 46, 0.05);
+  --rb-backdrop-accent: rgba(232, 80, 63, 0.1);
+}
+@keyframes leSpaceRelayPulse { 0%, 100% { transform: scale(1); opacity: 0.74; } 50% { transform: scale(1.22); opacity: 1; } }
+`;
+
 const basePanelStyle: React.CSSProperties = {
   position: "fixed",
   zIndex: 9999,
@@ -25,57 +84,59 @@ const basePanelStyle: React.CSSProperties = {
   overflowWrap: "anywhere",
   wordBreak: "break-word",
   border:
-    "1px solid var(--le-space-sponsor-relay-panel-border, rgba(199, 210, 254, 0.22))",
-  borderRadius: "1.4rem",
+    "1px solid var(--le-space-sponsor-relay-panel-border, var(--rb-border))",
+  borderRadius: "0.625rem",
   background:
-    "var(--le-space-sponsor-relay-panel-bg, rgba(49, 46, 129, 0.94))",
-  color: "#f8fafc",
+    "var(--le-space-sponsor-relay-panel-bg, var(--rb-panel-bg))",
+  color: "var(--rb-text)",
   boxShadow:
-    "var(--le-space-sponsor-relay-panel-shadow, 0 28px 80px rgba(49, 46, 129, 0.34))",
+    "var(--le-space-sponsor-relay-panel-shadow, var(--rb-panel-shadow))",
   padding: "1rem",
-  fontFamily: '"DM Sans", "Inter", sans-serif',
+  fontFamily: "var(--rb-font-body)",
+  fontSize: "0.8125rem",
+  lineHeight: 1.5,
 };
 
 const fieldStyle: React.CSSProperties = {
   width: "100%",
   minWidth: 0,
   boxSizing: "border-box",
-  borderRadius: "0.8rem",
-  border: "1px solid rgba(255,255,255,0.16)",
-  background: "rgba(248,250,252,0.98)",
-  color: "#111827",
-  padding: "0.7rem 0.85rem",
-  fontFamily: '"DM Sans", "Inter", sans-serif',
-  fontSize: "0.98rem",
-  lineHeight: 1.45,
+  borderRadius: "0.5rem",
+  border: "1px solid var(--rb-border)",
+  background: "var(--rb-field-bg)",
+  color: "var(--rb-text)",
+  padding: "0.65rem 0.8rem",
+  fontFamily: "var(--rb-font-body)",
+  fontSize: "0.8125rem",
+  lineHeight: 1.4,
 };
 
 const secondaryButtonStyle: React.CSSProperties = {
-  borderRadius: "0.95rem",
-  border: "1px solid rgba(255,255,255,0.22)",
-  background: "rgba(255,255,255,0.10)",
-  color: "#f8fafc",
-  padding: "0.72rem 0.95rem",
-  fontFamily: '"DM Sans", "Inter", sans-serif',
-  fontSize: "0.92rem",
-  fontWeight: 700,
+  borderRadius: "0.5rem",
+  border: "1px solid var(--rb-border)",
+  background: "var(--rb-surface)",
+  color: "var(--rb-text)",
+  padding: "0.65rem 0.9rem",
+  fontFamily: "var(--rb-font-body)",
+  fontSize: "0.8125rem",
+  fontWeight: 600,
   lineHeight: 1.1,
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06)",
-  backdropFilter: "blur(8px)",
+  cursor: "pointer",
 };
 
 const primaryButtonStyle: React.CSSProperties = {
   boxSizing: "border-box",
-  borderRadius: "0.95rem",
-  border: "1px solid rgba(251, 191, 36, 0.42)",
-  background: "linear-gradient(135deg, #f6c453 0%, #f59e0b 100%)",
-  color: "#281606",
-  padding: "0.82rem 1rem",
-  fontFamily: '"DM Sans", "Inter", sans-serif',
-  fontSize: "0.96rem",
-  fontWeight: 800,
+  borderRadius: "0.5rem",
+  border: "1px solid transparent",
+  background: "var(--rb-accent)",
+  color: "var(--rb-accent-contrast)",
+  padding: "0.78rem 1rem",
+  fontFamily: "var(--rb-font-body)",
+  fontSize: "0.875rem",
+  fontWeight: 700,
   lineHeight: 1.1,
-  boxShadow: "0 10px 24px rgba(245, 158, 11, 0.24)",
+  cursor: "pointer",
+  boxShadow: "0 10px 24px rgba(255, 107, 91, 0.22)",
 };
 
 const containedContentStyle: React.CSSProperties = {
@@ -88,52 +149,52 @@ const containedContentStyle: React.CSSProperties = {
 };
 
 const dangerButtonStyle: React.CSSProperties = {
-  borderRadius: "0.95rem",
-  border: "1px solid rgba(248, 113, 113, 0.45)",
-  background: "rgba(239, 68, 68, 0.18)",
-  color: "#ffe2e2",
-  padding: "0.72rem 0.95rem",
-  fontFamily: '"DM Sans", "Inter", sans-serif',
-  fontSize: "0.9rem",
-  fontWeight: 700,
+  borderRadius: "0.5rem",
+  border: "1px solid rgba(255, 77, 106, 0.45)",
+  background: "transparent",
+  color: "var(--rb-danger)",
+  padding: "0.65rem 0.9rem",
+  fontFamily: "var(--rb-font-body)",
+  fontSize: "0.8125rem",
+  fontWeight: 600,
   lineHeight: 1.1,
+  cursor: "pointer",
 };
 
 const warningButtonStyle: React.CSSProperties = {
-  borderRadius: "0.95rem",
-  border: "1px solid rgba(251, 146, 60, 0.4)",
-  background: "rgba(251, 146, 60, 0.16)",
-  color: "#fed7aa",
-  padding: "0.72rem 0.95rem",
-  fontFamily: '"DM Sans", "Inter", sans-serif',
-  fontSize: "0.9rem",
-  fontWeight: 700,
+  borderRadius: "0.5rem",
+  border: "1px solid rgba(255, 194, 75, 0.45)",
+  background: "transparent",
+  color: "var(--rb-warning)",
+  padding: "0.65rem 0.9rem",
+  fontFamily: "var(--rb-font-body)",
+  fontSize: "0.8125rem",
+  fontWeight: 600,
   lineHeight: 1.1,
+  cursor: "pointer",
 };
 
 const themedLauncherBackground =
-  "linear-gradient(135deg, var(--le-space-sponsor-relay-launcher-start, #4f46e5) 0%, var(--le-space-sponsor-relay-launcher-end, #6366f1) 100%)";
+  "linear-gradient(135deg, var(--le-space-sponsor-relay-launcher-start, var(--rb-launcher-start)) 0%, var(--le-space-sponsor-relay-launcher-end, var(--rb-launcher-end)) 100%)";
 const themedLauncherBorder =
-  "var(--le-space-sponsor-relay-launcher-border, rgba(199, 210, 254, 0.42))";
+  "var(--le-space-sponsor-relay-launcher-border, var(--rb-border))";
 const themedLauncherBadgeBackground =
-  "var(--le-space-sponsor-relay-launcher-badge-bg, rgba(49, 46, 129, 0.92))";
+  "var(--le-space-sponsor-relay-launcher-badge-bg, var(--rb-launcher-badge-bg))";
 const themedLauncherBadgeBorder =
-  "var(--le-space-sponsor-relay-launcher-badge-border, rgba(191, 219, 254, 0.24))";
-const themedLauncherDot =
-  "var(--le-space-sponsor-relay-launcher-dot, #f59e0b)";
+  "var(--le-space-sponsor-relay-launcher-badge-border, var(--rb-border))";
 
 function progressToneColor(
   status: "info" | "success" | "warning" | "error",
 ): string {
   switch (status) {
     case "success":
-      return "#37d67a";
+      return "#3edc97";
     case "warning":
-      return "#ffc83f";
+      return "#ffc24b";
     case "error":
-      return "#e91315";
+      return "#ff4d6a";
     default:
-      return "#0176ce";
+      return "#58c7f3";
   }
 }
 
@@ -456,8 +517,8 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
       ? `0 0 0 5px rgba(55, 214, 122, 0.22), 0 14px 32px rgba(55, 214, 122, 0.22)`
       : launcherMode === "inline"
         ? hovered
-          ? "var(--le-space-sponsor-relay-launcher-hover-shadow, 0 14px 30px rgba(79, 70, 229, 0.28))"
-          : "var(--le-space-sponsor-relay-launcher-shadow, 0 10px 24px rgba(99, 102, 241, 0.22))"
+          ? "var(--le-space-sponsor-relay-launcher-hover-shadow, 0 14px 30px rgba(4, 6, 12, 0.5))"
+          : "var(--le-space-sponsor-relay-launcher-shadow, 0 10px 24px rgba(4, 6, 12, 0.4))"
         : undefined;
   const inlineButtonBackground = themedLauncherBackground;
   const inlineButtonBorder = `1px solid ${themedLauncherBorder}`;
@@ -491,7 +552,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
 
   return (
     <>
-      <style>{`@keyframes leSpaceRelayPulse { 0%, 100% { transform: scale(1); opacity: 0.74; } 50% { transform: scale(1.22); opacity: 1; } }`}</style>
+      <style>{THEME_CSS}</style>
       <button
         ref={launcherRef}
         type="button"
@@ -509,21 +570,21 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
           borderRadius: "999px",
           border:
             launcherMode === "floating"
-              ? `2px solid ${themedLauncherBorder}`
+              ? `1px solid ${themedLauncherBorder}`
               : inlineButtonBorder,
           background:
             launcherMode === "floating"
               ? themedLauncherBackground
               : inlineButtonBackground,
-          color: "white",
+          color: "var(--rb-launcher-text)",
           minHeight: launcherMode === "floating" ? undefined : "2.25rem",
           padding:
             launcherMode === "floating"
-              ? "0.9rem 1.2rem"
+              ? "0.8rem 1.15rem"
               : "0.42rem 0.56rem 0.42rem 0.76rem",
-          fontFamily: '"Epilogue", sans-serif',
+          fontFamily: "var(--rb-font-mono)",
           fontWeight: 700,
-          fontSize: launcherMode === "floating" ? "0.84rem" : "0.73rem",
+          fontSize: launcherMode === "floating" ? "0.78rem" : "0.7rem",
           textTransform: "uppercase",
           letterSpacing: "0.08em",
           cursor: "pointer",
@@ -544,22 +605,34 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
             gap: "0.36rem",
           }}
         >
-          <span
+          <svg
             aria-hidden="true"
+            viewBox="0 0 32 32"
             style={{
-              width: launcherMode === "floating" ? "0.5rem" : "0.42rem",
-              height: launcherMode === "floating" ? "0.5rem" : "0.42rem",
-              borderRadius: "999px",
-              background:
-                launcherMode === "floating"
-                  ? "rgba(255,255,255,0.96)"
-                  : themedLauncherDot,
-              boxShadow:
-                launcherMode === "floating"
-                  ? "0 0 0 3px rgba(255,255,255,0.22)"
-                  : "0 0 0 3px var(--le-space-sponsor-relay-launcher-dot-ring, rgba(245, 158, 11, 0.18))",
+              width: launcherMode === "floating" ? "1.1rem" : "0.95rem",
+              height: launcherMode === "floating" ? "1.1rem" : "0.95rem",
+              flex: "none",
             }}
-          />
+          >
+            <line
+              x1="17"
+              y1="15.4"
+              x2="19.6"
+              y2="13"
+              stroke="var(--rb-cyan)"
+              strokeWidth={2.4}
+              strokeLinecap="round"
+            />
+            <circle cx="11.5" cy="20.5" r="7" fill="var(--rb-coral)" />
+            <circle
+              cx="23.5"
+              cy="9.5"
+              r="4.2"
+              fill="none"
+              stroke="var(--rb-cyan)"
+              strokeWidth={2.8}
+            />
+          </svg>
           <span>{launcherLabel}</span>
         </span>
         <span
@@ -573,11 +646,11 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
             borderRadius: "999px",
             background:
               launcherMode === "floating"
-                ? "rgba(15, 23, 42, 0.18)"
+                ? "var(--rb-launcher-badge-bg)"
                 : inlineBadgeBackground,
             border:
               launcherMode === "floating"
-                ? "1px solid rgba(255,255,255,0.18)"
+                ? "1px solid var(--rb-border)"
                 : inlineBadgeBorder,
             fontSize: launcherMode === "floating" ? "0.62rem" : "0.61rem",
             fontWeight: launcherMode === "floating" ? 700 : 800,
@@ -616,7 +689,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               inset: 0,
               zIndex: 9998,
               background:
-                "radial-gradient(circle at 88% 82%, var(--le-space-sponsor-relay-backdrop-accent, rgba(79, 70, 229, 0.2)), transparent 34%)",
+                "radial-gradient(circle at 88% 82%, var(--le-space-sponsor-relay-backdrop-accent, var(--rb-backdrop-accent)), transparent 34%)",
             }}
           />
           <aside style={panelStyle}>
@@ -634,8 +707,10 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                     display: "flex",
                     alignItems: "center",
                     gap: "0.45rem",
-                    color: "#9fb2ca",
-                    fontSize: "0.72rem",
+                    color: "var(--rb-accent)",
+                    fontFamily: "var(--rb-font-mono)",
+                    fontWeight: 700,
+                    fontSize: "0.6563rem",
                     textTransform: "uppercase",
                     letterSpacing: "0.08em",
                   }}
@@ -643,10 +718,11 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   <span>Aleph VM credit deployer</span>
                   <span
                     style={{
-                      fontSize: "0.62rem",
+                      fontWeight: 400,
+                      fontSize: "0.625rem",
                       letterSpacing: "0.04em",
                       textTransform: "none",
-                      color: "rgba(191, 219, 254, 0.82)",
+                      color: "var(--rb-comet)",
                     }}
                   >
                     {versionLabel}
@@ -655,7 +731,9 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                 <h2
                   style={{
                     margin: "0.2rem 0 0",
-                    fontFamily: '"Epilogue", sans-serif',
+                    fontFamily: "var(--rb-font-heading)",
+                    fontSize: "1.125rem",
+                    fontWeight: 700,
                   }}
                 >
                   {deploymentPanelTitle(state)}
@@ -670,9 +748,9 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               </button>
             </div>
 
-            <p style={{ color: "#9fb2ca" }}>{state.statusText}</p>
+            <p style={{ color: "var(--rb-muted)" }}>{state.statusText}</p>
             {state.errorText ? (
-              <p style={{ color: "#ffd9d9" }}>{state.errorText}</p>
+              <p style={{ color: "var(--rb-danger)" }}>{state.errorText}</p>
             ) : null}
 
             {pollingState ? (
@@ -683,9 +761,9 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   marginBottom: "0.8rem",
                   padding: "0.7rem 0.8rem",
                   borderRadius: "1rem",
-                  border: "1px solid rgba(125, 211, 252, 0.18)",
+                  border: "1px solid rgba(88, 199, 243, 0.22)",
                   background:
-                    "linear-gradient(180deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.05))",
+                    "rgba(88, 199, 243, 0.08)",
                   display: "grid",
                   gap: "0.28rem",
                 }}
@@ -710,7 +788,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   />
                   <strong style={{ fontSize: "0.88rem" }}>{pollingState.label}</strong>
                 </div>
-                <small style={{ color: "#9fb2ca", lineHeight: 1.35 }}>
+                <small style={{ color: "var(--rb-muted)", lineHeight: 1.35 }}>
                   {pollingState.detail}
                 </small>
               </div>
@@ -722,11 +800,10 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   marginTop: "0.85rem",
                   padding: "0.75rem 0.8rem",
                   borderRadius: "1rem",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  border: "1px solid var(--rb-border)",
                   background:
-                    "linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03))",
-                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
-                }}
+                    "var(--rb-surface)",
+                                  }}
               >
                 <div
                   style={{
@@ -779,8 +856,8 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   <span
                     style={{
                       fontSize: "0.72rem",
-                      color: "#9fb2ca",
-                      fontFamily: '"DM Mono", monospace',
+                      color: "var(--rb-muted)",
+                      fontFamily: "var(--rb-font-mono)",
                     }}
                   >
                     {String(
@@ -795,7 +872,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                     width: "100%",
                     height: "0.34rem",
                     borderRadius: "999px",
-                    background: "rgba(255,255,255,0.08)",
+                    background: "rgba(168, 179, 199, 0.18)",
                     overflow: "hidden",
                   }}
                 >
@@ -821,9 +898,9 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   {state.deploymentProgress.itemHash ? (
                     <div
                       style={{
-                        color: "#9fb2ca",
+                        color: "var(--rb-muted)",
                         fontSize: "0.7rem",
-                        fontFamily: '"DM Mono", monospace',
+                        fontFamily: "var(--rb-font-mono)",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -835,13 +912,13 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   {state.deploymentProgress.detail ? (
                     <div
                       style={{
-                        color: "#9fb2ca",
+                        color: "var(--rb-muted)",
                         fontSize: "0.72rem",
                         lineHeight: 1.3,
                         fontFamily:
                           state.deploymentProgress.detail.includes("0x") ||
                           state.deploymentProgress.detail.includes("Qm")
-                            ? '"DM Mono", monospace'
+                            ? "var(--rb-font-mono)"
                             : undefined,
                       }}
                     >
@@ -851,7 +928,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   {state.deploymentProgress.error ? (
                     <div
                       style={{
-                        color: "#ffd9d9",
+                        color: "var(--rb-danger)",
                         fontSize: "0.72rem",
                         lineHeight: 1.3,
                       }}
@@ -904,7 +981,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               </select>
               <div
                 style={{
-                  color: "#9fb2ca",
+                  color: "var(--rb-muted)",
                   fontSize: "0.74rem",
                   lineHeight: 1.35,
                   marginTop: "-0.15rem",
@@ -1094,7 +1171,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                         />
                         <div
                           style={{
-                            color: "#9fb2ca",
+                            color: "var(--rb-muted)",
                             fontSize: "0.74rem",
                             lineHeight: 1.35,
                             marginTop: "-0.15rem",
@@ -1143,9 +1220,9 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   marginTop: "1rem",
                   padding: "0.9rem",
                   borderRadius: "1rem",
-                  border: "1px solid rgba(248, 113, 113, 0.58)",
-                  background: "rgba(127, 29, 29, 0.34)",
-                  color: "#fee2e2",
+                  border: "1px solid rgba(255, 77, 106, 0.5)",
+                  background: "rgba(255, 77, 106, 0.1)",
+                  color: "var(--rb-text)",
                 }}
               >
                 <strong>Rootfs unavailable — deployment blocked</strong>
@@ -1169,7 +1246,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                     Edit manifest URL
                   </button>
                   {/^https?:\/\//.test(state.manifestUrl) ? (
-                    <a href={state.manifestUrl} target="_blank" rel="noreferrer" style={{ color: "#bfdbfe", alignSelf: "center", fontSize: "0.78rem" }}>
+                    <a href={state.manifestUrl} target="_blank" rel="noreferrer" style={{ color: "var(--rb-link)", alignSelf: "center", fontSize: "0.78rem" }}>
                       Open manifest
                     </a>
                   ) : null}
@@ -1194,7 +1271,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                 ...primaryButtonStyle,
                 width: "100%",
                 marginTop: "1rem",
-                ...(rootfsBlocked ? { background: "rgba(148, 163, 184, 0.22)", borderColor: "rgba(248, 113, 113, 0.45)", color: "#fee2e2", boxShadow: "none", cursor: "not-allowed" } : {}),
+                ...(rootfsBlocked ? { background: "var(--rb-surface)", borderColor: "rgba(255, 77, 106, 0.45)", color: "var(--rb-text)", boxShadow: "none", cursor: "not-allowed" } : {}),
               }}
             >
               {deployCallToAction}
@@ -1245,8 +1322,8 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                                 gap: "0.32rem",
                                 padding: "0.16rem 0.45rem",
                                 borderRadius: "999px",
-                                background: "rgba(34, 197, 94, 0.16)",
-                                color: "#86efac",
+                                background: "rgba(62, 220, 151, 0.14)",
+                                color: "var(--rb-success)",
                                 fontSize: "0.7rem",
                                 fontWeight: 700,
                               }}
@@ -1257,9 +1334,9 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                                   width: "0.45rem",
                                   height: "0.45rem",
                                   borderRadius: "999px",
-                                  background: "#22c55e",
+                                  background: "var(--rb-success)",
                                   boxShadow:
-                                    "0 0 0 3px rgba(34, 197, 94, 0.18)",
+                                    "0 0 0 3px rgba(62, 220, 151, 0.18)",
                                 }}
                               />
                               Aleph bootstrap registered
@@ -1327,14 +1404,14 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                       gap: "0.7rem",
                       padding: "0.85rem",
                       borderRadius: "1rem",
-                      border: "1px solid rgba(248, 113, 113, 0.22)",
+                      border: "1px solid rgba(255, 77, 106, 0.3)",
                       background:
-                        "linear-gradient(180deg, rgba(127, 29, 29, 0.18), rgba(69, 10, 10, 0.12))",
+                        "rgba(255, 77, 106, 0.06)",
                     }}
                   >
                     <div style={{ display: "grid", gap: "0.2rem" }}>
                       <strong>Orphan bootstrap registrations</strong>
-                      <small style={{ color: "#fecaca", lineHeight: 1.35 }}>
+                      <small style={{ color: "var(--rb-muted)", lineHeight: 1.35 }}>
                         Current-wallet registrations without a matching instance.
                         Forget them directly from here.
                       </small>
@@ -1355,8 +1432,8 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                             gap: "0.35rem",
                             padding: "0.75rem",
                             borderRadius: "0.9rem",
-                            background: "rgba(15, 23, 42, 0.22)",
-                            border: "1px solid rgba(255,255,255,0.08)",
+                            background: "var(--rb-surface)",
+                            border: "1px solid var(--rb-border)",
                           }}
                         >
                           <div

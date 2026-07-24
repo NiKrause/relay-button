@@ -15,6 +15,7 @@ const sidebars = {
       type: 'category',
       label: 'Reference',
       items: [
+        'reference/branding',
         'reference/aleph-bootstrap',
         'reference/aleph-bootstrap-sequences',
         'reference/aleph-bootstrap-operations',
