@@ -1,6 +1,6 @@
 # Roadmap
 
-## 0.7.0 — Relay Button branding
+## Shipped: 0.7.0 — Relay Button branding
 
 First release shipping the new brand system (#80): Le-Space palette,
 JetBrains Mono/Inter typography, brand-lockup launcher, re-themed Svelte +
