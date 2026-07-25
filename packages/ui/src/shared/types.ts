@@ -136,6 +136,8 @@ export interface SponsorRelayState {
   balance: BalanceResponse | null
   crns: Crn[]
   selectedCrn: Crn | null
+  crnOptions: Array<{ hash: string; name: string | null; score: number | null }>
+  crnPinnedByUser: boolean
   instances: CompactInstanceRecord[]
   bootstrapRegistrations: CompactBootstrapRegistrationRecord[]
   orphanBootstrapRegistrations: CompactBootstrapRegistrationRecord[]

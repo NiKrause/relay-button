@@ -260,7 +260,19 @@ export let apiHosts = undefined
       </div>
       <div class="metric-card">
         <span>CRN</span>
-        <strong>{state.selectedCrn?.name ?? shortHash(state.selectedCrn?.hash)}</strong>
+        <select
+          class="crn-select"
+          aria-label="Select CRN"
+          value={state.crnPinnedByUser ? (state.selectedCrn?.hash ?? '') : ''}
+          on:change={(event) => controller.selectCrn(event.currentTarget.value || null)}
+        >
+          <option value="">Auto ({state.crnOptions[0]?.name ?? 'best score'})</option>
+          {#each state.crnOptions as option (option.hash)}
+            <option value={option.hash}>
+              {option.name ?? option.hash.slice(0, 8)}{option.score != null ? ` · ${option.score.toFixed(2)}` : ''}
+            </option>
+          {/each}
+        </select>
         <small>{state.selectedCrn?.address ?? 'Auto-picked best compatible CRN'}</small>
       </div>
       <div class="metric-card">

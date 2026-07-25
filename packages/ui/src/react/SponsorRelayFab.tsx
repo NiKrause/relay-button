@@ -1200,7 +1200,23 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               </div>
               <div>{state.rootfsHealth.label}</div>
               <div>
-                {state.selectedCrn?.name ?? shortHash(state.selectedCrn?.hash)}
+                <select
+                  aria-label="Select CRN"
+                  value={state.crnPinnedByUser ? (state.selectedCrn?.hash ?? "") : ""}
+                  onChange={(event) =>
+                    controller.selectCrn(event.currentTarget.value || null)
+                  }
+                >
+                  <option value="">
+                    Auto ({state.crnOptions[0]?.name ?? "best score"})
+                  </option>
+                  {state.crnOptions.map((option) => (
+                    <option key={option.hash} value={option.hash}>
+                      {(option.name ?? option.hash.slice(0, 8)) +
+                        (option.score != null ? ` · ${option.score.toFixed(2)}` : "")}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 Ports{" "}

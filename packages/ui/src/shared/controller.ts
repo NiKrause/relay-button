@@ -332,6 +332,8 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     balance: null,
     crns: [],
     selectedCrn: null,
+    crnOptions: [],
+    crnPinnedByUser: false,
     instances: [],
     bootstrapRegistrations: [],
     orphanBootstrapRegistrations: [],
@@ -2302,17 +2304,31 @@ export class SponsorRelayController {
         ? buildPaymentQuote(tier, pricing, balance)
         : null;
     const spec = pricing && tier ? tierSpec(pricing, tier) : null;
-    const selectedCrn =
-      compatibleCrnsForTier(this.state.crns, {
-        ...this.state,
-        pricingSummary: {
-          ...this.state.pricingSummary,
-          pricing,
-          tier,
-        },
-      } as SponsorRelayState)[0] ?? null;
+    const compatibleList = compatibleCrnsForTier(this.state.crns, {
+      ...this.state,
+      pricingSummary: {
+        ...this.state.pricingSummary,
+        pricing,
+        tier,
+      },
+    } as SponsorRelayState);
+    // A user-pinned CRN survives summary refreshes as long as it stays
+    // compatible with the tier; otherwise fall back to the ranked pick.
+    const pinned = this.state.crnPinnedByUser
+      ? (compatibleList.find(
+          (crn) => crn.hash === this.state.selectedCrn?.hash,
+        ) ?? null)
+      : null;
+    const selectedCrn = pinned ?? compatibleList[0] ?? null;
+    const crnOptions = compatibleList.slice(0, 15).map((crn) => ({
+      hash: crn.hash,
+      name: crn.name ?? null,
+      score: typeof crn.score === "number" ? crn.score : null,
+    }));
 
     this.patch({
+      crnOptions,
+      crnPinnedByUser: this.state.crnPinnedByUser && pinned != null,
       pricingSummary: {
         pricing,
         tier,
@@ -2324,6 +2340,18 @@ export class SponsorRelayController {
       },
       selectedCrn,
     });
+  }
+
+  /** Pin a specific CRN as the first deploy attempt (null = automatic). */
+  selectCrn(hash: string | null): void {
+    if (!hash) {
+      this.patch({ crnPinnedByUser: false });
+      this.recomputePricingSummary();
+      return;
+    }
+    const match = this.state.crns.find((crn) => crn.hash === hash) ?? null;
+    if (!match) return;
+    this.patch({ selectedCrn: match, crnPinnedByUser: true });
   }
 
   private queueManifestRefresh(): void {
