@@ -38,6 +38,7 @@ import {
   waitForDeploymentResult,
   waitForSetupEndpoint,
   waitForVmBootstrapConfigSignal,
+  crnExecutionAbsent,
   waitForVmRuntime,
 } from "../../../core/src/index.ts";
 import {
@@ -936,6 +937,7 @@ export class SponsorRelayController {
     itemHash: string;
     runtime: Awaited<ReturnType<typeof waitForVmRuntime>>;
     deploymentToken?: string | null;
+    crnUrl?: string | null;
   }): Promise<void> {
     const deploymentProfile = deploymentProfileForManifest(this.state.manifest);
     const profile = bootstrapRelayProfileForManifest(this.state.manifest);
@@ -1388,6 +1390,36 @@ export class SponsorRelayController {
         // content on an HTTPS origin).
         attempts: 100,
         delayMs: 3000,
+        // Early failover (relay-button#83): a silently broken CRN accepts the
+        // allocation but never schedules the VM. Probe the CRN's execution
+        // list alongside the signal wait; after 4 consecutive "absent"
+        // sightings (~2 min into the window) stop waiting — the full window
+        // costs ~5 min and the VM will never publish a signal.
+        shouldAbort: (() => {
+          let absentStreak = 0;
+          let probeCountdown = 0;
+          return async () => {
+            if (probeCountdown > 0) {
+              probeCountdown -= 1;
+              return false;
+            }
+            probeCountdown = 9; // one probe per ~30 s (10 × 3 s attempts)
+            const absent = await crnExecutionAbsent({
+              crnUrl: args.crnUrl,
+              itemHash: args.itemHash,
+              fetch: asJsonFetch,
+            });
+            absentStreak = absent ? absentStreak + 1 : 0;
+            if (absentStreak >= 4) {
+              this.trace("deploy:crn-execution-absent-abort", {
+                itemHash: args.itemHash,
+                crnUrl: args.crnUrl ?? null,
+              });
+              return true;
+            }
+            return false;
+          };
+        })(),
       });
 
       this.trace("deploy:bootstrap-config-signal-visible", {
@@ -2910,6 +2942,7 @@ export class SponsorRelayController {
             itemHash: result.itemHash,
             runtime,
             deploymentToken: attemptDeploymentToken,
+            crnUrl: candidateCrn.address ?? null,
           });
 
           this.patch({

@@ -508,6 +508,11 @@ export async function waitForVmBootstrapConfigSignal(args: {
   attempts?: number
   delayMs?: number
   sleep?: (ms: number) => Promise<void>
+  // Early-abort hook (relay-button#83): a silently broken CRN accepts the
+  // allocation but never starts the VM, so this wait otherwise burns its full
+  // window (~5 min) before failover. The caller probes the CRN's execution
+  // list and returns true once it is confident the VM will never come up.
+  shouldAbort?: () => Promise<boolean>
 }): Promise<VmBootstrapConfigSignalRecord | null> {
   const attempts = Math.max(1, Number(args.attempts ?? 24))
   const delayMs = Math.max(0, Number(args.delayMs ?? 2500))
@@ -530,10 +535,40 @@ export async function waitForVmBootstrapConfigSignal(args: {
     const match = signals.find((entry) => entry.status === expectedStatus) ?? null
     if (match) return match
 
+    if (args.shouldAbort && (await args.shouldAbort().catch(() => false))) {
+      return null
+    }
+
     if (attempt < attempts - 1) {
       await sleep(delayMs)
     }
   }
 
   return null
+}
+
+/**
+ * True when the CRN's execution list does NOT contain the instance —
+ * i.e. the CRN accepted the allocation but never scheduled the VM
+ * (relay-button#83, the ~9-minute silent-failure mode). "unknown" errors
+ * (endpoint unreachable, schema surprises) never count as absent.
+ */
+export async function crnExecutionAbsent(args: {
+  crnUrl: string | null | undefined
+  itemHash: string
+  fetch: JsonFetchLike
+}): Promise<boolean> {
+  const base = String(args.crnUrl ?? '').trim()
+  if (!base) return false
+  try {
+    const response = await args.fetch(new URL('/about/executions/list', base).toString(), {
+      cache: 'no-store',
+    })
+    if (!response.ok) return false
+    const payload = (await response.json()) as Record<string, unknown>
+    if (!payload || typeof payload !== 'object') return false
+    return !(args.itemHash in payload)
+  } catch {
+    return false
+  }
 }
