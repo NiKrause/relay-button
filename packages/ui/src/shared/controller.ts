@@ -1256,6 +1256,10 @@ export class SponsorRelayController {
         });
 
         let latestRuntime = runtime;
+        // Early failover during the activation wait too (relay-button#83): a
+        // CRN that never scheduled the VM otherwise burns the full 2n6 window
+        // (up to 10 min) before the signal-wait watchdog gets its chance.
+        let activationAbsentStreak = 0;
         for (
           let attempt = 0;
           attempt < UI_RUNTIME_WAIT_ATTEMPTS;
@@ -1263,6 +1267,25 @@ export class SponsorRelayController {
         ) {
           if (latestRuntime.webAccess?.active === true) {
             break;
+          }
+
+          if (attempt > 0 && attempt % 6 === 0) {
+            const absent = await crnExecutionAbsent({
+              crnUrl: args.crnUrl,
+              itemHash: args.itemHash,
+              fetch: asJsonFetch,
+            });
+            activationAbsentStreak = absent ? activationAbsentStreak + 1 : 0;
+            if (activationAbsentStreak >= 4) {
+              this.trace("deploy:crn-execution-absent-abort", {
+                itemHash: args.itemHash,
+                crnUrl: args.crnUrl ?? null,
+                phase: "https-activation",
+              });
+              throw new Error(
+                "The CRN never scheduled the relay VM (execution absent while waiting for HTTPS activation).",
+              );
+            }
           }
 
           await new Promise((resolve) =>
