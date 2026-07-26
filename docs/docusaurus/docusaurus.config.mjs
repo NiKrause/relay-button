@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+const require = createRequire(import.meta.url)
 const configDir = fileURLToPath(new URL('.', import.meta.url))
 const nodePackage = JSON.parse(
   readFileSync(join(configDir, '..', '..', 'packages', 'node', 'package.json'), 'utf8')
@@ -23,7 +25,26 @@ const config = {
       onBrokenMarkdownLinks: 'throw'
     }
   },
-  themes: ['@docusaurus/theme-mermaid'],
+  themes: [
+    '@docusaurus/theme-mermaid',
+    // Offline, self-contained search. The index is built at compile time and
+    // shipped with the site, so search keeps working on IPFS/Pages without
+    // Algolia or any other external service.
+    [
+      require.resolve('@easyops-cn/docusaurus-search-local'),
+      {
+        hashed: true,
+        language: ['en'],
+        indexDocs: true,
+        indexBlog: false,
+        indexPages: true,
+        docsRouteBasePath: '/docs',
+        highlightSearchTermsOnTargetPage: true,
+        searchResultLimits: 10,
+        searchResultContextMaxLength: 60
+      }
+    ]
+  ],
   presets: [
     [
       'classic',

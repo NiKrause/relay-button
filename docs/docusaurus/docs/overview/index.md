@@ -53,6 +53,23 @@ permanent backend and do not have to own its primary data.
 6. The deployment can run for minutes, months, or years—and be stopped when it
    is no longer needed.
 
+End to end, one button press turns a purely local app into a collaborating
+one:
+
+```mermaid
+flowchart TD
+    A["Local-first PWA<br/>(IPFS, download, or USB)<br/>data stays on device"] --> B["User presses<br/>the Relay Button"]
+    B --> C["Wallet pays with<br/>Aleph credits"]
+    C --> D["Relay VM deployed<br/>on Aleph Cloud"]
+    D --> E["Relay registers its<br/>addresses for bootstrap<br/>discovery"]
+    E --> F["Team peers discover<br/>the relay and each other"]
+    F --> G["Direct peer-to-peer<br/>replication in real time"]
+    G --> H["Optional: relay pins<br/>selected IPFS data"]
+    H --> I["Optional: durable archive<br/>(e.g. Filecoin)"]
+    G --> J["Stop the deployment<br/>when it is no longer needed"]
+    J --> A
+```
+
 The current implementation deploys this relay infrastructure on Aleph Cloud.
 The local-first peer-to-peer PWA remains distributable through IPFS, a normal
 download, or offline media and is not tied to that deployment for its basic
@@ -74,6 +91,18 @@ This creates a layered model:
   selected data online
 - **decentralized archive:** optional long-term storage preserves data beyond
   the lifetime of devices and relays
+
+Each layer is optional and sits on top of the one below it — the app keeps
+working when you remove any of the upper layers:
+
+```mermaid
+flowchart BT
+    L1["Local-first<br/>working copy on the user's device"]
+    L2["Peer-to-peer<br/>collaborators replicate changes directly"]
+    L3["Relay on demand<br/>temporary infrastructure for discovery and availability"]
+    L4["Decentralized archive<br/>optional long-term storage"]
+    L1 --> L2 --> L3 --> L4
+```
 
 The goal is not to pretend that infrastructure disappears. The goal is to make
 it optional, replaceable, and controlled by the people using the application.
