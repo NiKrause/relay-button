@@ -5,6 +5,55 @@ environment-specific code lives in thin adapters.
 
 Packages use the `@le-space/*` scope.
 
+The arrows below are the actual workspace dependencies declared in each
+`packages/*/package.json` — an arrow means "depends on". Note that `browser`
+and `rootfs` are deliberately dependency-free leaves, and that nothing depends
+on `ui` inside this repo: it is a published leaf for consumer apps.
+
+```mermaid
+flowchart TD
+    ST["@le-space/shared-types<br/>contracts only"]
+    AB["@le-space/aleph-bootstrap<br/>bootstrap registration + discovery"]
+    CORE["@le-space/core<br/>deployment engine"]
+    BROWSER["@le-space/browser<br/>browser-safe Aleph + EVM helpers"]
+    UI["@le-space/ui<br/>Svelte + React Relay Button"]
+    NODE["@le-space/node<br/>Node / CI adapters"]
+    ROOTFS["@le-space/rootfs<br/>RootFS build + contract"]
+    PW["@le-space/playwright<br/>E2E testkit"]
+
+    ACTION[".github/actions/aleph-vm-deploy"]
+    WF[".github/workflows/<br/>aleph-rootfs-build-publish-deploy.yml"]
+
+    CORE --> ST
+    CORE --> AB
+    UI --> CORE
+    UI --> BROWSER
+    NODE --> CORE
+    NODE --> ST
+    NODE --> ROOTFS
+    PW --> CORE
+    PW --> AB
+    ACTION --> NODE
+    WF --> ACTION
+
+    APP["Consumer app / PWA"] -.-> UI
+
+    classDef leaf fill:transparent,stroke-dasharray: 4 3;
+    class ST,BROWSER,ROOTFS leaf
+```
+
+`@le-space/browser` has no workspace dependencies today: it is a standalone
+browser-safe layer that `@le-space/ui` composes with `@le-space/core`, rather
+than a package layered on top of core. The intended *conceptual* layering
+(`shared-types → core → browser → ui`) is about responsibility, not about the
+import graph.
+
+Two details the graph flattens: `@le-space/ui` additionally reaches into
+`shared-types` and `browser` through relative source imports
+(`../../../shared-types/src/…`) without declaring `shared-types` as a
+dependency, and `@le-space/node` pulls in the libp2p/Helia stack on top of the
+workspace packages shown above.
+
 ## `@le-space/shared-types`
 
 This package should hold only shared contracts and value shapes.

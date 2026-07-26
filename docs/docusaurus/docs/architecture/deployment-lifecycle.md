@@ -18,6 +18,28 @@ This page describes the current shared deployment flow implemented by
 10. If deployment fails on a CRN, forget failed messages and retry the next
     candidate when appropriate.
 
+As a picture — the happy path runs down the left, and every failure inside the
+CRN attempt folds back into the retry loop described below:
+
+```mermaid
+flowchart TD
+    V["1. Validate rootfs<br/>reference + inputs"] --> C["2. Resolve and rank<br/>CRN candidates"]
+    C --> S["3. Build and sign<br/>Aleph INSTANCE message"]
+    S --> B["4. Broadcast the<br/>deployment request"]
+    B --> AGG["5. Publish required<br/>port forwards (AGGREGATE)"]
+    AGG --> W["6. Wait for Aleph to<br/>process the message"]
+    W --> R["7. Poll runtime endpoints<br/>until networking is up"]
+    R --> G["8. uc-go-peer: notify allocation,<br/>wait for setup endpoint,<br/>/configure, fetch /metadata"]
+    G --> P["9. Verify required TCP<br/>and HTTPS reachability"]
+    P --> OK["Deployment recorded<br/>in the retention ledger"]
+
+    W -. rejected .-> F["10. Forget failed messages,<br/>retry next CRN candidate"]
+    R -. no usable runtime .-> F
+    G -. guest never configures .-> F
+    P -. not reachable .-> F
+    F --> C
+```
+
 ## Shared Core Modules
 
 - `manifests.ts`
@@ -64,6 +86,32 @@ activation model and budget guidance.
 
 This keeps the higher-level consumer workflows simpler because the retry
 behavior now lives in shared code instead of repo-local scripts.
+
+The browser loop in `packages/ui/src/shared/controller.ts` takes at most five
+ordered candidates (a user-pinned CRN first, then the score-sorted compatible
+ones) and treats "not browser-dialable" as a failed attempt rather than a
+success:
+
+```mermaid
+flowchart TD
+    START(["deploy()"]) --> RANK["Order compatible CRNs<br/>pinned first, max 5 candidates"]
+    RANK --> SEL["Select next CRN candidate"]
+    SEL --> DEP["Sign + broadcast INSTANCE,<br/>publish port forwards,<br/>notify CRN allocation"]
+    DEP --> RUN{"Runtime ready?<br/>IPv4 + mapped ports"}
+    RUN -- no --> FAIL
+    RUN -- yes --> CFG["Configure guest,<br/>wait for relay metadata"]
+    CFG --> DIAL{"Browser-dialable address?<br/>WSS, or certhash transport<br/>+ 2n6 /health probe"}
+    DIAL -- no --> FAIL["Attempt failed"]
+    DIAL -- yes --> OK(["Relay ready<br/>bootstrap registration published"])
+
+    FAIL --> CLEAN["Clean up the attempt:<br/>delete bootstrap config aggregate,<br/>FORGET the INSTANCE message"]
+    CLEAN --> MORE{"Candidates left?"}
+    MORE -- yes --> SEL
+    MORE -- no --> ERR(["Error:<br/>all compatible CRNs failed"])
+```
+
+The controller waits up to ten minutes per attempt for the 2n6 hostname to
+activate, which is why a single failed candidate costs 7–13 minutes.
 
 ## `uc-go-peer` Guest Lifecycle
 
