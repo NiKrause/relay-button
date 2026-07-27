@@ -22,6 +22,46 @@ The domain target uses the Aleph STORE item hash, not the IPFS CID. Linking a
 pending STORE can leave the workflow green while the public domain continues
 to serve its previous IPFS root. The safe defaults prevent that state.
 
+## DNS prerequisites
+
+`site-domain-link` changes the Aleph `domains` aggregate. It does not create DNS
+records, and a missing record does not fail the job in a useful way: the run is
+green, the aggregate is correct, and the domain still does not resolve. Create
+these three records **before** the first domain link.
+
+Worked example for `webrtc-qr.le-space.de`:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| CNAME | `webrtc-qr.le-space.de` | `ipfs.public.aleph.sh` |
+| CNAME | `_dnslink.webrtc-qr.le-space.de` | `_dnslink.webrtc-qr.le-space.de.static.public.aleph.sh` |
+| TXT | `_control.webrtc-qr.le-space.de` | `0xD139E44669fD96C714F888B6b04Fe5D02D02B4fD` |
+
+The `_dnslink` value embeds the domain itself before appending
+`.static.public.aleph.sh`, so it is **not** a constant across sites. Substitute
+your own domain in both halves.
+
+The `_control` TXT is the ownership proof. It must hold the EVM address derived
+from the `ALEPH_PRIVATE_KEY` that signs the STORE and the aggregate update. A
+key rotation means updating this record, and a site published with a different
+key than its `_control` record names will not be served.
+
+Verify before running the workflow:
+
+```bash
+dig +short CNAME webrtc-qr.le-space.de
+# ipfs.public.aleph.sh.
+
+dig +short CNAME _dnslink.webrtc-qr.le-space.de
+# _dnslink.webrtc-qr.le-space.de.static.public.aleph.sh.
+
+dig +short TXT _control.webrtc-qr.le-space.de
+# "0xD139E44669fD96C714F888B6b04Fe5D02D02B4fD"
+```
+
+The Aleph console lists the same three records when you create the domain, and
+detects them as soon as they resolve.
+
 ## GitHub Actions example
 
 ```yaml
