@@ -12,6 +12,23 @@ on:
         required: false
         default: 3600000
         type: number
+      extra_name_prefixes:
+        description: >-
+          Additional exact instance-name prefixes to sweep beyond
+          playwright-<repository_scope>-, comma or space separated (for example
+          simple-todo-e2e-). Ephemeral VMs named by a repository's own scheme
+          match no repository prefix and otherwise leak forever.
+        required: false
+        default: ''
+        type: string
+      fail_on_unswept:
+        description: >-
+          Fail the run when an allocated instance is past the TTL but matches no
+          configured prefix. Enable for wallets that only ever hold ephemeral
+          VMs; leave off where the same wallet funds long-lived relays.
+        required: false
+        default: false
+        type: boolean
     secrets:
       ALEPH_PRIVATE_KEY:
         required: true
@@ -26,6 +43,16 @@ on:
         required: true
         default: 3600000
         type: number
+      extra_name_prefixes:
+        description: Additional exact instance-name prefixes to sweep, comma or space separated
+        required: false
+        default: ''
+        type: string
+      fail_on_unswept:
+        description: Fail when an allocated instance is past the TTL but matches no configured prefix
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -65,6 +92,8 @@ jobs:
           ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
           ALEPH_PLAYWRIGHT_JANITOR_REPOSITORY: ${{ inputs.repository_scope }}
           ALEPH_PLAYWRIGHT_JANITOR_TTL_MS: ${{ inputs.ttl_ms }}
+          ALEPH_PLAYWRIGHT_JANITOR_EXTRA_NAME_PREFIXES: ${{ inputs.extra_name_prefixes }}
+          ALEPH_PLAYWRIGHT_JANITOR_FAIL_ON_UNSWEPT: ${{ inputs.fail_on_unswept }}
           ALEPH_VM_API_HOSTS: https://api2.aleph.im,https://api.aleph.im
         # shell: bash runs with -o pipefail so a node failure is not masked
         # by tee's exit code.
