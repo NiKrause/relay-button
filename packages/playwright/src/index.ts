@@ -96,6 +96,15 @@ export interface AlephRunnerInstanceCandidate {
 export interface AlephRunnerJanitorSelection {
   expired: AlephRunnerInstanceCandidate[]
   retained: Array<AlephRunnerInstanceCandidate & { reason: string }>
+  /**
+   * Instances the janitor may not touch — their name matches none of the
+   * configured prefixes — that are nevertheless past the TTL and still
+   * allocated. These are the invisible credit leaks: two `simple-todo-e2e-*`
+   * VMs burned ~811k credits over 38 h while seven consecutive janitor runs
+   * reported success, because "name I do not recognise" was indistinguishable
+   * from "nothing to do" (NiKrause/simple-todo#88).
+   */
+  unswept: Array<AlephRunnerInstanceCandidate & { ageMs: number }>
 }
 
 export interface RelayAddressPolicy {
@@ -303,29 +312,51 @@ export function selectExpiredAlephPlaywrightRunners(options: {
   repository: string
   now?: number
   ttlMs?: number
+  /**
+   * Extra exact name prefixes to sweep beyond `playwright-<repository>-`.
+   * Ephemeral VMs that a repository names by its own scheme (simple-todo's
+   * relay runners are `simple-todo-e2e-<timestamp>`) never matched the
+   * repository prefix and so leaked forever (#88).
+   */
+  additionalNamePrefixes?: readonly string[]
 }): AlephRunnerJanitorSelection {
   const owner = options.ownerAddress.trim().toLowerCase()
   const repository = options.repository.trim().toLowerCase().replace(/[^a-z0-9]+/gu, '-')
   if (!/^0x[a-f0-9]{40}$/u.test(owner)) throw new Error('Janitor requires an exact EVM owner address')
   if (!repository) throw new Error('Janitor requires a repository name')
-  const prefix = `playwright-${repository}-`
+  const prefixes = [
+    `playwright-${repository}-`,
+    ...(options.additionalNamePrefixes ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean),
+  ]
   const now = options.now ?? Date.now()
   const ttlMs = options.ttlMs ?? 60 * 60_000
   if (!Number.isFinite(ttlMs) || ttlMs < 15 * 60_000) throw new Error('Janitor TTL must be at least 15 minutes')
-  const selection: AlephRunnerJanitorSelection = { expired: [], retained: [] }
+  const selection: AlephRunnerJanitorSelection = { expired: [], retained: [], unswept: [] }
 
   for (const candidate of options.candidates) {
     let reason = ''
     const createdAt = Date.parse(candidate.createdAt)
     if (!/^[a-f0-9]{64}$/iu.test(candidate.itemHash)) reason = 'invalid exact INSTANCE hash'
     else if (candidate.ownerAddress.toLowerCase() !== owner) reason = 'different owner'
-    else if (!candidate.instanceName.toLowerCase().startsWith(prefix)) reason = 'name outside repository scope'
+    else if (!prefixes.some((prefix) => candidate.instanceName.toLowerCase().startsWith(prefix)))
+      reason = 'name outside repository scope'
     else if (!Number.isFinite(createdAt)) reason = 'invalid creation timestamp'
     else if (now - createdAt < ttlMs) reason = 'within TTL'
     else if (!['processed', 'pending'].includes(candidate.status.toLowerCase())) reason = `terminal status ${candidate.status}`
 
-    if (reason) selection.retained.push({ ...candidate, reason })
-    else selection.expired.push(candidate)
+    if (reason) {
+      selection.retained.push({ ...candidate, reason })
+      // An unrecognised name is the only retention reason that can conceal a
+      // live, credit-burning VM: every other reason means the instance is
+      // either ours-and-still-young or not a real allocation.
+      if (
+        reason === 'name outside repository scope' &&
+        Number.isFinite(createdAt) &&
+        now - createdAt >= ttlMs &&
+        ['processed', 'pending'].includes(candidate.status.toLowerCase())
+      )
+        selection.unswept.push({ ...candidate, ageMs: now - createdAt })
+    } else selection.expired.push(candidate)
   }
   return selection
 }

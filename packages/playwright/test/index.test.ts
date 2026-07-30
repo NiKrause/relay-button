@@ -130,6 +130,57 @@ test('Aleph runner janitor only selects expired exact-hash instances in owner an
   ])
 })
 
+test('Aleph runner janitor sweeps additional exact name prefixes', () => {
+  const ownerAddress = `0x${'ab'.repeat(20)}`
+  const base = {
+    ownerAddress,
+    status: 'processed',
+    createdAt: '2026-07-17T10:00:00.000Z',
+  }
+  const result = selectExpiredAlephPlaywrightRunners({
+    ownerAddress,
+    repository: 'NiKrause/simple-todo',
+    now: Date.parse('2026-07-17T12:00:00.000Z'),
+    ttlMs: 60 * 60_000,
+    additionalNamePrefixes: ['simple-todo-e2e-'],
+    candidates: [
+      // The exact leak from #88: ephemeral relay VMs named by simple-todo's own
+      // scheme, which the repository prefix never matched.
+      { ...base, itemHash: 'a'.repeat(64), instanceName: 'simple-todo-e2e-1785074478061' },
+      { ...base, itemHash: 'b'.repeat(64), instanceName: 'playwright-nikrause-simple-todo-123-1' },
+      // Still young enough to be an in-flight test run.
+      { ...base, itemHash: 'c'.repeat(64), instanceName: 'simple-todo-e2e-1785074478062', createdAt: '2026-07-17T11:30:00.000Z' },
+      { ...base, itemHash: 'd'.repeat(64), instanceName: 'orbitdb-relay-production' },
+    ],
+  })
+  assert.deepEqual(result.expired.map(({ itemHash }) => itemHash), ['a'.repeat(64), 'b'.repeat(64)])
+  assert.deepEqual(result.retained.map(({ reason }) => reason), ['within TTL', 'name outside repository scope'])
+})
+
+test('Aleph runner janitor reports expired out-of-scope instances as unswept credit leaks', () => {
+  const ownerAddress = `0x${'ab'.repeat(20)}`
+  const base = { ownerAddress, status: 'processed' }
+  const result = selectExpiredAlephPlaywrightRunners({
+    ownerAddress,
+    repository: 'NiKrause/simple-todo',
+    now: Date.parse('2026-07-28T13:34:00.000Z'),
+    ttlMs: 60 * 60_000,
+    candidates: [
+      // Both orphans from #88, before the prefix was configured: 47 h old and
+      // invisible, because "unrecognised name" looked like "nothing to do".
+      { ...base, itemHash: 'a'.repeat(64), instanceName: 'simple-todo-e2e-1785074478061', createdAt: '2026-07-26T14:23:00.000Z' },
+      { ...base, itemHash: 'b'.repeat(64), instanceName: 'simple-todo-e2e-1785071969399', createdAt: '2026-07-26T13:55:00.000Z' },
+      // Out of scope but already deallocated — not a leak.
+      { ...base, itemHash: 'c'.repeat(64), instanceName: 'gone', createdAt: '2026-07-26T13:55:00.000Z', status: 'rejected' },
+      // Out of scope and young — a run that may still be in flight.
+      { ...base, itemHash: 'd'.repeat(64), instanceName: 'fresh', createdAt: '2026-07-28T13:10:00.000Z' },
+    ],
+  })
+  assert.deepEqual(result.expired, [])
+  assert.deepEqual(result.unswept.map(({ itemHash }) => itemHash), ['a'.repeat(64), 'b'.repeat(64)])
+  assert.deepEqual(result.unswept.map(({ ageMs }) => Math.round(ageMs / 3_600_000)), [47, 48])
+})
+
 test('resolveAlephApiHosts enforces api2 then api and excludes api3', () => {
   assert.deepEqual(resolveAlephApiHosts(['https://api.aleph.im/path', 'https://api3.aleph.im', 'https://api2.aleph.im', 'https://untrusted.example']), [
     'https://api2.aleph.im',
