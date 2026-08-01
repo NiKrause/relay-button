@@ -5,7 +5,8 @@ inputs:
   aleph_private_key:
     required: true
   instance_item_hash:
-    required: true
+    description: INSTANCE to erase; empty when the deploy never created one
+    required: false
   testkit_version:
     description: Version of @le-space/playwright providing the playwright-runner-cleanup bin
     required: false
@@ -18,8 +19,19 @@ outputs:
 runs:
   using: composite
   steps:
+    # A deploy that never produced an INSTANCE leaves this input empty, because
+    # the outputs of a failed step are empty. aleph-vm-deploy already forgets
+    # its own failed deployment (preserve_failed_deployment: false), so there is
+    # nothing to erase here — but failing anyway added a second "exit code 1"
+    # to the run, drawing attention away from the deploy error that caused it.
+    - name: Skip cleanup without an INSTANCE to erase
+      if: ${{ inputs.instance_item_hash == '' }}
+      shell: bash
+      run: echo 'No INSTANCE hash supplied; the deploy left nothing to erase.'
+
     - name: Clean exact Playwright runner INSTANCE
       id: cleanup
+      if: ${{ inputs.instance_item_hash != '' }}
       shell: bash
       env:
         ALEPH_PRIVATE_KEY: ${{ inputs.aleph_private_key }}
