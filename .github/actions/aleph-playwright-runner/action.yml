@@ -29,6 +29,28 @@ inputs:
   memory_mib:
     required: false
     default: "4096"
+  # Scheduler placement is a single anonymous shot: aleph-vm-deploy builds one
+  # placement candidate, so `1/1`, and max_crn_attempts shapes only the manual
+  # candidate list. When the scheduler's node never exposes execution
+  # networking the run is simply lost, and the log cannot even name the node
+  # that failed. Manual placement iterates ranked CRNs the way the relay
+  # profiles do, and reports each one.
+  placement_strategy:
+    required: false
+    description: scheduler lets Aleph choose one node; manual iterates ranked CRNs
+    default: manual
+  max_crn_attempts:
+    required: false
+    description: Ranked CRNs to try before giving up (manual placement only)
+    default: "5"
+  runtime_attempts:
+    required: false
+    description: Polls to wait for the CRN to expose runtime networking
+    default: "40"
+  runtime_delay_ms:
+    required: false
+    description: Delay between runtime networking polls
+    default: "5000"
 
 outputs:
   instance_item_hash:
@@ -71,6 +93,10 @@ runs:
         preferred_country_code: ${{ inputs.preferred_country_code }}
         vcpus: ${{ inputs.vcpus }}
         memory_mib: ${{ inputs.memory_mib }}
+        placement_strategy: ${{ inputs.placement_strategy }}
+        max_crn_attempts: ${{ inputs.max_crn_attempts }}
+        runtime_attempts: ${{ inputs.runtime_attempts }}
+        runtime_delay_ms: ${{ inputs.runtime_delay_ms }}
         auto_configure: "false"
         verify_reachability: "false"
         publish_port_forwards: "true"

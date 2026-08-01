@@ -25,5 +25,25 @@ the separate cleanup action under `always()` using the exact deployment output:
     instance_item_hash: ${{ steps.runner.outputs.instance_item_hash }}
 ```
 
+The cleanup action tolerates an empty `instance_item_hash`, so the guard above
+is belt-and-braces: a deploy that never created an INSTANCE has already forgotten
+its own failed deployment, and the cleanup step now skips instead of failing the
+run a second time.
+
+## Placement
+
+Deployment defaults to `manual` placement, which walks the ranked CRN list and
+names each node it tries. Aleph's own scheduler is a single anonymous attempt —
+one placement candidate, no failover — so a node that never exposes execution
+networking loses the whole run, and the log cannot say which node it was. Pass
+`placement_strategy: scheduler` to opt back into it.
+
+| Input | Default | Purpose |
+| --- | --- | --- |
+| `placement_strategy` | `manual` | `manual` iterates ranked CRNs; `scheduler` lets Aleph pick one |
+| `max_crn_attempts` | `5` | Ranked CRNs to try; ignored under `scheduler` |
+| `runtime_attempts` | `40` | Polls waiting for the CRN to expose runtime networking |
+| `runtime_delay_ms` | `5000` | Delay between those polls |
+
 Generate and mask the secret and SSH identity in the consumer workflow. Do not
 store either in the RootFS or artifacts.
