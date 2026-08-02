@@ -133,9 +133,12 @@ on:
         default: "20480"
         type: string
       vm_preferred_country_code:
-        description: Preferred two-letter country code for automatic CRN selection
+        description: >-
+          Preferred two-letter country code for automatic CRN selection. Empty
+          by default — a preference disables the ranker's top-5 shuffle and
+          sends every run at the same, usually congested, top node.
         required: false
-        default: DE
+        default: ''
         type: string
       vm_geo_crn_limit:
         description: Maximum number of top-ranked CRNs to geolocate when preferring a country

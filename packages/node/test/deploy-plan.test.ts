@@ -24,7 +24,7 @@ test("parseDeployPlan reads required deploy env and defaults", () => {
   assert.equal(plan.rootfsSizeMiB, 20480);
   assert.equal(plan.channel, "TEST");
   assert.equal(plan.placementStrategy, "scheduler");
-  assert.equal(plan.preferredCountryCode, "DE");
+  assert.equal(plan.preferredCountryCode, "");
   assert.equal(plan.geoCrnLimit, 30);
   assert.equal(plan.maxCrnAttempts, 5);
   assert.equal(plan.runtimeAttempts, 40);

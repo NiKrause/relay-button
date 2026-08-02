@@ -52,9 +52,15 @@ inputs:
     required: false
     default: scheduler
   preferred_country_code:
-    description: Preferred two-letter country code for automatic CRN selection
+    description: >-
+      Preferred two-letter country code for automatic CRN selection. Empty by
+      default on purpose: an explicit preference switches ranking to
+      deterministic geo-first ordering, which sends every run at the same
+      top-ranked node — usually the most congested one. With no preference the
+      ranker shuffles its top-5 pool instead, spreading first picks across
+      near-equally-scored nodes while failover still walks the ordered tail.
     required: false
-    default: 'DE'
+    default: ''
   max_crn_attempts:
     description: Maximum number of distinct CRNs to try when Aleph rejects a deployment
     required: false
