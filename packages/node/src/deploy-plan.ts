@@ -279,9 +279,13 @@ export function parseDeployPlan(
     rootfsSizeMiB: integerEnv("ALEPH_VM_ROOTFS_SIZE_MIB", 20480, env),
     placementStrategy: parsePlacementStrategy(env),
     crnHash: optionalEnv("ALEPH_VM_CRN_HASH", "", env),
+    // No geographic preference by default. An explicit country switches
+    // rankCandidateCrns to deterministic geo-first ordering, which disables the
+    // top-5 shuffle and therefore sends every run at the same top-ranked node —
+    // in practice the most congested one.
     preferredCountryCode: optionalEnv(
       "ALEPH_VM_PREFERRED_COUNTRY_CODE",
-      "DE",
+      "",
       env,
     ),
     geoCrnLimit: integerEnv("ALEPH_VM_GEO_CRN_LIMIT", 30, env),

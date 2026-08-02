@@ -21,8 +21,10 @@ inputs:
     required: true
     description: Random per-run bearer secret (never emitted as output)
   preferred_country_code:
+    # Empty on purpose — see aleph-vm-deploy: a preference disables the
+    # top-5 shuffle and pins every run to the same congested node.
     required: false
-    default: DE
+    default: ''
   vcpus:
     required: false
     default: "2"
