@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import json
 import os
+import socket
+import ssl
 import subprocess
 import time
 import urllib.error
@@ -24,6 +26,7 @@ CADDYFILE = os.environ.get("CADDYFILE", "/etc/caddy/Caddyfile")
 METRICS_PORT = int(os.environ.get("METRICS_PORT", "9090"))
 WAIT_TIMEOUT_SECONDS = int(os.environ.get("AUTOTLS_WAIT_TIMEOUT_SECONDS", "900"))
 WAIT_INTERVAL_SECONDS = float(os.environ.get("AUTOTLS_WAIT_INTERVAL_SECONDS", "5"))
+TLS_PROBE_TIMEOUT_SECONDS = float(os.environ.get("AUTOTLS_TLS_PROBE_TIMEOUT_SECONDS", "5"))
 
 
 def fetch_json(path: str) -> dict:
@@ -98,6 +101,43 @@ def ipv6_domain(ipv6: str, zone: str) -> str:
     return f"{subdomain}.{zone}"
 
 
+def listener_presents_certificate(port: str, server_name: str) -> bool:
+    """Does the local WebSocket listener actually terminate TLS?
+
+    This is the only question that matters before announcing a `/tls/...`
+    address, and until this existed nothing asked it. The previous gate read
+    `/multiaddrs` from the metrics endpoint and looked for a `/tls/ws` entry -
+    but that list is the *announce* list, which is what this script writes. It
+    confirmed its own output from the run before, so it passed on a relay whose
+    WebSocket port had never spoken TLS in its life.
+
+    The result on a live relay: `/ip4/.../tcp/52194/tls/sni/<host>/ws` announced
+    for a port that answers a plaintext handshake with `101 Switching
+    Protocols`. Browsers on an https origin got ERR_SSL_PROTOCOL_ERROR, and
+    every peer paid a TLS timeout on every connect
+    (see NiKrause/simple-todo#154).
+
+    Opening a socket cannot be fooled that way.
+    """
+    context = ssl.create_default_context()
+    # Asking whether *a* certificate is served, not whether it validates: the
+    # probe runs against loopback while the certificate is issued for the public
+    # AutoTLS hostname, so a chain check would fail on a healthy relay.
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), TLS_PROBE_TIMEOUT_SECONDS) as raw:
+            # SNI is not optional. Without `server_hostname` a name-based TLS
+            # server has nothing to select a certificate by and aborts the
+            # handshake - which made an earlier version of this probe report
+            # "no TLS" for Caddy on 443, a port that demonstrably serves one.
+            with context.wrap_socket(raw, server_hostname=server_name) as tls:
+                return tls.getpeercert(binary_form=True) is not None
+    except (OSError, ssl.SSLError, ValueError):
+        return False
+
+
 def wait_for_autotls_zone() -> str:
     deadline = time.monotonic() + WAIT_TIMEOUT_SECONDS
     last_error = "metrics endpoint never became ready"
@@ -105,17 +145,10 @@ def wait_for_autotls_zone() -> str:
     while time.monotonic() < deadline:
         try:
             health = fetch_json("/health")
-            payload = fetch_json("/multiaddrs")
             zone = health.get("autoTlsServingZone")
-            all_addrs = payload.get("all")
-            if (
-                isinstance(zone, str)
-                and zone
-                and isinstance(all_addrs, list)
-                and any(isinstance(addr, str) and "/tls/ws" in addr for addr in all_addrs)
-            ):
+            if isinstance(zone, str) and zone:
                 return zone
-            last_error = "AutoTLS secure websocket multiaddrs not advertised yet"
+            last_error = "AutoTLS serving zone not published yet"
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
             last_error = str(error)
 
@@ -187,14 +220,40 @@ def main() -> None:
 
     env_values = parse_env_file(ENV_FILE)
     zone = wait_for_autotls_zone()
-    secure_addrs = build_secure_addrs(env_values, zone)
-    exact_hosts = secure_hosts(env_values, zone)
+
+    # Announce a TLS address only where something terminates TLS. The relay
+    # listens plaintext on RELAY_WS_PORT and Caddy terminates on 443; if AutoTLS
+    # has not taken over that listener, the libp2p.direct addresses would be a
+    # promise the port cannot keep. Caddy's own 443 address is written elsewhere
+    # and is unaffected by this - it keeps working either way.
+    internal_ws_port = env_values.get("RELAY_WS_PORT", "").strip()
+    autotls_hostname = metrics_https_public_host(env_values, zone)
+    autotls_serving = bool(internal_ws_port and autotls_hostname) and listener_presents_certificate(
+        internal_ws_port, autotls_hostname
+    )
+
+    if autotls_serving:
+        secure_addrs = build_secure_addrs(env_values, zone)
+    else:
+        secure_addrs = []
+        print(
+            f"AutoTLS is not terminating TLS on 127.0.0.1:{internal_ws_port or '<unset>'} - "
+            "skipping the libp2p.direct announce addresses. Peers keep the Caddy "
+            "address on 443, which is served by a separate process."
+        )
+    exact_hosts = secure_hosts(env_values, zone) if autotls_serving else []
     metrics_host = metrics_https_public_host(env_values, zone)
     current_value = env_values.get("VITE_APPEND_ANNOUNCE", "")
     current_metrics_host = env_values.get("METRICS_HTTPS_PUBLIC_HOST", "").strip()
-    merged = dedupe(
-        [normalize_addr(addr) for addr in current_value.split(",") if addr.strip()] + secure_addrs
-    )
+    previous = [normalize_addr(addr) for addr in current_value.split(",") if addr.strip()]
+
+    # Drop stale libp2p.direct entries when the probe says they are not served.
+    # Without this the first bad run leaves them in the file forever - which is
+    # how the live relay kept announcing a plaintext port across restarts.
+    if not autotls_serving:
+        previous = [addr for addr in previous if "libp2p.direct" not in addr]
+
+    merged = dedupe(previous + secure_addrs)
     announce_changed = current_value.split(",") != merged
     metrics_host_changed = bool(metrics_host) and current_metrics_host != metrics_host
 
