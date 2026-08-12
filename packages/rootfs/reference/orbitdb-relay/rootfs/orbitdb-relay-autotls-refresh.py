@@ -282,7 +282,21 @@ def main() -> None:
     elif os.path.exists(AUTOTLS_CADDY_READY_FILE):
         os.remove(AUTOTLS_CADDY_READY_FILE)
 
-    open(AUTOTLS_READY_FILE, "a", encoding="utf-8").close()
+    # The ready file is what stops this unit from running again
+    # (ConditionPathExists=! in the unit), so it may only be written once the
+    # AutoTLS addresses are actually announced. Writing it unconditionally is
+    # what made a single early probe final: AutoTLS needs a minute or two to
+    # fetch its certificate, the probe correctly found a plaintext port before
+    # that, marked itself done - and the certificate that arrived afterwards was
+    # never announced. The timer beside this unit retries until it is here.
+    if autotls_serving:
+        open(AUTOTLS_READY_FILE, "a", encoding="utf-8").close()
+    else:
+        print(
+            "Not marking AutoTLS ready - no TLS on the listener yet. "
+            f"{os.path.basename(AUTOTLS_READY_FILE)} stays absent so the timer retries."
+        )
+
     print(f"Updated VITE_APPEND_ANNOUNCE={announce_value}")
 
 
