@@ -245,6 +245,7 @@ case "${ROOTFS_PROFILE}" in
       --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap-refresh.timer:/etc/systemd/system"
       --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap-deregister.service:/etc/systemd/system"
       --copy-in "${SCRIPT_DIR}/orbitdb-relay-autotls-refresh.service:/etc/systemd/system"
+      --copy-in "${SCRIPT_DIR}/orbitdb-relay-autotls-refresh.timer:/etc/systemd/system"
       --copy-in "${SCRIPT_DIR}/orbitdb-relay-bootstrap.conf:/etc/systemd/system/orbitdb-relay.service.d"
       --run-command "tar -xf /opt/$(basename "${APP_TAR}") -C /opt/orbitdb-relay"
       --run-command "chmod 0755 /usr/local/sbin/orbitdb-relay-bootstrap.sh"
@@ -259,6 +260,7 @@ case "${ROOTFS_PROFILE}" in
 
     orbitdb_customize_args+=(
       --run-command "systemctl enable orbitdb-relay-bootstrap.service"
+      --run-command "systemctl enable orbitdb-relay-autotls-refresh.timer"
       --run-command "systemctl enable orbitdb-relay.service"
       --run-command "rm -f /opt/$(basename "${APP_TAR}")"
     )

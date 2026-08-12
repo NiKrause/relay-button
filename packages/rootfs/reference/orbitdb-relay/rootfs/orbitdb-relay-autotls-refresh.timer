@@ -1,0 +1,22 @@
+[Unit]
+# AutoTLS fetches its certificate a minute or two after the relay starts, and
+# the refresh unit runs seconds after it. Without a retry the probe sees a
+# plaintext listener, correctly declines to announce a TLS address - and never
+# looks again, so a certificate that arrives later is never advertised.
+#
+# The unit's own ConditionPathExists=! on the ready file is the stop condition:
+# once the addresses are announced, every later firing is skipped by systemd
+# before python starts. This timer therefore costs nothing after success.
+Description=Retry the AutoTLS announce refresh for orbitdb-relay until it succeeds
+After=orbitdb-relay.service
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+# Certificates can take a while on a busy ACME endpoint, and the relay is
+# usable over Caddy on 443 throughout - so retrying patiently costs nothing.
+AccuracySec=15s
+Unit=orbitdb-relay-autotls-refresh.service
+
+[Install]
+WantedBy=timers.target
