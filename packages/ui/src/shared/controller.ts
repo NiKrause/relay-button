@@ -77,6 +77,7 @@ import type {
   CompactBootstrapRegistrationRecord,
   CompactInstanceDetails,
   CompactInstanceRecord,
+  SponsorRelayInstanceAddresses,
   SponsorRelayProps,
   SponsorRelayRootfsHealth,
   SponsorRelayState,
@@ -339,6 +340,7 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     orphanBootstrapRegistrations: [],
     lastDeploymentHash: null,
     deploymentProgress: IDLE_DEPLOYMENT_PROGRESS,
+    instanceAddresses: {},
   };
 }
 
@@ -371,6 +373,118 @@ async function sha256Hex(payload: string): Promise<string> {
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function hostnameOfUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).hostname || null;
+  } catch {
+    return null;
+  }
+}
+
+function emptyInstanceAddresses(): SponsorRelayInstanceAddresses {
+  return {
+    status: "idle",
+    groups: [],
+    pwaEnv: null,
+    payload: null,
+    peerId: null,
+    version: null,
+    fetchedAt: null,
+    error: null,
+    sourceUrl: null,
+  };
+}
+
+const TRANSPORT_LABELS: Record<string, string> = {
+  tcp: "TCP",
+  websocket: "WebSocket",
+  webrtc: "WebRTC",
+  direct_tcp: "Direct TCP",
+  autotls_wss: "AutoTLS WSS",
+  proxy_wss: "Proxy WSS",
+  webtransport: "WebTransport",
+  webrtc_direct: "WebRTC Direct",
+  browser_bootstrap: "Browser bootstrap",
+  probe: "Probe",
+};
+
+function transportLabel(key: string): string {
+  return (
+    TRANSPORT_LABELS[key] ??
+    key.replace(/[_-]+/g, " ").replace(/^./, (first) => first.toUpperCase())
+  );
+}
+
+function addressList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim()))
+    : [];
+}
+
+/**
+ * Normalise the two address documents in the fleet into one list of groups.
+ *
+ * orbitdb-relay reports `byTransport`; uc-go-peer's describe output uses
+ * `<transport>_multiaddrs` keys. Neither is rewritten or ranked here — the card
+ * shows what the relay said, and picking an address is the consumer's job.
+ */
+export function parseInstanceAddressPayload(
+  payload: Record<string, unknown>,
+): SponsorRelayInstanceAddresses {
+  const groups: SponsorRelayInstanceAddresses["groups"] = [];
+
+  const byTransport = payload.byTransport;
+  if (byTransport && typeof byTransport === "object") {
+    for (const [key, value] of Object.entries(
+      byTransport as Record<string, unknown>,
+    )) {
+      const addresses = addressList(value);
+      if (addresses.length > 0) {
+        groups.push({ key, label: transportLabel(key), addresses });
+      }
+    }
+  }
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (!key.endsWith("_multiaddrs")) continue;
+    const addresses = addressList(value);
+    if (addresses.length === 0) continue;
+    const groupKey = key.replace(/_multiaddrs$/, "");
+    groups.push({
+      key: groupKey,
+      label: transportLabel(groupKey),
+      addresses,
+    });
+  }
+
+  const pwaEnvRaw = payload.pwa_env;
+  const pwaEnv =
+    pwaEnvRaw && typeof pwaEnvRaw === "object"
+      ? Object.fromEntries(
+          Object.entries(pwaEnvRaw as Record<string, unknown>)
+            .filter(([, entry]) => typeof entry === "string")
+            .map(([entryKey, entry]) => [entryKey, entry as string]),
+        )
+      : null;
+
+  const peerId =
+    typeof payload.peerId === "string"
+      ? payload.peerId
+      : typeof payload.peer_id === "string"
+        ? payload.peer_id
+        : null;
+
+  return {
+    ...emptyInstanceAddresses(),
+    groups,
+    pwaEnv,
+    payload,
+    peerId,
+    version: typeof payload.version === "string" ? payload.version : null,
+  };
 }
 
 function mappedPorts(
@@ -656,6 +770,7 @@ async function inspectInstanceRuntime(args: {
     vmIpv4: null,
     webUrl: null,
     sshCommand: null,
+    proxyHostname: null,
     mappedPorts: [],
     execution: null,
     error: null,
@@ -733,6 +848,7 @@ async function inspectInstanceRuntime(args: {
       execution.networking.ipv6_ip ?? execution.networking.ipv6 ?? details.ipv6;
     details.vmIpv4 = execution.networking.ipv4_ip ?? null;
     details.webUrl = execution.networking.proxy_url ?? details.webUrl;
+    details.proxyHostname = hostnameOfUrl(details.webUrl);
     details.mappedPorts = mappedPorts(execution);
     details.sshCommand = buildSshCommand(details.hostIpv4, details.mappedPorts);
     return { details, lookup };
@@ -2494,6 +2610,7 @@ export class SponsorRelayController {
                     vmIpv4: null,
                     webUrl: null,
                     sshCommand: null,
+                    proxyHostname: null,
                     mappedPorts: [],
                     execution: null,
                     error: null,
@@ -2993,6 +3110,12 @@ export class SponsorRelayController {
               runtime.execution?.networking?.proxy_url ??
               null,
             sshCommand: runtime.sshCommand ?? null,
+            proxyHostname: hostnameOfUrl(
+              runtime.proxyUrl ??
+                runtime.webAccessUrl ??
+                runtime.execution?.networking?.proxy_url ??
+                null,
+            ),
             mappedPorts:
               runtime.execution != null
                 ? mappedPorts(runtime.execution)
@@ -3128,6 +3251,12 @@ export class SponsorRelayController {
                         latestRuntime.execution?.networking?.proxy_url ??
                         null,
                       sshCommand: latestRuntime.sshCommand ?? null,
+                      proxyHostname: hostnameOfUrl(
+                        latestRuntime.proxyUrl ??
+                          latestRuntime.webAccessUrl ??
+                          latestRuntime.execution?.networking?.proxy_url ??
+                          null,
+                      ),
                       mappedPorts:
                         latestRuntime.execution != null
                           ? mappedPorts(latestRuntime.execution)
@@ -3338,6 +3467,99 @@ export class SponsorRelayController {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  /**
+   * Read one deployment's own address document over its HTTPS proxy.
+   *
+   * The mapped ports are plain HTTP, which a browser on an HTTPS page refuses to
+   * fetch, so the proxy hostname is the only way in. Deliberately single-shot:
+   * unlike the deploy-time readiness probe this backs a button someone pressed,
+   * and a caller who wants newer data presses it again.
+   */
+  async loadInstanceAddresses(
+    instanceHash: string,
+    options: { force?: boolean } = {},
+  ): Promise<void> {
+    const existing = this.state.instanceAddresses[instanceHash];
+    if (!options.force && existing && existing.status !== "idle") return;
+
+    const record = this.state.instances.find(
+      (entry) => entry.instance.item_hash === instanceHash,
+    );
+    const proxyHostname = record?.details.proxyHostname ?? null;
+    if (!proxyHostname) {
+      this.patchInstanceAddresses(instanceHash, {
+        ...emptyInstanceAddresses(),
+        status: "unsupported",
+        error:
+          "This deployment has no HTTPS proxy hostname yet, so its addresses cannot be read from the browser.",
+      });
+      return;
+    }
+
+    const sourceUrl = `https://${proxyHostname}/multiaddrs`;
+    this.patchInstanceAddresses(instanceHash, {
+      ...(existing ?? emptyInstanceAddresses()),
+      status: "loading",
+      sourceUrl,
+      error: null,
+    });
+
+    try {
+      const abort = new AbortController();
+      const timeout = globalThis.setTimeout(() => abort.abort(), 10000);
+      const response = await fetch(sourceUrl, {
+        cache: "no-cache",
+        signal: abort.signal,
+      });
+      globalThis.clearTimeout(timeout);
+
+      if (response.status === 404) {
+        // A profile that publishes no address document at all. Say so, rather
+        // than render an empty list that reads as "this relay has no addresses".
+        this.patchInstanceAddresses(instanceHash, {
+          ...emptyInstanceAddresses(),
+          status: "unsupported",
+          sourceUrl,
+          fetchedAt: Date.now(),
+          error: "This profile does not publish an address document.",
+        });
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(`${sourceUrl} answered ${response.status}.`);
+      }
+
+      const payload = (await response.json()) as Record<string, unknown>;
+      this.patchInstanceAddresses(instanceHash, {
+        ...parseInstanceAddressPayload(payload),
+        status: "ready",
+        sourceUrl,
+        fetchedAt: Date.now(),
+        error: null,
+      });
+    } catch (error) {
+      this.patchInstanceAddresses(instanceHash, {
+        ...(this.state.instanceAddresses[instanceHash] ??
+          emptyInstanceAddresses()),
+        status: "error",
+        sourceUrl,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private patchInstanceAddresses(
+    instanceHash: string,
+    value: SponsorRelayInstanceAddresses,
+  ) {
+    this.patch({
+      instanceAddresses: {
+        ...this.state.instanceAddresses,
+        [instanceHash]: value,
+      },
+    });
   }
 
   async deleteInstance(instanceHash: string): Promise<void> {

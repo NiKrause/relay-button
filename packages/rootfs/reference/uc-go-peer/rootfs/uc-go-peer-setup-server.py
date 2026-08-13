@@ -476,6 +476,15 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_metadata()
             return
 
+        # orbitdb-relay serves its address document at /multiaddrs, so consumers
+        # look for one path on every profile. /metadata already carries exactly
+        # that document -- it runs the same describe script -- it was just named
+        # after the deploy flow that first needed it and reachable only on the
+        # plain-HTTP setup port. Expose the same payload under the shared names.
+        if self._request_path() in ("/describe", "/multiaddrs"):
+            self._handle_describe()
+            return
+
         if self._request_path() not in ("/", "/health"):
             self._send_json(404, {"status": "not-found"})
             return
@@ -485,6 +494,23 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_metadata(self) -> None:
         status, payload = _metadata_status_payload()
         self._send_json(status, payload)
+
+    def _handle_describe(self) -> None:
+        status, payload = _metadata_status_payload()
+        if status != 200:
+            self._send_json(status, payload)
+            return
+        # Unwrap the `metadata` envelope: a consumer asking for the address
+        # document wants the document, not the readiness wrapper around it.
+        metadata = payload.get("metadata")
+        if not isinstance(metadata, dict):
+            self._send_json(500, {"status": "error", "error": "describe payload missing"})
+            return
+        document = dict(metadata)
+        document["profile"] = "uc-go-peer"
+        if payload.get("stale"):
+            document["stale"] = True
+        self._send_json(200, document)
 
     def do_POST(self) -> None:  # noqa: N802
         if self._request_path() != "/configure":

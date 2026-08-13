@@ -8,9 +8,11 @@ import {
   joinMappedPorts,
   joinRequiredPortForwards,
   shortHash,
+  type SponsorRelayInstanceAddresses,
   type SponsorRelayProps,
   type SponsorRelayState,
 } from "../shared/index";
+import { CopyButton } from "./components/CopyButton";
 import { useSponsorRelayController } from "./hooks/useSponsorRelayController";
 
 /*
@@ -159,6 +161,67 @@ const containedContentStyle: React.CSSProperties = {
   wordBreak: "break-word",
   whiteSpace: "normal",
 };
+
+type InstanceTab = "general" | "addresses" | "health";
+
+const tabBarStyle: React.CSSProperties = {
+  display: "flex",
+  gap: "0.35rem",
+  margin: "0.55rem 0 0.5rem",
+  borderBottom: "1px solid var(--rb-border)",
+};
+
+const tabStyle = (active: boolean): React.CSSProperties => ({
+  border: 0,
+  borderBottom: `2px solid ${active ? "var(--rb-accent)" : "transparent"}`,
+  background: "transparent",
+  color: active ? "var(--rb-text)" : "var(--rb-muted)",
+  padding: "0.35rem 0.6rem",
+  fontFamily: "var(--rb-font-mono, monospace)",
+  fontSize: "0.6875rem",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: "0.06em",
+  cursor: "pointer",
+});
+
+const addressRowStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "0.5rem",
+  padding: "0.25rem 0",
+  borderTop: "1px solid var(--rb-border)",
+};
+
+const payloadStyle: React.CSSProperties = {
+  maxHeight: "20rem",
+  overflow: "auto",
+  padding: "0.5rem",
+  border: "1px solid var(--rb-border)",
+  borderRadius: "0.5rem",
+  fontFamily: "var(--rb-font-mono, monospace)",
+  fontSize: "0.6875rem",
+  lineHeight: 1.5,
+};
+
+/** Label the tab by what the deployment publishes, not by its profile name. */
+function addressTabLabel(
+  addresses: SponsorRelayInstanceAddresses | null,
+): string {
+  if (!addresses?.groups.length && addresses?.pwaEnv) return "Endpoints";
+  return "Multiaddresses";
+}
+
+function copyAllText(addresses: SponsorRelayInstanceAddresses): string {
+  return addresses.groups.flatMap((group) => group.addresses).join("\n");
+}
+
+function pwaEnvText(addresses: SponsorRelayInstanceAddresses): string {
+  return Object.entries(addresses.pwaEnv ?? {})
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+}
 
 const dangerButtonStyle: React.CSSProperties = {
   borderRadius: "0.5rem",
@@ -421,6 +484,19 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
   const orphanRegistrations = state.orphanBootstrapRegistrations ?? [];
   const [successFlash, setSuccessFlash] = React.useState(false);
   const [hovered, setHovered] = React.useState(false);
+  // Which tab each expanded deployment card is showing, keyed by item hash.
+  const [instanceTabs, setInstanceTabs] = React.useState<
+    Record<string, InstanceTab>
+  >({});
+
+  const selectInstanceTab = (itemHash: string, tab: InstanceTab) => {
+    setInstanceTabs((current) => ({ ...current, [itemHash]: tab }));
+    if (tab !== "general") {
+      // Addresses are live state — AutoTLS entries turn up a minute or two after
+      // the deploy reports success — so load on open and let the user refresh.
+      void controller.loadInstanceAddresses(itemHash);
+    }
+  };
   const launcherRef = React.useRef<HTMLButtonElement | null>(null);
   const [inlinePanelStyle, setInlinePanelStyle] =
     React.useState<React.CSSProperties | null>(null);
@@ -1381,6 +1457,220 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                           marginTop: "0.55rem",
                         }}
                       >
+                        {(() => {
+                          const itemHash = entry.instance.item_hash;
+                          const tab = instanceTabs[itemHash] ?? "general";
+                          const addresses =
+                            state.instanceAddresses?.[itemHash] ?? null;
+                          const refreshRow = (
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: "0.5rem",
+                                marginBottom: "0.5rem",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  color: "var(--rb-muted)",
+                                  fontSize: "0.6875rem",
+                                  overflowWrap: "anywhere",
+                                }}
+                              >
+                                {addresses?.sourceUrl ??
+                                  "Reading from the deployment"}
+                              </span>
+                              <button
+                                type="button"
+                                style={secondaryButtonStyle}
+                                disabled={addresses?.status === "loading"}
+                                onClick={() =>
+                                  void controller.loadInstanceAddresses(
+                                    itemHash,
+                                    { force: true },
+                                  )
+                                }
+                              >
+                                {addresses?.status === "loading"
+                                  ? "Loading…"
+                                  : "Refresh"}
+                              </button>
+                            </div>
+                          );
+
+                          return (
+                            <>
+                              <div style={tabBarStyle} role="tablist">
+                                {(
+                                  [
+                                    ["general", "General"],
+                                    ["addresses", addressTabLabel(addresses)],
+                                    ["health", "Health"],
+                                  ] as Array<[InstanceTab, string]>
+                                ).map(([key, label]) => (
+                                  <button
+                                    key={key}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={tab === key}
+                                    style={tabStyle(tab === key)}
+                                    onClick={() =>
+                                      selectInstanceTab(itemHash, key)
+                                    }
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {tab === "addresses" ? (
+                                <div style={containedContentStyle}>
+                                  {refreshRow}
+                                  {addresses?.status === "loading" &&
+                                  !addresses.groups.length ? (
+                                    <div>
+                                      Reading the deployment&apos;s address
+                                      document…
+                                    </div>
+                                  ) : addresses?.status === "unsupported" ||
+                                    addresses?.status === "error" ? (
+                                    <div>{addresses.error}</div>
+                                  ) : addresses?.groups.length ? (
+                                    <>
+                                      {addresses.peerId ? (
+                                        <div style={addressRowStyle}>
+                                          <code>{addresses.peerId}</code>
+                                          <CopyButton text={addresses.peerId} />
+                                        </div>
+                                      ) : null}
+                                      {addresses.groups.map((group) => (
+                                        <div
+                                          key={group.key}
+                                          style={{ marginBottom: "0.75rem" }}
+                                        >
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              justifyContent: "space-between",
+                                              gap: "0.5rem",
+                                            }}
+                                          >
+                                            <strong>{group.label}</strong>
+                                            <CopyButton
+                                              text={group.addresses.join("\n")}
+                                              label="Copy group"
+                                            />
+                                          </div>
+                                          {group.addresses.map((address) => (
+                                            <div
+                                              key={address}
+                                              style={addressRowStyle}
+                                            >
+                                              <code>{address}</code>
+                                              <CopyButton text={address} />
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ))}
+                                      <div
+                                        style={{ display: "flex", gap: "0.5rem" }}
+                                      >
+                                        <CopyButton
+                                          text={copyAllText(addresses)}
+                                          label="Copy all"
+                                        />
+                                        <CopyButton
+                                          text={JSON.stringify(
+                                            addresses.payload,
+                                            null,
+                                            2,
+                                          )}
+                                          label="Copy JSON"
+                                        />
+                                      </div>
+                                    </>
+                                  ) : addresses?.pwaEnv ? (
+                                    <>
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "space-between",
+                                          gap: "0.5rem",
+                                        }}
+                                      >
+                                        <strong>PWA environment</strong>
+                                        <CopyButton
+                                          text={pwaEnvText(addresses)}
+                                          label="Copy block"
+                                        />
+                                      </div>
+                                      {Object.entries(addresses.pwaEnv).map(
+                                        ([key, value]) => (
+                                          <div
+                                            key={key}
+                                            style={addressRowStyle}
+                                          >
+                                            <code>{`${key}=${value}`}</code>
+                                            <CopyButton
+                                              text={`${key}=${value}`}
+                                            />
+                                          </div>
+                                        ),
+                                      )}
+                                    </>
+                                  ) : (
+                                    <div>
+                                      This deployment reports no addresses yet.
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+
+                              {tab === "health" ? (
+                                <div style={containedContentStyle}>
+                                  {refreshRow}
+                                  {addresses?.payload ? (
+                                    <>
+                                      <pre style={payloadStyle}>
+                                        {JSON.stringify(
+                                          addresses.payload,
+                                          null,
+                                          2,
+                                        )}
+                                      </pre>
+                                      <CopyButton
+                                        text={JSON.stringify(
+                                          addresses.payload,
+                                          null,
+                                          2,
+                                        )}
+                                        label="Copy JSON"
+                                      />
+                                    </>
+                                  ) : addresses?.status === "loading" ? (
+                                    <div>
+                                      Reading the deployment&apos;s health
+                                      document…
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      {addresses?.error ??
+                                        "No health document read yet."}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+                            </>
+                          );
+                        })()}
+
+                        {(instanceTabs[entry.instance.item_hash] ??
+                          "general") !== "general" ? null : (
+                          <>
                         <div>Status: {entry.details.messageStatus}</div>
                         {bootstrapUiEnabled && confirmedRegistration ? (
                           <div>
@@ -1401,6 +1691,14 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                         <div>
                           Ports: {joinMappedPorts(entry.details.mappedPorts)}
                         </div>
+                        {entry.details.proxyHostname ? (
+                          <div style={addressRowStyle}>
+                            <code>
+                              Proxy: {entry.details.proxyHostname}
+                            </code>
+                            <CopyButton text={entry.details.proxyHostname} />
+                          </div>
+                        ) : null}
                         <div>
                           Submitted:{" "}
                           {formatDateTime(
@@ -1421,6 +1719,8 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                             ? "Deleting…"
                             : "Delete"}
                         </button>
+                          </>
+                        )}
                       </div>
                     </details>
                   );

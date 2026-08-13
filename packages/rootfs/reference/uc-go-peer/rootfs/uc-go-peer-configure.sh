@@ -83,6 +83,23 @@ https://${proxy_hostname} {
         reverse_proxy http://127.0.0.1:80
     }
 
+    # The address and readiness documents live on the setup server (:80). A PWA
+    # served over HTTPS cannot fetch that port directly -- the browser blocks it
+    # as mixed content -- so they have to be reachable through this proxy.
+    # Named handles must precede the catch-all, which swallows everything else
+    # into the WebSocket backend.
+    handle /describe {
+        reverse_proxy http://127.0.0.1:80
+    }
+
+    handle /multiaddrs {
+        reverse_proxy http://127.0.0.1:80
+    }
+
+    handle /health {
+        reverse_proxy http://127.0.0.1:80
+    }
+
     handle {
         reverse_proxy http://127.0.0.1:${WS_BACKEND_PORT}
     }
