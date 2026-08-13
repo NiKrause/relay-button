@@ -883,11 +883,17 @@ export async function executeDeployPlan(
 
         if (isOrbitdbRelayProfile) {
           const orbitdbTcpPort = mappedPorts["9091"]?.host ?? null;
-          const orbitdbWsPort =
-            mappedPorts["9092"]?.host ?? mappedPorts["443"]?.host ?? null;
+          // No fallback to 443: that port is Caddy's, and standing in for the
+          // WebSocket listener made the relay announce three addresses on it
+          // that nothing answers. 9092 or nothing.
+          const orbitdbWsPort = mappedPorts["9092"]?.host ?? null;
           if (!orbitdbTcpPort || !orbitdbWsPort) {
+            const missing = [
+              orbitdbTcpPort ? null : "9091 (libp2p TCP)",
+              orbitdbWsPort ? null : "9092 (libp2p WebSocket)",
+            ].filter(Boolean);
             log(
-              `[deploy] orbitdb relay runtime is missing required mapped ports; cleaning up ${deployment.itemHash}`,
+              `[deploy] orbitdb relay runtime has no mapped host port for ${missing.join(" and ")}; cleaning up ${deployment.itemHash}`,
             );
             await cleanupFailedDeploymentForPlan(plan, log, {
               sender: identity.address,
@@ -954,7 +960,7 @@ export async function executeDeployPlan(
                 setupPort,
                 tcpPort: mappedPorts["9091"]?.host ?? 0,
                 wsPort:
-                  mappedPorts["9092"]?.host ?? mappedPorts["443"]?.host ?? 0,
+                  mappedPorts["9092"]?.host ?? 0,
                 proxyUrl,
                 metricsPort: mappedPorts["9090"]?.host ?? null,
                 metricsHttpsPort: mappedPorts["443"]?.host ?? null,
@@ -1319,7 +1325,7 @@ export async function executeDeployPlan(
                 tcpPort:
                   mappedPorts[isOrbitdbRelayProfile ? "9091" : "9095"]?.host ?? 0,
                 wsPort: isOrbitdbRelayProfile
-                  ? (mappedPorts["9092"]?.host ?? mappedPorts["443"]?.host ?? 0)
+                  ? (mappedPorts["9092"]?.host ?? 0)
                   : (mappedPorts["9097"]?.host ?? 0),
                 proxyUrl,
                 metricsPort: mappedPorts["9090"]?.host ?? null,

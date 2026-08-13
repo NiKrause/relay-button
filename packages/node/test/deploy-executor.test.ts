@@ -1161,6 +1161,7 @@ test('executeDeployPlan configures orbitdb relay after mapped ports appear', asy
         { port: 80, tcp: true, udp: false, purpose: 'Temporary setup endpoint' },
         { port: 9090, tcp: true, udp: false, purpose: 'Metrics and health API' },
         { port: 9091, tcp: true, udp: false, purpose: 'Relay TCP' },
+        { port: 9092, tcp: true, udp: false, purpose: 'Relay WebSocket' },
         { port: 443, tcp: true, udp: false, purpose: 'HTTPS and WSS proxy' },
         { port: 9093, tcp: false, udp: true, purpose: 'WebRTC' },
         { port: 9094, tcp: false, udp: true, purpose: 'QUIC' },
@@ -1217,6 +1218,7 @@ test('executeDeployPlan configures orbitdb relay after mapped ports appear', asy
                   '22': { host: 32022, tcp: true, udp: false },
                   '9090': { host: 29090, tcp: true, udp: false },
                   '9091': { host: 29091, tcp: true, udp: false },
+                  '9092': { host: 29092, tcp: true, udp: false },
                   '443': { host: 29443, tcp: true, udp: false },
                   '9093': { host: 29093, tcp: false, udp: true },
                   '9094': { host: 29094, tcp: false, udp: true }
@@ -1278,7 +1280,7 @@ test('executeDeployPlan configures orbitdb relay after mapped ports appear', asy
     public_ipv4: '203.0.113.8',
     public_ipv6: '2001:db8::8',
     tcp_port: 29091,
-    ws_port: 29443,
+    ws_port: 29092,
     proxy_url: 'https://dragon-belt-friend-share.2n6.me',
     metrics_port: 29090,
     metrics_https_port: 29443,
@@ -1317,6 +1319,7 @@ test('executeDeployPlan pushes the bootstrap owner authorization after the guest
         { port: 443, tcp: true, udp: false, purpose: 'wss proxy' },
         { port: 9090, tcp: true, udp: false, purpose: 'metrics' },
         { port: 9091, tcp: true, udp: false, purpose: 'relay tcp' },
+        { port: 9092, tcp: true, udp: false, purpose: 'relay websocket' },
         { port: 9093, tcp: false, udp: true, purpose: 'relay webrtc' },
         { port: 9094, tcp: false, udp: true, purpose: 'relay quic' }
       ]
@@ -1372,6 +1375,7 @@ test('executeDeployPlan pushes the bootstrap owner authorization after the guest
                   '22': { host: 32022, tcp: true, udp: false },
                   '9090': { host: 29090, tcp: true, udp: false },
                   '9091': { host: 29091, tcp: true, udp: false },
+                  '9092': { host: 29092, tcp: true, udp: false },
                   '443': { host: 29443, tcp: true, udp: false },
                   '9093': { host: 29093, tcp: false, udp: true },
                   '9094': { host: 29094, tcp: false, udp: true }
@@ -1555,6 +1559,7 @@ test('executeDeployPlan never sends key material to the plain-HTTP guest setup e
                   '22': { host: 32022, tcp: true, udp: false },
                   '9090': { host: 29090, tcp: true, udp: false },
                   '9091': { host: 29091, tcp: true, udp: false },
+                  '9092': { host: 29092, tcp: true, udp: false },
                   '443': { host: 29443, tcp: true, udp: false },
                   '9093': { host: 29093, tcp: false, udp: true },
                   '9094': { host: 29094, tcp: false, udp: true }
