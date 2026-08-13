@@ -1,5 +1,24 @@
 # Roadmap
 
+## 0.8.0 — deployment addresses on the card
+
+The deployment card gains Multiaddresses and Health tabs (#96): each
+deployment shows the addresses its own endpoint reports, grouped by
+transport, every row individually copyable. Nothing is ranked — the card
+shows what the relay said rather than computing a "best" address, which is
+why it is unaffected by the `best.websocket` defect in #93/#94.
+
+`uc-go-peer` now answers `/multiaddrs` and `/describe` through its HTTPS
+proxy, making that one path across the libp2p profiles. The React build gains
+its first clipboard affordance.
+
+Gated on manual testing of the widget in both consumer repos (simple-todo and
+universal-connectivity `js-peer`) against `0.8.0@next` before promotion to
+`latest`, same as 0.7.0.
+
+Not covered: `ucan-store`'s address document, and the four data-quality
+findings against `orbitdb-relay` listed in #96.
+
 ## Shipped: 0.7.0 — Relay Button branding
 
 First release shipping the new brand system (#80): Le-Space palette,
