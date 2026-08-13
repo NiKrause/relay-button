@@ -25,6 +25,11 @@ export const DEFAULT_ALEPH_API_HOSTS: readonly string[] = [
 ]
 export const DEFAULT_ALEPH_API_HOST: string = DEFAULT_ALEPH_API_HOSTS[0] ?? 'https://api2.aleph.im'
 export const DEFAULT_CRN_LIST_URL = 'https://crns-list.aleph.sh/crns.json'
+// Mirrors @le-space/core: the core channel aggregate is the registry crns.json
+// is derived from, and it is served by the same API hosts the rest of the
+// browser client already talks to (CORS included).
+export const DEFAULT_CRN_AGGREGATE_ADDRESS = '0xa1B3bb7d2332383D96b7796B908fB7f7F3c2Be10'
+export const DEFAULT_CRN_AGGREGATE_KEY = 'corechannel'
 export const DEFAULT_ALEPH_SCHEDULER_API_HOST = 'https://scheduler.api.aleph.cloud'
 export const DEFAULT_2N6_API_HOST = 'https://api.2n6.me'
 
@@ -171,7 +176,7 @@ export async function fetchBalance(address: string, apiHost = DEFAULT_ALEPH_API_
   return (await response.json()) as BalanceResponse
 }
 
-export async function fetchCrns(url = DEFAULT_CRN_LIST_URL): Promise<Crn[]> {
+export async function fetchCrnsFromList(url = DEFAULT_CRN_LIST_URL): Promise<Crn[]> {
   const requestUrl = new URL(url)
   requestUrl.searchParams.set('filter_inactive', 'true')
 
@@ -180,6 +185,113 @@ export async function fetchCrns(url = DEFAULT_CRN_LIST_URL): Promise<Crn[]> {
 
   const payload = (await response.json()) as CrnListResponse
   return payload.crns ?? []
+}
+
+function asFiniteNumber(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const numeric = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function normalizeCrnAddress(value: unknown): string | null {
+  const address = asString(value)
+  if (!address) return null
+
+  const withScheme = /^https?:\/\//i.test(address) ? address : `https://${address}`
+  try {
+    return new URL(withScheme).toString().replace(/\/+$/, '')
+  } catch {
+    return null
+  }
+}
+
+export function mapResourceNodesToCrns(resourceNodes: unknown): Crn[] {
+  if (!Array.isArray(resourceNodes)) return []
+
+  const crns: Crn[] = []
+  for (const node of resourceNodes) {
+    if (!node || typeof node !== 'object') continue
+
+    const entry = node as Record<string, unknown>
+    const hash = asString(entry.hash)
+    const address = normalizeCrnAddress(entry.address)
+    const type = asString(entry.type)?.toLowerCase()
+    const status = asString(entry.status)?.toLowerCase()
+
+    if (!hash || !address) continue
+    if (entry.inactive_since != null || entry.locked === true) continue
+    if (type && type !== 'compute') continue
+    if (status && status !== 'linked' && status !== 'active') continue
+    if (!asString(entry.parent)) continue
+
+    const score = asFiniteNumber(entry.score) ?? asFiniteNumber(entry.scoreV1)
+    const performance = asFiniteNumber(entry.performance)
+    const decentralization = asFiniteNumber(entry.decentralization)
+
+    crns.push({
+      hash,
+      address,
+      name: asString(entry.name) ?? hash,
+      ...(score == null ? {} : { score }),
+      ...(performance == null ? {} : { performance }),
+      ...(decentralization == null ? {} : { decentralization })
+    })
+  }
+
+  return crns
+}
+
+export async function fetchCrnsFromAggregate(
+  apiHosts: readonly string[] = DEFAULT_ALEPH_API_HOSTS,
+  address = DEFAULT_CRN_AGGREGATE_ADDRESS
+): Promise<Crn[]> {
+  const hosts = apiHosts.length > 0 ? apiHosts : DEFAULT_ALEPH_API_HOSTS
+  let lastError: unknown = null
+
+  for (const apiHost of hosts) {
+    try {
+      const url = new URL(`/api/v0/aggregates/${address}.json`, apiHost)
+      url.searchParams.set('keys', DEFAULT_CRN_AGGREGATE_KEY)
+
+      const response = await fetchWithTimeout(url, { cache: 'no-cache' })
+      if (!response.ok) {
+        lastError = new Error(`CRN aggregate request failed: ${response.status}`)
+        continue
+      }
+
+      const payload = (await response.json()) as {
+        data?: { corechannel?: { resource_nodes?: unknown } | null } | null
+      }
+      const crns = mapResourceNodesToCrns(payload?.data?.corechannel?.resource_nodes)
+      if (crns.length > 0) return crns
+
+      lastError = new Error('CRN aggregate contained no deployable resource nodes')
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError ?? 'CRN aggregate request failed'))
+}
+
+/**
+ * Prefers the polled crns.json list for its live status, capacity and qemu
+ * flags, and falls back to the core channel aggregate when that single HTTP
+ * service is down — an outage that reaches the browser as a CORS error because
+ * the gateway's 502 page carries no Access-Control-Allow-Origin header.
+ */
+export async function fetchCrns(
+  url = DEFAULT_CRN_LIST_URL,
+  options: { apiHosts?: readonly string[]; aggregateAddress?: string } = {}
+): Promise<Crn[]> {
+  try {
+    const crns = await fetchCrnsFromList(url)
+    if (crns.length > 0) return crns
+  } catch {
+    // Fall through to the decentralized source below.
+  }
+
+  return fetchCrnsFromAggregate(options.apiHosts ?? DEFAULT_ALEPH_API_HOSTS, options.aggregateAddress)
 }
 
 export async function fetchInstances(address: string, apiHost = DEFAULT_ALEPH_API_HOST): Promise<InstanceMessage[]> {

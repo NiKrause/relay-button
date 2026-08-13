@@ -51,6 +51,23 @@ CRN selection:
 - `max_crn_attempts`
 - `geo_crn_limit`
 - `crn_list_url`
+- `crn_source`
+
+`crn_list_url` points at `crns.json`, a single HTTP service that polls every
+compute node. It is the richer source — it carries live status, free capacity
+and QEMU support — but it is also the only centralized hop in the deploy path,
+and deploys used to die with it. The candidate list is therefore read with a
+fallback: when `crns.json` fails or comes back empty, the deploy reads the
+`corechannel` aggregate (`resource_nodes`) from the Aleph API hosts instead —
+the same on-chain registry `crns.json` is derived from.
+
+The aggregate has no liveness signal of its own, so when it is used the deploy
+probes each candidate's `GET /about/executions/list` and skips the nodes that
+do not answer. If nothing answers — a runner that cannot reach CRNs directly —
+the ranking is kept unverified rather than failing the run.
+
+Set `crn_source: aggregate` to skip `crns.json` entirely and always read the
+aggregate. The default, `auto`, prefers `crns.json` for its live capacity data.
 
 Guest access and lifecycle:
 

@@ -163,6 +163,110 @@ test('fetchCrns requests the CRN list with inactive filtering enabled', async ()
   }
 })
 
+test('fetchCrns falls back to the corechannel aggregate when the CRN list is down', async () => {
+  const originalFetch = globalThis.fetch
+
+  try {
+    const urls = []
+    globalThis.fetch = async (input) => {
+      const url = String(input)
+      urls.push(url)
+
+      if (url.includes('crns-list')) {
+        // The gateway's error page carries no CORS header, which is what the
+        // browser surfaces instead of the 502 itself.
+        return new Response('<html>502 Bad Gateway</html>', { status: 502 })
+      }
+
+      return new Response(
+        JSON.stringify({
+          data: {
+            corechannel: {
+              resource_nodes: [
+                {
+                  hash: 'crn-linked',
+                  name: 'Linked',
+                  address: 'https://linked.example.com/',
+                  status: 'linked',
+                  type: 'compute',
+                  parent: 'ccn-1',
+                  score: 0.93,
+                  performance: 0.8
+                },
+                { hash: 'crn-waiting', address: 'https://waiting.example.com', status: 'waiting', parent: 'ccn-1' }
+              ]
+            }
+          }
+        }),
+        { status: 200 }
+      )
+    }
+
+    const crns = await fetchCrns('https://crns-list.aleph.sh/crns.json')
+
+    assert.deepEqual(crns.map((crn) => crn.hash), ['crn-linked'])
+    assert.equal(crns[0].address, 'https://linked.example.com')
+    assert.equal(crns[0].name, 'Linked')
+    assert.equal(crns[0].score, 0.93)
+    assert.equal(urls.length, 2)
+    assert.match(urls[1], /\/api\/v0\/aggregates\/0xa1B3bb7d2332383D96b7796B908fB7f7F3c2Be10\.json/)
+    assert.match(urls[1], /keys=corechannel/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('fetchCrns tries every configured API host before giving up on the aggregate', async () => {
+  const originalFetch = globalThis.fetch
+
+  try {
+    const urls = []
+    globalThis.fetch = async (input) => {
+      const url = String(input)
+      urls.push(url)
+      if (url.includes('crns-list')) throw new TypeError('Failed to fetch')
+      if (url.includes('api-down')) return new Response('', { status: 500 })
+
+      return new Response(
+        JSON.stringify({
+          data: {
+            corechannel: {
+              resource_nodes: [
+                { hash: 'crn-1', address: 'https://one.example.com', status: 'linked', parent: 'ccn-1' }
+              ]
+            }
+          }
+        }),
+        { status: 200 }
+      )
+    }
+
+    const crns = await fetchCrns('https://crns-list.aleph.sh/crns.json', {
+      apiHosts: ['https://api-down.example', 'https://api-up.example']
+    })
+
+    assert.deepEqual(crns.map((crn) => crn.hash), ['crn-1'])
+    assert.equal(urls.length, 3)
+    assert.match(urls[2], /^https:\/\/api-up\.example\//)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('fetchCrns surfaces an error when neither the list nor the aggregate answers', async () => {
+  const originalFetch = globalThis.fetch
+
+  try {
+    globalThis.fetch = async () => new Response('', { status: 502 })
+    await assert.rejects(
+      fetchCrns('https://crns-list.aleph.sh/crns.json', { apiHosts: ['https://api.example'] }),
+      /CRN aggregate request failed: 502/
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('fetchInstances requests instance messages and normalizes confirmed items to processed', async () => {
   const originalFetch = globalThis.fetch
 
@@ -696,7 +800,10 @@ test('createAlephBrowserClient binds apiHost and crnListUrl defaults into reusab
         )
       }
 
-      return new Response(JSON.stringify({ crns: [] }), { status: 200 })
+      return new Response(
+        JSON.stringify({ crns: [{ hash: 'abc', name: 'CRN', address: 'https://crn.example' }] }),
+        { status: 200 }
+      )
     }
 
     const client = createAlephBrowserClient({

@@ -90,7 +90,7 @@ export function createAlephBrowserClient(options: CreateAlephBrowserClientOption
       return withApiHostFallback(apiHosts, (host) => fetchBalance(address, host))
     },
     fetchCrns() {
-      return fetchCrns(crnListUrl)
+      return fetchCrns(crnListUrl, { apiHosts })
     },
     fetchInstances(address) {
       return withApiHostFallback(apiHosts, (host) => fetchInstances(address, host))

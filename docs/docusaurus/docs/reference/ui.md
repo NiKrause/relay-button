@@ -98,7 +98,7 @@ Every prop is optional. The full type is `SponsorRelayProps` in
 | `debug` | `boolean` | `false` | Verbose `console.debug('[le-space/ui]', …)` tracing of the deployment state machine. Also enabled without a prop by setting `localStorage.LE_SPACE_UI_DEBUG = '1'`. **React only** — the Svelte component does not declare this prop, so use the `localStorage` switch there. |
 | `apiHost` | `string` | `'https://api2.aleph.im'` | Single Aleph Core Channel Node API host. Ignored when `apiHosts` is given. |
 | `apiHosts` | `string \| readonly string[]` | `['https://api2.aleph.im', 'https://api.aleph.im']` | Ordered Aleph API hosts with automatic failover on request errors. Accepts an array or a comma/whitespace-separated string. `api3.aleph.im` is filtered out. |
-| `crnListUrl` | `string` | `'https://crns-list.aleph.sh/crns.json'` | Source of the CRN (compute node) list used for compatibility filtering and scoring. |
+| `crnListUrl` | `string` | `'https://crns-list.aleph.sh/crns.json'` | Source of the CRN (compute node) list used for compatibility filtering and scoring. When this endpoint is unreachable the client falls back to the `corechannel` aggregate read from `apiHosts`, so a crns-list outage no longer blocks deployment. |
 | `schedulerApiHost` | `string` | `'https://scheduler.api.aleph.cloud'` | Aleph scheduler used to resolve the allocation for a submitted instance. |
 | `twoN6ApiHost` | `string` | `'https://api.2n6.me'` | 2n6 API used to resolve the VM's HTTPS hostname, which the controller probes before declaring a relay reachable. |
 | `ucanStoreBootstrap` | `Partial<SponsorRelayUcanStoreBootstrapInput>` | see below | Pre-fills the UCAN Store bootstrap form. Only used when the manifest declares `profile: "ucan-store"`. |
