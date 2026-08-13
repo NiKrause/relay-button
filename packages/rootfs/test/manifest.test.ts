@@ -90,6 +90,26 @@ test("playwright-runner manifest exposes the exact protocol version", async () =
   assert.equal(validateRootfsManifest(manifest).valid, true);
 });
 
+test("the orbitdb-relay contract forwards every port the relay listens on", async () => {
+  // The bug this pins: 9092, the WebSocket listener, was missing from the
+  // contract. Nothing failed. The deploying client fell back to the host port
+  // for 443 - Caddy's - and the relay then announced three addresses on it that
+  // nothing answers, including the two AutoTLS ones browsers most want. A
+  // missing entry is invisible; an entry asserted here is not.
+  const contract = await readRootfsContractFile(referenceProfileContractPath("orbitdb-relay"));
+  const tcp = new Set(contract.ports.filter((entry) => entry.tcp).map((entry) => entry.port));
+  const udp = new Set(contract.ports.filter((entry) => entry.udp).map((entry) => entry.port));
+
+  // Keep in sync with the RELAY_*_PORT defaults in orbitdb-relay-bootstrap.sh.
+  for (const port of [9091, 9092]) {
+    assert.ok(tcp.has(port), `TCP ${port} must be forwarded`);
+  }
+
+  for (const port of [9093, 9094]) {
+    assert.ok(udp.has(port), `UDP ${port} must be forwarded`);
+  }
+});
+
 test("validateRootfsManifest rejects invalid port-forward and hash declarations", () => {
   const result = validateRootfsManifest({
     profile: "orbitdb-relay",

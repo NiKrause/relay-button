@@ -254,6 +254,7 @@ required_port_forwards_json() {
     { "port": 80, "tcp": true, "udp": false, "purpose": "Temporary setup endpoint" },
     { "port": 9090, "tcp": true, "udp": false, "purpose": "Metrics and health API" },
     { "port": 9091, "tcp": true, "udp": false, "purpose": "libp2p TCP" },
+    { "port": 9092, "tcp": true, "udp": false, "purpose": "libp2p WebSocket and AutoTLS" },
     { "port": 443, "tcp": true, "udp": false, "purpose": "Caddy HTTPS and WSS proxy" },
     { "port": 9093, "tcp": false, "udp": true, "purpose": "WebRTC direct" },
     { "port": 9094, "tcp": false, "udp": true, "purpose": "QUIC" }

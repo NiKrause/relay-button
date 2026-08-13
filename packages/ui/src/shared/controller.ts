@@ -1213,10 +1213,22 @@ export class SponsorRelayController {
       });
 
       const tcpPort = mappedPorts["9091"]?.host ?? 0;
-      const wsPort = mappedPorts["9092"]?.host ?? mappedPorts["443"]?.host ?? 0;
+      // No fallback to 443. That port belongs to Caddy, and handing it over as
+      // the WebSocket port made the relay announce three addresses that nothing
+      // answers: a plain /ws that Caddy rejects for not being TLS, and two
+      // AutoTLS /tls/sni forms that Caddy aborts because it has no certificate
+      // for a libp2p.direct name. The relay's own listener is 9092 and only
+      // 9092 - if the CRN did not map it, say so.
+      const wsPort = mappedPorts["9092"]?.host ?? 0;
       if (!tcpPort || !wsPort) {
+        const missing = [
+          tcpPort ? null : "9091 (libp2p TCP)",
+          wsPort ? null : "9092 (libp2p WebSocket)",
+        ].filter(Boolean);
+
         throw new Error(
-          "OrbitDB relay runtime is missing required mapped TCP/WS ports.",
+          `OrbitDB relay runtime has no mapped host port for ${missing.join(" and ")}. ` +
+            "Deploy a rootfs whose manifest requests these forwards.",
         );
       }
 
