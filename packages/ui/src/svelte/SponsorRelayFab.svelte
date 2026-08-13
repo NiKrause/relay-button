@@ -800,6 +800,14 @@ export let apiHosts = undefined
     font: 500 0.8125rem/1.4 var(--relay-font-body);
   }
 
+  /* The list, not the closed control. Without this it inherits the select's
+     translucent field background and keeps --relay-text, which on a light
+     drop-down is light-on-light. */
+  option {
+    background: var(--relay-menu-bg);
+    color: var(--relay-text);
+  }
+
   input:focus-visible,
   select:focus-visible,
   textarea:focus-visible {

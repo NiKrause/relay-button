@@ -42,6 +42,11 @@
   --relay-surface: rgba(11, 14, 21, 0.55);
   --relay-surface-border: var(--relay-horizon);
   --relay-field-bg: rgba(11, 14, 21, 0.85);
+  /* Opaque on purpose. A select's drop-down takes the control's own colours on
+     the platforms that honour author styling, and it opens over the page rather
+     than over the panel - a translucent background would composite against
+     whatever is behind it and leave light text on a light list. */
+  --relay-menu-bg: var(--relay-deep-space);
   --relay-accent: var(--relay-coral);
   --relay-accent-contrast: #0b0e15;
   --relay-link: var(--relay-cyan);
@@ -81,6 +86,7 @@
   --relay-surface: rgba(20, 27, 46, 0.04);
   --relay-surface-border: #d9e0ec;
   --relay-field-bg: #ffffff;
+  --relay-menu-bg: #ffffff;
   --relay-accent: var(--relay-coral);
   --relay-accent-contrast: #ffffff;
   --relay-link: var(--relay-cyan);
