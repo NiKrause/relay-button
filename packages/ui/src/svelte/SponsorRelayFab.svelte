@@ -91,6 +91,44 @@ export let apiHosts = undefined
   )
   $: orphanRegistrations = state.orphanBootstrapRegistrations ?? []
 
+  // Which tab each expanded deployment card is showing, keyed by item hash.
+  let instanceTabs = {}
+
+  function instanceTab(itemHash) {
+    return instanceTabs[itemHash] ?? 'general'
+  }
+
+  function selectInstanceTab(itemHash, tab) {
+    instanceTabs = { ...instanceTabs, [itemHash]: tab }
+    if (tab !== 'general') {
+      // Addresses are live state — AutoTLS entries turn up a minute or two after
+      // the deploy reports success — so load on open and let the user refresh.
+      controller.loadInstanceAddresses(itemHash)
+    }
+  }
+
+  function addressesOf(itemHash) {
+    return state.instanceAddresses?.[itemHash] ?? null
+  }
+
+  /** Label the tab by what the deployment actually publishes, not by profile. */
+  function addressTabLabel(itemHash) {
+    const addresses = addressesOf(itemHash)
+    if (addresses?.groups?.length) return 'Multiaddresses'
+    if (addresses?.pwaEnv) return 'Endpoints'
+    return 'Multiaddresses'
+  }
+
+  function copyAllText(addresses) {
+    return (addresses?.groups ?? []).flatMap((group) => group.addresses).join('\n')
+  }
+
+  function pwaEnvText(addresses) {
+    return Object.entries(addresses?.pwaEnv ?? {})
+      .map(([key, value]) => `${key}=${value}`)
+      .join('\n')
+  }
+
   onMount(async () => {
     const unsubscribe = controller.subscribe((next) => {
       state = next
@@ -359,6 +397,38 @@ export let apiHosts = undefined
               </button>
             </div>
 
+            {@const itemHash = entry.instance.item_hash}
+            {@const addresses = addressesOf(itemHash)}
+            {@const tab = instanceTab(itemHash)}
+
+            <div class="tab-bar" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                class="tab"
+                class:tab-active={tab === 'general'}
+                aria-selected={tab === 'general'}
+                on:click={() => selectInstanceTab(itemHash, 'general')}
+              >General</button>
+              <button
+                type="button"
+                role="tab"
+                class="tab"
+                class:tab-active={tab === 'addresses'}
+                aria-selected={tab === 'addresses'}
+                on:click={() => selectInstanceTab(itemHash, 'addresses')}
+              >{addressTabLabel(itemHash)}</button>
+              <button
+                type="button"
+                role="tab"
+                class="tab"
+                class:tab-active={tab === 'health'}
+                aria-selected={tab === 'health'}
+                on:click={() => selectInstanceTab(itemHash, 'health')}
+              >Health</button>
+            </div>
+
+            {#if tab === 'general'}
             <div class="instance-grid">
               <div>
                 <span>Host IPv4</span>
@@ -389,11 +459,108 @@ export let apiHosts = undefined
               <strong>{joinMappedPorts(entry.details.mappedPorts)}</strong>
             </div>
 
+            {#if entry.details.proxyHostname}
+              <div class="mono-block">
+                <span>Proxy hostname</span>
+                <strong>{entry.details.proxyHostname}</strong>
+                <CopyButton text={entry.details.proxyHostname} />
+              </div>
+            {/if}
+
             {#if bootstrapUiEnabled() && confirmedRegistration}
               <div class="mono-block">
                 <span>Bootstrap Registration</span>
                 <strong>{shortHash(confirmedRegistration.messageHash ?? confirmedRegistration.content?.registrationId ?? 'confirmed', 14, 8)}</strong>
               </div>
+            {/if}
+            {/if}
+
+            {#if tab === 'addresses'}
+              <div class="tab-head">
+                <span>{addresses?.sourceUrl ?? 'Reading from the deployment'}</span>
+                <button
+                  type="button"
+                  class="refresh"
+                  disabled={addresses?.status === 'loading'}
+                  on:click={() => controller.loadInstanceAddresses(itemHash, { force: true })}
+                >{addresses?.status === 'loading' ? 'Loading…' : 'Refresh'}</button>
+              </div>
+
+              {#if addresses?.status === 'loading' && !addresses?.groups?.length}
+                <p class="tab-note">Reading the deployment's address document…</p>
+              {:else if addresses?.status === 'unsupported'}
+                <p class="tab-note">{addresses.error}</p>
+              {:else if addresses?.status === 'error'}
+                <p class="alert error">{addresses.error}</p>
+              {:else if addresses?.groups?.length}
+                {#if addresses.peerId}
+                  <div class="mono-block">
+                    <span>Peer ID</span>
+                    <strong>{addresses.peerId}</strong>
+                    <CopyButton text={addresses.peerId} />
+                  </div>
+                {/if}
+
+                {#each addresses.groups as group}
+                  <div class="address-group">
+                    <div class="address-group-head">
+                      <strong>{group.label}</strong>
+                      <CopyButton text={group.addresses.join('\n')} label="Copy group" />
+                    </div>
+                    {#each group.addresses as address}
+                      <div class="address-row">
+                        <code>{address}</code>
+                        <CopyButton text={address} />
+                      </div>
+                    {/each}
+                  </div>
+                {/each}
+
+                <div class="link-row">
+                  <CopyButton text={copyAllText(addresses)} label="Copy all" />
+                  <CopyButton text={JSON.stringify(addresses.payload, null, 2)} label="Copy JSON" />
+                </div>
+              {:else if addresses?.pwaEnv}
+                <div class="address-group">
+                  <div class="address-group-head">
+                    <strong>PWA environment</strong>
+                    <CopyButton text={pwaEnvText(addresses)} label="Copy block" />
+                  </div>
+                  {#each Object.entries(addresses.pwaEnv) as [key, value]}
+                    <div class="address-row">
+                      <code>{key}={value}</code>
+                      <CopyButton text={`${key}=${value}`} />
+                    </div>
+                  {/each}
+                </div>
+              {:else}
+                <p class="tab-note">This deployment reports no addresses yet.</p>
+              {/if}
+            {/if}
+
+            {#if tab === 'health'}
+              <div class="tab-head">
+                <span>{addresses?.sourceUrl ?? 'Reading from the deployment'}</span>
+                <button
+                  type="button"
+                  class="refresh"
+                  disabled={addresses?.status === 'loading'}
+                  on:click={() => controller.loadInstanceAddresses(itemHash, { force: true })}
+                >{addresses?.status === 'loading' ? 'Loading…' : 'Refresh'}</button>
+              </div>
+
+              {#if addresses?.payload}
+                <pre class="payload">{JSON.stringify(addresses.payload, null, 2)}</pre>
+                <div class="link-row">
+                  <CopyButton text={JSON.stringify(addresses.payload, null, 2)} label="Copy JSON" />
+                </div>
+              {:else if addresses?.status === 'loading'}
+                <p class="tab-note">Reading the deployment's health document…</p>
+              {:else if addresses?.error}
+                <p class="tab-note">{addresses.error}</p>
+              {:else}
+                <p class="tab-note">No health document read yet.</p>
+              {/if}
             {/if}
 
             <div class="link-row">
@@ -828,6 +995,115 @@ export let apiHosts = undefined
   .instance-grid {
     display: grid;
     gap: 0.3rem;
+  }
+
+  .tab-bar {
+    display: flex;
+    gap: 0.35rem;
+    margin: 0.75rem 0 0.5rem;
+    border-bottom: 1px solid var(--relay-surface-border);
+  }
+
+  .tab {
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--relay-muted);
+    padding: 0.35rem 0.6rem;
+    font: 700 0.6875rem/1 var(--relay-font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+
+  .tab:hover {
+    color: var(--relay-text);
+  }
+
+  .tab-active {
+    color: var(--relay-text);
+    border-bottom-color: var(--relay-cyan);
+  }
+
+  .tab-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .tab-head span {
+    color: var(--relay-muted);
+    font: 400 0.6875rem/1.4 var(--relay-font-mono);
+    overflow-wrap: anywhere;
+  }
+
+  .refresh {
+    border: 1px solid var(--relay-surface-border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--relay-muted);
+    padding: 0.28rem 0.7rem;
+    font: 700 0.6563rem/1 var(--relay-font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+
+  .refresh:hover:not(:disabled) {
+    color: var(--relay-text);
+    border-color: var(--relay-cyan);
+  }
+
+  .refresh:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .tab-note {
+    color: var(--relay-muted);
+    font-size: 0.75rem;
+    margin: 0.5rem 0;
+  }
+
+  .address-group {
+    margin-bottom: 0.75rem;
+  }
+
+  .address-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .address-group-head strong {
+    font-size: 0.75rem;
+  }
+
+  .address-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+    border-top: 1px solid var(--relay-surface-border);
+  }
+
+  .address-row code {
+    font: 400 0.6875rem/1.4 var(--relay-font-mono);
+    overflow-wrap: anywhere;
+  }
+
+  .payload {
+    max-height: 20rem;
+    overflow: auto;
+    padding: 0.5rem;
+    border: 1px solid var(--relay-surface-border);
+    border-radius: 0.5rem;
+    font: 400 0.6875rem/1.5 var(--relay-font-mono);
   }
 
   .deployment-box strong {

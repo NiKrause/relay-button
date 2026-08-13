@@ -76,9 +76,43 @@ export interface CompactInstanceDetails {
   vmIpv4: string | null
   webUrl: string | null
   sshCommand: string | null
+  /**
+   * Hostname of the deployment's HTTPS proxy. The mapped ports are plain HTTP,
+   * which a browser on an HTTPS page refuses to fetch, so this is the only
+   * address the card can read the relay's own documents from.
+   */
+  proxyHostname: string | null
   mappedPorts: Array<{ label: string; hostPort: number | null }>
   execution: InstanceExecution | null
   error: string | null
+}
+
+/** One transport's worth of addresses, as the relay itself groups them. */
+export interface SponsorRelayAddressGroup {
+  key: string
+  label: string
+  addresses: string[]
+}
+
+/**
+ * What a deployment reports about itself at `/multiaddrs`. Deliberately not
+ * normalised into "the best address": the card shows what the relay says, and
+ * choosing between addresses is the consumer's business, not this UI's.
+ */
+export interface SponsorRelayInstanceAddresses {
+  status: 'idle' | 'loading' | 'ready' | 'unsupported' | 'error'
+  /** Transport groups, empty for a profile that publishes no libp2p addresses. */
+  groups: SponsorRelayAddressGroup[]
+  /** Ready-to-paste environment block, when the profile publishes one. */
+  pwaEnv: Record<string, string> | null
+  /** Raw payload, rendered verbatim on the health tab. */
+  payload: Record<string, unknown> | null
+  peerId: string | null
+  version: string | null
+  fetchedAt: number | null
+  error: string | null
+  /** Source URL, shown so a person can curl exactly what the card read. */
+  sourceUrl: string | null
 }
 
 export interface CompactInstanceRecord {
@@ -143,6 +177,13 @@ export interface SponsorRelayState {
   orphanBootstrapRegistrations: CompactBootstrapRegistrationRecord[]
   lastDeploymentHash: string | null
   deploymentProgress: DeploymentProgressEvent
+  /**
+   * What each deployment reports at `/multiaddrs`, keyed by instance item hash.
+   * Fetched on demand rather than with the instance list: AutoTLS addresses only
+   * appear a minute or two after a deploy reports success, so this is state that
+   * has to be refreshable on its own.
+   */
+  instanceAddresses: Record<string, SponsorRelayInstanceAddresses>
 }
 
 export type SponsorRelaySubscriber = (state: SponsorRelayState) => void
