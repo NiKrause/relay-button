@@ -38,6 +38,8 @@ const THEME_CSS = `
   --rb-panel-shadow: 0 28px 80px rgba(4, 6, 12, 0.55);
   --rb-surface: rgba(11, 14, 21, 0.55);
   --rb-field-bg: rgba(11, 14, 21, 0.85);
+  /* Opaque on purpose - see optionStyle. */
+  --rb-menu-bg: #0b0e15;
   --rb-accent: var(--rb-coral);
   --rb-accent-contrast: #0b0e15;
   --rb-link: var(--rb-cyan);
@@ -62,6 +64,7 @@ const THEME_CSS = `
   --rb-panel-shadow: 0 28px 80px rgba(20, 27, 46, 0.18);
   --rb-surface: rgba(20, 27, 46, 0.04);
   --rb-field-bg: #ffffff;
+  --rb-menu-bg: #ffffff;
   --rb-accent-contrast: #ffffff;
   --rb-launcher-start: #ffffff;
   --rb-launcher-end: #f2f5fa;
@@ -109,6 +112,15 @@ const fieldStyle: React.CSSProperties = {
   fontFamily: "var(--rb-font-body)",
   fontSize: "0.8125rem",
   lineHeight: 1.4,
+};
+
+// The drop-down list, which is a separate surface from the closed control: it
+// opens over the page, not over the panel, so it cannot borrow the panel's
+// background. Applied per option because this build injects tokens only - a
+// bare `option { }` rule in THEME_CSS would repaint the host page's own selects.
+const optionStyle: React.CSSProperties = {
+  background: "var(--rb-menu-bg)",
+  color: "var(--rb-text)",
 };
 
 const secondaryButtonStyle: React.CSSProperties = {
@@ -973,7 +985,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                     : null;
 
                   return (
-                    <option key={tier.id} value={tier.id}>
+                    <option style={optionStyle} key={tier.id} value={tier.id}>
                       {`${tier.id} ${formatTierSpecLabel(vcpus, memoryMiB, diskMiB)}`}
                     </option>
                   );
@@ -1201,17 +1213,18 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               <div>{state.rootfsHealth.label}</div>
               <div>
                 <select
+                  style={fieldStyle}
                   aria-label="Select CRN"
                   value={state.crnPinnedByUser ? (state.selectedCrn?.hash ?? "") : ""}
                   onChange={(event) =>
                     controller.selectCrn(event.currentTarget.value || null)
                   }
                 >
-                  <option value="">
+                  <option style={optionStyle} value="">
                     Auto ({state.crnOptions[0]?.name ?? "best score"})
                   </option>
                   {state.crnOptions.map((option) => (
-                    <option key={option.hash} value={option.hash}>
+                    <option style={optionStyle} key={option.hash} value={option.hash}>
                       {(option.name ?? option.hash.slice(0, 8)) +
                         (option.score != null ? ` · ${option.score.toFixed(2)}` : "")}
                     </option>
