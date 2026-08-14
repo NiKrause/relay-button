@@ -92,22 +92,45 @@ The probe replaces some of what `crns.json` polling gave us, but not all of it:
 it proves a node is *answering*, not that it has capacity or QEMU support.
 That is why it is a safety net for the fallback, not a reason to prefer it.
 
-### Browser asymmetry
+### In the browser
 
-The browser client falls back to the aggregate but does **not** probe. It reads
-the aggregate from the same `apiHosts` it already uses, then relies on its
-existing behavior: the user sees the CRN picker, and a rejected
-`/control/allocation/notify` fails the attempt and advances to the next
-candidate (see [Deployment paths](./deployment-paths.md)). Probing every
-candidate up front would put N extra round-trips on the critical path before
-the picker can render. Worth revisiting if aggregate-sourced deploys turn out
-to pick dead nodes often in practice.
+The browser probes too, with two differences that matter.
 
-## Forcing the aggregate
+**It runs at deploy time, not at refresh time.** The CRN picker renders from
+the list as it arrives; the probe fires once the user has committed to
+deploying, against the (at most five) candidates that would actually be tried.
+Probing during refresh would put N round-trips in front of the picker for
+every page load.
 
-Set `crn_source: aggregate` on the deploy action (or `ALEPH_VM_CRN_SOURCE=aggregate`)
-to skip `crns.json` entirely. The default, `auto`, prefers it for the live
-capacity data described above.
+**It distinguishes "dead" from "blocked".** A cross-origin request that never
+reaches the node — CORS, a blocked port, an offline client — is our origin's
+problem, not evidence about the node. `probeCrnAvailability()` therefore
+returns three verdicts:
+
+| Verdict | Meaning | Effect |
+| --- | --- | --- |
+| `reachable` | the node served its executions list | kept |
+| `unreachable` | the node answered, but with an error status | dropped |
+| `unknown` | the request never got an answer (`blocked`) | **kept** |
+
+Dropping candidates for our own origin restriction would be worse than not
+probing at all, so `unknown` keeps the node in the running. A CRN the user
+pinned by hand is never dropped either — an explicit choice outranks the probe.
+
+## Choosing the source explicitly
+
+All three surfaces take the same three values:
+
+| Value | Behavior |
+| --- | --- |
+| `auto` (default) | read `crns.json`, fall back to the aggregate |
+| `aggregate` | skip `crns.json` entirely |
+| `list` | **disable** the fallback, so an outage surfaces as an error |
+
+`list` exists for testing: it is the only way to see the failure the fallback
+normally hides.
+
+### GitHub Actions
 
 ```yaml
 - uses: NiKrause/relay-button/.github/actions/aleph-vm-deploy@main
@@ -115,10 +138,42 @@ capacity data described above.
     crn_source: aggregate
 ```
 
-Reasonable uses: reproducing a deploy that must not depend on a centralized
-service, testing the fallback path itself, or riding out a `crns.json` outage
-that returns wrong data rather than failing outright — the one failure mode the
-automatic fallback cannot detect.
+Or `ALEPH_VM_CRN_SOURCE=aggregate` when driving `@le-space/node` directly.
+
+### Browser: the `crnSource` prop
+
+```jsx
+<SponsorRelayFab crnSource="aggregate" />
+```
+
+### Browser: the live switch
+
+For testing against the real network, the prop is inconvenient — it needs a
+rebuild, and a `crns.json` outage is not something you can reproduce on demand.
+`localStorage.LE_SPACE_CRN_SOURCE` overrides the prop and is **read on every
+refresh**, so it takes effect on the next refresh cycle without a page reload:
+
+```js
+// Force the decentralized path and watch it pick a node
+localStorage.LE_SPACE_CRN_SOURCE = 'aggregate'
+
+// Prove the fallback is what is saving you — this one throws on an outage
+localStorage.LE_SPACE_CRN_SOURCE = 'list'
+
+// Back to normal
+localStorage.removeItem('LE_SPACE_CRN_SOURCE')
+```
+
+Pair it with `localStorage.LE_SPACE_UI_DEBUG = '1'` to see which source was
+used, why the fallback triggered, and what the probe dropped:
+
+```
+[le-space/ui] crns:fallback { source: 'aggregate', count: 42, listError: 'CRN list request failed: 502' }
+[le-space/ui] crns:probe   { message: 'Skipping 1 unreachable CRN of 5 probed' }
+```
+
+The current source is also on the controller state as `crnSource`
+(`'list' | 'aggregate' | null`), so a host app can surface it in its own UI.
 
 ## What would make the aggregate a safe default
 

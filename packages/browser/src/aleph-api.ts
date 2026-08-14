@@ -30,6 +30,8 @@ export const DEFAULT_CRN_LIST_URL = 'https://crns-list.aleph.sh/crns.json'
 // browser client already talks to (CORS included).
 export const DEFAULT_CRN_AGGREGATE_ADDRESS = '0xa1B3bb7d2332383D96b7796B908fB7f7F3c2Be10'
 export const DEFAULT_CRN_AGGREGATE_KEY = 'corechannel'
+
+export type CrnSource = 'list' | 'aggregate'
 export const DEFAULT_ALEPH_SCHEDULER_API_HOST = 'https://scheduler.api.aleph.cloud'
 export const DEFAULT_2N6_API_HOST = 'https://api.2n6.me'
 
@@ -274,24 +276,122 @@ export async function fetchCrnsFromAggregate(
   throw lastError instanceof Error ? lastError : new Error(String(lastError ?? 'CRN aggregate request failed'))
 }
 
+export interface FetchCrnsOptions {
+  apiHosts?: readonly string[]
+  aggregateAddress?: string
+  /**
+   * `auto` prefers crns.json and falls back to the aggregate, `aggregate`
+   * reads the aggregate directly, `list` disables the fallback so an outage
+   * surfaces as an error. Useful for exercising either path deliberately.
+   */
+  source?: CrnSourcePreference
+}
+
+export type CrnSourcePreference = 'auto' | 'aggregate' | 'list'
+
+export interface CrnListResult {
+  crns: Crn[]
+  source: CrnSource
+  listError?: Error
+}
+
 /**
  * Prefers the polled crns.json list for its live status, capacity and qemu
  * flags, and falls back to the core channel aggregate when that single HTTP
  * service is down — an outage that reaches the browser as a CORS error because
  * the gateway's 502 page carries no Access-Control-Allow-Origin header.
  */
-export async function fetchCrns(
+export async function fetchCrnsWithSource(
   url = DEFAULT_CRN_LIST_URL,
-  options: { apiHosts?: readonly string[]; aggregateAddress?: string } = {}
-): Promise<Crn[]> {
-  try {
-    const crns = await fetchCrnsFromList(url)
-    if (crns.length > 0) return crns
-  } catch {
-    // Fall through to the decentralized source below.
+  options: FetchCrnsOptions = {}
+): Promise<CrnListResult> {
+  const apiHosts = options.apiHosts ?? DEFAULT_ALEPH_API_HOSTS
+  const source = options.source ?? 'auto'
+
+  if (source === 'aggregate') {
+    return {
+      crns: await fetchCrnsFromAggregate(apiHosts, options.aggregateAddress),
+      source: 'aggregate'
+    }
   }
 
-  return fetchCrnsFromAggregate(options.apiHosts ?? DEFAULT_ALEPH_API_HOSTS, options.aggregateAddress)
+  let listError: Error
+  try {
+    const crns = await fetchCrnsFromList(url)
+    if (crns.length > 0) return { crns, source: 'list' }
+    listError = new Error('CRN list returned no entries')
+  } catch (error) {
+    listError = error instanceof Error ? error : new Error(String(error))
+  }
+
+  if (source === 'list') throw listError
+
+  return {
+    crns: await fetchCrnsFromAggregate(apiHosts, options.aggregateAddress),
+    source: 'aggregate',
+    listError
+  }
+}
+
+export async function fetchCrns(
+  url = DEFAULT_CRN_LIST_URL,
+  options: FetchCrnsOptions = {}
+): Promise<Crn[]> {
+  return (await fetchCrnsWithSource(url, options)).crns
+}
+
+/**
+ * `unknown` is not a soft `unreachable`: the browser cannot distinguish a node
+ * that is down from one whose CORS headers block us, and dropping candidates
+ * for our own origin restriction would be worse than not probing at all.
+ */
+export type CrnProbeVerdict = 'reachable' | 'unreachable' | 'unknown'
+
+export async function probeCrnAvailability(crn: Pick<Crn, 'address'>): Promise<CrnProbeVerdict> {
+  const address = String(crn.address ?? '').trim()
+  if (!address) return 'unreachable'
+
+  const lookup = await fetchCrnExecutionMap(address)
+  if (lookup.payload !== null) return 'reachable'
+  return lookup.blocked ? 'unknown' : 'unreachable'
+}
+
+/**
+ * Drops candidates that answered but are not serving, keeping the incoming
+ * order. Aggregate records carry no liveness signal, so without this a
+ * registered-but-dead node costs a full deployment attempt. Only the head is
+ * probed, and if every candidate is ruled out the list is returned unchanged.
+ */
+export async function filterReachableCrns<TCrn extends Crn>(
+  crns: readonly TCrn[],
+  options: { limit?: number; onDiagnostic?: (message: string) => void } = {}
+): Promise<TCrn[]> {
+  const limit = Math.max(1, Number(options.limit) || 5)
+  const probed = crns.slice(0, limit)
+  if (probed.length === 0) return [...crns]
+
+  const verdicts = await Promise.all(
+    probed.map(async (crn) => {
+      try {
+        return { crn, verdict: await probeCrnAvailability(crn) }
+      } catch {
+        return { crn, verdict: 'unknown' as CrnProbeVerdict }
+      }
+    })
+  )
+
+  const kept = verdicts.filter((entry) => entry.verdict !== 'unreachable').map((entry) => entry.crn)
+  if (kept.length === 0) {
+    options.onDiagnostic?.(`No CRN answered its executions endpoint (${probed.length} probed); keeping the unverified order`)
+    return [...crns]
+  }
+
+  const dropped = probed.length - kept.length
+  if (dropped > 0) {
+    options.onDiagnostic?.(`Skipping ${dropped} unreachable CRN${dropped === 1 ? '' : 's'} of ${probed.length} probed`)
+  }
+
+  return [...kept, ...crns.slice(limit)]
 }
 
 export async function fetchInstances(address: string, apiHost = DEFAULT_ALEPH_API_HOST): Promise<InstanceMessage[]> {

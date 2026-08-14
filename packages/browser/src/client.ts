@@ -11,6 +11,7 @@ import {
   fetch2n6WebAccessUrl,
   fetchCrnExecutionMap,
   fetchCrns,
+  fetchCrnsWithSource,
   fetchInstances,
   fetchMessageEnvelope,
   fetchSchedulerAllocation,
@@ -18,6 +19,7 @@ import {
   inspectDeploymentResult,
   waitForDeploymentResult
 } from './aleph-api'
+import type { CrnSourcePreference } from './aleph-api'
 import type { AlephBrowserClient } from './types'
 
 type ApiHostInput = string | readonly string[]
@@ -26,6 +28,11 @@ export interface CreateAlephBrowserClientOptions {
   apiHost?: string
   apiHosts?: ApiHostInput
   crnListUrl?: string
+  /**
+   * `auto` falls back to the corechannel aggregate when crns.json is down,
+   * `aggregate` skips crns.json, `list` disables the fallback.
+   */
+  crnSource?: CrnSourcePreference
   schedulerApiHost?: string
   twoN6ApiHost?: string
 }
@@ -78,6 +85,7 @@ export function createAlephBrowserClient(options: CreateAlephBrowserClientOption
     : normalizeApiHosts(options.apiHosts, options.apiHost ?? DEFAULT_ALEPH_API_HOST)
   const apiHost = apiHosts[0] ?? DEFAULT_ALEPH_API_HOST
   const crnListUrl = options.crnListUrl ?? DEFAULT_CRN_LIST_URL
+  const crnSource = options.crnSource ?? 'auto'
   const schedulerApiHost = options.schedulerApiHost ?? DEFAULT_ALEPH_SCHEDULER_API_HOST
   const twoN6ApiHost = options.twoN6ApiHost ?? DEFAULT_2N6_API_HOST
 
@@ -85,12 +93,16 @@ export function createAlephBrowserClient(options: CreateAlephBrowserClientOption
     apiHost,
     apiHosts,
     crnListUrl,
+    crnSource,
     schedulerApiHost,
     fetchBalance(address) {
       return withApiHostFallback(apiHosts, (host) => fetchBalance(address, host))
     },
     fetchCrns() {
-      return fetchCrns(crnListUrl, { apiHosts })
+      return fetchCrns(crnListUrl, { apiHosts, source: crnSource })
+    },
+    fetchCrnsWithSource(source) {
+      return fetchCrnsWithSource(crnListUrl, { apiHosts, source: source ?? crnSource })
     },
     fetchInstances(address) {
       return withApiHostFallback(apiHosts, (host) => fetchInstances(address, host))

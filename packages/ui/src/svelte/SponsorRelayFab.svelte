@@ -20,6 +20,7 @@ export let version = ''
 export let apiHost = undefined
 export let apiHosts = undefined
   export let crnListUrl = undefined
+  export let crnSource = undefined
   export let schedulerApiHost = undefined
   export let twoN6ApiHost = undefined
 
@@ -35,6 +36,7 @@ export let apiHosts = undefined
   apiHost,
   apiHosts,
     crnListUrl,
+    crnSource,
     schedulerApiHost,
     twoN6ApiHost
   })
