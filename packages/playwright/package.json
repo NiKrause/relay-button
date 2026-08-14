@@ -1,6 +1,6 @@
 {
 	"name": "@le-space/playwright",
-	"version": "0.8.0",
+	"version": "0.9.0",
 	"description": "Reusable Playwright fixtures and Relay Button lifecycle helpers.",
 	"license": "MIT",
 	"type": "module",
