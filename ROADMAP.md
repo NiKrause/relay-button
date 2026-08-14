@@ -1,6 +1,41 @@
 # Roadmap
 
-## 0.8.0 — deployment addresses on the card
+## 0.9.0 — CRN discovery without a single point of failure
+
+The deploy path no longer dies with `crns-list.aleph.sh` (#92). When that
+service fails or returns nothing, both the Actions and the browser path read
+the CRN candidates from the `corechannel` aggregate instead — the on-chain
+registry `crns.json` is itself derived from, served by every Aleph API host.
+In the browser the outage did not even look like one: the gateway's 502 page
+carries no CORS header, so the UI reported a CORS failure.
+
+The aggregate carries no liveness signal, so aggregate-sourced candidates are
+probed against `GET /about/executions/list` before they cost a deployment
+attempt — partial credit on #83. The browser probe distinguishes a dead node
+from a request that never arrived, keeping candidates whose failure is our
+own origin's problem.
+
+`crns.json` stays the default: it is the only source carrying `qemu_support`
+and free capacity, and defaulting to the aggregate would trade a rare outage
+for a permanent rise in failed first attempts. The reasoning, and what would
+change it, is written up in
+[CRN discovery](docs/docusaurus/docs/reference/crn-discovery.md).
+
+Minor rather than patch because this adds public surface: new exported
+functions and types in `@le-space/core` and `@le-space/browser`, a new client
+method, a new `crnSource` prop and state field, a new `crn_source` action
+input, and a new `DeployPlan` field.
+
+The source is selectable on every surface — `crn_source` /
+`ALEPH_VM_CRN_SOURCE` for Actions, the `crnSource` prop for the widget, and
+`localStorage.LE_SPACE_CRN_SOURCE` as a runtime switch so the fallback can be
+exercised against the real network without a rebuild.
+
+Gated on manual testing of the widget in both consumer repos (simple-todo and
+universal-connectivity `js-peer`) against `0.9.0@next` before promotion to
+`latest`, same as 0.8.0.
+
+## Shipped: 0.8.0 — deployment addresses on the card
 
 The deployment card gains Multiaddresses and Health tabs (#96): each
 deployment shows the addresses its own endpoint reports, grouped by
