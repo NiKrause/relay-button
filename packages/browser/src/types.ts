@@ -294,9 +294,13 @@ export interface AlephBrowserClient {
   apiHost: string
   apiHosts: string[]
   crnListUrl: string
+  /** Which CRN source the client is configured to read. */
+  crnSource: import('./aleph-api').CrnSourcePreference
   schedulerApiHost: string
   fetchBalance(address: string): Promise<BalanceResponse>
   fetchCrns(): Promise<Crn[]>
+  /** `source` overrides the configured preference for this call, so a live toggle takes effect without rebuilding the client. */
+  fetchCrnsWithSource(source?: import('./aleph-api').CrnSourcePreference): Promise<import('./aleph-api').CrnListResult>
   fetchInstances(address: string): Promise<InstanceMessage[]>
   fetch2n6WebAccessUrl(itemHash: string): Promise<string | null>
   fetchMessageEnvelope(itemHash: string): Promise<AlephMessageEnvelope | null>

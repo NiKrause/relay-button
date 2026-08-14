@@ -12,8 +12,9 @@ import {
   deployInstance,
   ensureInstancePortForwards,
   fetchVmRuntime,
-  fetchCrns,
+  fetchCrnsWithSource,
   fetchUcGoPeerMetadata,
+  filterReachableCrns,
   notifyCrnAllocationWithRetry,
   publishRelayBootstrapRegistration,
   reconcileOwnerRelayBootstrapRegistrations,
@@ -325,10 +326,13 @@ async function deploymentPlacementsForPlan(
     ];
   }
 
-  const crns = await fetchCrns({
+  const { crns, source } = await fetchCrnsWithSource({
     url: plan.crnListUrl,
     fetch: fetchImpl,
+    preferAggregate: plan.crnSource === "aggregate",
+    onDiagnostic: (message) => console.log(`[deploy] ${message}`),
   });
+  console.log(`[deploy] CRN candidates: ${crns.length} from ${source}`);
 
   if (plan.crnHash) {
     const explicit = crns.find((crn) => crn.hash === plan.crnHash);
@@ -344,13 +348,24 @@ async function deploymentPlacementsForPlan(
       : [];
   }
 
+  const maxCrnAttempts = Math.max(1, plan.maxCrnAttempts);
+  const ranked = await rankCandidateCrns(crns, {
+    fetch: fetchImpl,
+    preferredCountryCode: plan.preferredCountryCode,
+    geoLimit: plan.geoCrnLimit,
+  });
+
+  // The aggregate carries no live status, so reachability has to be verified
+  // here instead of being inherited from the polled list.
   const rankedCrns = (
-    await rankCandidateCrns(crns, {
-      fetch: fetchImpl,
-      preferredCountryCode: plan.preferredCountryCode,
-      geoLimit: plan.geoCrnLimit,
-    })
-  ).slice(0, Math.max(1, plan.maxCrnAttempts));
+    source === "aggregate"
+      ? await filterReachableCrns(ranked, {
+          fetch: fetchImpl,
+          limit: maxCrnAttempts * 2,
+          onDiagnostic: (message) => console.log(`[deploy] ${message}`),
+        })
+      : ranked
+  ).slice(0, maxCrnAttempts);
 
   return rankedCrns.map((crn) => ({
     strategy: "manual",

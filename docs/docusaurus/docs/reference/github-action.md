@@ -51,6 +51,17 @@ CRN selection:
 - `max_crn_attempts`
 - `geo_crn_limit`
 - `crn_list_url`
+- `crn_source`
+
+`crn_list_url` points at `crns.json`, the polled CRN list. It stays the
+preferred source because it carries live status, free capacity and QEMU
+support. When it fails or comes back empty, the deploy falls back to the
+`corechannel` aggregate and probes the candidates for reachability.
+
+`crn_source: aggregate` skips `crns.json` entirely; the default is `auto`.
+
+See [CRN discovery](./crn-discovery.md) for what each source knows, why the
+aggregate is the fallback rather than the default, and what would change that.
 
 Guest access and lifecycle:
 

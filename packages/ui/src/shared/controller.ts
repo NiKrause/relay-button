@@ -5,7 +5,10 @@ import {
   normalizeExecution,
   resolveRootfsReference,
   verifyRootfsExists,
+  filterReachableCrns,
   type Crn,
+  type CrnSource,
+  type CrnSourcePreference,
   type InstanceExecution,
   type InstanceMessage,
   type RootfsManifest,
@@ -332,6 +335,7 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     },
     balance: null,
     crns: [],
+    crnSource: null,
     selectedCrn: null,
     crnOptions: [],
     crnPinnedByUser: false,
@@ -363,6 +367,23 @@ function isDebugEnabled(props: SponsorRelayProps): boolean {
   } catch {
     return false;
   }
+}
+
+// Read at request time rather than at construction, so flipping the switch in
+// the browser console takes effect on the next refresh instead of needing a
+// page reload. That is the whole point of having it: the crns.json outage this
+// guards against is not something you can reproduce on demand.
+function crnSourcePreference(props: SponsorRelayProps): CrnSourcePreference {
+  const fromStorage = (() => {
+    try {
+      return globalThis.localStorage?.getItem("LE_SPACE_CRN_SOURCE") ?? null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const raw = (fromStorage ?? props.crnSource ?? "auto").trim().toLowerCase();
+  return raw === "aggregate" || raw === "list" ? raw : "auto";
 }
 
 async function sha256Hex(payload: string): Promise<string> {
@@ -965,6 +986,7 @@ export class SponsorRelayController {
       apiHost: props.apiHost,
       apiHosts: props.apiHosts,
       crnListUrl: props.crnListUrl,
+      crnSource: crnSourcePreference(props),
       schedulerApiHost: props.schedulerApiHost,
       twoN6ApiHost: props.twoN6ApiHost,
     });
@@ -2561,10 +2583,18 @@ export class SponsorRelayController {
     });
 
     try {
-      const [pricingSummary, crns] = await Promise.all([
+      const [pricingSummary, crnList] = await Promise.all([
         fetchInstancePricing(this.client.apiHost),
-        this.client.fetchCrns(),
+        this.client.fetchCrnsWithSource(crnSourcePreference(this.props)),
       ]);
+      const { crns, source: crnSource } = crnList;
+      if (crnList.listError) {
+        this.trace("crns:fallback", {
+          source: crnSource,
+          count: crns.length,
+          listError: crnList.listError.message,
+        });
+      }
       const manifestState = await resolveManifest({
         manifestUrl: this.state.manifestUrl,
         manifestJson: this.state.manifestJson,
@@ -2746,6 +2776,7 @@ export class SponsorRelayController {
         },
         balance,
         crns,
+        crnSource,
         instances,
         bootstrapRegistrations,
         orphanBootstrapRegistrations,
@@ -2838,10 +2869,34 @@ export class SponsorRelayController {
         },
       } as SponsorRelayState);
       const preferredCrnHash = this.state.selectedCrn?.hash ?? null;
-      const orderedCrns = [
+      const rankedCrns = [
         ...compatibleCrns.filter((crn) => crn.hash === preferredCrnHash),
         ...compatibleCrns.filter((crn) => crn.hash !== preferredCrnHash),
       ].slice(0, 5);
+
+      // Aggregate records are registry entries, not health checks, so a
+      // registered-but-dead node would otherwise cost a full attempt. Probing
+      // here rather than during refresh keeps the CRN picker rendering
+      // immediately — this runs once the user has committed to deploying.
+      // A CRN the user pinned themselves is never dropped.
+      const orderedCrns =
+        this.state.crnSource === "aggregate"
+          ? await filterReachableCrns(rankedCrns, {
+              limit: rankedCrns.length,
+              onDiagnostic: (message) =>
+                this.trace("crns:probe", { message }),
+            }).then((reachable) =>
+              preferredCrnHash &&
+              !reachable.some((crn) => crn.hash === preferredCrnHash)
+                ? [
+                    ...rankedCrns.filter(
+                      (crn) => crn.hash === preferredCrnHash,
+                    ),
+                    ...reachable,
+                  ]
+                : reachable,
+            )
+          : rankedCrns;
 
       if (orderedCrns.length === 0) {
         throw new Error(

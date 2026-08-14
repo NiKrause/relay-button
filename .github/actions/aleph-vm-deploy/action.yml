@@ -25,6 +25,13 @@ inputs:
     description: Aleph CRN list endpoint
     required: false
     default: https://crns-list.aleph.sh/crns.json
+  crn_source:
+    description: >-
+      Where the CRN candidates come from. "auto" reads crn_list_url and falls
+      back to the Aleph corechannel aggregate when it is unavailable;
+      "aggregate" skips the list endpoint entirely and reads the aggregate.
+    required: false
+    default: auto
   name:
     description: Aleph VM instance name
     required: false
@@ -340,6 +347,7 @@ runs:
         ALEPH_VM_API_HOST: ${{ inputs.api_host }}
         ALEPH_VM_API_HOSTS: ${{ inputs.api_hosts }}
         ALEPH_VM_CRN_LIST_URL: ${{ inputs.crn_list_url }}
+        ALEPH_VM_CRN_SOURCE: ${{ inputs.crn_source }}
         ALEPH_VM_NAME: ${{ inputs.name }}
         ALEPH_VM_SSH_PUBLIC_KEY: ${{ inputs.ssh_public_key }}
         ALEPH_VM_ROOTFS_ITEM_HASH: ${{ inputs.rootfs_item_hash }}

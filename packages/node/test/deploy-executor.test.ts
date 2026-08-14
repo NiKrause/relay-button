@@ -14,6 +14,7 @@ const DEPLOY_PLAN: DeployPlan = {
   bootstrapOwnerPrivateKey: '',
   apiHost: 'https://api.aleph.im',
   crnListUrl: 'https://crns-list.aleph.sh/crns.json',
+  crnSource: 'auto',
   name: 'uc-go-peer',
   sshPublicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest key@example',
   rootfsItemHash: 'a'.repeat(64),
@@ -1747,4 +1748,115 @@ test('executeDeployPlan configures relay Caddy when a reserved 2n6 proxy URL is 
     JSON.parse(configureBodies[0]).proxy_url,
     'https://relay.example.com'
   )
+})
+
+test('executeDeployPlan deploys from the corechannel aggregate when the CRN list is down', async () => {
+  const calls: string[] = []
+  const result = await executeDeployPlan({
+    ...DEPLOY_PLAN,
+    crnHash: '',
+    preferredCountryCode: '',
+    autoConfigure: false,
+    verifyReachability: false,
+    publishPortForwards: false
+  }, {
+    sender: '0x1234',
+    signer: async () => '0xsigned',
+    hasher: (() => {
+      let count = 0
+      return () => `hash-${++count}`
+    })(),
+    sleep: async () => undefined,
+    tcpProbe: async () => ({ ok: true }),
+    fetch: async (url, init) => {
+      calls.push(`${String(init?.method ?? 'GET')} ${url}`)
+
+      if (String(url).includes('crns-list.aleph.sh')) {
+        return jsonResponse('<html>502 Bad Gateway</html>', 502)
+      }
+
+      if (String(url).includes('/api/v0/aggregates/0xa1B3bb7d2332383D96b7796B908fB7f7F3c2Be10.json')) {
+        return jsonResponse({
+          data: {
+            corechannel: {
+              resource_nodes: [
+                {
+                  hash: 'crn-dead',
+                  name: 'Dead CRN',
+                  address: 'https://crn-dead.example.com',
+                  status: 'linked',
+                  type: 'compute',
+                  parent: 'ccn-1',
+                  score: 0.99
+                },
+                {
+                  hash: 'crn-1',
+                  name: 'CRN One',
+                  address: 'https://crn.example.com',
+                  status: 'linked',
+                  type: 'compute',
+                  parent: 'ccn-1',
+                  score: 0.95
+                }
+              ]
+            }
+          }
+        })
+      }
+
+      if (String(url).includes('crn-dead.example.com')) {
+        return jsonResponse('', 502)
+      }
+
+      if (String(url).includes('/api/v0/messages/hash-1') && !init?.method) {
+        return jsonResponse({ status: 'processed', details: { rootfs: DEPLOY_PLAN.rootfsItemHash } })
+      }
+
+      if (String(url).includes('scheduler.api.aleph.cloud')) {
+        return jsonResponse({ node: { node_id: 'crn-1', url: 'https://crn.example.com' } })
+      }
+
+      if (String(url).includes('api.2n6.me')) {
+        return jsonResponse({ url: 'https://relay.example.com', active: true })
+      }
+
+      if (String(url).includes('/v2/about/executions/list')) {
+        return jsonResponse({
+          'hash-1': {
+            networking: {
+              host_ipv4: '203.0.113.7',
+              ipv6_ip: '2001:db8::7',
+              mapped_ports: {
+                '80': { host: 30080, tcp: true, udp: false },
+                '22': { host: 32022, tcp: true, udp: false },
+                '9095': { host: 32095, tcp: true, udp: true },
+                '9097': { host: 32097, tcp: true, udp: false }
+              }
+            }
+          }
+        })
+      }
+
+      if (String(url).includes('/control/allocation/notify')) {
+        return jsonResponse({ ok: true })
+      }
+
+      if (String(url).includes('/api/v0/messages/') && !init?.method) {
+        return jsonResponse({ status: 'processed', message: { type: 'STORE' } })
+      }
+
+      return jsonResponse(
+        { publication_status: { status: 'success' }, message_status: 'pending' },
+        202
+      )
+    }
+  })
+
+  assert.equal(result.status, 'processed')
+  assert.equal(result.runtime?.selectedCrn?.hash, 'crn-1')
+  // The dead node outranks the live one, so only the reachability probe can
+  // keep the deploy off it.
+  assert.ok(calls.some((entry) => entry.includes('https://crn-dead.example.com/v2/about/executions/list')))
+  assert.ok(calls.every((entry) => !entry.includes('https://crn-dead.example.com/control/allocation/notify')))
+  assert.ok(calls.some((entry) => entry.includes('https://crn.example.com/control/allocation/notify')))
 })

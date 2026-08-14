@@ -28,6 +28,11 @@ export interface DeployPlan {
   bootstrapOwnerPrivateKey: string;
   apiHost: string;
   crnListUrl: string;
+  /**
+   * "auto" reads crns.json and falls back to the corechannel aggregate,
+   * "aggregate" skips crns.json entirely.
+   */
+  crnSource: DeploymentCrnSource;
   name: string;
   sshPublicKey: string;
   rootfsManifestUrl: string;
@@ -67,6 +72,17 @@ export interface DeployPlan {
 }
 
 export type DeploymentPlacementStrategy = "scheduler" | "manual";
+
+export type DeploymentCrnSource = "auto" | "aggregate";
+
+function parseCrnSource(
+  env: NodeJS.ProcessEnv = process.env,
+): DeploymentCrnSource {
+  return optionalEnv("ALEPH_VM_CRN_SOURCE", "", env).trim().toLowerCase() ===
+    "aggregate"
+    ? "aggregate"
+    : "auto";
+}
 
 function parsePlacementStrategy(
   env: NodeJS.ProcessEnv = process.env,
@@ -271,6 +287,7 @@ export function parseDeployPlan(
       "https://crns-list.aleph.sh/crns.json",
       env,
     ),
+    crnSource: parseCrnSource(env),
     name: requiredEnv("ALEPH_VM_NAME", env),
     sshPublicKey: requiredEnv("ALEPH_VM_SSH_PUBLIC_KEY", env),
     rootfsManifestUrl,

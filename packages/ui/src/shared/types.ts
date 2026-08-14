@@ -9,6 +9,7 @@ import type {
   RootfsResolution,
   Tier
 } from '../../../browser/src/types.ts'
+import type { CrnSource, CrnSourcePreference } from '../../../browser/src/aleph-api.ts'
 import type { DeploymentProgressEvent } from '../../../shared-types/src/deployment.ts'
 
 export type SponsorRelayHealthTone = 'ok' | 'caution' | 'error' | 'idle'
@@ -39,6 +40,12 @@ export interface SponsorRelayProps {
   apiHost?: string
   apiHosts?: string | readonly string[]
   crnListUrl?: string
+  /**
+   * Which CRN source to read. `auto` falls back to the corechannel aggregate
+   * when crns.json is down, `aggregate` skips crns.json, `list` disables the
+   * fallback. `localStorage.LE_SPACE_CRN_SOURCE` overrides this at runtime.
+   */
+  crnSource?: CrnSourcePreference
   schedulerApiHost?: string
   twoN6ApiHost?: string
 }
@@ -169,6 +176,8 @@ export interface SponsorRelayState {
   pricingSummary: SponsorRelayPricingSummary
   balance: BalanceResponse | null
   crns: Crn[]
+  /** Which source the current `crns` came from; `null` until the first load. */
+  crnSource: CrnSource | null
   selectedCrn: Crn | null
   crnOptions: Array<{ hash: string; name: string | null; score: number | null }>
   crnPinnedByUser: boolean

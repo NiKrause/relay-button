@@ -971,3 +971,167 @@ test("controller erases the VM on the CRN before broadcasting FORGET", async () 
     globalThis.window = originalWindow;
   }
 });
+
+function crnRefreshFetch(seenUrls, walletAddress, rootfsItemHash) {
+  return async (input, init) => {
+    const url = String(input);
+    seenUrls.push(`${init?.method ?? "GET"} ${url}`);
+
+    if (url.includes("/api/v0/aggregates/") && url.includes("keys=pricing")) {
+      return jsonResponse({
+        data: {
+          pricing: {
+            instance: {
+              price: { compute_unit: 1 },
+              compute_unit: { vcpus: 1, memory_mib: 1024, disk_mib: 10240 },
+              tiers: [{ id: "tiny", compute_units: 1 }],
+            },
+          },
+        },
+      });
+    }
+
+    if (url.includes("crns.json")) {
+      return jsonResponse("<html>502 Bad Gateway</html>", 502);
+    }
+
+    if (url.includes("keys=corechannel")) {
+      return jsonResponse({
+        data: {
+          corechannel: {
+            resource_nodes: [
+              {
+                hash: "crn-agg",
+                name: "Aggregate CRN",
+                address: "https://agg.example.com",
+                status: "linked",
+                type: "compute",
+                parent: "ccn-1",
+                score: 0.9,
+              },
+            ],
+          },
+        },
+      });
+    }
+
+    if (url.includes(`/api/v0/addresses/${walletAddress}/balance`)) {
+      return jsonResponse({ balance: 100, locked_amount: 0, credit_balance: 100 });
+    }
+
+    if (url.includes("/api/v0/messages.json") && url.includes("msgTypes=INSTANCE")) {
+      return jsonResponse({ messages: [] });
+    }
+
+    if (url.includes(`/api/v0/messages/${rootfsItemHash}`)) {
+      return jsonResponse({
+        status: "processed",
+        type: "STORE",
+        messages: [{ type: "STORE", content: { item_hash: "bafytestrootfs" } }],
+      });
+    }
+
+    if (url.includes("/ipfs/bafytestrootfs")) {
+      return jsonResponse({});
+    }
+
+    if (url.includes("relay-bootstrap") || url.includes("posts")) {
+      return jsonResponse({ posts: [] });
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+}
+
+function crnRefreshController(walletAddress, rootfsItemHash, props = {}) {
+  const controller = createSponsorRelayController({
+    apiHost: "https://api.aleph.im",
+    crnListUrl: "https://crns-list.aleph.sh/crns.json",
+    ...props,
+  });
+
+  controller.patch({
+    wallet: {
+      connected: true,
+      address: walletAddress,
+      chainId: "0x1",
+      isMetaMask: true,
+    },
+    manifestJson: JSON.stringify({
+      profile: "ucan-store",
+      version: "ucan-store-v0.1.0",
+      rootfsItemHash,
+      rootfsSizeMiB: 20480,
+      createdAt: "2026-06-18T00:00:00.000Z",
+      requiredPortForwards: [],
+    }),
+  });
+
+  return controller;
+}
+
+test("controller falls back to the corechannel aggregate when crns.json is down", async () => {
+  const originalFetch = globalThis.fetch;
+  const seenUrls = [];
+  const walletAddress = "0x1234000000000000000000000000000000000000";
+  const rootfsItemHash = "d".repeat(64);
+
+  globalThis.fetch = crnRefreshFetch(seenUrls, walletAddress, rootfsItemHash);
+
+  try {
+    const controller = crnRefreshController(walletAddress, rootfsItemHash);
+    await controller.refresh();
+
+    const state = controller.getState();
+    assert.equal(state.crnSource, "aggregate");
+    assert.deepEqual(
+      state.crns.map((crn) => crn.hash),
+      ["crn-agg"],
+    );
+    assert.equal(
+      seenUrls.some((entry) => entry.includes("crns.json")),
+      true,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("localStorage.LE_SPACE_CRN_SOURCE steers the CRN source at runtime", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalLocalStorage = globalThis.localStorage;
+  const walletAddress = "0x1234000000000000000000000000000000000000";
+  const rootfsItemHash = "d".repeat(64);
+
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: (key) => store.delete(key),
+  };
+
+  try {
+    // 'aggregate' must not touch crns.json even though the switch is set after
+    // the controller was constructed — that is what makes it a live toggle.
+    store.set("LE_SPACE_CRN_SOURCE", "aggregate");
+    const aggregateUrls = [];
+    globalThis.fetch = crnRefreshFetch(aggregateUrls, walletAddress, rootfsItemHash);
+
+    const controller = crnRefreshController(walletAddress, rootfsItemHash);
+    await controller.refresh();
+
+    assert.equal(controller.getState().crnSource, "aggregate");
+    assert.equal(
+      aggregateUrls.some((entry) => entry.includes("crns.json")),
+      false,
+    );
+
+    // 'list' disables the fallback, so the outage stays visible.
+    store.set("LE_SPACE_CRN_SOURCE", "list");
+    await controller.refresh();
+    assert.match(controller.getState().errorText ?? "", /502/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.localStorage = originalLocalStorage;
+  }
+});

@@ -21,6 +21,7 @@ test("parseDeployPlan reads required deploy env and defaults", () => {
   assert.equal(plan.bootstrapOwnerPrivateKey, "");
   assert.equal(plan.apiHost, "https://api.aleph.im");
   assert.equal(plan.crnListUrl, "https://crns-list.aleph.sh/crns.json");
+  assert.equal(plan.crnSource, "auto");
   assert.equal(plan.rootfsSizeMiB, 20480);
   assert.equal(plan.channel, "TEST");
   assert.equal(plan.placementStrategy, "scheduler");
@@ -262,4 +263,27 @@ test("resolveDeployPlanRootfs derives hash, size, version, and ports from a mani
     { port: 22, tcp: true, udp: false, purpose: "SSH" },
     { port: 9095, tcp: true, udp: true, purpose: "Relay" },
   ]);
+});
+
+test("parseDeployPlan can pin the CRN source to the corechannel aggregate", () => {
+  const base = {
+    ALEPH_VM_PRIVATE_KEY: "0xabc",
+    ALEPH_VM_NAME: "uc-go-peer",
+    ALEPH_VM_SSH_PUBLIC_KEY:
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest key@example",
+    ALEPH_VM_ROOTFS_ITEM_HASH: "a".repeat(64),
+  };
+
+  assert.equal(
+    parseDeployPlan({ ...base, ALEPH_VM_CRN_SOURCE: "aggregate" }).crnSource,
+    "aggregate",
+  );
+  assert.equal(
+    parseDeployPlan({ ...base, ALEPH_VM_CRN_SOURCE: " AGGREGATE " }).crnSource,
+    "aggregate",
+  );
+  assert.equal(
+    parseDeployPlan({ ...base, ALEPH_VM_CRN_SOURCE: "list" }).crnSource,
+    "auto",
+  );
 });
