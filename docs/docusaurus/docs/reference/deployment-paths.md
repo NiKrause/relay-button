@@ -10,6 +10,7 @@ historically been more reliable than the browser path.
 | --- | --- | --- |
 | Signing | MetaMask `personal_sign` per message (user interaction) | `ALEPH_PRIVATE_KEY` (non-interactive) |
 | CRN selection | `filterDeployableCrns` (score-sorted crns-list snapshot), preferred CRN first, up to 5 candidates | Same scoring plus geo preference, `manual`/`scheduler` placement strategies, `vm_max_crn_attempts` |
+| CRN source | crns-list, falling back to the `corechannel` aggregate; **no** reachability probe — relies on notify failover below | Same fallback, plus a `GET /about/executions/list` probe when the candidates came from the aggregate — see [CRN discovery](./crn-discovery.md) |
 | Allocation notify | Result was **discarded** until 0.6.32; now an unconfirmed notify fails the attempt and triggers CRN failover | Result still discarded (`.catch(() => null)`) — compensated by the runtime wait below |
 | Runtime validation | `waitForVmRuntime` polls CRN for IPv4/ports | Same, but failure cleanly advances to the next CRN candidate |
 | Guest configuration | `waitForSetupEndpoint` (hard gate) then HTTP `POST VM:80/configure` — **impossible from an HTTPS origin**, see [Guest configuration handoff](./guest-configuration-handoff.md); images declaring `supportsBootstrapConfigAggregate` use the pull handoff instead | `waitForSetupEndpoint` (hard gate) then `configureOrbitdbRelaySetup`; failure fails the attempt |

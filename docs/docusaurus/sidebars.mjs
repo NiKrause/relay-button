@@ -38,6 +38,7 @@ const sidebars = {
         'reference/aleph-bootstrap',
         'reference/aleph-bootstrap-sequences',
         'reference/deployment-paths',
+        'reference/crn-discovery',
         'reference/guest-configuration-handoff',
         'reference/relay-dialability-timeline',
         'reference/rootfs-contract',
