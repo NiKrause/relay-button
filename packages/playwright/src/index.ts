@@ -892,6 +892,43 @@ export async function waitForAlephMessageForgotten(options: {
   )
 }
 
+/**
+ * The address that published `messageHash`, or `null` when no replica will say.
+ *
+ * Aleph only honours a FORGET signed by a message's original sender, so this is
+ * what decides whether a cleanup account has any power over a message at all.
+ *
+ * `null` means "could not be read" — never "not owned". Callers must treat the
+ * two differently: an unreadable sender is a transient API problem, and turning
+ * it into a hard failure would make cleanup flaky for reasons unrelated to the
+ * relay being cleaned up.
+ */
+export async function resolveAlephMessageSender(options: {
+  messageHash: string
+  apiHosts?: readonly string[]
+  fetch?: typeof fetch
+}): Promise<string | null> {
+  const fetchImpl = options.fetch ?? globalThis.fetch?.bind(globalThis)
+  if (!fetchImpl) throw new Error('A fetch implementation is required to resolve a message sender')
+
+  for (const apiHost of resolveAlephApiHosts(options.apiHosts)) {
+    try {
+      const response = await fetchImpl(new URL(`/api/v0/messages/${options.messageHash}`, apiHost), {
+        cache: 'no-cache',
+      })
+      const payload = (await response.json().catch(() => null)) as {
+        message?: { sender?: string }
+      } | null
+      const sender = payload?.message?.sender
+      if (typeof sender === 'string' && sender.length > 0) return sender
+    } catch {
+      // Try the next replica.
+    }
+  }
+
+  return null
+}
+
 export async function cleanupRelay(options: CleanupRelayOptions): Promise<CleanupRelayResult> {
   if (!/^[a-f0-9]{64}$/iu.test(options.instanceHash)) {
     throw new Error(`Invalid Aleph INSTANCE hash: ${options.instanceHash}`)
@@ -904,6 +941,56 @@ export async function cleanupRelay(options: CleanupRelayOptions): Promise<Cleanu
   const forget = options.hooks?.forget ?? forgetAlephMessages
   const hosts = resolveAlephApiHosts(options.apiHosts)
   let uiDeleteRequested = false
+
+  // Who owns the bootstrap registration decides whether cleanup may wait for it
+  // to be deregistered.
+  //
+  // A relay publishes its own `relay-bootstrap-v2` POST, signed with the *relay's*
+  // key, so on a normal deployment the registration's sender is not the account
+  // running cleanup. Aleph only honours a FORGET from the original sender, and
+  // this function never included the registration in its own FORGET anyway — so
+  // awaiting the deregistration burned the full `timeoutMs` and then threw, on
+  // every single run, for a state that could not be reached from here. The relay
+  // deregisters itself on graceful shutdown; erasing the VM denies it the chance.
+  //
+  // Resolved once and shared by both the UI and fallback paths below.
+  let ownership: { owned: boolean; sender: string | null } | undefined
+  const resolveRegistrationOwnership = async () => {
+    if (!ownership) {
+      const sender = options.registrationHash
+        ? await resolveAlephMessageSender({
+            messageHash: options.registrationHash,
+            apiHosts: hosts,
+            fetch: fetchImpl,
+          })
+        : null
+      ownership = {
+        owned: sender !== null && sender.toLowerCase() === options.account.address.toLowerCase(),
+        sender,
+      }
+    }
+    return ownership
+  }
+
+  // Wait only when the wait can actually succeed; otherwise say why it was
+  // skipped. Reporting beats throwing here: a registration this account cannot
+  // forget is not a cleanup failure, and nothing about it is billable.
+  const verifyRegistrationDeregistered = async (): Promise<string | undefined> => {
+    if (!options.registrationHash) return undefined
+    const { owned, sender } = await resolveRegistrationOwnership()
+    if (!owned) {
+      return sender === null
+        ? `Bootstrap registration ${options.registrationHash} was not awaited: its sender could not be read from any Aleph replica.`
+        : `Bootstrap registration ${options.registrationHash} was not awaited: it belongs to ${sender}, not the cleanup account ${options.account.address}, so only the relay itself can deregister it.`
+    }
+    return waitForAlephMessageForgotten({
+      messageHash: options.registrationHash,
+      apiHosts: hosts,
+      timeoutMs: options.timeoutMs,
+      pollIntervalMs: options.pollIntervalMs,
+      fetch: fetchImpl,
+    })
+  }
 
   try {
     await driver.requestDelete(options.instanceName)
@@ -922,15 +1009,7 @@ export async function cleanupRelay(options: CleanupRelayOptions): Promise<Cleanu
         pollIntervalMs: options.pollIntervalMs,
         fetch: fetchImpl,
       })
-      const registrationVerificationSummary = options.registrationHash
-        ? await waitForAlephMessageForgotten({
-            messageHash: options.registrationHash,
-            apiHosts: hosts,
-            timeoutMs: options.timeoutMs,
-            pollIntervalMs: options.pollIntervalMs,
-            fetch: fetchImpl,
-          })
-        : undefined
+      const registrationVerificationSummary = await verifyRegistrationDeregistered()
       return {
         instanceHash: options.instanceHash,
         uiDeleteRequested,
@@ -971,11 +1050,22 @@ export async function cleanupRelay(options: CleanupRelayOptions): Promise<Cleanu
   const hasher = (content: string) => createHash('sha256').update(content).digest('hex')
   let forgetSummary = ''
   let lastForgetError = 'No Aleph API host attempted.'
+  // Forget the registration alongside the INSTANCE when — and only when — this
+  // account is its sender. Waiting for a deregistration nothing had asked for
+  // was the other half of the bug: even an owned registration was never
+  // included here, so the wait could not succeed in that case either. Adding an
+  // unowned hash would be worse than useless: Aleph rejects the whole FORGET,
+  // which would take the INSTANCE cleanup down with it and leave a billing VM.
+  const { owned: registrationOwned } = await resolveRegistrationOwnership()
+  const forgetHashes =
+    registrationOwned && options.registrationHash
+      ? [options.instanceHash, options.registrationHash]
+      : [options.instanceHash]
   for (const apiHost of hosts) {
     try {
       const result = await forget({
         sender: options.account.address,
-        hashes: [options.instanceHash],
+        hashes: forgetHashes,
         reason: 'Relay Button Playwright cleanup',
         signer,
         hasher,
@@ -1004,15 +1094,7 @@ export async function cleanupRelay(options: CleanupRelayOptions): Promise<Cleanu
     pollIntervalMs: options.pollIntervalMs,
     fetch: fetchImpl,
   })
-  const registrationVerificationSummary = options.registrationHash
-    ? await waitForAlephMessageForgotten({
-        messageHash: options.registrationHash,
-        apiHosts: hosts,
-        timeoutMs: options.timeoutMs,
-        pollIntervalMs: options.pollIntervalMs,
-        fetch: fetchImpl,
-      })
-    : undefined
+  const registrationVerificationSummary = await verifyRegistrationDeregistered()
   return {
     instanceHash: options.instanceHash,
     uiDeleteRequested,

@@ -531,3 +531,109 @@ test('RelayButtonDriver.prepare fills the deploy form by label OR placeholder (S
   // launcher click + Advanced toggle + Connect wallet
   assert.equal(calls.clicks, 3)
 })
+
+// A relay signs its own bootstrap registration, so on a real deployment the
+// registration's sender is the relay, not the account running cleanup. Aleph
+// only honours a FORGET from the original sender, so awaiting deregistration
+// there can only burn `timeoutMs` and throw.
+function registrationCleanupHarness(options: {
+  accountAddress: string
+  registrationSender: string | null
+}) {
+  const forgotten: string[][] = []
+  const account: RelayWalletAccount = {
+    address: options.accountAddress,
+    signMessage: async () => '0xsigned',
+  }
+  const driver = {
+    requestDelete: async () => {
+      throw new Error('page is closed')
+    },
+  } as unknown as RelayButtonDriver
+
+  return {
+    forgotten,
+    run: () =>
+      cleanupRelay({
+        page: {} as never,
+        account,
+        instanceName: 'relay-run-1',
+        instanceHash: 'b'.repeat(64),
+        registrationHash: 'c'.repeat(64),
+        driver,
+        timeoutMs: 1_000,
+        pollIntervalMs: 0,
+        // The sender lookup and the deregistration poll hit the same
+        // `/api/v0/messages/<hash>` URL and read different fields of it, so one
+        // response serves both: `message.sender` for ownership, top-level
+        // `status` for whether it has been forgotten.
+        fetch: async () => {
+          if (options.registrationSender === null) throw new Error('replica unreachable')
+          return Response.json({
+            status: 'forgotten',
+            message: { sender: options.registrationSender },
+          })
+        },
+        hooks: {
+          verify: async () => 'api: forgotten; scheduler: unallocated',
+          erase: async () => ({
+            status: 'erased',
+            crnUrl: 'https://crn.example',
+            crnHash: 'crn',
+            source: 'provided',
+          }),
+          forget: async ({ hashes }) => {
+            forgotten.push([...hashes])
+            return {
+              sender: account.address,
+              itemHash: 'forget-hash',
+              response: {},
+              httpStatus: 200,
+              status: 'processed',
+            }
+          },
+        },
+      }),
+  }
+}
+
+test('cleanupRelay does not await a registration the relay owns', async () => {
+  const harness = registrationCleanupHarness({
+    accountAddress: '0x1234',
+    registrationSender: '0xRELAY',
+  })
+
+  const result = await harness.run()
+
+  assert.match(result.registrationVerificationSummary ?? '', /belongs to 0xRELAY/u)
+  assert.match(result.registrationVerificationSummary ?? '', /only the relay itself/u)
+  // The unowned hash must stay out of the FORGET: Aleph rejects the whole
+  // request, which would take the INSTANCE down with it and leave a billing VM.
+  assert.deepEqual(harness.forgotten, [['b'.repeat(64)]])
+})
+
+test('cleanupRelay forgets and awaits a registration it owns, ignoring case', async () => {
+  const harness = registrationCleanupHarness({
+    accountAddress: '0x1234',
+    registrationSender: '0X1234',
+  })
+
+  const result = await harness.run()
+
+  assert.deepEqual(harness.forgotten, [['b'.repeat(64), 'c'.repeat(64)]])
+  assert.match(result.registrationVerificationSummary ?? '', /forgotten/u)
+})
+
+test('cleanupRelay does not await a registration whose sender cannot be read', async () => {
+  const harness = registrationCleanupHarness({
+    accountAddress: '0x1234',
+    registrationSender: null,
+  })
+
+  const result = await harness.run()
+
+  // Unreadable is not the same as unowned: a transient API problem must not be
+  // escalated into a cleanup failure, nor into an unowned hash in the FORGET.
+  assert.match(result.registrationVerificationSummary ?? '', /sender could not be read/u)
+  assert.deepEqual(harness.forgotten, [['b'.repeat(64)]])
+})
