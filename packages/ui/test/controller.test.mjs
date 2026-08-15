@@ -1135,3 +1135,67 @@ test("localStorage.LE_SPACE_CRN_SOURCE steers the CRN source at runtime", async 
     globalThis.localStorage = originalLocalStorage;
   }
 });
+
+test("address load reports the real cause instead of a raw DOMException", async () => {
+  const originalFetch = globalThis.fetch;
+  const walletAddress = "0x1234000000000000000000000000000000000000";
+  const itemHash = "e".repeat(64);
+
+  const controllerWithProxy = () => {
+    const controller = createSponsorRelayController();
+    controller.patch({
+      wallet: {
+        connected: true,
+        address: walletAddress,
+        chainId: "0x1",
+        isMetaMask: true,
+      },
+      instances: [
+        {
+          instance: { item_hash: itemHash, type: "INSTANCE" },
+          details: { proxyHostname: "relay.example.com", mappedPorts: [] },
+        },
+      ],
+    });
+    return controller;
+  };
+
+  try {
+    // A guest whose image predates the address routes: its proxy falls through
+    // to the WebSocket backend and hangs up, which the browser reports as a
+    // bare "Failed to fetch".
+    globalThis.fetch = async () => {
+      throw new TypeError("Failed to fetch");
+    };
+    const closed = controllerWithProxy();
+    await closed.loadInstanceAddresses(itemHash, { force: true });
+    const closedState = closed.getState().instanceAddresses[itemHash];
+    assert.equal(closedState.status, "error");
+    assert.match(closedState.error, /closed the connection without answering/);
+    assert.match(closedState.error, /rootfs 0\.8\.0/);
+    assert.match(closedState.error, /relay\.example\.com\/multiaddrs/);
+
+    // An abort must not leak Chrome's "signal is aborted without reason".
+    globalThis.fetch = async () => {
+      const abortError = new Error("signal is aborted without reason");
+      abortError.name = "AbortError";
+      throw abortError;
+    };
+    const aborted = controllerWithProxy();
+    await aborted.loadInstanceAddresses(itemHash, { force: true });
+    const abortedState = aborted.getState().instanceAddresses[itemHash];
+    assert.equal(abortedState.status, "error");
+    assert.match(abortedState.error, /did not answer within 10s/);
+    assert.doesNotMatch(abortedState.error, /without reason/);
+
+    // A guest that does answer 404 keeps the friendly "no address document".
+    globalThis.fetch = async () => new Response("", { status: 404 });
+    const missing = controllerWithProxy();
+    await missing.loadInstanceAddresses(itemHash, { force: true });
+    const missingState = missing.getState().instanceAddresses[itemHash];
+    assert.equal(missingState.status, "unsupported");
+    assert.match(missingState.error, /does not publish an address document/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
