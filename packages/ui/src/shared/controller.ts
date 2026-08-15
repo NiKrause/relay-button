@@ -405,6 +405,36 @@ function hostnameOfUrl(value: string | null | undefined): string | null {
   }
 }
 
+const INSTANCE_ADDRESS_TIMEOUT_MS = 10000;
+
+/**
+ * Turns a transport-level failure into something a person can act on.
+ *
+ * The raw messages are actively misleading here. An abort surfaces as Chrome's
+ * "signal is aborted without reason", and the most common cause of all --
+ * a guest whose image predates the address-document routes -- surfaces as a
+ * bare "Failed to fetch". That guest is not silent: its proxy falls through to
+ * the WebSocket backend, which hangs up on a plain GET, so the 404 branch that
+ * would have explained the situation is never reached.
+ */
+function describeInstanceAddressFailure(error: unknown, sourceUrl: string): string {
+  const raw = error instanceof Error ? error.message : String(error);
+
+  if (error instanceof Error && error.name === "AbortError") {
+    return `${sourceUrl} did not answer within ${INSTANCE_ADDRESS_TIMEOUT_MS / 1000}s. Press Refresh to try again.`;
+  }
+
+  if (error instanceof TypeError || /failed to fetch|load failed|networkerror/i.test(raw)) {
+    return (
+      `${sourceUrl} closed the connection without answering. ` +
+      `Relays built before rootfs 0.8.0 do not serve an address document, and their proxy hangs up instead of returning 404 — ` +
+      `redeploying from a current rootfs fixes it. (${raw})`
+    );
+  }
+
+  return raw;
+}
+
 function emptyInstanceAddresses(): SponsorRelayInstanceAddresses {
   return {
     status: "idle",
@@ -3561,14 +3591,22 @@ export class SponsorRelayController {
       error: null,
     });
 
+    const abort = new AbortController();
+    const timeout = globalThis.setTimeout(
+      () => abort.abort(),
+      INSTANCE_ADDRESS_TIMEOUT_MS,
+    );
+
     try {
-      const abort = new AbortController();
-      const timeout = globalThis.setTimeout(() => abort.abort(), 10000);
-      const response = await fetch(sourceUrl, {
-        cache: "no-cache",
-        signal: abort.signal,
-      });
-      globalThis.clearTimeout(timeout);
+      let response: Response;
+      try {
+        response = await fetch(sourceUrl, {
+          cache: "no-cache",
+          signal: abort.signal,
+        });
+      } finally {
+        globalThis.clearTimeout(timeout);
+      }
 
       if (response.status === 404) {
         // A profile that publishes no address document at all. Say so, rather
@@ -3600,7 +3638,7 @@ export class SponsorRelayController {
           emptyInstanceAddresses()),
         status: "error",
         sourceUrl,
-        error: error instanceof Error ? error.message : String(error),
+        error: describeInstanceAddressFailure(error, sourceUrl),
       });
     }
   }
