@@ -73,22 +73,33 @@ test('every HTTP path a profile routes is named in the rootfs contract', () => {
   )
 })
 
-test('the quick start does not tell readers to install the latest dist-tag blindly', () => {
-  // `latest` trails `next` by design: releases are promoted only after consumer
-  // testing. A bare install therefore hands over a build that predates the
-  // features the rest of the docs describe.
-  const page = read('docs/docusaurus/docs/getting-started.md')
+test('the docs do not claim which dist-tag is ahead', () => {
+  // Which tag is newer depends on where a release sits in the publish-then-
+  // promote cycle, so any page asserting an order is right only until the next
+  // promotion. This check replaced one that banned a bare `npm install`: that
+  // rule was written while `latest` was stale, and it outlived the staleness --
+  // it would have kept the docs recommending `@next` after `latest` moved past
+  // it. Say what the tags are for; let the reader ask which is current.
+  const pages = docPages()
 
-  const bare = [...page.matchAll(/npm install (@le-space\/[a-z-]+)\s*$/gm)].map((m) => m[1])
+  const claims = pages
+    .flatMap((file) => {
+      const text = readFileSync(file, 'utf8')
+      const found = []
+      if (/`?latest`? is behind/i.test(text)) found.push('asserts latest is behind')
+      if (/install .*@next/.test(text)) found.push('recommends installing @next')
+      return found.map((claim) => `${relative(repo, file)} → ${claim}`)
+    })
+
   assert.deepEqual(
-    bare,
+    claims,
     [],
-    `unpinned install of ${bare.join(', ')}. Use @next or an explicit version — ` +
-      'a bare install resolves to `latest`, which is deliberately behind.',
+    `stale tag claims:\n  ${claims.join('\n  ')}\n` +
+      'Point readers at `npm view <pkg> dist-tags` instead of naming a winner.',
   )
 
   assert.match(
-    page,
+    read('docs/docusaurus/docs/getting-started.md'),
     /dist-tag/,
     'the quick start installs from a tag but never explains that two exist',
   )

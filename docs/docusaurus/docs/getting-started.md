@@ -49,25 +49,22 @@ the pricing check before anything is signed.
 The shortest possible integration. Install the shared UI package:
 
 ```bash
-npm install @le-space/ui@next
+npm install @le-space/ui
 ```
 
-:::caution `latest` is behind
+:::note Pin it in anything you ship
 
-Releases go out under the `next` dist-tag first and are promoted to `latest`
-only after they have been tested in a consumer app. A plain
-`npm install @le-space/ui` therefore installs whatever was last promoted, which
-can be several releases old and will not have the features described elsewhere
-in these docs.
-
-Ask npm what you would actually get before you pin:
+That installs the `latest` dist-tag. Releases are published under `next` and
+promoted to `latest` once they have been tested in a consumer app, so between
+those two moments `next` is the newer one. Which tag is ahead depends on where
+a release sits in that cycle — ask rather than assume:
 
 ```bash
 npm view @le-space/ui dist-tags
 ```
 
-Pin an exact version in an app you ship. `@next` is for trying the current
-release; it moves under you.
+Then pin an exact version. Both tags move under a project that installed
+without one.
 
 :::
 

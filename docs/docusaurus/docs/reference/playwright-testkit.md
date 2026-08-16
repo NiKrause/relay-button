@@ -13,7 +13,7 @@ evidence, and verified teardown.
 ## Installation and compatibility
 
 ```bash
-npm install --save-dev @le-space/playwright@next @playwright/test@1.61.1
+npm install --save-dev @le-space/playwright @playwright/test@1.61.1
 ```
 
 `@playwright/test` is a peer dependency. The current package supports Playwright

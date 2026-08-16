@@ -11,11 +11,12 @@ your own UI, your own flow, or a PWA that only needs to *read* Aleph state.
 ## Install
 
 ```bash
-npm install @le-space/browser@next
+npm install @le-space/browser
 ```
 
-Releases go out under `next` first; see the note in
-[Getting Started](../getting-started.md) on why a plain install can be behind.
+Pin a version rather than a tag. `latest` and `next` move independently of each
+other, so neither is reliably the newer one — see the note in
+[Getting Started](../getting-started.md).
 
 The package is browser-first: it assumes `fetch`, and the wallet functions
 assume an injected EIP-1193 provider. It carries no Node built-ins, so it
