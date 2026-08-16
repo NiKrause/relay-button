@@ -83,6 +83,8 @@ These should remain local to apps until the browser package has a stable base:
 
 ## Source Of Truth
 
-The detailed extraction roadmap lives in:
-
-- `docs/docusaurus/docs/architecture/browser-extraction-plan.md`
+- [Browser package reference](https://nikrause.github.io/relay-button/docs/reference/browser)
+  — the client, what each module owns, and what this package deliberately does
+  not own
+- [Package boundaries](https://nikrause.github.io/relay-button/docs/architecture/package-boundaries)
+  — how this layer relates to `@le-space/core` and `@le-space/ui`

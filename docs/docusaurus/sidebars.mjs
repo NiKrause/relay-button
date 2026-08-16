@@ -1,7 +1,11 @@
 // Task-oriented navigation: a first-time reader should reach "how do I use
 // this" before internal architecture. "How-to" holds the pages you act on,
-// "Deep dives" the design/ops narratives you read once, "Design notes" the
-// internal RFCs that describe proposals rather than shipped behaviour.
+// "Deep dives" the design/ops narratives you read once.
+//
+// Every page here describes shipped behaviour. Proposals belong in the issue
+// tracker, not in a docs category — a reader cannot tell a plan from a fact
+// once both are rendered as a docs page, and stale plans quietly discredit the
+// pages around them.
 const sidebars = {
   docsSidebar: [
     'overview/index',
@@ -45,15 +49,6 @@ const sidebars = {
         'reference/relay-dialability-timeline',
         'reference/rootfs-contract',
         'reference/aleph-bootstrap-operations',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Design notes',
-      collapsed: true,
-      items: [
-        'architecture/browser-extraction-plan',
-        'architecture/browser-guest-setup-refactor-plan',
       ],
     },
     'reference/branding',

@@ -198,18 +198,18 @@ Current real references include:
 See also:
 
 - [Examples And Real Integrations](../architecture/examples-and-integrations.md)
-- [Browser Guest Setup Refactor Plan](../architecture/browser-guest-setup-refactor-plan.md)
 
 ### Recommended Reading Order
 
 1. [Package Boundaries](../architecture/package-boundaries.md)
 2. [Examples And Real Integrations](../architecture/examples-and-integrations.md)
-3. [Browser Guest Setup Refactor Plan](../architecture/browser-guest-setup-refactor-plan.md)
-4. [Deployment Lifecycle](../architecture/deployment-lifecycle.md)
-5. [Aleph Bootstrap Reference](../reference/aleph-bootstrap.md)
-6. [Aleph Bootstrap Operations](../reference/aleph-bootstrap-operations.md)
-7. [UI Package Reference](../reference/ui.md)
-8. [Node CLI Reference](../reference/node-cli.md)
+3. [Deployment Lifecycle](../architecture/deployment-lifecycle.md)
+4. [Aleph Bootstrap Reference](../reference/aleph-bootstrap.md)
+5. [Aleph Bootstrap Operations](../reference/aleph-bootstrap-operations.md)
+6. [UI Package Reference](../reference/ui.md)
+7. [Core Package Reference](../reference/core.md)
+8. [Browser Package Reference](../reference/browser.md)
+9. [Node CLI Reference](../reference/node-cli.md)
 9. [GitHub Action Reference](../reference/github-action.md)
 10. [Rootfs Contract Reference](../reference/rootfs-contract.md)
 11. [Reusable Workflow Reference](../reference/reusable-workflow.md)
