@@ -55,23 +55,11 @@ Add the Relay Button widget to this Svelte app.
 2. Import the Svelte entrypoint — `import SponsorRelayFab from '@le-space/ui/svelte'`
    — and render it once at the app's root layout so the floating launcher is
    available on every page.
-3. Configure it with these props only (this is the full supported prop set;
-   do not invent others):
-   - manifestUrl: string, defaults to './rootfs-manifest.json'
-   - manifestJson: string, an inline manifest instead of a URL
-   - sshPublicKey: string
-   - instanceName: string, defaults to 'sponsor-relay'
-   - showInstances: boolean, defaults to true
-   - openByDefault: boolean, defaults to false
-   - launcherMode: 'floating' | 'inline', defaults to 'floating'
-   - version: string
-   - apiHost: string
-   - apiHosts: string or string array
-   - crnListUrl: string
-   - schedulerApiHost: string
-   - twoN6ApiHost: string
-   - ucanStoreBootstrap: object, only for the ucan-store profile
-   Set manifestUrl to <YOUR_MANIFEST_URL> and instanceName to <YOUR_APP>-relay.
+3. Set manifestUrl to <YOUR_MANIFEST_URL> and instanceName to <YOUR_APP>-relay.
+   For anything beyond those two, read the Props table at
+   https://nikrause.github.io/relay-button/docs/reference/ui — that table is
+   the complete supported set, with types and defaults. Use only props listed
+   there; do not invent prop names.
 4. Make sure the bundler can handle the component's own CSS import. The package
    also exposes '@le-space/ui/styles.css' if you need the theme separately.
 
@@ -113,13 +101,12 @@ Add the Relay Button widget to this React app.
    same controller.
 3. Render it once near the root of the app tree. It positions itself as a fixed
    floating launcher, so it does not need a layout slot.
-4. Configure it with these props only (the component takes `SponsorRelayProps`;
-   do not invent prop names):
-   manifestUrl, manifestJson, sshPublicKey, instanceName, showInstances,
-   openByDefault, launcherMode ('floating' | 'inline'), version, apiHost,
-   apiHosts, crnListUrl, schedulerApiHost, twoN6ApiHost, ucanStoreBootstrap,
-   debug.
-   Set manifestUrl to <YOUR_MANIFEST_URL> and instanceName to <YOUR_APP>-relay.
+4. Set manifestUrl to <YOUR_MANIFEST_URL> and instanceName to <YOUR_APP>-relay.
+   The component takes `SponsorRelayProps`. For anything beyond those two,
+   read the Props table at
+   https://nikrause.github.io/relay-button/docs/reference/ui — that table is
+   the complete supported set. Use only props listed there; do not invent
+   prop names.
 5. If this is a Next.js app using the App Router, the component is
    client-only — put it in a component with the 'use client' directive and make
    sure it is not server-rendered.
