@@ -166,9 +166,8 @@ Keep local to apps for now:
 
 See also:
 
-- `browser-extraction-plan`
-- `examples-and-integrations`
-- `browser-guest-setup-refactor-plan`
+- [Browser reference](../reference/browser.md)
+- [Examples And Real Integrations](./examples-and-integrations.md)
 
 ## `@le-space/ui`
 
