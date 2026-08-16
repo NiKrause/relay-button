@@ -1,5 +1,38 @@
 # Roadmap
 
+## 0.9.1 — a cleanup that stops failing on something it never owned
+
+`cleanupRelay` waited for the relay's bootstrap registration to be
+deregistered and threw when it was not — a wait that could never succeed
+(#103). A relay publishes its own `relay-bootstrap-v2` POST signed with the
+*relay's* key, and Aleph honours a FORGET only from the original sender, so
+the account running cleanup was never able to forget it. `cleanupRelay` did
+not put the registration in its own FORGET either, so even a registration the
+account did own stayed unforgotten and the wait stayed unreachable. Erasing
+the VM also denies the relay the graceful shutdown in which it would
+deregister itself. Every cleanup therefore burned the full timeout and threw.
+
+The sender is now resolved first. A registration this account cannot forget is
+skipped with the reason reported, because it is not a cleanup failure and
+nothing about it bills; one the account does own is added to the FORGET *and*
+waited for, so the wait can succeed. An unreadable sender is skipped and kept
+out of the FORGET — an unowned hash makes Aleph reject the whole request,
+which would take the INSTANCE cleanup down with it and leave a billing VM.
+
+Downstream this is what kept NiKrause/simple-todo's "Relay button E2E"
+permanently red while every functional assertion in it passed: provisioning
+and two-browser replication succeeded, and only the teardown reported failure.
+
+Also: the Multiaddresses and Health tabs share one `/multiaddrs` request, so a
+single transport failure blanked both and left Chrome's raw "signal is aborted
+without reason" on screen, naming neither the timeout nor the far more common
+real cause (#102).
+
+**Note for whoever publishes this.** `release-packages` defaults to
+`npm_tag: next`, so 0.8.0 and 0.9.0 went out under `next` and the `latest`
+dist-tag still points at 0.7.0 — a plain `npm i @le-space/playwright` installs
+a version from July. Run `promote-npm-dist-tag` after this release.
+
 ## 0.9.0 — CRN discovery without a single point of failure
 
 The deploy path no longer dies with `crns-list.aleph.sh` (#92). When that
