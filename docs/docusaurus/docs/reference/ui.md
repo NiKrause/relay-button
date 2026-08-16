@@ -257,6 +257,16 @@ const { controller, state } = useSponsorRelayController({ manifestUrl })
 - Lists existing deployments with status, IPs, SSH command, mapped ports,
   bootstrap-registration state, and a delete action — plus a way to forget
   orphaned bootstrap registrations.
+- Shows each deployment's own addresses on a **Multiaddresses** tab, read live
+  from `https://<proxy-hostname>/multiaddrs` and grouped by transport, with
+  every row copyable. A **Health** tab renders the raw document. Both load when
+  opened and have their own refresh, because AutoTLS addresses appear a minute
+  or two after a deploy reports success.
+
+  Nothing is ranked here: the panel shows what the relay reported and leaves
+  the choice to you. A profile that publishes no address document is named as
+  such rather than shown as an empty list. What a profile has to serve is in
+  [Rootfs Contract](./rootfs-contract.md#runtime-http-surface).
 
 ## Where it sits in the stack
 
