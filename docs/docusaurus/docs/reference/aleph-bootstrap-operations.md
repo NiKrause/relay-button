@@ -295,136 +295,24 @@ We likely also need at least one of:
 - app-specific namespaces
 - relay-profile-specific namespaces
 
-## Implementation Plan
+## Where Each Decision Landed
 
-The next implementation steps should treat the current system as a useful
-prototype, not the final operational shape.
+The design below was carried out. This section records what was decided and
+where it lives, so the reasoning survives without reading as pending work.
 
-### Phase 1: Preserve The Working Baseline
+| Decision | Implemented in |
+| --- | --- |
+| Deploy-time publish, newest-per-relay discovery, multi-page reads | `packages/aleph-bootstrap/src/index.ts` |
+| Dual-key proofs: owner key authorizes the relay key | `signRelayBootstrapAuthorization`, `packages/core/src/bootstrap-registration.ts` |
+| Read-side verification of those proofs | `verifyDualKeyAttestation`, `packages/aleph-bootstrap/src/index.ts` |
+| Heartbeat refresh from inside the relay VM | `uc-go-peer-bootstrap-refresh.service` and its timer |
+| Forgetting older self-owned records on refresh | `registrationId`-keyed `FORGET` in the deploy path |
+| Consumer query semantics: newest per identity, freshness window, no private multiaddrs | `packages/aleph-bootstrap/src/index.ts` |
 
-- keep the current deploy-time publish flow
-- keep external `refresh-bootstrap` available as the temporary heartbeat path
-- keep forgetting older self-owned bootstrap records whenever a stable
-  `registrationId` is available
-- keep multi-page discovery and newest-per-relay selection in place
+One decision is implemented but not yet in force: verification is opt-in,
+because requiring it would reject legacy records that are still valid. Flipping
+that default is [#108](https://github.com/NiKrause/relay-button/issues/108).
 
-Goal:
-
-- maintain a working bootstrap registry while we add stronger trust semantics
-
-### Phase 2: Introduce Dual-Key Bootstrap Proofs
-
-- generate or inject relay key `B` for the VM
-- define an owner-signed authorization payload from key `A` to key `B`
-- define a relay-signed bootstrap payload from key `B`
-- extend the bootstrap record schema to carry both proof layers
-- keep `peerId`, `multiaddrs`, `browserMultiaddrs`, and `updatedAt` inside the
-  relay-signed payload
-
-Goal:
-
-- make it possible for readers to verify that the relay itself signed the
-  bootstrap record and that this relay key was authorized by the deployment
-  wallet
-
-Status:
-
-- implemented in the shared bootstrap schema and publish helpers
-
-### Phase 3: Verify Dual-Key Records On Read
-
-- add verification helpers in `@le-space/aleph-bootstrap`
-- reject records whose owner authorization is invalid
-- reject records whose relay signature is invalid
-- reject records whose signed relay payload does not match the advertised
-  `peerId` and multiaddrs
-- continue treating successful dial as the real liveness check
-
-Goal:
-
-- move bootstrap trust from "wallet-signed payload we believe" to "relay-signed
-  payload authorized by the deployment wallet"
-
-Status:
-
-- implemented as optional verification on read
-- legacy records are still accepted by default unless
-  `requireDualKeyAttestation: true` is enabled
-
-### Phase 4: Move Heartbeats Into The Relay VM
-
-- keep external `refresh-bootstrap` available as a fallback and repair path
-- let relay key `B` refresh the bootstrap record from inside the VM
-- for both relay profiles, preseed the relay libp2p secp256k1 identity from
-  publisher key `B` before first start when that key is supplied
-- for `orbitdb-relay`, continue supporting the older owner-authorization
-  writeback flow when publisher key `B` is not supplied
-- store only the owner authorization record plus publisher key `B` in the
-  guest
-- run periodic guest-side systemd timers for both relay profiles
-
-Goal:
-
-- make long-lived relays autonomous without storing the main deployment wallet
-  key in the VM
-
-Status:
-
-- implemented for `uc-go-peer` and `orbitdb-relay`
-- both relay profiles now pre-seed the relay libp2p identity from publisher
-  key `B` when it is supplied
-- `orbitdb-relay` still retains the Ed25519 fallback when `B` is not
-  supplied
-- remaining work is mainly operational validation on real deployments and
-  deciding when consumers should require dual-key attestation by default
-
-### Phase 5: Forget Old Self-Owned Records
-
-- keep forgetting older self-owned bootstrap records whenever a stable relay
-  identity is available
-- make sure relay-side refresh continues to replace old records cleanly
-- keep measuring how quickly forgotten records disappear from `posts.json`
-
-Goal:
-
-- reduce namespace clutter caused by our own legitimate refresh traffic
-
-### Phase 6: Tighten Consumer Query Semantics
-
-- keep collapsing records to the newest post per relay identity
-- continue using `registrationId` first, then sender address as fallback
-- keep the freshness window, but apply it to the newest relay record rather
-  than blindly merging every recent post
-- continue filtering out local/private multiaddrs
-
-Goal:
-
-- make bootstrap discovery more stable and less sensitive to duplicate refresh
-  posts
-
-### Phase 7: Reduce Spam Surface
-
-- consider app-specific or environment-specific namespaces instead of one broad
-  shared namespace
-- optionally add sender allowlists for production consumers
-- document what a trusted publisher set looks like for each consuming app
-
-Goal:
-
-- avoid treating every public writer in the namespace as equally trusted
-
-### Phase 8: Clarify Aleph Retention Operationally
-
-- publish a dedicated test record
-- forget it from the same wallet
-- poll `posts.json` and direct message queries until disappearance or stable
-  persistence is observed
-- repeat with time-delayed checks to learn whether ordinary unforgotten `POST`
-  messages are ever pruned automatically
-
-Goal:
-
-- replace our current retention assumptions with measured operational facts
 
 ## Recommended Testing
 
@@ -482,37 +370,22 @@ That experiment would answer the key remaining architecture question:
 - is Aleph P2P publication alone enough for our durable bootstrap registry, or
   do we still need the gateway/CCN write path for indexed retrieval
 
-## Open Questions
+## Still Open
 
-The main open questions left for this feature are:
+Questions the implementation did not settle. The dual-key payload shape, its
+browser-side verification, and whether the relay key doubles as the libp2p
+identity were all answered by building it; these were not.
 
-1. What is the maximum practical lifetime of a bootstrap `POST` on Aleph if it
-   is never forgotten?
-2. What exact `FORGET` flow should we document for operators who want to remove
-   stale or mistaken bootstrap registrations later?
-3. Does P2P publication alone result in the same durable indexed visibility as
-   the current REST/CCN submission path?
-4. Do we want additional consumer-side anti-spam rules beyond freshness and
-   public-multiaddr filtering?
-5. Do we want namespace separation per app, per environment, or per relay
-   profile instead of one shared `simple-todo` namespace?
-6. What exact authorization payload shape do we want from owner key `A` to
-   relay key `B`?
-7. Should the relay key `B` also be the relay's libp2p identity key, or should
-   that remain a separate cryptographic layer?
-8. What is the best way to serialize and verify relay-key signatures in
-   browser-friendly consumers?
+1. How long does an un-forgotten bootstrap `POST` actually survive on Aleph?
+   The 7-day filter consumers apply is an app-side freshness rule, not a
+   retention guarantee, and we have no confirmation from upstream either way.
+2. What `FORGET` flow should an operator follow to remove a stale or mistaken
+   registration by hand? Automatic self-forget covers our own refresh traffic,
+   not human error.
+3. Do consumers want anti-spam rules beyond freshness and public-multiaddr
+   filtering?
+4. Should the namespace be separated per app, per environment, or per relay
+   profile, instead of one shared `simple-todo` namespace?
 
-## Suggested Next Steps
-
-- keep the current 7-day freshness filter for consumers
-- keep live publishing enabled for the relay deployment flows
-- keep the new newest-record-per-identity read semantics in place
-- keep automatic self-`FORGET` for producers that can provide a stable
-  `registrationId`
-- design the exact owner-authorization payload from key `A` to relay key `B`
-- design the exact relay-signed bootstrap payload from key `B`
-- implement read-side verification helpers before switching the preferred
-  heartbeat path to in-guest refresh
-- confirm Aleph retention and moderation expectations in upstream docs or with
-  the Aleph team
+Moving publication and discovery to direct P2P libp2p flows is tracked
+separately in [#5](https://github.com/NiKrause/relay-button/issues/5).

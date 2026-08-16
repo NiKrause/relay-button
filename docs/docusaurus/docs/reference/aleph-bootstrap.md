@@ -422,26 +422,10 @@ Current in-guest refresh behavior:
 This keeps the owner key `A` out of the long-lived guest state once the
 authorization record has been minted.
 
-## P2P Direction
+## Live Validation Requirements
 
-The current architectural direction is not to replace REST reads immediately,
-but to investigate a hybrid model:
-
-- P2P or P2P-bridge publication for live bootstrap announcements
-- REST `posts.json` discovery for startup, history, pagination, and browser
-  backfill
-
-This is based on the current Aleph ecosystem shape:
-
-- Aleph documents P2P broadcast as a supported message transport
-- Aleph maintains a Rust `p2p-service` that exposes gossipsub publication and
-  subscription over HTTP and RabbitMQ
-- we do not yet have source-backed evidence that raw pubsub alone gives us the
-  same durable indexed behavior as the current REST/CCN write path
-
-## Remaining Requirements
-
-The main requirements and caveats left for end-to-end live validation are:
+Requirements and caveats for validating publish and discovery end to end
+against the real network:
 
 - an EVM private key available as `ALEPH_BOOTSTRAP_TEST_PRIVATE_KEY` or
   `ALEPH_PRIVATE_KEY`
@@ -452,27 +436,25 @@ The main requirements and caveats left for end-to-end live validation are:
 - browser consumers still need their own project-level checks because bootstrap
   discovery can be correct while unrelated app type errors still exist
 
-## Next Implementation Focus
+## Known Limits
 
-The main unfinished work for this feature is no longer basic publish/discover
-mechanics. It is completing the stronger same-root signing path across all
-relay profiles:
+**Attestation is opt-in.** `requireDualKeyAttestation` defaults to `false`, so
+a consumer that does not ask for it will accept legacy wallet-signed records.
+The default cannot flip until every relay producer emits an attested record —
+tracked in
+[#108](https://github.com/NiKrause/relay-button/issues/108).
 
-- the wallet that deployed the relay VM
-- the key that refreshes the bootstrap record from the relay
-- the `peerId` that other relays and clients actually dial
+Until it does, treat the shared namespace as publicly writable: consumer-side
+filtering is what carries the trust, not the namespace.
 
-The planned implementation direction is:
+**Liveness is not provable from Aleph.** A record says a relay announced these
+addresses, not that they answer. Check at dial time; see
+[Relay dialability timeline](./relay-dialability-timeline.md) for how that has
+gone wrong in practice.
 
-1. keep the current dual-key authorization payload from owner key `A` to relay
-   key `B`
-2. keep the relay-signed bootstrap payload that key `B` refreshes
-3. validate the new same-root `peerId <- B` model on real deployments for both
-   relay profiles
-4. teach consumers to require dual-key verification by default once the relay
-   producers all emit it
-5. keep actual liveness checks at dial time rather than trying to prove
-   liveness from Aleph alone
+**Transport.** Publication and discovery go over Aleph's REST/CCN path. Moving
+them to direct P2P libp2p flows is under investigation in
+[#5](https://github.com/NiKrause/relay-button/issues/5).
 
 ## Consumer Notes
 
