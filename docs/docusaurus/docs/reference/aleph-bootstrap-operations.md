@@ -39,7 +39,7 @@ Current shared deployment/rootfs profiles:
 relay-bootstrap producer. Its public discovery path is service metadata, not
 relay multiaddr registration posts.
 
-## Current Versus Target Trust Model
+## Trust Model
 
 Current implementation:
 
@@ -53,19 +53,16 @@ Current implementation:
 - `orbitdb-relay` still keeps its older Ed25519-generated fallback when
   no publisher key `B` is supplied
 
-Target implementation:
+Both signature modes are supported today, and readers can verify the dual-key
+form. What is not yet in force is *requiring* it: owner key `A` authorizes
+relay key `B`, `B` signs the payload it republishes, and a reader could
+verify both — but demanding that would reject legacy wallet-signed records that
+remain valid. Flipping the default is
+[#108](https://github.com/NiKrause/relay-button/issues/108).
 
-- owner key `A` is the deployment wallet
-- relay key `B` is a separate key stored in the relay VM
-- owner key `A` signs an authorization for relay key `B`
-- relay key `B` signs the bootstrap payload it republishes
-- readers verify both signatures before trusting the record
+Superseded during design: "single key for everything", "derived child key
+recognized by Aleph", and "Aleph publish-on-behalf as the primary trust model".
 
-This dual-key model is now the intended direction for the feature. Older
-competing ideas such as "single key for everything", "derived child key
-recognized by Aleph", or "Aleph publish-on-behalf as the primary trust model"
-should be treated as superseded design exploration rather than the active
-plan.
 
 ## Current Write Path
 
@@ -84,40 +81,21 @@ combination of:
 - continued REST/indexed reads for browser startup discovery
 - and a relay-side dual-key refresh model once reader verification is in place
 
-## Research Update
+## Why Publication Still Goes Over REST
 
-Our current upstream reading suggests the right framing is slightly more
-specific than "direct libp2p publishing" alone.
+Aleph documents two submission paths: a Core Channel Node gateway, and
+broadcast on the Aleph peer-to-peer network. First-party code exposes a Rust
+`p2p-service` with gossipsub publish/subscribe, HTTP `identify`/`dial`
+endpoints, and RabbitMQ bridging.
 
-What Aleph clearly documents:
+What does not exist, as far as we could establish: a browser-ready TypeScript
+SDK for direct P2P publication, a replacement for indexed history queries such
+as `posts.json`, or evidence that raw pubsub yields the same durable indexed
+behaviour the REST path gives us today.
 
-- messages can be submitted to a Core Channel Node gateway
-- messages can also be broadcast on the Aleph peer-to-peer network
+So publication and discovery stay on REST/CCN. Moving them is tracked in
+[#5](https://github.com/NiKrause/relay-button/issues/5).
 
-What Aleph currently exposes in first-party code:
-
-- a dedicated Rust `p2p-service`
-- gossipsub-based publish and subscribe support
-- HTTP endpoints for `identify` and `dial`
-- RabbitMQ exchanges for P2P publish and subscribe bridging
-
-What we did **not** find yet:
-
-- a first-party browser-ready TypeScript SDK for direct Aleph P2P message
-  publication
-- a source-backed replacement for indexed REST history queries such as
-  `posts.json`
-- clear proof that raw pubsub publication alone yields the same durable indexed
-  message behavior we currently rely on
-
-So the most accurate current plan is:
-
-- short term: keep REST reads and optionally add P2P publication via an
-  Aleph-supported bridge
-- medium term: test whether P2P publication can coexist with or replace gateway
-  submission
-- long term: revisit native direct libp2p publication only if Aleph documents
-  the exact message topic, protocol, and durable-ingestion expectations we need
 
 ## What We Verified
 
