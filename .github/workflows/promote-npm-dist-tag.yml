@@ -52,7 +52,11 @@ jobs:
           if [[ -n "${{ inputs.version }}" ]]; then
             echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           else
-            node -p "const pkg=require('./package.json'); console.log('value=' + pkg.version)" >> "$GITHUB_OUTPUT"
+            # `-e`, not `-p`: `-p` prints the expression's value on top of
+            # whatever it printed itself, so `console.log(...)` wrote the line
+            # *and* a second line reading `undefined`. That is not a key=value
+            # pair, so the step failed before it could promote anything.
+            echo "value=$(node -e "process.stdout.write(require('./package.json').version)")" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Promote dist-tag
