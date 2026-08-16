@@ -39,6 +39,7 @@
 		"test": "pnpm -r --filter './packages/*' --if-present run test",
 		"lint": "pnpm -r lint",
 		"docs:dev": "pnpm --dir docs/docusaurus start",
-		"docs:build": "pnpm --dir docs/docusaurus build"
+		"docs:build": "pnpm --dir docs/docusaurus build",
+		"docs:check": "node --test scripts/docs-drift.test.mjs"
 	}
 }

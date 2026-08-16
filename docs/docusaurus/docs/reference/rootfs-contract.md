@@ -202,6 +202,7 @@ behind a bare `handle` they never match.
 | --- | --- | --- |
 | `/health` | all | Readiness. Shape is profile-specific. |
 | `/multiaddrs` | libp2p profiles | The relay's dialable addresses. |
+| `/multiaddresses` | `orbitdb-relay` | Spelled-out alias of `/multiaddrs`. |
 | `/describe` | `uc-go-peer` | Same document as `/multiaddrs`, shared name. |
 | `/metrics`, `/pinning/*`, `/ipfs/*` | `orbitdb-relay` | Its own API surface. |
 | `/bootstrap/*` | `uc-go-peer` | Guest configuration handoff. |

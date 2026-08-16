@@ -78,5 +78,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
 
+      # Catches documentation that has fallen behind the code — undocumented
+      # props or HTTP paths, an install command that resolves to a stale
+      # dist-tag, a page that reads as a plan rather than a description.
+      - name: Check docs against the source
+        run: pnpm docs:check
+
       - name: Build docs
         run: pnpm docs:build
