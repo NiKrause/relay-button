@@ -22,7 +22,7 @@ owner of the app or its primary data.
 Embedding the button takes one dependency and one component:
 
 ```bash
-npm install @le-space/ui@next
+npm install @le-space/ui
 ```
 
 ```svelte
@@ -38,9 +38,9 @@ React, props, theming, and driving the controller yourself are in
 CI instead of a browser is in
 [GitHub Action](./docs/docusaurus/docs/reference/github-action.md).
 
-> Releases go out under the `next` dist-tag and are promoted to `latest` only
-> after consumer testing, so a plain install can be several releases behind.
-> `npm view @le-space/ui dist-tags` tells you what you would get.
+> Pin a version. Releases are published under `next` and promoted to `latest`
+> after consumer testing, so which tag is newer depends on where a release is
+> in that cycle. `npm view @le-space/ui dist-tags` answers it for today.
 
 ## Packages
 

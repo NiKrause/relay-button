@@ -14,10 +14,11 @@ Reach for it directly when you are building a fourth way.
 ## Install
 
 ```bash
-npm install @le-space/core@next
+npm install @le-space/core
 ```
 
-Releases go out under `next` first; see the note in
+Pin a version rather than a tag. `latest` and `next` move independently of each
+other, so neither is reliably the newer one — see the note in
 [Getting Started](../getting-started.md).
 
 `@le-space/core` takes `fetch` and a signer as arguments rather than reaching
