@@ -183,6 +183,62 @@ This is how the contract becomes the bridge between:
 - shared RootFS reference assets
 - guest build/runtime behavior
 
+## Runtime HTTP Surface
+
+The contract file describes what gets *built*. This section describes what a
+deployed guest must *answer*, which is a separate contract and the one
+consumers actually call.
+
+Everything here has to be reachable through the deployment's HTTPS proxy
+hostname, not only on the mapped port. The mapped ports are plain HTTP, and a
+browser on an HTTPS page refuses to fetch them as mixed content — an app that
+can only reach a guest over `http://<host>:<mapped-port>` cannot reach it at
+all. Route named paths *before* any catch-all in the profile's Caddyfile;
+behind a bare `handle` they never match.
+
+### Paths
+
+| Path | Profiles | Answers |
+| --- | --- | --- |
+| `/health` | all | Readiness. Shape is profile-specific. |
+| `/multiaddrs` | libp2p profiles | The relay's dialable addresses. |
+| `/describe` | `uc-go-peer` | Same document as `/multiaddrs`, shared name. |
+| `/metrics`, `/pinning/*`, `/ipfs/*` | `orbitdb-relay` | Its own API surface. |
+| `/bootstrap/*` | `uc-go-peer` | Guest configuration handoff. |
+
+`/multiaddrs` is the one path a consumer can rely on across libp2p profiles.
+`orbitdb-relay` has served it natively since 0.10; `uc-go-peer` answers it from
+its setup server as of 0.8.0, under both names.
+
+### Address document
+
+Two shapes exist and a consumer should read whichever it gets rather than
+branch on the profile name:
+
+- `orbitdb-relay` groups addresses under `byTransport`, alongside `all`,
+  `peerId` and `version`.
+- `uc-go-peer` uses `<transport>_multiaddrs` keys — `direct_tcp`,
+  `autotls_wss`, `proxy_wss`, `webtransport`, `webrtc_direct`,
+  `browser_bootstrap`, `probe` — alongside `peer_id` and `profile`.
+
+A profile that publishes no libp2p addresses answers `404`, which consumers
+must present as "this profile publishes no address document" rather than as an
+empty address list.
+
+Do not treat any single field as *the* address to use. `orbitdb-relay` reports
+a `best` object whose `websocket` entry has pointed at the Caddy port rather
+than the relay (see the relay dialability timeline); the deployment card
+deliberately ignores it and shows what the relay reported instead.
+
+### Where this is implemented
+
+- `packages/rootfs/reference/uc-go-peer/rootfs/uc-go-peer-configure.sh` —
+  `render_proxy_caddyfile`, named handles ahead of the WebSocket catch-all
+- `packages/rootfs/reference/uc-go-peer/rootfs/uc-go-peer-setup-server.py` —
+  `_handle_describe`, unwrapping the readiness envelope
+- `packages/rootfs/reference/orbitdb-relay/rootfs/orbitdb-relay-configure.sh` —
+  the full API surface proxied to the metrics port
+
 ## Recommended Consumer Pattern
 
 For consumer repos:

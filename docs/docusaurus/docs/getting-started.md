@@ -49,8 +49,27 @@ the pricing check before anything is signed.
 The shortest possible integration. Install the shared UI package:
 
 ```bash
-npm install @le-space/ui
+npm install @le-space/ui@next
 ```
+
+:::caution `latest` is behind
+
+Releases go out under the `next` dist-tag first and are promoted to `latest`
+only after they have been tested in a consumer app. A plain
+`npm install @le-space/ui` therefore installs whatever was last promoted, which
+can be several releases old and will not have the features described elsewhere
+in these docs.
+
+Ask npm what you would actually get before you pin:
+
+```bash
+npm view @le-space/ui dist-tags
+```
+
+Pin an exact version in an app you ship. `@next` is for trying the current
+release; it moves under you.
+
+:::
 
 `@le-space/ui` declares `react >=18`, `react-dom >=18`, and `svelte >=4` as peer
 dependencies. Install whichever framework you actually use; you do not need
