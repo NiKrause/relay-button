@@ -1,7 +1,7 @@
 <script>
   import { onDestroy, onMount } from 'svelte'
 
-  import { UI_PACKAGE_VERSION, createSponsorRelayController, formatDateTime, formatNumber, formatTierSpecLabel, joinMappedPorts, joinRequiredPortForwards, shortHash } from '../shared/index'
+  import { UI_PACKAGE_VERSION, anchorPanelToLauncher, clampToViewport, createSponsorRelayController, readStoredPosition, resolveCornerPlacement, writeStoredPosition, formatDateTime, formatNumber, formatTierSpecLabel, joinMappedPorts, joinRequiredPortForwards, shortHash } from '../shared/index'
   import AccordionSection from './components/AccordionSection.svelte'
   import CopyButton from './components/CopyButton.svelte'
   import LauncherButton from './components/LauncherButton.svelte'
@@ -23,6 +23,9 @@ export let apiHosts = undefined
   export let crnSource = undefined
   export let schedulerApiHost = undefined
   export let twoN6ApiHost = undefined
+  export let position = 'bottom-right'
+  export let draggable = false
+  export let positionStorageKey = undefined
 
   const controller = createSponsorRelayController({
     manifestUrl,
@@ -131,13 +134,93 @@ export let apiHosts = undefined
       .join('\n')
   }
 
+  // Placement lives here rather than in the launcher because the panel has to
+  // be anchored to it, and only this component renders both.
+  let launcherEl = null
+  let panelEl = null
+  let placement = null
+  let panelPlacement = null
+  let dragOffset = null
+
+  function viewport() {
+    return { width: window.innerWidth, height: window.innerHeight }
+  }
+
+  function launcherSize() {
+    const rect = launcherEl?.getBoundingClientRect()
+    return { width: rect?.width ?? 180, height: rect?.height ?? 44 }
+  }
+
+  function initPlacement() {
+    if (launcherMode !== 'floating' || typeof window === 'undefined') return
+    const stored = readStoredPosition(positionStorageKey)
+    placement = stored
+      ? clampToViewport(stored, launcherSize(), viewport())
+      : resolveCornerPlacement(position, launcherSize(), viewport())
+    updatePanelPlacement()
+  }
+
+  function updatePanelPlacement() {
+    if (!state.open || !placement || launcherMode !== 'floating') {
+      panelPlacement = null
+      return
+    }
+    const panelRect = panelEl?.getBoundingClientRect()
+    panelPlacement = anchorPanelToLauncher(
+      { ...placement, ...launcherSize() },
+      { width: panelRect?.width ?? 448, height: panelRect?.height ?? 520 },
+      viewport(),
+    )
+  }
+
+  function handleDragStart(point) {
+    if (!placement) return
+    // Remember where inside the button the finger landed, so it does not jump
+    // to the pointer on the first move.
+    dragOffset = { x: point.x - placement.left, y: point.y - placement.top }
+  }
+
+  function handleDragMove(point) {
+    if (!dragOffset) return
+    placement = clampToViewport(
+      { left: point.x - dragOffset.x, top: point.y - dragOffset.y },
+      launcherSize(),
+      viewport(),
+    )
+    updatePanelPlacement()
+  }
+
+  function handleDragEnd(wasDragging) {
+    dragOffset = null
+    if (wasDragging && placement) writeStoredPosition(positionStorageKey, placement, viewport())
+  }
+
+  function handleViewportChange() {
+    if (!placement) return
+    placement = clampToViewport(placement, launcherSize(), viewport())
+    updatePanelPlacement()
+  }
+
+  $: if (state.open !== undefined) updatePanelPlacement()
+
+  $: panelStyle = panelPlacement
+    ? `left:${panelPlacement.left}px;top:${panelPlacement.top}px;right:auto;bottom:auto;max-height:${panelPlacement.maxHeight}px;`
+    : ''
+
   onMount(async () => {
     const unsubscribe = controller.subscribe((next) => {
       state = next
     })
 
     await controller.init()
-    return unsubscribe
+    initPlacement()
+    window.addEventListener('resize', handleViewportChange)
+    window.addEventListener('orientationchange', handleViewportChange)
+    return () => {
+      window.removeEventListener('resize', handleViewportChange)
+      window.removeEventListener('orientationchange', handleViewportChange)
+      unsubscribe()
+    }
   })
 
   onDestroy(() => {
@@ -145,14 +228,24 @@ export let apiHosts = undefined
   })
 </script>
 
-<LauncherButton open={state.open} onToggle={() => controller.toggleOpen()} mode={launcherMode} />
+<LauncherButton
+  bind:element={launcherEl}
+  open={state.open}
+  onToggle={() => controller.toggleOpen()}
+  mode={launcherMode}
+  {placement}
+  {draggable}
+  onDragStart={handleDragStart}
+  onDragMove={handleDragMove}
+  onDragEnd={handleDragEnd}
+/>
 
 {#if state.open}
   <div class="backdrop" on:click={() => controller.setOpen(false)}></div>
 {/if}
 
 {#if state.open}
-  <aside class="panel">
+  <aside class="panel" bind:this={panelEl} style={panelStyle}>
     <div class="panel-head">
       <div>
         <p class="eyebrow">

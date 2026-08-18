@@ -1,10 +1,68 @@
 <script>
+  import { dragExceedsThreshold } from '../../shared/index'
+
   export let open = false
   export let onToggle = () => {}
   export let mode = 'floating'
+  /** Absolute placement from the parent, or null to use the CSS corner default. */
+  export let placement = null
+  export let draggable = false
+  /** Called with the pointer position while dragging; the parent owns the maths. */
+  export let onDragStart = () => {}
+  export let onDragMove = () => {}
+  export let onDragEnd = () => {}
+  /** Bound by the parent so it can measure the launcher to anchor the panel. */
+  export let element = null
+
+  let dragging = false
+  let pressOrigin = null
+
+  function handlePointerDown(event) {
+    if (!draggable || mode !== 'floating' || event.button > 0) return
+    pressOrigin = { x: event.clientX, y: event.clientY }
+    dragging = false
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    onDragStart(pressOrigin)
+  }
+
+  function handlePointerMove(event) {
+    if (!pressOrigin) return
+    const point = { x: event.clientX, y: event.clientY }
+    // Only become a drag once the pointer has travelled far enough; below the
+    // threshold this is still a press that should open the panel.
+    if (!dragging && !dragExceedsThreshold(pressOrigin, point)) return
+    dragging = true
+    onDragMove(point)
+  }
+
+  function handlePointerUp(event) {
+    if (!pressOrigin) return
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    const wasDragging = dragging
+    pressOrigin = null
+    dragging = false
+    onDragEnd(wasDragging)
+    // A drag must not also toggle the panel; a tap must.
+    if (!wasDragging) onToggle()
+  }
+
+  $: placementStyle =
+    placement && mode === 'floating'
+      ? `left:${placement.left}px;top:${placement.top}px;right:auto;bottom:auto;`
+      : ''
 </script>
 
-<button class={`launcher ${mode} ${open ? 'open' : ''}`} type="button" on:click={onToggle}>
+<button
+  bind:this={element}
+  class={`launcher ${mode} ${open ? 'open' : ''} ${draggable ? 'draggable' : ''}`}
+  style={placementStyle}
+  type="button"
+  on:pointerdown={handlePointerDown}
+  on:pointermove={handlePointerMove}
+  on:pointerup={handlePointerUp}
+  on:pointercancel={handlePointerUp}
+  on:click={draggable ? undefined : onToggle}
+>
   <svg class="mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
     <line x1="17" y1="15.4" x2="19.6" y2="13" class="mark-link" stroke-width="2.4" stroke-linecap="round" />
     <circle cx="11.5" cy="20.5" r="7" class="mark-node" />
@@ -51,6 +109,12 @@
     right: 1.4rem;
     bottom: 5.8rem;
     z-index: 10000;
+  }
+
+  .launcher.draggable {
+    /* Without this the browser scrolls the page instead of moving the button. */
+    touch-action: none;
+    user-select: none;
   }
 
   .launcher.inline {

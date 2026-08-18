@@ -103,6 +103,26 @@ Every prop is optional. The full type is `SponsorRelayProps` in
 | `schedulerApiHost` | `string` | `'https://scheduler.api.aleph.cloud'` | Aleph scheduler used to resolve the allocation for a submitted instance. |
 | `twoN6ApiHost` | `string` | `'https://api.2n6.me'` | 2n6 API used to resolve the VM's HTTPS hostname, which the controller probes before declaring a relay reachable. |
 | `ucanStoreBootstrap` | `Partial<SponsorRelayUcanStoreBootstrapInput>` | see below | Pre-fills the UCAN Store bootstrap form. Only used when the manifest declares `profile: "ucan-store"`. |
+| `position` | `'bottom-right' \| 'bottom-left' \| 'top-right' \| 'top-left'` | `'bottom-right'` | Which corner the floating launcher starts in. Ignored when `launcherMode` is `'inline'`, where your own layout places it. |
+| `draggable` | `boolean` | `false` | Let the user drag the launcher. The panel follows it and flips its open direction near an edge. |
+| `positionStorageKey` | `string` | — | `localStorage` key for the dragged position. Omit it and nothing is stored. |
+
+### Placing the launcher
+
+The floating launcher is `position: fixed`, so a wrapper around it cannot move
+it — the wrapper collapses to 0×0 because the child is out of flow. Use these
+props rather than `:global()` overrides against internal class names, which
+couple your app to markup that can change.
+
+```svelte
+<SponsorRelayFab position="bottom-left" draggable positionStorageKey="my-app.relay-fab" />
+```
+
+Two behaviours worth knowing about. A press only becomes a drag after about
+6px of travel, so a tap still opens the panel — a stricter threshold turns
+every press into a one-pixel drag and swallows the click. And the position is
+clamped to the viewport on resize and rotation, so a button dragged to the
+bottom of a tall phone cannot end up unreachable after turning it sideways.
 
 ### `ucanStoreBootstrap` fields
 

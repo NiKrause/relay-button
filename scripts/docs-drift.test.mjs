@@ -30,12 +30,21 @@ test('every SponsorRelayProps prop is documented in the UI reference', () => {
   const props = [...block[1].matchAll(/^ {2}([a-zA-Z]+)\??:/gm)].map((m) => m[1])
   assert.ok(props.length > 5, `only ${props.length} props parsed; the regex has probably stopped matching`)
 
-  // Word-boundary, not substring: `apiHost` and `apiHosts` are both props, and
-  // a plain `includes` would count the shorter one as documented whenever the
-  // longer one appears.
+  // Read the Props table itself rather than searching the page. Two weaker
+  // checks passed a prop that was not documented: a word boundary matched the
+  // English word "position" in prose, and a code span matched `position:
+  // fixed` in a CSS example. The table is the thing consumers read, so the
+  // table is what has to list them.
   const page = read('docs/docusaurus/docs/reference/ui.md')
-  const missing = props.filter((prop) => !new RegExp(`\\b${prop}\\b`).test(page))
+  const documented = new Set(
+    [...page.matchAll(/^\| `([a-zA-Z]+)` \|/gm)].map((row) => row[1]),
+  )
+  assert.ok(
+    documented.size > 5,
+    `only ${documented.size} rows parsed from the Props table; has its shape changed?`,
+  )
 
+  const missing = props.filter((prop) => !documented.has(prop))
   assert.deepEqual(
     missing,
     [],
