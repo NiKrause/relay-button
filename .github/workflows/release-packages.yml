@@ -25,7 +25,7 @@ on:
         type: boolean
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -129,3 +129,45 @@ jobs:
             args+=(--provenance)
           fi
           node ./scripts/publish-from-dist.mjs "${args[@]}"
+
+      # Without this the npm publish is the whole release: every version after
+      # 0.7.0 shipped to npm with no tag and no GitHub release, and the roadmap
+      # went on linking to release notes that did not exist. Runs only on a real
+      # publish, and skips a tag that is already there so a re-run is harmless.
+      - name: Tag the release and publish notes
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          tag="v${version}"
+
+          if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "${tag} already released; leaving it alone."
+            exit 0
+          fi
+
+          # Release notes come from the roadmap entry for this version, so the
+          # release and the repo cannot tell different stories.
+          notes_file="$(mktemp)"
+          node -e "
+            const fs = require('node:fs')
+            const lines = fs.readFileSync('ROADMAP.md', 'utf8').split('\n')
+            const version = process.argv[1]
+            const heading = new RegExp('^## (Shipped: )?' + version.replace(/\./g, '\\.') + ' ')
+            const start = lines.findIndex((line) => heading.test(line))
+            if (start < 0) {
+              console.error('No ROADMAP section for ' + version + '; add one before releasing.')
+              process.exit(1)
+            }
+            let end = lines.findIndex((line, index) => index > start && line.startsWith('## '))
+            if (end < 0) end = lines.length
+            fs.writeFileSync(process.argv[2], lines.slice(start + 1, end).join('\n').trim() + '\n')
+            fs.writeFileSync(process.argv[3], lines[start].replace(/^## (Shipped: )?/, ''))
+          " "${version}" "${notes_file}" /tmp/release-title
+
+          gh release create "${tag}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${GITHUB_SHA}" \
+            --title "$(cat /tmp/release-title)" \
+            --notes-file "${notes_file}"
