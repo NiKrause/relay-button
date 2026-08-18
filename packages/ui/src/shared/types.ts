@@ -11,6 +11,7 @@ import type {
 } from '../../../browser/src/types.ts'
 import type { CrnSource, CrnSourcePreference } from '../../../browser/src/aleph-api.ts'
 import type { DeploymentProgressEvent } from '../../../shared-types/src/deployment.ts'
+import type { FabCorner } from './fab-position'
 
 export type SponsorRelayHealthTone = 'ok' | 'caution' | 'error' | 'idle'
 
@@ -48,6 +49,20 @@ export interface SponsorRelayProps {
   crnSource?: CrnSourcePreference
   schedulerApiHost?: string
   twoN6ApiHost?: string
+  /**
+   * Which corner the floating launcher starts in. Consumers could not place it
+   * at all before: the launcher is `position: fixed`, so a wrapper around it
+   * collapses to 0x0 and has no box to position or drag.
+   */
+  position?: FabCorner
+  /** Let the user drag the launcher. The panel follows it. */
+  draggable?: boolean
+  /**
+   * localStorage key for the dragged position. Omit it and nothing is
+   * persisted -- a library that writes to storage unasked collides with its
+   * host.
+   */
+  positionStorageKey?: string
 }
 
 export interface SponsorRelayWalletState {

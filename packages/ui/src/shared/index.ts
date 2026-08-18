@@ -1,4 +1,5 @@
 export * from './types'
+export * from './fab-position'
 export * from './constants'
 export * from './package-version'
 export * from './format'

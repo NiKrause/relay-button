@@ -8,6 +8,13 @@ import {
   joinMappedPorts,
   joinRequiredPortForwards,
   shortHash,
+  anchorPanelToLauncher,
+  clampToViewport,
+  dragExceedsThreshold,
+  readStoredPosition,
+  resolveCornerPlacement,
+  writeStoredPosition,
+  type FabPlacement,
   type SponsorRelayInstanceAddresses,
   type SponsorRelayProps,
   type SponsorRelayState,
@@ -498,6 +505,14 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
     }
   };
   const launcherRef = React.useRef<HTMLButtonElement | null>(null);
+  const panelRef = React.useRef<HTMLElement | null>(null);
+  const draggable = props.draggable ?? false;
+  const corner = props.position ?? "bottom-right";
+  const storageKey = props.positionStorageKey;
+  const [placement, setPlacement] = React.useState<FabPlacement | null>(null);
+  const dragOrigin = React.useRef<{ x: number; y: number } | null>(null);
+  const dragOffset = React.useRef<{ x: number; y: number } | null>(null);
+  const draggedRef = React.useRef(false);
   const [inlinePanelStyle, setInlinePanelStyle] =
     React.useState<React.CSSProperties | null>(null);
   const [compactInlineLabel, setCompactInlineLabel] = React.useState(false);
@@ -537,6 +552,82 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
       window.clearTimeout(timeout);
     };
   }, [state.deploymentProgress.stage, state.deploymentProgress.timestamp]);
+
+  const viewportSize = () => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+
+  const launcherSize = () => {
+    const rect = launcherRef.current?.getBoundingClientRect();
+    return { width: rect?.width ?? 180, height: rect?.height ?? 44 };
+  };
+
+  // Resolve the floating launcher's own position: a stored one if the consumer
+  // asked us to remember it, otherwise the requested corner. Clamped either
+  // way, because a viewport can shrink between visits.
+  React.useEffect(() => {
+    if (launcherMode !== "floating") {
+      setPlacement(null);
+      return;
+    }
+    const stored = readStoredPosition(storageKey);
+    setPlacement(
+      stored
+        ? clampToViewport(stored, launcherSize(), viewportSize())
+        : resolveCornerPlacement(corner, launcherSize(), viewportSize()),
+    );
+
+    const onViewportChange = () =>
+      setPlacement((current) =>
+        current ? clampToViewport(current, launcherSize(), viewportSize()) : current,
+      );
+    window.addEventListener("resize", onViewportChange);
+    window.addEventListener("orientationchange", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+      window.removeEventListener("orientationchange", onViewportChange);
+    };
+  }, [launcherMode, corner, storageKey]);
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!draggable || launcherMode !== "floating" || event.button > 0 || !placement) return;
+    dragOrigin.current = { x: event.clientX, y: event.clientY };
+    // Grab the offset within the button so it does not jump to the pointer.
+    dragOffset.current = { x: event.clientX - placement.left, y: event.clientY - placement.top };
+    draggedRef.current = false;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const origin = dragOrigin.current;
+    const offset = dragOffset.current;
+    if (!origin || !offset) return;
+    const point = { x: event.clientX, y: event.clientY };
+    // Below the threshold this is still a press that should open the panel.
+    if (!draggedRef.current && !dragExceedsThreshold(origin, point)) return;
+    draggedRef.current = true;
+    setPlacement(
+      clampToViewport(
+        { left: point.x - offset.x, top: point.y - offset.y },
+        launcherSize(),
+        viewportSize(),
+      ),
+    );
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragOrigin.current) return;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    dragOrigin.current = null;
+    dragOffset.current = null;
+    if (draggedRef.current && placement) {
+      writeStoredPosition(storageKey, placement, viewportSize());
+    } else {
+      controller.toggleOpen();
+    }
+    draggedRef.current = false;
+  };
 
   React.useEffect(() => {
     if (launcherMode !== "inline" || !state.open) {
@@ -612,6 +703,34 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
   const inlineButtonBorder = `1px solid ${themedLauncherBorder}`;
   const inlineBadgeBackground = themedLauncherBadgeBackground;
   const inlineBadgeBorder = `1px solid ${themedLauncherBadgeBorder}`;
+  // Anchored to the launcher rather than to its own corner, so a dragged
+  // button keeps its panel. Falls back to the original fixed corner before the
+  // first measurement, which is also what a non-draggable launcher gets.
+  const floatingPanelStyle = (): React.CSSProperties => {
+    if (!placement || typeof window === "undefined") {
+      return {
+        ...basePanelStyle,
+        right: "1.4rem",
+        bottom: "11.5rem",
+        maxHeight: "calc(100vh - 12.5rem)",
+      };
+    }
+    const panelRect = panelRef.current?.getBoundingClientRect();
+    const anchored = anchorPanelToLauncher(
+      { ...placement, ...launcherSize() },
+      { width: panelRect?.width ?? 448, height: panelRect?.height ?? 520 },
+      viewportSize(),
+    );
+    return {
+      ...basePanelStyle,
+      left: anchored.left,
+      top: anchored.top,
+      right: "auto",
+      bottom: "auto",
+      maxHeight: anchored.maxHeight,
+    };
+  };
+
   const panelStyle =
     launcherMode === "inline"
       ? (inlinePanelStyle ?? {
@@ -621,12 +740,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
           maxHeight: "calc(100vh - 6rem)",
           width: "min(30rem, calc(100vw - 1.5rem))",
         })
-      : {
-          ...basePanelStyle,
-          right: "1.4rem",
-          bottom: "11.5rem",
-          maxHeight: "calc(100vh - 12.5rem)",
-        };
+      : floatingPanelStyle();
   const launcherLabel =
     deploymentLauncherLabel(state, compactInlineLabel, launcherMode);
   const rootfsBlocked = state.rootfsHealth.tone === "error";
@@ -644,7 +758,11 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
       <button
         ref={launcherRef}
         type="button"
-        onClick={() => controller.toggleOpen()}
+        onClick={draggable ? undefined : () => controller.toggleOpen()}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onFocus={() => setHovered(true)}
@@ -652,8 +770,13 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
         title={indicator.detail ?? deploymentPanelTitle(state)}
         style={{
           position: launcherMode === "floating" ? "fixed" : "relative",
-          right: launcherMode === "floating" ? "1.4rem" : undefined,
-          bottom: launcherMode === "floating" ? "5.8rem" : undefined,
+          left: launcherMode === "floating" && placement ? placement.left : undefined,
+          top: launcherMode === "floating" && placement ? placement.top : undefined,
+          right: launcherMode === "floating" && !placement ? "1.4rem" : undefined,
+          bottom: launcherMode === "floating" && !placement ? "5.8rem" : undefined,
+          // Without this the browser scrolls the page instead of moving the button.
+          touchAction: draggable ? "none" : undefined,
+          userSelect: draggable ? "none" : undefined,
           zIndex: launcherMode === "floating" ? 10000 : "auto",
           borderRadius: "999px",
           border:
@@ -780,7 +903,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                 "radial-gradient(circle at 88% 82%, var(--le-space-sponsor-relay-backdrop-accent, var(--rb-backdrop-accent)), transparent 34%)",
             }}
           />
-          <aside style={panelStyle}>
+          <aside ref={panelRef} style={panelStyle}>
             <div
               style={{
                 display: "flex",
