@@ -1,5 +1,38 @@
 # Roadmap
 
+## 0.9.2 — a relay button the user can move out of the way
+
+The launcher and the panel each positioned themselves with hardcoded corner
+offsets, so a consumer could not place either (#113). Wrapping the launcher
+does not help and the failure is instructive: it is `position: fixed`, so it is
+out of flow, so the wrapper collapses to 0×0 — no box to position, none to
+drag. That left `:global()` against private class names. On a phone the button
+sat on top of content with no way out.
+
+Three additive props: `position` picks a starting corner, `draggable` lets the
+user move it, `positionStorageKey` remembers where they put it. Defaults leave
+the render unchanged.
+
+The panel now follows the launcher. It was never "above the button" — it was
+`bottom: 11.5rem` next to the launcher's `5.8rem`, two constants that happened
+to agree, so anything moving one would have separated them. It anchors to the
+measured launcher and flips its open direction near an edge.
+
+Patch rather than minor on purpose. It adds exports, but a caret range on a 0.x
+version locks the minor, so `^0.9.1` picks up 0.9.2 and would *not* pick up
+0.10.0 — shipping the fix as a patch is what gets it to consumers without a
+bump PR in each of them.
+
+Also in this release, from the docs audit: a quick start that told readers to
+install a build from July, an HTTP surface (`/multiaddrs`, `/describe`) that no
+page defined, first reference pages for `@le-space/core` and
+`@le-space/browser`, proposals moved out of the reference and into the tracker,
+and a `docs:check` CI job that fails when the docs fall behind the code.
+
+**Before promoting to `latest`:** exercise the drag by hand in simple-todo.
+The geometry has unit tests, but real pointer input has no harness in this
+package.
+
 ## 0.9.1 — a cleanup that stops failing on something it never owned
 
 `cleanupRelay` waited for the relay's bootstrap registration to be
