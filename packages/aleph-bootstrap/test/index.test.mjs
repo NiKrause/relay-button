@@ -9,6 +9,7 @@ import {
   dedupeMultiaddrs,
   discoverAlephBootstrapMultiaddrs,
   filterPublicMultiaddrs,
+  isBrowserDialableMultiaddr,
   relayBootstrapMultiaddrsHash,
   relayBootstrapTrustMode,
   selectCompactRelayBootstrapMultiaddrs,
@@ -47,6 +48,69 @@ test("filterPublicMultiaddrs can keep only browser dialable addresses", () => {
   assert.deepEqual(addrs, [
     "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWWs",
     "/ip4/203.0.113.10/udp/9095/quic-v1/webtransport/certhash/uEiWebTransport/p2p/12D3KooWWt",
+  ]);
+});
+
+test("filterPublicMultiaddrs drops plaintext ws from the browser dialable set", () => {
+  const candidates = [
+    "/ip4/93.186.192.85/tcp/24057/ws/p2p/12D3KooWPlain",
+    "/ip6/2001:db8::10/tcp/9092/ws/p2p/12D3KooWPlainV6",
+    "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWTls",
+    "/dns4/relay.example.com/tcp/443/wss/p2p/12D3KooWWss",
+    "/ip4/93.186.192.85/tcp/443/tls/sni/relay.example.com/ws/p2p/12D3KooWSni",
+  ];
+
+  assert.deepEqual(
+    filterPublicMultiaddrs(candidates, { browserDialableOnly: true }),
+    [
+      "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooWTls",
+      "/dns4/relay.example.com/tcp/443/wss/p2p/12D3KooWWss",
+      "/ip4/93.186.192.85/tcp/443/tls/sni/relay.example.com/ws/p2p/12D3KooWSni",
+    ],
+  );
+
+  assert.deepEqual(
+    filterPublicMultiaddrs(candidates, {
+      browserDialableOnly: true,
+      allowInsecureWebSockets: true,
+    }),
+    candidates,
+  );
+});
+
+test("isBrowserDialableMultiaddr separates ws from wss", () => {
+  assert.equal(
+    isBrowserDialableMultiaddr("/ip4/93.186.192.85/tcp/24057/ws/p2p/12D3KooW"),
+    false,
+  );
+  assert.equal(
+    isBrowserDialableMultiaddr("/ip4/93.186.192.85/tcp/24057/ws/p2p/12D3KooW", {
+      allowInsecureWebSockets: true,
+    }),
+    true,
+  );
+  assert.equal(
+    isBrowserDialableMultiaddr(
+      "/dns4/relay.example.com/tcp/443/tls/ws/p2p/12D3KooW",
+    ),
+    true,
+  );
+  assert.equal(
+    isBrowserDialableMultiaddr("/ip4/203.0.113.10/tcp/9095/p2p/12D3KooW"),
+    false,
+  );
+});
+
+test("a relay still announces the plaintext port it really serves", () => {
+  const content = buildRelayBootstrapPostContent({
+    sender: "0xabc",
+    peerId: "12D3KooWPlain",
+    multiaddrs: ["/ip4/93.186.192.85/tcp/24057/ws/p2p/12D3KooWPlain"],
+    now: 1234,
+  });
+
+  assert.deepEqual(content.content.multiaddrs, [
+    "/ip4/93.186.192.85/tcp/24057/ws/p2p/12D3KooWPlain",
   ]);
 });
 

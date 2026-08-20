@@ -99,6 +99,13 @@ export interface DiscoverAlephBootstrapOptions {
   maxAgeMs?: number;
   compactMultiaddrLimit?: number;
   browserDialableOnly?: boolean;
+  /**
+   * Keep plaintext `/ws` relays in a browser-dialable result. Defaults to
+   * false so an https page never receives an address the browser will block as
+   * mixed content. Set it for consumers that dial from node or a plain-http
+   * origin.
+   */
+  allowInsecureWebSockets?: boolean;
   requireDualKeyAttestation?: boolean;
   verifyDualKeyAttestation?: boolean;
   /**
@@ -116,6 +123,15 @@ export interface DiscoverAlephBootstrapOptions {
 export interface FilterPublicMultiaddrsOptions {
   browserDialableOnly?: boolean;
   requirePeerId?: boolean;
+  /**
+   * Keep plaintext `/ws` addresses in the browser-dialable set. Defaults to
+   * false: a page served over https cannot open a `ws://` socket, the browser
+   * blocks it as mixed content, so a plaintext relay is dead weight in a
+   * browser bootstrap list. Publishers pass true — a relay should still
+   * announce the plaintext port it really serves, for node peers that can use
+   * it.
+   */
+  allowInsecureWebSockets?: boolean;
 }
 
 export interface CreateRelayBootstrapPostOptions {
@@ -198,12 +214,19 @@ function browserMultiaddrTransport(addr: string): string {
   return "other";
 }
 
+/**
+ * Publish-side helper: pick the addresses a relay announces to the registry.
+ * Plaintext `/ws` is kept here on purpose — announcing the port the relay
+ * really serves is honest, and node peers can dial it. Browsers filter it out
+ * again on the read side, where the https origin makes it undialable.
+ */
 export function selectCompactRelayBootstrapMultiaddrs(
   addrs: readonly string[],
   limit = DEFAULT_BOOTSTRAP_COMPACT_MULTIADDR_LIMIT,
 ): string[] {
   const entries = filterPublicMultiaddrs(addrs, {
     browserDialableOnly: true,
+    allowInsecureWebSockets: true,
   }).map((addr, index) => ({
     addr,
     index,
@@ -322,7 +345,28 @@ function hasPeerId(addr: string): boolean {
   return splitMultiaddr(addr).includes("p2p");
 }
 
-function isBrowserDialableMultiaddr(addr: string): boolean {
+/**
+ * Whether a WebSocket multiaddr terminates TLS, i.e. whether it maps to a
+ * `wss://` URL rather than a `ws://` one. `/wss` is the legacy spelling of
+ * `/tls/ws`; `/tls/sni/<host>/ws` is the form the relay announces when Caddy
+ * fronts it. A bare `/ws` is plaintext.
+ */
+function isSecureWebSocketMultiaddr(addr: string): boolean {
+  const parts = splitMultiaddr(addr.toLowerCase());
+  if (parts.includes("wss")) return true;
+  const wsIndex = parts.indexOf("ws");
+  return wsIndex > 0 && parts.lastIndexOf("tls", wsIndex) >= 0;
+}
+
+function isWebSocketMultiaddr(addr: string): boolean {
+  const parts = splitMultiaddr(addr.toLowerCase());
+  return parts.includes("ws") || parts.includes("wss");
+}
+
+export function isBrowserDialableMultiaddr(
+  addr: string,
+  options: Pick<FilterPublicMultiaddrsOptions, "allowInsecureWebSockets"> = {},
+): boolean {
   const normalized = addr.toLowerCase();
   if (
     normalized.includes("/webtransport") ||
@@ -330,7 +374,11 @@ function isBrowserDialableMultiaddr(addr: string): boolean {
   ) {
     return normalized.includes("/certhash/");
   }
-  return normalized.includes("/ws") || normalized.includes("/wss");
+  if (!isWebSocketMultiaddr(addr)) return false;
+  return (
+    (options.allowInsecureWebSockets ?? false) ||
+    isSecureWebSocketMultiaddr(addr)
+  );
 }
 
 export function dedupeMultiaddrs(addrs: readonly string[]): string[] {
@@ -377,7 +425,12 @@ export function filterPublicMultiaddrs(
   return dedupeMultiaddrs(addrs).filter((addr) => {
     if (!isPublicMultiaddr(addr)) return false;
     if (options.requirePeerId !== false && !hasPeerId(addr)) return false;
-    if (options.browserDialableOnly && !isBrowserDialableMultiaddr(addr)) {
+    if (
+      options.browserDialableOnly &&
+      !isBrowserDialableMultiaddr(addr, {
+        allowInsecureWebSockets: options.allowInsecureWebSockets,
+      })
+    ) {
       return false;
     }
     return true;
@@ -549,6 +602,7 @@ export function buildRelayBootstrapPostContent(args: {
   const fullBrowserMultiaddrs = args.browserMultiaddrs
     ? filterPublicMultiaddrs(args.browserMultiaddrs, {
         browserDialableOnly: true,
+        allowInsecureWebSockets: true,
       })
     : undefined;
   const compactMultiaddrs = selectCompactRelayBootstrapMultiaddrs(
@@ -688,6 +742,7 @@ export async function signRelayBootstrapProof(args: {
   const fullBrowserMultiaddrs = args.browserMultiaddrs
     ? filterPublicMultiaddrs(args.browserMultiaddrs, {
         browserDialableOnly: true,
+        allowInsecureWebSockets: true,
       })
     : undefined;
   const compactMultiaddrs = selectCompactRelayBootstrapMultiaddrs(
@@ -1125,6 +1180,7 @@ export async function discoverAlephBootstrapMultiaddrs(
     const addrs = relayBootstrapPostsToMultiaddrs(
       trustedPosts,
       browserDialableOnly,
+      options.allowInsecureWebSockets ?? false,
     );
     if (addrs.length > 0) {
       return addrs;
@@ -1141,6 +1197,7 @@ export async function discoverAlephBootstrapMultiaddrs(
 function relayBootstrapPostsToMultiaddrs(
   posts: readonly RelayBootstrapPostRecord[],
   browserDialableOnly: boolean,
+  allowInsecureWebSockets: boolean,
 ): string[] {
   const addrs: string[] = [];
 
@@ -1158,6 +1215,7 @@ function relayBootstrapPostsToMultiaddrs(
     addrs.push(
       ...filterPublicMultiaddrs(candidates, {
         browserDialableOnly,
+        allowInsecureWebSockets,
       }),
     );
   }
