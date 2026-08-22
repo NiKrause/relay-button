@@ -12,6 +12,8 @@ It is designed for two complementary jobs:
 
 - `discoverAlephBootstrapMultiaddrs(options)`
 - `createLibp2pAlephBootstrap(options)`
+- `filterRelayBootstrapPostsByProfile(posts, profile?)`
+- `filterRelayBootstrapPostsByRegistration(posts, registrationId?)`
 - `filterPublicMultiaddrs(addrs, options?)`
 - `createRelayBootstrapPost(options)`
 - `signRelayBootstrapAuthorization(args)`
@@ -44,6 +46,34 @@ By default, discovery will:
 - accept wallet-signed v2 posts
 - verify dual-key records when they are present
 - ignore malformed or invalid dual-key records
+
+## Scoping discovery
+
+The channel is shared. Several relay implementations register in it, and so
+does every throwaway relay an E2E run starts — under the same profile as the
+production one, with a registration that outlives the machine it describes,
+because guests self-publish with generated keys and no remaining key can
+FORGET the post.
+
+Two scopes, and most consumers want both:
+
+```ts
+const list = await discoverAlephBootstrapMultiaddrs({
+  profile: 'orbitdb-relay',                          // not uc-go-peer's relays
+  registrationId: 'relay:orbitdb-relay:orbitdb-relay' // and not the E2E ones
+})
+```
+
+`profile` keeps out relays a consumer cannot use at all — an orbitdb app that
+dials a `uc-go-peer` relay never gets a shared circuit and sits at
+`candidates: 0`. `registrationId` keeps out its own corpses: measured
+downstream, a browser probe wave against an unscoped list spent its outbound
+stream budget on dead addresses and wrote off the one healthy relay along with
+them.
+
+Use `registrationId` for anything that bakes addresses into a build or dials
+them on start. Omit both to see the whole channel, which is what a dashboard
+wants.
 
 If a consumer wants to require the stronger model:
 

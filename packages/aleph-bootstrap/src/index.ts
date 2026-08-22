@@ -117,6 +117,15 @@ export interface DiscoverAlephBootstrapOptions {
    * When omitted, posts of every profile are returned (previous behaviour).
    */
   profile?: string | readonly string[];
+  /**
+   * Restrict discovery further, to the registrations published under this id
+   * (e.g. `"relay:orbitdb-relay:orbitdb-relay"`). Profile is not fine enough:
+   * an E2E run's throwaway relays register under the same profile as the
+   * production one, and a registration outlives the machine it describes. Use
+   * this for anything that bakes addresses into a build or dials them on
+   * start; omit it to see the whole channel.
+   */
+  registrationId?: string | readonly string[];
   fetch?: typeof fetch;
 }
 
@@ -1112,6 +1121,42 @@ export function filterRelayBootstrapPostsByProfile(
   );
 }
 
+/**
+ * Keep only the registrations a consumer published for itself.
+ *
+ * Profile is not fine enough. Every ephemeral relay an E2E run starts
+ * registers under the same profile as the production one - as
+ * `relay:<profile>:<name>-e2e-*` - and a registration outlives the machine it
+ * describes, because guests self-publish with generated keys and no remaining
+ * key can FORGET the post. So the channel accumulates registrations that are
+ * indistinguishable from the real one by profile alone, and were alive when
+ * they were written.
+ *
+ * Measured downstream: a browser probe wave against that list exhausted its
+ * outbound stream budget on dead addresses and wrote off the one healthy relay
+ * along with the corpses, leaving both browsers with nothing to dial.
+ *
+ * Omitting the scope returns every registration, which is the previous
+ * behaviour and the right default for a consumer that wants to see the channel
+ * rather than its own corner of it.
+ */
+export function filterRelayBootstrapPostsByRegistration(
+  posts: readonly RelayBootstrapPostRecord[],
+  registrationId?: string | readonly string[],
+): RelayBootstrapPostRecord[] {
+  const wanted = (
+    typeof registrationId === "string" ? [registrationId] : (registrationId ?? [])
+  )
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (wanted.length === 0) return [...posts];
+  const allowed = new Set(wanted);
+  return posts.filter(
+    (post) =>
+      post.content != null && allowed.has(String(post.content.registrationId)),
+  );
+}
+
 async function filterTrustedRelayBootstrapPosts(
   posts: readonly RelayBootstrapPostRecord[],
   options: Pick<
@@ -1167,11 +1212,14 @@ export async function discoverAlephBootstrapMultiaddrs(
     });
     collectedPosts.push(...pagePosts);
 
-    const selectedPosts = filterRelayBootstrapPostsByProfile(
-      selectCurrentRelayBootstrapPosts(collectedPosts, {
-        maxAgeMs: options.maxAgeMs,
-      }),
-      options.profile,
+    const selectedPosts = filterRelayBootstrapPostsByRegistration(
+      filterRelayBootstrapPostsByProfile(
+        selectCurrentRelayBootstrapPosts(collectedPosts, {
+          maxAgeMs: options.maxAgeMs,
+        }),
+        options.profile,
+      ),
+      options.registrationId,
     );
     const trustedPosts = await filterTrustedRelayBootstrapPosts(selectedPosts, {
       requireDualKeyAttestation: options.requireDualKeyAttestation,

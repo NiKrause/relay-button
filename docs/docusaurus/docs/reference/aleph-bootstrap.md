@@ -74,6 +74,25 @@ Browser transports are preferred in this order:
 `/tcp/443/tls/ws`, other `/tls/ws`, WebTransport, WebRTC direct, then other
 websocket addresses.
 
+### Reading the channel: two scopes
+
+`discoverAlephBootstrapMultiaddrs` takes `profile` and `registrationId`, and
+a consumer that dials what it finds wants both.
+
+`profile` excludes relays it cannot use: an orbitdb app that dials a
+`uc-go-peer` relay never forms a shared circuit and stops at
+`candidates: 0`.
+
+`registrationId` excludes its own past. Every ephemeral relay an E2E run
+starts registers under the production profile, and the record survives the
+machine — guests self-publish with generated keys, so no remaining key can
+FORGET it. Measured in simple-todo: a browser probe wave against the unscoped
+list exhausted its outbound stream budget on dead addresses and discarded the
+one live relay with them, leaving both browsers with nothing to dial.
+
+Omitting both returns the whole channel, which is what a dashboard wants and
+what anything dialling does not.
+
 ### Relay Button Registration Lifecycle
 
 For `uc-go-peer`, the browser Relay Button flow is now a staged handoff rather
