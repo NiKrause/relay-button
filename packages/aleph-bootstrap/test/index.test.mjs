@@ -8,6 +8,7 @@ import {
   createRelayBootstrapPost,
   dedupeMultiaddrs,
   discoverAlephBootstrapMultiaddrs,
+  filterRelayBootstrapPostsByRegistration,
   filterPublicMultiaddrs,
   isBrowserDialableMultiaddr,
   relayBootstrapMultiaddrsHash,
@@ -925,5 +926,96 @@ test("dual-key verification fails when relay proof publisher does not match", as
   assert.match(
     verified.errors.join("\n"),
     /expected publisher address|publisherAddress does not match/i,
+  );
+});
+
+test("filterRelayBootstrapPostsByRegistration keeps only the named registrations", () => {
+  const posts = [
+    { hash: "a", content: { registrationId: "relay:orbitdb-relay:orbitdb-relay" } },
+    { hash: "b", content: { registrationId: "relay:orbitdb-relay:simple-todo-e2e-7f2" } },
+    { hash: "c", content: {} },
+    { hash: "d", content: null },
+  ];
+
+  assert.deepEqual(
+    filterRelayBootstrapPostsByRegistration(posts, "relay:orbitdb-relay:orbitdb-relay").map(
+      (post) => post.hash,
+    ),
+    ["a"],
+  );
+
+  // A list, for a consumer that runs more than one relay of its own.
+  assert.deepEqual(
+    filterRelayBootstrapPostsByRegistration(posts, [
+      "relay:orbitdb-relay:orbitdb-relay",
+      "relay:orbitdb-relay:simple-todo-e2e-7f2",
+    ]).map((post) => post.hash),
+    ["a", "b"],
+  );
+
+  // No scope means the whole channel: the previous behaviour, and the right
+  // one for a consumer that wants to see what is out there.
+  assert.equal(filterRelayBootstrapPostsByRegistration(posts).length, 4);
+  assert.equal(filterRelayBootstrapPostsByRegistration(posts, "  ").length, 4);
+});
+
+test("discoverAlephBootstrapMultiaddrs can be scoped to one registration", async () => {
+  // The case this exists for: an E2E run's throwaway relay is alive, fresh and
+  // registered under the same profile as the production one. Profile alone
+  // cannot tell them apart, and the throwaway becomes permanent dial noise the
+  // moment its VM is erased — nobody can FORGET the post afterwards.
+  const now = Date.now();
+  const fetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return {
+        posts: [
+          {
+            hash: "hash-prod",
+            type: "relay-bootstrap-v2",
+            ref: "simple-todo-bootstrap",
+            content: {
+              peerId: "12D3KooWProd",
+              profile: "orbitdb-relay",
+              registrationId: "relay:orbitdb-relay:orbitdb-relay",
+              updatedAt: now,
+              browserMultiaddrs: [
+                "/dns4/relay-prod.example.com/tcp/443/tls/ws/p2p/12D3KooWProd",
+              ],
+            },
+          },
+          {
+            hash: "hash-e2e",
+            type: "relay-bootstrap-v2",
+            ref: "simple-todo-bootstrap",
+            content: {
+              peerId: "12D3KooWE2E",
+              profile: "orbitdb-relay",
+              registrationId: "relay:orbitdb-relay:simple-todo-e2e-7f2",
+              updatedAt: now,
+              browserMultiaddrs: [
+                "/dns4/relay-e2e.example.com/tcp/443/tls/ws/p2p/12D3KooWE2E",
+              ],
+            },
+          },
+        ],
+      };
+    },
+  });
+
+  assert.deepEqual(
+    await discoverAlephBootstrapMultiaddrs({
+      fetch,
+      profile: "orbitdb-relay",
+      registrationId: "relay:orbitdb-relay:orbitdb-relay",
+    }),
+    ["/dns4/relay-prod.example.com/tcp/443/tls/ws/p2p/12D3KooWProd"],
+  );
+
+  // Without the scope both come back — which is what made the scope necessary.
+  assert.equal(
+    (await discoverAlephBootstrapMultiaddrs({ fetch, profile: "orbitdb-relay" })).length,
+    2,
   );
 });
