@@ -1,5 +1,28 @@
 # Roadmap
 
+## 0.9.3 — the drag nobody could do
+
+0.9.2 shipped a draggable launcher and said so. In the Svelte build it did not
+work at all: `initPlacement()` sat behind `await controller.init()`, so
+`placement` stayed null for as long as Aleph took to answer the manifest and
+instance queries — and `handleDragStart` returns early on a null placement.
+Measured in simple-todo: still immovable twenty seconds after the app was
+ready, with `pointerdown`, eight `pointermove`s and `pointerup` all arriving at
+the button. Placement needs no network; it reads storage and the viewport. It
+now runs first.
+
+The React build never had this — it resolves placement in its own effect,
+which is also why the defect survived: the two builds disagreed and nothing
+compared them.
+
+That is the point of the other half. `RelayButtonDriver` gains
+`dragLauncherBy`, `tapLauncherWithWobble` and `launcherBox` (#117), so a
+consumer verifies a drag without rebuilding the pointer sequence against
+behaviour that is not its own — the ~6 px threshold, the clamping, a storage
+that throws. The 0.9.2 notes asked for a manual check before promoting to
+`latest`; that check never happened, and it would have failed. This replaces
+it with one that runs.
+
 ## 0.9.2 — a relay button the user can move out of the way
 
 The launcher and the panel each positioned themselves with hardcoded corner

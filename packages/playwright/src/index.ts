@@ -135,6 +135,13 @@ export interface RelayButtonDriverOptions {
   deleteButtonName?: string
   refreshButtonName?: string
   advancedToggleName?: string
+  /**
+   * The distance in CSS pixels the widget treats as a drag rather than a tap.
+   * Kept as an option because it is the widget's number, not the test's:
+   * `dragThreshold` in `fab-position.ts`. A driver that guessed it would drive
+   * a press the widget still reads as a click.
+   */
+  dragThresholdPx?: number
 }
 
 export interface ProvisionRelayOptions {
@@ -536,7 +543,85 @@ export class RelayButtonDriver {
       deleteButtonName: options.deleteButtonName ?? 'Delete',
       refreshButtonName: options.refreshButtonName ?? 'Refresh',
       advancedToggleName: options.advancedToggleName ?? 'Advanced',
+      dragThresholdPx: options.dragThresholdPx ?? 6,
     }
+  }
+
+  /** The launcher itself — the thing a consumer places, and now drags. */
+  launcher(): Locator {
+    return this.page.getByRole('button', { name: this.options.launcherName })
+  }
+
+  /**
+   * Where the launcher is, in viewport coordinates.
+   *
+   * The widget positions it with `position: fixed` and its own offsets, so
+   * there is no layout box on any wrapper to read — an earlier consumer tried
+   * exactly that and got 0×0, because a fixed child leaves its parent empty.
+   * The launcher's own box is the only honest source.
+   */
+  async launcherBox(): Promise<{ x: number; y: number; width: number; height: number }> {
+    const launcher = this.launcher()
+    await launcher.waitFor({ state: 'visible', timeout: 30_000 })
+    const box = await launcher.boundingBox()
+    if (!box) throw new Error('The relay button launcher has no bounding box; is it rendered?')
+    return box
+  }
+
+  /**
+   * Drag the launcher by an offset, as a finger or a mouse would.
+   *
+   * Several intermediate moves rather than one jump: the widget follows
+   * `pointermove` and decides between a tap and a drag on the distance
+   * travelled, so a single move from A to B exercises neither the threshold nor
+   * the clamping on the way. `steps` is deliberately low by default — enough to
+   * cross the threshold and to move afterwards, few enough to stay quick.
+   *
+   * Returns the box before and after, because every assertion worth making
+   * compares the two and reading it twice at the call site invites reading it
+   * at the wrong moment.
+   */
+  async dragLauncherBy(
+    dx: number,
+    dy: number,
+    options: { steps?: number } = {},
+  ): Promise<{
+    before: { x: number; y: number; width: number; height: number }
+    after: { x: number; y: number; width: number; height: number }
+  }> {
+    const before = await this.launcherBox()
+    const steps = Math.max(2, options.steps ?? 8)
+    const startX = before.x + before.width / 2
+    const startY = before.y + before.height / 2
+
+    await this.page.mouse.move(startX, startY)
+    await this.page.mouse.down()
+    for (let step = 1; step <= steps; step += 1) {
+      await this.page.mouse.move(startX + (dx * step) / steps, startY + (dy * step) / steps)
+    }
+    await this.page.mouse.up()
+
+    return { before, after: await this.launcherBox() }
+  }
+
+  /**
+   * Press and move less than the threshold — a tap, as far as the widget is
+   * concerned, however jittery the hand holding the phone.
+   *
+   * This is the half that is easy to leave untested and expensive to get wrong:
+   * a launcher that reads a one-pixel wobble as a drag never opens at all.
+   */
+  async tapLauncherWithWobble(): Promise<void> {
+    const box = await this.launcherBox()
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
+    // Half the threshold on each axis, so the diagonal is still under it.
+    const wobble = Math.max(1, Math.floor(this.options.dragThresholdPx / 2) - 1)
+
+    await this.page.mouse.move(x, y)
+    await this.page.mouse.down()
+    await this.page.mouse.move(x + wobble, y + wobble)
+    await this.page.mouse.up()
   }
 
   deployButton(): Locator {
@@ -571,9 +656,7 @@ export class RelayButtonDriver {
   }
 
   async prepare(options: { instanceName: string; sshPublicKey: string }): Promise<void> {
-    const launcher = this.page.getByRole('button', {
-      name: this.options.launcherName,
-    })
+    const launcher = this.launcher()
     await launcher.waitFor({ state: 'visible', timeout: 60_000 })
     await launcher.click()
     await this.instanceNameField().fill(options.instanceName)
