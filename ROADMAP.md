@@ -1,6 +1,6 @@
 # Roadmap
 
-## 0.9.3 — the drag nobody could do
+## 0.9.4 — the drag nobody could do, and the scope nobody could ask for
 
 0.9.2 shipped a draggable launcher and said so. In the Svelte build it did not
 work at all: `initPlacement()` sat behind `await controller.init()`, so
@@ -14,6 +14,14 @@ now runs first.
 The React build never had this — it resolves placement in its own effect,
 which is also why the defect survived: the two builds disagreed and nothing
 compared them.
+
+Also in this release, and the reason the number is 0.9.4 rather than 0.9.3:
+`@le-space/aleph-bootstrap` can be scoped by `registrationId` (#121), so a
+consumer sees its own registrations rather than the whole channel — its own
+erased E2E relays included, which is what left a browser probe wave spending
+its stream budget on corpses. That work landed after 0.9.3 had already been
+published from this repo, so it has never been on npm. Publishing the set at
+0.9.4 is what gets it there and keeps every package on one number.
 
 That is the point of the other half. `RelayButtonDriver` gains
 `dragLauncherBy`, `tapLauncherWithWobble` and `launcherBox` (#117), so a
