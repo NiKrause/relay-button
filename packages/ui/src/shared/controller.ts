@@ -103,15 +103,73 @@ function deploymentNoun(
   return profile === "ucan-store" ? "service" : "relay";
 }
 
+/**
+ * What a request was, for an error that otherwise says nothing.
+ *
+ * `fetch` rejects with a bare `TypeError: Failed to fetch` for every network
+ * failure — no URL, no method, no cause. Carried up through the deploy path
+ * that becomes "Relay Button deployment failed: Failed to fetch", which is
+ * where a run of this project ended with no way to tell which of a dozen calls
+ * had failed.
+ *
+ * Exported for its test; `init.method` is read defensively because a call site
+ * may pass none.
+ */
+export function describeRequest(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): string {
+  const method = String(init?.method ?? "GET").toUpperCase();
+  const url =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : typeof (input as Request)?.url === "string"
+          ? (input as Request).url
+          : "<unknown url>";
+  return `${method} ${url}`;
+}
+
+/**
+ * The failure message, with the step it happened in.
+ *
+ * A deployment walks two dozen calls across Aleph, a CRN and a guest VM. When
+ * one of them fails with a message that names none of them — `Failed to fetch`
+ * is the standard case — the step is the only thing that narrows it down, and
+ * it is already known.
+ *
+ * Exported for its test.
+ */
+export function deploymentFailureMessage(
+  error: unknown,
+  stage: string | null | undefined,
+): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const step = String(stage ?? "").trim();
+  return step ? `${message} (while: ${step})` : message;
+}
+
 function asJsonFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> {
-  return fetch(input, init).then(async (response) => ({
-    ok: response.ok,
-    status: response.status,
-    json: async () => await response.json(),
-  }));
+  return fetch(input, init).then(
+    async (response) => ({
+      ok: response.ok,
+      status: response.status,
+      json: async () => await response.json(),
+    }),
+    (error: unknown) => {
+      // Only network failures land here — an HTTP error is a resolved response
+      // and is handled by the caller reading `ok`. So this rethrow adds the two
+      // facts the original lacks and keeps everything else it had.
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`${reason} (${describeRequest(input, init)})`, {
+        cause: error,
+      });
+    },
+  );
 }
 
 function isConfirmedGuestSetupResult(
@@ -1079,11 +1137,21 @@ export class SponsorRelayController {
     this.emit();
   }
 
+  private lastProgressLabel: string | null = null;
+
   private emitProgress(event: Omit<DeploymentProgressEvent, "timestamp">) {
     const nextEvent: DeploymentProgressEvent = {
       ...event,
       timestamp: Date.now(),
     };
+    // Kept so a failure can say *when* it happened. The progress events are
+    // already emitted for the operator's benefit; this costs one assignment and
+    // turns "Failed to fetch" into "Failed to fetch, while waiting for guest
+    // config" — which is the difference between a log that names a suspect and
+    // one that names a dozen.
+    if (nextEvent.stage !== "error") {
+      this.lastProgressLabel = nextEvent.label;
+    }
     this.trace(`progress:${nextEvent.stage}`, {
       label: nextEvent.label,
       progress: nextEvent.progress,
@@ -3538,10 +3606,15 @@ export class SponsorRelayController {
           : (lastError?.message ?? "All compatible CRNs failed."),
       );
     } catch (error) {
-      this.trace("deploy:error", error);
+      const message = deploymentFailureMessage(error, this.lastProgressLabel);
+      this.trace("deploy:error", {
+        message,
+        stage: this.lastProgressLabel,
+        error,
+      });
       this.patch({
         busy: { deploying: false },
-        errorText: error instanceof Error ? error.message : String(error),
+        errorText: message,
         statusText: "Deployment failed",
       });
       this.emitProgress({
@@ -3549,7 +3622,7 @@ export class SponsorRelayController {
         label: "Deployment failed",
         progress: 100,
         status: "error",
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       });
     }
   }
