@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createSponsorRelayController } from "../dist/shared/index.js";
+import {
+  createSponsorRelayController,
+  describeRequest,
+  deploymentFailureMessage,
+} from "../dist/shared/index.js";
 
 function jsonResponse(payload, status = 200) {
   return {
@@ -1198,4 +1202,33 @@ test("address load reports the real cause instead of a raw DOMException", async 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("a failed request says which request it was", () => {
+  // `fetch` rejects with a bare `TypeError: Failed to fetch` — no URL, no
+  // method, no cause. Carried up the deploy path that became "Relay Button
+  // deployment failed: Failed to fetch", and a run of this project ended there
+  // with no way to tell which of two dozen calls had failed.
+  assert.equal(describeRequest("https://api2.aleph.im/api/v0/posts.json"), "GET https://api2.aleph.im/api/v0/posts.json");
+  assert.equal(
+    describeRequest(new URL("https://crn.example/about/executions/list"), { method: "post" }),
+    "POST https://crn.example/about/executions/list",
+  );
+  // A Request object, and something that is neither.
+  assert.equal(describeRequest({ url: "https://api.aleph.im/x" }), "GET https://api.aleph.im/x");
+  assert.match(describeRequest({}), /^GET <unknown url>$/);
+});
+
+test("a failed deployment says which step it failed in", () => {
+  // The step is the only thing that narrows a message naming nothing, and it is
+  // already known — the progress events carry it for the operator anyway.
+  assert.equal(
+    deploymentFailureMessage(new Error("Failed to fetch (GET https://api2.aleph.im/x)"), "Waiting for guest config"),
+    "Failed to fetch (GET https://api2.aleph.im/x) (while: Waiting for guest config)",
+  );
+
+  // No step known: say the message and nothing invented.
+  assert.equal(deploymentFailureMessage(new Error("boom"), null), "boom");
+  assert.equal(deploymentFailureMessage(new Error("boom"), "   "), "boom");
+  assert.equal(deploymentFailureMessage("not an error", "Selecting CRN"), "not an error (while: Selecting CRN)");
 });
