@@ -212,8 +212,19 @@ export let apiHosts = undefined
       state = next
     })
 
-    await controller.init()
+    // Before `controller.init()`, not after it, and the order is the whole
+    // feature. Placement reads storage and the viewport — no network — while
+    // `init()` fetches the manifest and the account's instances. Behind that
+    // await, `placement` stays null for as long as Aleph takes to answer, and
+    // `handleDragStart` returns early on a null placement: the launcher simply
+    // cannot be dragged. Measured in simple-todo: still immovable 20 seconds
+    // after the app was ready, with pointerdown, eight pointermoves and
+    // pointerup all arriving at the button.
+    //
+    // The React build never had this — it resolves placement in its own effect.
     initPlacement()
+
+    await controller.init()
     window.addEventListener('resize', handleViewportChange)
     window.addEventListener('orientationchange', handleViewportChange)
     return () => {

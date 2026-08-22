@@ -637,3 +637,75 @@ test('cleanupRelay does not await a registration whose sender cannot be read', a
   assert.match(result.registrationVerificationSummary ?? '', /sender could not be read/u)
   assert.deepEqual(harness.forgotten, [['b'.repeat(64)]])
 })
+
+/** A page whose launcher reports a box and whose mouse records what it was told. */
+function dragHarness(box = { x: 100, y: 200, width: 40, height: 40 }) {
+  const events: string[] = []
+  const locator: Record<string, unknown> = {}
+  locator.waitFor = async () => {}
+  locator.boundingBox = async () => box
+  const page = {
+    getByRole: () => locator,
+    mouse: {
+      move: async (x: number, y: number) => {
+        events.push(`move ${Math.round(x)},${Math.round(y)}`)
+      },
+      down: async () => {
+        events.push('down')
+      },
+      up: async () => {
+        events.push('up')
+      },
+    },
+  }
+  return { page, events, box }
+}
+
+test('RelayButtonDriver drags from the launcher centre, in steps, and ends with the button up', async () => {
+  const { page, events } = dragHarness()
+  const driver = new RelayButtonDriver(page as never)
+
+  const result = await driver.dragLauncherBy(-60, -40, { steps: 4 })
+
+  // From the centre of the launcher (100+20, 200+20), not from its corner: a
+  // press on the corner of a round button lands outside it.
+  assert.equal(events[0], 'move 120,220')
+  assert.equal(events[1], 'down')
+  // Intermediate moves, because the widget follows `pointermove` and decides
+  // tap-or-drag on the distance travelled. One jump exercises neither the
+  // threshold nor the clamping on the way.
+  assert.deepEqual(events.slice(2, 6), ['move 105,210', 'move 90,200', 'move 75,190', 'move 60,180'])
+  assert.equal(events.at(-1), 'up')
+
+  // Both boxes come back, because every assertion worth making compares them
+  // and reading it twice at the call site invites reading it at the wrong time.
+  assert.deepEqual(result.before, result.after)
+})
+
+test('RelayButtonDriver keeps a wobble under the widget’s own threshold', async () => {
+  const { page, events } = dragHarness()
+  // The threshold is the widget's number, not the test's — `dragThreshold` in
+  // `fab-position.ts`. A driver guessing it would drive a press the widget
+  // still reads as a click, and this would silently stop testing anything.
+  const driver = new RelayButtonDriver(page as never, { dragThresholdPx: 6 })
+
+  await driver.tapLauncherWithWobble()
+
+  const moved = events.filter((event) => event.startsWith('move')).at(-1) ?? ''
+  const [x, y] = moved.replace('move ', '').split(',').map(Number)
+  assert.ok(Math.hypot(x - 120, y - 220) < 6, `wobble travelled ${Math.hypot(x - 120, y - 220)}px`)
+  assert.deepEqual(events.filter((event) => event === 'down' || event === 'up'), ['down', 'up'])
+})
+
+test('RelayButtonDriver says so when the launcher has no box, rather than throwing on null', async () => {
+  // A fixed-position launcher inside a wrapper gives the wrapper no box at all;
+  // an earlier consumer measured exactly that and got 0×0. A null here means
+  // the launcher itself is not rendered, and the message should say which.
+  const locator: Record<string, unknown> = {
+    waitFor: async () => {},
+    boundingBox: async () => null,
+  }
+  const driver = new RelayButtonDriver({ getByRole: () => locator } as never)
+
+  await assert.rejects(() => driver.launcherBox(), /launcher has no bounding box/)
+})
