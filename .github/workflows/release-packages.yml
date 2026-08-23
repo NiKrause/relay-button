@@ -130,6 +130,37 @@ jobs:
           fi
           node ./scripts/publish-from-dist.mjs "${args[@]}"
 
+      # A green tick is not an answer to "did it publish?". `dry_run` defaults
+      # to true, so the obvious click — Run workflow, leave everything alone —
+      # packs and publishes nothing while the run goes green. That happened
+      # twice for 0.9.4, and both times the failure only surfaced one workflow
+      # later, as a bare `400 Bad Request` from a dist-tag promotion pointing
+      # at a version npm had never seen. The summary now says which of the two
+      # this run was, in the place somebody looks first.
+      - name: Say what this run did
+        if: always()
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          NPM_TAG: ${{ inputs.npm_tag }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [[ "${DRY_RUN}" == "true" ]]; then
+            {
+              echo "## Dry run — nothing was published"
+              echo
+              echo "Packed \`${version}\` and stopped. npm still has whatever it had before."
+              echo
+              echo "To publish, run this workflow again with **dry_run unchecked**."
+            } >> "${GITHUB_STEP_SUMMARY}"
+          else
+            {
+              echo "## Published \`${version}\` under the \`${NPM_TAG}\` tag"
+              echo
+              echo "\`latest\` does **not** move on its own: run **Promote npm dist-tag**"
+              echo "with version \`${version}\` when this version is the one to recommend."
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
       # Without this the npm publish is the whole release: every version after
       # 0.7.0 shipped to npm with no tag and no GitHub release, and the roadmap
       # went on linking to release notes that did not exist. Runs only on a real
