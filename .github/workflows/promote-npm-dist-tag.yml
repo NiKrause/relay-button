@@ -59,12 +59,32 @@ jobs:
             echo "value=$(node -e "process.stdout.write(require('./package.json').version)")" >> "$GITHUB_OUTPUT"
           fi
 
+      # Checked before the promotion, not discovered during it. Promoting a
+      # version npm has never seen fails with a bare
+      # `400 Bad Request - PUT .../dist-tags/latest`, which names neither the
+      # version nor the reason. Worse, the log's most visible line is then the
+      # *echoed script text* of the token check below — so the obvious reading
+      # is a missing secret, and 0.9.4 cost an afternoon of looking for one that
+      # was there all along. The cause is almost always the same: Release
+      # Packages was run with its default `dry_run: true` and published nothing.
+      - name: Check the version is on npm
+        run: |
+          pkg="${{ matrix.package_name }}"
+          version="${{ steps.version.outputs.value }}"
+
+          if ! npm view "${pkg}@${version}" version >/dev/null 2>&1; then
+            echo "::error::${pkg}@${version} is not on npm, so there is nothing to promote." \
+                 "Run Release Packages with dry_run unchecked first — its default is a dry run," \
+                 "which packs the tarballs and publishes none of them."
+            exit 1
+          fi
+
       - name: Promote dist-tag
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [[ -z "${NODE_AUTH_TOKEN}" ]]; then
-            echo "NPM_TOKEN secret is required for dist-tag promotion." >&2
+            echo "::error::NPM_TOKEN secret is required for dist-tag promotion."
             exit 1
           fi
 
@@ -72,3 +92,13 @@ jobs:
           version="${{ steps.version.outputs.value }}"
           tag="${{ inputs.dist_tag }}"
           npm dist-tag add "${pkg}@${version}" "${tag}"
+
+          # Read it back. `dist-tag add` has been seen to exit 0 against a
+          # registry that then served the old tag, and a promotion nobody
+          # verified is how `latest` sat on 0.9.1 for a week.
+          actual="$(npm view "${pkg}" "dist-tags.${tag}" 2>/dev/null || true)"
+          if [[ "${actual}" != "${version}" ]]; then
+            echo "::error::${pkg}: ${tag} is ${actual:-unset} after promoting ${version}."
+            exit 1
+          fi
+          echo "${pkg}: ${tag} → ${version}"
