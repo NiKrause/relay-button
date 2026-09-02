@@ -21,6 +21,13 @@ jobs:
   promote:
     runs-on: ubuntu-24.04
     strategy:
+      # One package must not cancel the other seven. A promotion that stops
+      # halfway leaves `latest` split across versions, which is worse than one
+      # that fails outright: consumers then resolve different releases from the
+      # same tag depending on which package they install. Measured on
+      # 2026-09-02 — five packages moved to 0.9.5 and three stayed on 0.9.4
+      # because the first job failed a read-back.
+      fail-fast: false
       matrix:
         # Must list every package that Release Packages actually publishes
         # (prepare-publish.mjs strips `private` from core/node/shared-types at
@@ -93,12 +100,21 @@ jobs:
           tag="${{ inputs.dist_tag }}"
           npm dist-tag add "${pkg}@${version}" "${tag}"
 
-          # Read it back. `dist-tag add` has been seen to exit 0 against a
-          # registry that then served the old tag, and a promotion nobody
-          # verified is how `latest` sat on 0.9.1 for a week.
-          actual="$(npm view "${pkg}" "dist-tags.${tag}" 2>/dev/null || true)"
+          # Read it back, but give the registry a moment. `dist-tag add` has
+          # been seen to exit 0 against a registry that then served the old tag,
+          # so the check is worth having — but reading once, immediately, turns
+          # ordinary propagation lag into a failed release. That is exactly what
+          # happened on 2026-09-02: npm printed `+latest: @le-space/core@0.9.5`
+          # and the very next `npm view` still said 0.9.4.
+          actual=""
+          for attempt in 1 2 3 4 5 6; do
+            actual="$(npm view "${pkg}" "dist-tags.${tag}" 2>/dev/null || true)"
+            [[ "${actual}" == "${version}" ]] && break
+            sleep "$((attempt * 5))"
+          done
+
           if [[ "${actual}" != "${version}" ]]; then
-            echo "::error::${pkg}: ${tag} is ${actual:-unset} after promoting ${version}."
+            echo "::error::${pkg}: ${tag} is still ${actual:-unset} a minute after promoting ${version}."
             exit 1
           fi
           echo "${pkg}: ${tag} → ${version}"
