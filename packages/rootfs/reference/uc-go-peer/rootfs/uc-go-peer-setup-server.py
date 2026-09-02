@@ -5,6 +5,7 @@ import ipaddress
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -85,6 +86,29 @@ def _validate_proxy_hostname(value: object) -> str | None:
     return parsed.hostname
 
 
+def _log(message: str) -> None:
+    """Say it once, on stderr, where journalctl picks it up.
+
+    This file had no logging at all, and the HTTP handler silenced its own.
+    That is how a relay can sit for hours doing nothing while `journalctl -u
+    uc-go-peer-bootstrap` shows a single "Started" line — which is what it did
+    on 2026-09-02, leaving no way to tell whether the guest had found its
+    locator, asked Aleph and been told nothing, or never looked.
+    """
+    print(f"[bootstrap] {message}", file=sys.stderr, flush=True)
+
+
+_LOGGED_ONCE: set[str] = set()
+
+
+def _log_once(key: str, message: str) -> None:
+    """For states that repeat every few seconds and are worth saying once."""
+    if key in _LOGGED_ONCE:
+        return
+    _LOGGED_ONCE.add(key)
+    _log(message)
+
+
 def _extract_guest_bootstrap_locator() -> tuple[str | None, str | None]:
     try:
         with open(AUTHORIZED_KEYS_FILE, encoding="utf-8") as handle:
@@ -98,10 +122,25 @@ def _extract_guest_bootstrap_locator() -> tuple[str | None, str | None]:
                         owner_address = owner_address.strip()
                         deployment_token = deployment_token.strip()
                         if owner_address and deployment_token:
+                            _log_once(
+                                "locator",
+                                f"locator found in authorized_keys: owner={owner_address} "
+                                f"token={deployment_token}",
+                            )
                             return owner_address, deployment_token
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, ValueError) as error:
+        _log_once("locator-error", f"cannot read {AUTHORIZED_KEYS_FILE}: {error!r}")
         return None, None
 
+    # Without this the guest can never find its record, and every deployment
+    # spends its full config window before failing over. The browser appends
+    # the marker to the SSH key it puts in the instance message; if it is not
+    # here, either no key was configured or something stripped the comment.
+    _log_once(
+        "locator-missing",
+        f"no aleph-bootstrap-config marker in {AUTHORIZED_KEYS_FILE}; "
+        "nothing to poll for, the relay will stay unconfigured",
+    )
     return None, None
 
 
@@ -415,10 +454,13 @@ def _load_vm_bootstrap_record() -> tuple[str | None, str | None, dict | None]:
         with urlopen(request_url, timeout=10) as response:
             payload = json.loads(response.read().decode("utf-8") or "{}")
     except HTTPError as error:
-        if error.code == 404:
-            return owner_address, deployment_token, None
+        # A 404 is ordinary early on: the browser publishes the aggregate only
+        # once the runtime is up. Anything else is worth naming.
+        key = "aggregate-404" if error.code == 404 else f"aggregate-{error.code}"
+        _log_once(key, f"aggregate query returned HTTP {error.code} for {owner_address}")
         return owner_address, deployment_token, None
-    except (URLError, json.JSONDecodeError, TimeoutError):
+    except (URLError, json.JSONDecodeError, TimeoutError) as error:
+        _log_once("aggregate-unreachable", f"aggregate query failed: {error!r}")
         return owner_address, deployment_token, None
 
     aggregate = payload.get("data", {}).get(BOOTSTRAP_CONFIG_KEY, {})
@@ -426,25 +468,47 @@ def _load_vm_bootstrap_record() -> tuple[str | None, str | None, dict | None]:
         return owner_address, deployment_token, None
 
     record = aggregate.get(deployment_token)
-    return owner_address, deployment_token, record if isinstance(record, dict) else None
+    if not isinstance(record, dict):
+        _log_once(
+            "record-missing",
+            f"aggregate has no record for token {deployment_token} "
+            f"({len(aggregate)} record(s) present)",
+        )
+        return owner_address, deployment_token, None
+
+    return owner_address, deployment_token, record
 
 
 def _poll_bootstrap_config_loop() -> None:
+    _log(
+        f"waiting for bootstrap config, polling every {BOOTSTRAP_CONFIG_POLL_SECONDS}s "
+        f"against {ALEPH_API_HOST}"
+    )
     while not os.path.exists(READY_FILE):
         _, deployment_token, record = _load_vm_bootstrap_record()
         if deployment_token and isinstance(record, dict):
             status = str(record.get("status") or "").strip().lower()
             if status != "pending":
+                # Somebody else's turn, or already done. Worth saying once per
+                # status: a record stuck on "applied" while the relay is down
+                # means something very different from no record at all.
+                _log_once(f"status-{status}", f"record status is {status!r}, not acting on it")
                 time.sleep(BOOTSTRAP_CONFIG_POLL_SECONDS)
                 continue
             try:
                 args = _build_configure_args(record)
-            except ValueError:
+            except ValueError as error:
+                # The record arrived and was unusable. Before this, that was
+                # indistinguishable from never having received one.
+                _log_once("record-invalid", f"record cannot be turned into a config: {error}")
                 time.sleep(BOOTSTRAP_CONFIG_POLL_SECONDS)
                 continue
-            ok, _ = _run_configure_process(args, record)
+            _log("record found and pending, configuring the relay now")
+            ok, detail = _run_configure_process(args, record)
             if ok:
+                _log("relay configured, setup endpoint is done")
                 return
+            _log(f"configure failed, will retry: {detail}")
         time.sleep(BOOTSTRAP_CONFIG_POLL_SECONDS)
 
 
