@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createSponsorRelayController,
   describeRequest,
+  describeThrown,
   deploymentFailureMessage,
 } from "../dist/shared/index.js";
 
@@ -1231,4 +1232,36 @@ test("a failed deployment says which step it failed in", () => {
   assert.equal(deploymentFailureMessage(new Error("boom"), null), "boom");
   assert.equal(deploymentFailureMessage(new Error("boom"), "   "), "boom");
   assert.equal(deploymentFailureMessage("not an error", "Selecting CRN"), "not an error (while: Selecting CRN)");
+});
+
+test("describeThrown says what was thrown, including when it is not an Error", () => {
+  // The case this exists for: five CRNs failed at once and the widget showed
+  // "NtS9: [object Object] | Nodeforge.crn.iv: [object Object] | …" — no way to
+  // tell whether that was one reason or five.
+  assert.equal(describeThrown(new Error("boom")), "boom");
+
+  // A `message` field is what the thrower meant to say, so it beats a dump.
+  assert.equal(describeThrown({ code: 503, message: "Insufficient capacity" }), "Insufficient capacity");
+
+  // No message: the dump, which is unreadable but not empty.
+  assert.equal(describeThrown({ code: 503, detail: "no room" }), '{"code":503,"detail":"no room"}');
+
+  // A cause chain, because the request that failed is usually one level down.
+  assert.equal(
+    describeThrown(new Error("Deployment failed", { cause: new Error("Failed to fetch (GET https://x)") })),
+    "Deployment failed (cause: Failed to fetch (GET https://x))",
+  );
+
+  // Cyclic input must not take the error handler down with it.
+  const cyclic = { name: "loop" };
+  cyclic.self = cyclic;
+  assert.doesNotThrow(() => describeThrown(cyclic));
+  assert.match(describeThrown(cyclic), /object with no message|<[A-Za-z]+>/);
+
+  // A long dump is truncated rather than filling the panel.
+  const long = { blob: "x".repeat(1000) };
+  assert.ok(describeThrown(long).length <= 401, describeThrown(long).length + " chars");
+
+  assert.equal(describeThrown("plain string"), "plain string");
+  assert.equal(describeThrown(undefined), "undefined");
 });
