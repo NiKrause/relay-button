@@ -1,5 +1,38 @@
 # Roadmap
 
+## 0.9.7 — the relay's websocket address points at a port that is open
+
+Four of the five address families a uc-go-peer relay announces used the port
+Aleph published it on. The AutoTLS websocket used the port the relay binds
+inside the guest. Measured on the live relay `65.108.233.158`: 9097 filtered
+from the internet, 24013 open, both the same listener — and 9097 was the one
+being advertised.
+
+Browsers discard an address they cannot reach, so the published registration
+carried no wss entry at all. The `direct-wss` probe family then had nothing to
+try, its required probe failed, and `bootstrap:resolve` in js-peer refused to
+bake a bootstrap list it could not verify. One wrong port number, and the
+build that consumes these relays could not go green.
+
+`uc-go-peer-configure.sh` had translated the port correctly all along. The
+address is rewritten a second time by the AutoTLS refresh, which waits for the
+certificate, scans the journal for the concrete SNI hostname, and re-emitted
+the matched log line verbatim — carrying the internal port back out with it.
+It only ever looked right because the log is where the true hostname is.
+
+`orbitdb-relay` reads `EXTERNAL_RELAY_WS_PORT` and raises when it is missing,
+which is why its relays have always published a reachable wss address and
+uc-go-peer's never did. The two profiles now agree, though uc-go-peer falls
+back to the backend port with a line on stderr rather than refusing to boot.
+
+The logic sat inside `main()`, between a `journalctl` call and a `systemctl
+restart`, where no test could reach it — which is the reason it survived this
+long. It now lives in two pure functions, and three of the six tests covering
+them fail against the previous release.
+
+Also: a stale `.pyc` had been committed before `__pycache__` was ignored, so
+every published tarball shipped bytecode for a script it no longer matched.
+
 ## 0.9.6 — the guest can be asked what it is waiting for
 
 A relay deployed from universal-connectivity sat idle for hours: the relay
