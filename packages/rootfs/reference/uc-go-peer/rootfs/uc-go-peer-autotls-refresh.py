@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import re
+import sys
 import subprocess
 import time
 from typing import Iterable
@@ -93,6 +94,57 @@ def wait_for_exact_hosts(ws_port: str) -> tuple[str, list[str], list[str]]:
     raise RuntimeError(last_error)
 
 
+def resolve_external_ws_port(env_values: dict[str, str], ws_port: str) -> str:
+    """Port the AutoTLS websocket should be *announced* on.
+
+    `ws_port` is where the relay actually listens inside the guest. On Aleph
+    every port is published under a different number, so announcing the
+    internal one hands out an address the internet cannot reach.
+    """
+    external = env_values.get("EXTERNAL_RELAY_WS_PORT", "").strip()
+    if external:
+        return external
+    print(
+        f"[autotls] EXTERNAL_RELAY_WS_PORT is missing from the environment file; "
+        f"announcing the backend port {ws_port}, which is unreachable from "
+        f"outside the guest whenever the port is mapped",
+        file=sys.stderr,
+    )
+    return ws_port
+
+
+def build_announce_addrs(
+    existing_announce: Iterable[str],
+    logged_addrs: Iterable[str],
+    ws_port: str,
+    external_ws_port: str,
+    proxy_hostname: str = "",
+) -> list[str]:
+    """Announce list for the concrete AutoTLS hostnames.
+
+    The relay logs its listeners on the internal port, which is what the log
+    scan had to match to find them. Re-announcing those strings verbatim was
+    the defect: `uc-go-peer-configure.sh` translates the port for every other
+    family, so tcp, quic, webtransport and webrtc-direct all advertised the
+    mapped port while the websocket — rewritten here, later — kept the
+    internal one. Measured on a live relay: `/tcp/9097/tls/sni/…/ws` was
+    announced and filtered, while the same listener answered on `/tcp/24013`.
+    Browsers dropped the address, `direct-wss` was left without a candidate,
+    and js-peer refused to bake a bootstrap list it could not verify.
+    """
+    wildcard_filtered = [entry for entry in existing_announce if "/tls/sni/*." not in entry]
+    exact_announces = [
+        addr.replace(f"/tcp/{ws_port}/", f"/tcp/{external_ws_port}/", 1)
+        for addr in logged_addrs
+    ]
+
+    if proxy_hostname:
+        exact_announces.append(f"/dns4/{proxy_hostname}/tcp/443/tls/ws")
+        exact_announces.append(f"/dns6/{proxy_hostname}/tcp/443/tls/ws")
+
+    return dedupe(list(wildcard_filtered) + exact_announces)
+
+
 def main() -> None:
     if not os.path.exists(READY_FILE):
         raise SystemExit(f"missing ready file: {READY_FILE}")
@@ -109,14 +161,13 @@ def main() -> None:
         raise RuntimeError("no AutoTLS websocket hostnames found in logs")
 
     existing = [entry.strip() for entry in env_values.get("LIBP2P_ANNOUNCE_ADDRS", "").split(",") if entry.strip()]
-    wildcard_filtered = [entry for entry in existing if "/tls/sni/*." not in entry]
-    exact_announces: list[str] = list(exact_logged_addrs)
-
-    if proxy_hostname:
-        exact_announces.append(f"/dns4/{proxy_hostname}/tcp/443/tls/ws")
-        exact_announces.append(f"/dns6/{proxy_hostname}/tcp/443/tls/ws")
-
-    merged = dedupe(wildcard_filtered + exact_announces)
+    merged = build_announce_addrs(
+        existing,
+        exact_logged_addrs,
+        ws_port,
+        resolve_external_ws_port(env_values, ws_port),
+        proxy_hostname,
+    )
     announce_value = ",".join(merged)
     write_env_var(ENV_FILE, "LIBP2P_ANNOUNCE_ADDRS", announce_value)
     if zone:
