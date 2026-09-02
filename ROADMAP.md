@@ -1,5 +1,34 @@
 # Roadmap
 
+## 0.9.6 — the guest can be asked what it is waiting for
+
+A relay deployed from universal-connectivity sat idle for hours: the relay
+process dead, the setup endpoint alive on port 80, and a journal containing
+one line — "Started uc-go-peer-bootstrap.service". Nothing else, in five
+hours.
+
+That silence is the release. The setup servers had no logging at all, their
+HTTP handlers silenced their own, and every failure path swallowed its
+exception. So a guest that never found its locator, one whose aggregate query
+returned 404, one handed a record it could not use, and one nobody ever asked
+to do anything all produced the same empty journal. "The relay VM did not
+confirm that it applied the Aleph bootstrap config" was therefore not a
+diagnosis — it was the only thing anyone could say. Both `uc-go-peer` and
+`orbitdb-relay` now say which of those four states they are in, once per state
+rather than every five seconds (#133).
+
+Also in this release, the security overrides that had been stuck on a
+conflicting branch since 23 July: esbuild, dompurify, js-yaml,
+webpack-dev-server, http-proxy-middleware, brace-expansion, ws and eight more
+move to patched versions. The branch was rebuilt rather than merged — its
+lockfile had diverged 800 lines against a tree that has since moved through
+five releases (#132).
+
+**For universal-connectivity:** this is the version its rootfs builder needs.
+It pins `@le-space/node` at 0.9.0, so every image it has built since carries
+none of the diagnostics above — including the browser-side ones from 0.9.5.
+Raising that pin is what makes the next failed deployment explain itself.
+
 ## 0.9.5 — two failures that could not be read, and one that could not be seen
 
 A deployment from universal-connectivity failed on all five compatible CRNs
