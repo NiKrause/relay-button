@@ -5,6 +5,7 @@ import ipaddress
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -92,6 +93,28 @@ def _parse_env_file(path: str) -> dict[str, str]:
     return values
 
 
+def _log(message: str) -> None:
+    """Say it once, on stderr, where journalctl picks it up.
+
+    This file had no logging and the HTTP handler silenced its own, so a relay
+    that never configured itself left a journal with one "Started" line in it.
+    That silence is what made "the guest never acknowledged" an unexplainable
+    failure rather than a readable one.
+    """
+    print(f"[bootstrap] {message}", file=sys.stderr, flush=True)
+
+
+_LOGGED_ONCE: set[str] = set()
+
+
+def _log_once(key: str, message: str) -> None:
+    """For states that repeat every few seconds and are worth saying once."""
+    if key in _LOGGED_ONCE:
+        return
+    _LOGGED_ONCE.add(key)
+    _log(message)
+
+
 def _extract_guest_bootstrap_locator() -> tuple[str | None, str | None]:
     """Read the deployment locator the deployer left in our SSH key.
 
@@ -112,9 +135,15 @@ def _extract_guest_bootstrap_locator() -> tuple[str | None, str | None]:
                         deployment_token = deployment_token.strip()
                         if owner_address and deployment_token:
                             return owner_address, deployment_token
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, ValueError) as error:
+        _log_once("locator-error", f"cannot read {AUTHORIZED_KEYS_FILE}: {error!r}")
         return None, None
 
+    _log_once(
+        "locator-missing",
+        f"no aleph-bootstrap-config marker in {AUTHORIZED_KEYS_FILE}; "
+        "nothing to poll for, the relay will stay unconfigured",
+    )
     return None, None
 
 
@@ -374,6 +403,10 @@ def _load_vm_bootstrap_record() -> tuple[str | None, str | None, dict | None]:
 
 
 def _poll_bootstrap_config_loop() -> None:
+    _log(
+        f"waiting for bootstrap config, polling every {BOOTSTRAP_CONFIG_POLL_SECONDS}s "
+        f"against {ALEPH_API_HOST}"
+    )
     while not os.path.exists(READY_FILE):
         _, deployment_token, record = _load_vm_bootstrap_record()
         if deployment_token and isinstance(record, dict):
@@ -381,12 +414,20 @@ def _poll_bootstrap_config_loop() -> None:
             if status == "pending":
                 try:
                     args = _build_configure_args_from_record(record)
-                except ValueError:
+                except ValueError as error:
+                    # The record arrived and was unusable — which used to look
+                    # exactly like never having received one.
+                    _log_once("record-invalid", f"record cannot be turned into a config: {error}")
                     time.sleep(BOOTSTRAP_CONFIG_POLL_SECONDS)
                     continue
-                ok, _ = _run_configure_process(args, record)
+                _log("record found and pending, configuring the relay now")
+                ok, detail = _run_configure_process(args, record)
                 if ok:
+                    _log("relay configured, setup endpoint is done")
                     return
+                _log(f"configure failed, will retry: {detail}")
+            else:
+                _log_once(f"status-{status}", f"record status is {status!r}, not acting on it")
         time.sleep(BOOTSTRAP_CONFIG_POLL_SECONDS)
 
 
