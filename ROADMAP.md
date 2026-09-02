@@ -1,5 +1,42 @@
 # Roadmap
 
+## 0.9.5 — two failures that could not be read, and one that could not be seen
+
+A deployment from universal-connectivity failed on all five compatible CRNs
+and said, five times over, `[object Object]`. The nodes were fine — all five
+answered `/about/executions/list` with HTTP 200 — and so was the rootfs the
+manifest pointed at, and the credit balance. One systemic cause, repeated five
+times, and the widget threw the only description of it away:
+`new Error(String(error))` on a rejection that was an object rather than an
+`Error`, which is what an Aleph or CRN response rejected as `{ code, message }`
+is. `describeThrown` now takes the message the thrower meant to send, follows
+the `cause` chain to the request that actually failed, and falls back to a
+truncated dump rather than to nothing (#127).
+
+Discovery could be blinded by a single record it did not like. The reader
+ended with `posts.forEach(assertSupportedRelayBootstrapPost)`, so one legacy
+v1 post threw and took the whole page with it. The bootstrap channel is public
+and append-only: the offending record belongs to somebody else, nobody can
+FORGET it, and every consumer polls the same page — so that would have been a
+permanent blackout for all of them. This is the failure aleph-rs hit in
+production on 2026-08-30, where a page-strict message iterator left the
+scheduler unable to see new v-programs at all; their answer was to yield per
+item and carry on, and this is ours. Unusable records are skipped and reported
+through `onUnsupportedPost` (#128).
+
+And this release publishes itself. A merged "Cut" already bumps every package
+and writes the section these notes come from, but publishing still waited for
+somebody to dispatch a workflow and untick a `dry_run` that defaults to true.
+Nobody did, twice, for 0.9.4. A push to main now publishes exactly when it
+changed the version — under `next` only, because promotion to `latest` has
+been gated on manual testing since 0.7.0 and 0.9.2 is the argument for keeping
+that gate (#129).
+
+**Before promoting to `latest`:** exercise the relay button in
+universal-connectivity's `js-peer` once it is on this version. That app is
+still on 0.9.0, which is where the unreadable failure was reported from, and
+it is the consumer this release exists for.
+
 ## 0.9.4 — the drag nobody could do, and the scope nobody could ask for
 
 0.9.2 shipped a draggable launcher and said so. In the Svelte build it did not
