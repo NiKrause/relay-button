@@ -8,6 +8,7 @@ import {
   createRelayBootstrapPost,
   dedupeMultiaddrs,
   discoverAlephBootstrapMultiaddrs,
+  unsupportedRelayBootstrapReason,
   filterRelayBootstrapPostsByRegistration,
   filterPublicMultiaddrs,
   isBrowserDialableMultiaddr,
@@ -551,43 +552,72 @@ test("discoverAlephBootstrapMultiaddrs scans later pages when page 1 has no usab
   ]);
 });
 
-test("discoverAlephBootstrapMultiaddrs rejects legacy v1 records", async () => {
+test("discoverAlephBootstrapMultiaddrs skips a legacy v1 record and keeps the rest", async () => {
+  // This used to reject the whole page, and the cost of that is what the Rust
+  // client hit in production on 2026-08-30: a page-strict reader turns one
+  // record it dislikes into a total blackout, on every poll
+  // (aleph-im/aleph-rs#386). Here it would be worse than a blackout on our own
+  // data — the channel is public and append-only, so the offending record
+  // belongs to somebody else and nobody can FORGET it. Discovery would stay
+  // dark for every consumer, permanently.
   const now = Date.now();
-  const requestedTypes = [];
-  const fetch = async (url) => {
-    const parsed = new URL(url);
-    const postType = parsed.searchParams.get("types");
-    requestedTypes.push(postType);
-
-    return {
-      ok: true,
-      status: 200,
-      async json() {
-        return {
-          posts: [
-            {
-              hash: "hash-legacy",
-              type: "relay-bootstrap",
-              ref: "simple-todo-bootstrap",
-              content: {
-                peerId: "12D3KooWLegacy",
-                updatedAt: now,
-                multiaddrs: [
-                  "/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy",
-                ],
-              },
+  const skipped = [];
+  const fetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return {
+        posts: [
+          {
+            hash: "hash-legacy",
+            type: "relay-bootstrap",
+            ref: "simple-todo-bootstrap",
+            content: {
+              peerId: "12D3KooWLegacy",
+              updatedAt: now,
+              multiaddrs: ["/dns4/relay-legacy.example.com/tcp/443/tls/ws/p2p/12D3KooWLegacy"],
             },
-          ],
-        };
-      },
-    };
-  };
+          },
+          {
+            hash: "hash-live",
+            type: "relay-bootstrap-v2",
+            ref: "simple-todo-bootstrap",
+            content: {
+              peerId: "12D3KooWLive",
+              updatedAt: now,
+              browserMultiaddrs: ["/dns4/relay-live.example.com/tcp/443/tls/ws/p2p/12D3KooWLive"],
+            },
+          },
+        ],
+      };
+    },
+  });
 
-  await assert.rejects(
-    discoverAlephBootstrapMultiaddrs({ fetch }),
-    /Legacy relay-bootstrap record encountered.*relay-bootstrap-v2/,
+  const addrs = await discoverAlephBootstrapMultiaddrs({
+    fetch,
+    onUnsupportedPost: (entry) => skipped.push(entry),
+  });
+
+  // The healthy relay survives its neighbour.
+  assert.deepEqual(addrs, ["/dns4/relay-live.example.com/tcp/443/tls/ws/p2p/12D3KooWLive"]);
+
+  // And the skip is reported rather than swallowed: a consumer whose relay
+  // vanished should see a reason, not an empty list to guess at.
+  assert.equal(skipped.length, 1);
+  assert.equal(skipped[0].hash, "hash-legacy");
+  assert.match(skipped[0].reason, /legacy relay-bootstrap record/);
+});
+
+test("a post of an unexpected type is skipped with its type named", () => {
+  // The types= query pins the post type, so this needs the API to return
+  // something it was not asked for — which is exactly the shape of the
+  // incident above, where server and client disagreed about a record.
+  assert.equal(unsupportedRelayBootstrapReason({ type: "relay-bootstrap-v2" }), null);
+  assert.equal(unsupportedRelayBootstrapReason({}), null);
+  assert.match(
+    unsupportedRelayBootstrapReason({ type: "relay-bootstrap-v3" }),
+    /unsupported post type relay-bootstrap-v3.*expected relay-bootstrap-v2/,
   );
-  assert.deepEqual(requestedTypes, [DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE]);
 });
 
 test("selectCurrentRelayBootstrapPosts keeps only the newest record per sender identity", () => {
