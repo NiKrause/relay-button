@@ -1,5 +1,39 @@
 # Roadmap
 
+## 0.9.8 — a relay publishes its websocket address the moment it has one
+
+A relay refreshes its bootstrap registration on a timer: once about twenty
+minutes after boot, then every six hours. AutoTLS issues the certificate on
+its own schedule. Nothing connected the two. A certificate that arrived after
+that first refresh sat unpublished for up to six hours.
+
+Measured on the live relay 65.108.233.158: booted 07:02:24, AutoTLS ready
+07:04:14, registration refreshed 07:30:27, next refresh 13:36. A relay
+deployed three and a half hours earlier had published two webtransport
+addresses and one webrtc-direct, and no websocket at all, because it had none
+to publish when its turn came.
+
+That set cannot be verified by the thing that consumes it.
+`select_compact_multiaddrs` keeps the three best browser-dialable addresses,
+ranking proxy wss first, AutoTLS wss second, webtransport and webrtc-direct
+after. With neither of the top two ranks available, all three slots go to
+transports Node cannot dial, and js-peer's `bootstrap:resolve` — which proves
+a peer is alive by connecting to it over a websocket — reports "no
+Node-dialable address proved this peer is live" and refuses to bake a list it
+could not verify.
+
+Both relay profiles now start their bootstrap refresh from the AutoTLS
+refresh's `ExecStartPost`. `--no-block` is not optional: both units are
+`Type=oneshot`, and starting one synchronously from inside the other's
+`ExecStartPost` deadlocks systemd. `ucan-store` is deliberately untouched —
+its AutoTLS unit is a `/bin/true` placeholder and it has no periodic refresh
+to trigger.
+
+How thin the margin was: a run at 07:50 discovered six relays and exactly one
+of them offered a websocket address that answered. One other had a proxy
+address whose host no longer connects. The build that depends on these relays
+was passing on the health of a single peer.
+
 ## 0.9.7 — the relay's websocket address points at a port that is open
 
 Four of the five address families a uc-go-peer relay announces used the port
