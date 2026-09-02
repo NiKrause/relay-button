@@ -1,6 +1,20 @@
 name: Release Packages
 
 on:
+  # A merged "Cut 0.9.x" is the act of releasing — it bumps every package and
+  # writes the ROADMAP section the notes come from. Until now it published
+  # nothing: somebody still had to dispatch this workflow and untick a
+  # `dry_run` that defaults to true. Twice for 0.9.4 nobody did, and the miss
+  # only surfaced a workflow later as a dist-tag promotion pointing at a
+  # version npm had never seen.
+  #
+  # So a push to main publishes exactly when the root version changed, and
+  # under `next` only. Promotion to `latest` stays a deliberate act: the
+  # release notes have gated it on manual testing since 0.7.0, and that gate is
+  # worth keeping.
+  push:
+    branches: [main]
+
   workflow_dispatch:
     inputs:
       dry_run:
@@ -29,7 +43,71 @@ permissions:
   id-token: write
 
 jobs:
+  # A cheap gate in front of the expensive job. Without it every merge to main
+  # would install, test and build a release it was never going to publish.
+  decide:
+    runs-on: ubuntu-24.04
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+      reason: ${{ steps.decide.outputs.reason }}
+      version: ${{ steps.decide.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # Two commits, so the step below can ask whether this push changed
+          # the version. Nothing else here needs history.
+          fetch-depth: 2
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      - name: Decide whether this run publishes
+        id: decide
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # The dispatcher said so, either way.
+            if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "reason=dispatched as a dry run" >> "$GITHUB_OUTPUT"
+            else
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+              echo "reason=dispatched with dry_run unchecked" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
+          # A push publishes only when it changed the version. Every other
+          # merge lands here and must do nothing at all.
+          previous="$(git show 'HEAD^:package.json' 2>/dev/null | node -p "JSON.parse(require('node:fs').readFileSync(0,'utf8')).version" 2>/dev/null || echo '')"
+          if [[ "${previous}" == "${version}" ]]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "reason=version unchanged at ${version}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # And never over an existing version: a revert-and-remerge would
+          # otherwise fail halfway through the set, having published some.
+          if npm view "@${{ inputs.npm_scope || 'le-space' }}/core@${version}" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "reason=${version} is already on npm" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "reason=version changed ${previous:-none} to ${version}" >> "$GITHUB_OUTPUT"
+
+
   release:
+    needs: decide
+    # A dispatch always runs, so a dry run stays available on demand. A push
+    # runs only when it changed the version — that is the whole automation.
+    if: ${{ needs.decide.outputs.publish == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -55,17 +133,17 @@ jobs:
 
       - name: Build publishable artifacts
         env:
-          NPM_SCOPE: ${{ inputs.npm_scope }}
+          NPM_SCOPE: ${{ inputs.npm_scope || 'le-space' }}
         run: pnpm publish:prepare
 
       - name: Pack dist packages
-        if: ${{ inputs.dry_run }}
+        if: needs.decide.outputs.publish != 'true'
         env:
-          NPM_SCOPE: ${{ inputs.npm_scope }}
-        run: node ./scripts/publish-from-dist.mjs --dry-run --tag "${{ inputs.npm_tag }}"
+          NPM_SCOPE: ${{ inputs.npm_scope || 'le-space' }}
+        run: node ./scripts/publish-from-dist.mjs --dry-run --tag "${{ inputs.npm_tag || 'next' }}"
 
       - name: Upload dry-run tarballs
-        if: ${{ inputs.dry_run }}
+        if: needs.decide.outputs.publish != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: npm-package-tarballs
@@ -79,7 +157,7 @@ jobs:
             packages/node/dist/*.tgz
 
       - name: Verify npm token is configured
-        if: ${{ !inputs.dry_run }}
+        if: needs.decide.outputs.publish == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -89,18 +167,18 @@ jobs:
           fi
 
       - name: Verify npm authentication
-        if: ${{ !inputs.dry_run }}
+        if: needs.decide.outputs.publish == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if ! npm whoami; then
             echo "npm authentication failed for the configured NPM_TOKEN." >&2
-            echo "Refresh the token and confirm it has publish rights for the @${{ inputs.npm_scope }} scope." >&2
+            echo "Refresh the token and confirm it has publish rights for the @${{ inputs.npm_scope || 'le-space' }} scope." >&2
             exit 1
           fi
 
       - name: Inspect npm scope access
-        if: ${{ !inputs.dry_run }}
+        if: needs.decide.outputs.publish == 'true'
         continue-on-error: true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -112,20 +190,20 @@ jobs:
             exit 0
           fi
 
-          if ! node -e "const fs=require('node:fs'); const payload=JSON.parse(fs.readFileSync('/tmp/npm-access.json','utf8')); const names=Object.keys(payload || {}); const scope='@${{ inputs.npm_scope }}/'; if(!names.some((name)=>name.startsWith(scope))){ console.error('The active npm account does not appear to have package access under ' + scope); process.exit(1) }"; then
-            echo "The configured NPM_TOKEN does not appear to have package access under the @${{ inputs.npm_scope }} scope." >&2
+          if ! node -e "const fs=require('node:fs'); const payload=JSON.parse(fs.readFileSync('/tmp/npm-access.json','utf8')); const names=Object.keys(payload || {}); const scope='@${{ inputs.npm_scope || 'le-space' }}/'; if(!names.some((name)=>name.startsWith(scope))){ console.error('The active npm account does not appear to have package access under ' + scope); process.exit(1) }"; then
+            echo "The configured NPM_TOKEN does not appear to have package access under the @${{ inputs.npm_scope || 'le-space' }} scope." >&2
             echo "Continuing to the publish step because npm access inspection can under-report automation token capabilities." >&2
             exit 0
           fi
 
       - name: Publish dist packages
-        if: ${{ !inputs.dry_run }}
+        if: needs.decide.outputs.publish == 'true'
         env:
-          NPM_SCOPE: ${{ inputs.npm_scope }}
+          NPM_SCOPE: ${{ inputs.npm_scope || 'le-space' }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          args=(--tag "${{ inputs.npm_tag }}")
-          if [[ "${{ inputs.provenance }}" == "true" ]]; then
+          args=(--tag "${{ inputs.npm_tag || 'next' }}")
+          if [[ "${{ inputs.provenance || false }}" == "true" ]]; then
             args+=(--provenance)
           fi
           node ./scripts/publish-from-dist.mjs "${args[@]}"
@@ -140,15 +218,16 @@ jobs:
       - name: Say what this run did
         if: always()
         env:
-          DRY_RUN: ${{ inputs.dry_run }}
-          NPM_TAG: ${{ inputs.npm_tag }}
+          PUBLISHED: ${{ needs.decide.outputs.publish }}
+          REASON: ${{ needs.decide.outputs.reason }}
+          NPM_TAG: ${{ inputs.npm_tag || 'next' }}
         run: |
           version="$(node -p "require('./package.json').version")"
-          if [[ "${DRY_RUN}" == "true" ]]; then
+          if [[ "${PUBLISHED}" != "true" ]]; then
             {
-              echo "## Dry run — nothing was published"
+              echo "## Nothing was published — ${REASON}"
               echo
-              echo "Packed \`${version}\` and stopped. npm still has whatever it had before."
+              echo "npm still has whatever it had before."
               echo
               echo "To publish, run this workflow again with **dry_run unchecked**."
             } >> "${GITHUB_STEP_SUMMARY}"
@@ -166,7 +245,7 @@ jobs:
       # went on linking to release notes that did not exist. Runs only on a real
       # publish, and skips a tag that is already there so a re-run is harmless.
       - name: Tag the release and publish notes
-        if: ${{ !inputs.dry_run }}
+        if: needs.decide.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
