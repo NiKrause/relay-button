@@ -141,11 +141,57 @@ export function describeRequest(
  *
  * Exported for its test.
  */
+/**
+ * Say what was thrown, even when it was not an `Error`.
+ *
+ * `String(value)` on a plain object is `"[object Object]"`, and that is what a
+ * user saw when every CRN failed at once: five candidates, five identical
+ * `[object Object]`, and no way to tell whether they had failed for one reason
+ * or five. Not every rejection in this path is an `Error` — an Aleph or CRN
+ * response rejected as `{ code, message }` is an object, and so is anything a
+ * dependency throws as a bare literal.
+ *
+ * Order matters: a `message` field is what the thrower meant to say, so it wins
+ * over a dump of the whole object. The dump is the fallback, truncated, because
+ * an unreadable line is still better than a line saying nothing — and a cyclic
+ * object must not take the error handler down with it.
+ *
+ * Exported for its test.
+ */
+export function describeThrown(error: unknown): string {
+  if (error instanceof Error) {
+    const cause = (error as { cause?: unknown }).cause;
+    const causeText =
+      cause != null && cause !== error ? ` (cause: ${describeThrown(cause)})` : "";
+    return `${error.message}${causeText}`;
+  }
+
+  if (typeof error === "object" && error !== null) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+
+    try {
+      const json = JSON.stringify(error);
+      if (json && json !== "{}") {
+        return json.length > 400 ? `${json.slice(0, 400)}…` : json;
+      }
+    } catch {
+      // Cyclic, or a getter that throws. Fall through to the constructor name,
+      // which at least says what kind of thing arrived.
+    }
+
+    const name = error.constructor?.name;
+    return name && name !== "Object" ? `<${name}>` : "<object with no message>";
+  }
+
+  return String(error);
+}
+
 export function deploymentFailureMessage(
   error: unknown,
   stage: string | null | undefined,
 ): string {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = describeThrown(error);
   const step = String(stage ?? "").trim();
   return step ? `${message} (while: ${step})` : message;
 }
@@ -164,7 +210,7 @@ function asJsonFetch(
       // Only network failures land here — an HTTP error is a resolved response
       // and is handled by the caller reading `ok`. So this rethrow adds the two
       // facts the original lacks and keeps everything else it had.
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = describeThrown(error);
       throw new Error(`${reason} (${describeRequest(input, init)})`, {
         cause: error,
       });
@@ -407,7 +453,7 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
 }
 
 function manifestLoadErrorState(error: unknown): RootfsManifestState {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = describeThrown(error);
   return {
     manifest: null,
     valid: false,
@@ -476,7 +522,7 @@ const INSTANCE_ADDRESS_TIMEOUT_MS = 10000;
  * would have explained the situation is never reached.
  */
 function describeInstanceAddressFailure(error: unknown, sourceUrl: string): string {
-  const raw = error instanceof Error ? error.message : String(error);
+  const raw = describeThrown(error);
 
   if (error instanceof Error && error.name === "AbortError") {
     return `${sourceUrl} did not answer within ${INSTANCE_ADDRESS_TIMEOUT_MS / 1000}s. Press Refresh to try again.`;
@@ -965,7 +1011,7 @@ async function inspectInstanceRuntime(args: {
     return {
       details: {
         ...details,
-        error: error instanceof Error ? error.message : String(error),
+        error: describeThrown(error),
       },
       lookup,
     };
@@ -2069,7 +2115,7 @@ export class SponsorRelayController {
           this.trace("deploy:bootstrap-config-cleanup-error", {
             itemHash: args.itemHash,
             deploymentToken: args.deploymentToken,
-            error: error instanceof Error ? error.message : String(error),
+            error: describeThrown(error),
           });
         });
 
@@ -2156,7 +2202,7 @@ export class SponsorRelayController {
       this.trace("deploy:bootstrap-config-history-scan-error", {
         itemHash: args.itemHash,
         currentAggregateItemHash: args.currentAggregateItemHash,
-        error: error instanceof Error ? error.message : String(error),
+        error: describeThrown(error),
       });
       return [];
     });
@@ -2207,7 +2253,7 @@ export class SponsorRelayController {
           itemHash: args.itemHash,
           currentAggregateItemHash: args.currentAggregateItemHash,
           staleHashes,
-          error: error instanceof Error ? error.message : String(error),
+          error: describeThrown(error),
         });
       });
   }
@@ -2637,7 +2683,7 @@ export class SponsorRelayController {
     } catch (error) {
       this.patch({
         busy: { connectingWallet: false },
-        errorText: error instanceof Error ? error.message : String(error),
+        errorText: describeThrown(error),
         statusText: "Wallet connection failed",
       });
     }
@@ -2895,7 +2941,7 @@ export class SponsorRelayController {
       this.trace("refresh:error", error);
       this.patch({
         busy: { refreshing: false },
-        errorText: error instanceof Error ? error.message : String(error),
+        errorText: describeThrown(error),
         statusText: "Refresh failed",
       });
     }
@@ -3311,7 +3357,11 @@ export class SponsorRelayController {
           });
           return;
         } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
+          // `new Error(String(error))` is where five CRN failures became five
+          // `[object Object]`. Whatever was thrown, this keeps it readable and
+          // keeps the original reachable through `cause`.
+          lastError =
+            error instanceof Error ? error : new Error(describeThrown(error), { cause: error });
           const attemptLabel = crnDisplayName;
           const failedDueToInvalidIpv6 =
             /not globally routable|public guest IPv6/i.test(lastError.message);
@@ -3865,7 +3915,7 @@ export class SponsorRelayController {
       this.trace("delete:error", error);
       this.patch({
         busy: { deletingInstanceHash: null },
-        errorText: error instanceof Error ? error.message : String(error),
+        errorText: describeThrown(error),
         statusText: "Delete failed",
       });
     }
@@ -3938,7 +3988,7 @@ export class SponsorRelayController {
       this.trace("registration-delete:error", error);
       this.patch({
         busy: { deletingRegistrationHash: null },
-        errorText: error instanceof Error ? error.message : String(error),
+        errorText: describeThrown(error),
         statusText: "Registration cleanup failed",
       });
     }
