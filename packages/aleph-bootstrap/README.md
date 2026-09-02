@@ -13,6 +13,7 @@ It is designed for two complementary jobs:
 - `discoverAlephBootstrapMultiaddrs(options)`
 - `createLibp2pAlephBootstrap(options)`
 - `filterRelayBootstrapPostsByProfile(posts, profile?)`
+- `unsupportedRelayBootstrapReason(post)`
 - `filterRelayBootstrapPostsByRegistration(posts, registrationId?)`
 - `filterPublicMultiaddrs(addrs, options?)`
 - `createRelayBootstrapPost(options)`
@@ -70,6 +71,12 @@ dials a `uc-go-peer` relay never gets a shared circuit and sits at
 downstream, a browser probe wave against an unscoped list spent its outbound
 stream budget on dead addresses and wrote off the one healthy relay along with
 them.
+
+A record this package cannot use — a legacy v1 post, or a type it did not ask
+for — is **skipped, not fatal**. One such record on a public, append-only
+channel would otherwise blind discovery for every consumer, permanently, and
+nobody can FORGET somebody else's post. Pass `onUnsupportedPost` to see what
+was skipped and why.
 
 Use `registrationId` for anything that bakes addresses into a build or dials
 them on start. Omit both to see the whole channel, which is what a dashboard

@@ -126,6 +126,12 @@ export interface DiscoverAlephBootstrapOptions {
    * start; omit it to see the whole channel.
    */
   registrationId?: string | readonly string[];
+  /**
+   * Called for each record discovery had to skip. Optional, and the default of
+   * doing nothing is deliberate — a skipped record is not an error for the
+   * consumer — but a consumer whose relay went missing wants to see this.
+   */
+  onUnsupportedPost?: (skipped: { hash: string | null | undefined; reason: string }) => void;
   fetch?: typeof fetch;
 }
 
@@ -1031,23 +1037,54 @@ export async function fetchAlephBootstrapPosts(
     .filter((entry): entry is RelayBootstrapPostRecord => entry != null)
     .sort((left, right) => compareRelayBootstrapPostRecency(right, left));
 
-  posts.forEach(assertSupportedRelayBootstrapPost);
-  return posts;
+  return usableRelayBootstrapPosts(posts, options.onUnsupportedPost);
 }
 
-function assertSupportedRelayBootstrapPost(
+/**
+ * Why this post cannot be used, or `null` if it can.
+ *
+ * This used to throw, and one record of the wrong type took the whole page
+ * with it. The channel is public and append-only: anybody with an ETH key can
+ * publish into it, nobody can FORGET somebody else's post, and every consumer
+ * polls the same page. So a single legacy record — not ours, not removable —
+ * would blind discovery for everyone, permanently.
+ *
+ * The Rust client learned this the same way and changed the same shape: after
+ * a production incident on 2026-08-30, `get_messages_iterator` was page-strict
+ * and one message the validator rejected failed every poll, leaving the
+ * scheduler unable to see new v-programs at all (aleph-im/aleph-rs#386). The
+ * answer there was to yield per message and carry on; the answer here is to
+ * skip the record and say which one it was.
+ */
+export function unsupportedRelayBootstrapReason(
   post: RelayBootstrapPostRecord,
-): void {
+): string | null {
   if (post.type === "relay-bootstrap") {
-    throw new Error(
-      "Legacy relay-bootstrap record encountered. Only relay-bootstrap-v2 is supported.",
-    );
+    return "legacy relay-bootstrap record; only relay-bootstrap-v2 is supported";
   }
   if (post.type && post.type !== DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE) {
-    throw new Error(
-      `Unsupported relay bootstrap post type: ${post.type}. Expected ${DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE}.`,
-    );
+    return `unsupported post type ${post.type}; expected ${DEFAULT_ALEPH_BOOTSTRAP_POST_TYPE}`;
   }
+  return null;
+}
+
+/**
+ * Drop what cannot be used, and report it rather than swallowing it.
+ *
+ * Silence would be the other way to get this wrong: a consumer whose relay
+ * vanished from discovery deserves to know a record was skipped, not to watch
+ * an empty list and guess.
+ */
+function usableRelayBootstrapPosts(
+  posts: readonly RelayBootstrapPostRecord[],
+  onUnsupportedPost?: (skipped: { hash: string | null | undefined; reason: string }) => void,
+): RelayBootstrapPostRecord[] {
+  return posts.filter((post) => {
+    const reason = unsupportedRelayBootstrapReason(post);
+    if (!reason) return true;
+    onUnsupportedPost?.({ hash: post.itemHash ?? post.hash, reason });
+    return false;
+  });
 }
 
 function compareRelayBootstrapPostRecency(
@@ -1075,7 +1112,7 @@ function relayBootstrapRecordIdentity(
 
 export function selectCurrentRelayBootstrapPosts(
   posts: readonly RelayBootstrapPostRecord[],
-  options: Pick<DiscoverAlephBootstrapOptions, "maxAgeMs"> & {
+  options: Pick<DiscoverAlephBootstrapOptions, "maxAgeMs" | "onUnsupportedPost"> & {
     now?: number;
   } = {},
 ): RelayBootstrapPostRecord[] {
@@ -1083,8 +1120,7 @@ export function selectCurrentRelayBootstrapPosts(
   const now = options.now ?? Date.now();
   const selected = new Map<string, RelayBootstrapPostRecord>();
 
-  for (const post of posts) {
-    assertSupportedRelayBootstrapPost(post);
+  for (const post of usableRelayBootstrapPosts(posts, options.onUnsupportedPost)) {
     const content = post.content;
     if (!content) continue;
     if (now - content.updatedAt > maxAgeMs) continue;
