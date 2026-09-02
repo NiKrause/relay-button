@@ -14,10 +14,25 @@
 	"pnpm": {
 		"overrides": {
 			"@babel/core": "^7.29.6",
+			"body-parser": "^1.20.6",
+			"brace-expansion@1": "^1.1.16",
+			"dompurify": "^3.4.12",
+			"esbuild": "^0.28.1",
+			"fast-uri": "^3.1.4",
+			"http-proxy-middleware@2": "^2.0.10",
+			"joi": "^17.13.4",
+			"js-yaml@3": "^3.15.0",
+			"js-yaml@4": "^4.3.0",
+			"launch-editor": "^2.14.1",
 			"protons-runtime": "^7.0.0",
 			"qs": "^6.15.2",
 			"serialize-javascript": "^7.0.5",
-			"ws": "^8.20.1"
+			"shell-quote": "^1.9.0",
+			"svgo": "^3.3.4",
+			"uuid": "^11.1.1",
+			"webpack-dev-server": "^5.2.6",
+			"websocket-driver": "^0.7.5",
+			"ws": "^8.21.0"
 		}
 	},
 	"devDependencies": {
