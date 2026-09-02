@@ -17,6 +17,7 @@ Environment=SERVICE_NAME=orbitdb-relay.service
 Environment=CADDY_SERVICE=caddy.service
 Environment=CADDYFILE=/etc/caddy/Caddyfile
 ExecStart=/usr/bin/python3 /usr/local/sbin/orbitdb-relay-autotls-refresh.py
+ExecStartPost=/usr/bin/systemctl start --no-block orbitdb-relay-bootstrap-refresh.service
 StandardOutput=journal
 StandardError=journal
 
