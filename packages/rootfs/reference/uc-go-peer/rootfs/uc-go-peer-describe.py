@@ -16,6 +16,7 @@ CADDY_HTTPS_PORT = int(os.environ.get("CADDY_HTTPS_PORT", "443"))
 WAIT_TIMEOUT_SECONDS = int(os.environ.get("DESCRIBE_WAIT_TIMEOUT_SECONDS", "240"))
 WAIT_INTERVAL_SECONDS = float(os.environ.get("DESCRIBE_WAIT_INTERVAL_SECONDS", "2"))
 AUTOTLS_EXTRA_WAIT_SECONDS = int(os.environ.get("DESCRIBE_AUTOTLS_EXTRA_WAIT_SECONDS", "120"))
+WS_BACKEND_PORT = os.environ.get("WS_BACKEND_PORT", "9097").strip()
 
 
 def tls_endpoint_serves(hostname: str, port: int) -> bool:
@@ -40,21 +41,55 @@ def tls_endpoint_serves(hostname: str, port: int) -> bool:
         return False
 
 
+def backend_ws_port(env_values: dict[str, str]) -> int | None:
+    """Port the websocket listener is bound to inside the guest."""
+    raw = env_values.get("GO_PEER_WSS_PORT", "").strip() or WS_BACKEND_PORT
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def caddy_cert_serves(hostname: str) -> bool:
     return tls_endpoint_serves(hostname, CADDY_HTTPS_PORT)
 
 
-def autotls_cert_serves(autotls_addrs: list[str]) -> bool:
-    """Verify the AutoTLS *.libp2p.direct certificate actually serves. Host
-    AND port come from the multiaddr — TLS is terminated on the announced
-    port; every candidate is tried until one verifies."""
+def autotls_cert_serves(autotls_addrs: list[str], backend_port: int | None = None) -> bool:
+    """Verify the AutoTLS *.libp2p.direct certificate actually serves.
+
+    The handshake is a loopback dial, so it needs the port the listener is
+    bound to *inside the guest* -- and the announced port is not that. On
+    Aleph every port is published under a different number: the relay binds
+    GO_PEER_WSS_PORT (9097) while the multiaddr advertises
+    EXTERNAL_RELAY_WS_PORT, and the translation is done by the host's NAT,
+    which loopback never traverses. Taking the port from the multiaddr
+    therefore dialled 127.0.0.1:<external>, got ECONNREFUSED every time, and
+    silently dropped every AutoTLS address from the registration.
+
+    Measured on a live relay: 127.0.0.1:64861 refused the connection while
+    127.0.0.1:9097 served a valid `*.libp2p.direct` certificate, and only
+    9097 was listening.
+
+    The announced port is still tried first: on a profile that binds the
+    published port directly -- orbitdb-relay does -- it is the right one, and
+    this must not regress there. `backend_port` is the fallback.
+    """
     for addr in autotls_addrs:
         host_match = re.search(r"/dns[46]/([^/]+)/", addr) or re.search(r"/sni/([^/]+)/", addr)
         port_match = re.search(r"/tcp/(\d+)/", addr)
-        if host_match and port_match:
-            if tls_endpoint_serves(host_match.group(1), int(port_match.group(1))):
+        if not host_match:
+            continue
+        hostname = host_match.group(1)
+        candidates: list[int] = []
+        if port_match:
+            candidates.append(int(port_match.group(1)))
+        if backend_port and backend_port not in candidates:
+            candidates.append(backend_port)
+        for port in candidates:
+            if tls_endpoint_serves(hostname, port):
                 return True
     return False
+
 
 PEER_ID_PATTERNS = [
     re.compile(r"PeerID:\s+(\S+)"),
@@ -280,7 +315,10 @@ def main() -> None:
         )
         autotls_cert_ready = bool(
             grouped["autotls_wss_multiaddrs"]
-            and autotls_cert_serves(grouped["autotls_wss_multiaddrs"])
+            and autotls_cert_serves(
+                grouped["autotls_wss_multiaddrs"],
+                backend_ws_port(env_values),
+            )
         )
         certhash_ready = bool(
             grouped["webtransport_multiaddrs"] or grouped["webrtc_direct_multiaddrs"]
