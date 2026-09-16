@@ -142,8 +142,14 @@ The libp2p check starts a standard Helia node from `libp2pDefaults()` and
 gateway routing, no delegated HTTP routing. AutoTLS and UPnP are left out as
 well, because a short-lived check needs no certificate and should not open
 router ports. One Helia session fetches the whole DAG; the checked sites took
-about six seconds. `libp2p_peers` (`ALEPH_SITE_LIBP2P_PEERS`) adds multiaddrs to
-dial besides Helia's bootstrap peers, and `libp2p_timeout_ms`
+about six seconds.
+
+Before fetching, the check dials Aleph's own IPFS nodes (`ALEPH_IPFS_PEERS` in
+`@le-space/node`). They are DHT servers that hold what Aleph pins, so the check
+does not depend on the public IPFS bootstrap nodes, which Shipyard stops
+operating on 30 September 2026. With those bootstrap nodes refused, each Aleph
+node alone was enough to find providers and fetch a pinned site. `libp2p_peers`
+(`ALEPH_SITE_LIBP2P_PEERS`) replaces that list, and `libp2p_timeout_ms`
 (`ALEPH_SITE_LIBP2P_TIMEOUT_MS`, default 10 minutes) bounds the fetch.
 
 The DNSLink check follows the CNAME of `_dnslink.<domain>` and asks the

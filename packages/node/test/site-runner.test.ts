@@ -858,6 +858,26 @@ test('runSitePublishMode verifies a processed STORE over libp2p without any HTTP
   assert.match(summary, /Fetched over libp2p: `2 blocks`/)
 })
 
+test('runSitePublishMode leaves the libp2p peers to the built-in Aleph list unless ALEPH_SITE_LIBP2P_PEERS is set', async () => {
+  const { env } = await oneFileSite('site-publish-libp2p-default-peers-')
+  const calls: string[] = []
+  const fetches: Array<Record<string, unknown>> = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = authenticatedCarFetch(calls)
+  try {
+    await runSitePublishModeCar({ ...env, ALEPH_SITE_VERIFY: 'libp2p', ALEPH_SITE_LIBP2P_PEERS: '' }, {
+      fetchDagOverLibp2p: async (options) => {
+        fetches.push(options as unknown as Record<string, unknown>)
+        return { cid: options.cid, blocks: 2, connectedPeers: 1, durationMs: 1 }
+      },
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  assert.equal(fetches.length, 1)
+  assert.equal(fetches[0]?.peers, undefined)
+})
+
 test('runSitePublishMode fails when the libp2p fetch fails', async () => {
   const { outputFile, env } = await oneFileSite('site-publish-libp2p-fail-')
   const calls: string[] = []

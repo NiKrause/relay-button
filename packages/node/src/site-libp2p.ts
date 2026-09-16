@@ -8,12 +8,24 @@ import { createHelia, libp2pDefaults } from "helia"
 import { createLibp2p } from "libp2p-helia"
 import { CID } from "multiformats/cid"
 
+/**
+ * IPFS nodes run by Aleph: DHT servers that hold what Aleph pins. Dialing them
+ * reaches the IPFS network without the public bootstrap nodes, which Shipyard
+ * stops operating on 30 September 2026. Each of them alone was enough to find
+ * providers and fetch a pinned site with those bootstrap nodes refused.
+ */
+export const ALEPH_IPFS_PEERS: readonly string[] = [
+  '/dns4/ipfs-2.aleph.im/tcp/4001/p2p/12D3KooWACE5dRw5V9WXuDTcngjE3ZaDSZ4qYJGfuhXZbENnL54y',
+  '/ip4/46.255.204.220/tcp/4001/p2p/12D3KooWJBw9CSUWQi7P7amZsjrsBAzoB2gJzyUUGkuBkdLc87co',
+  '/ip4/46.255.204.193/tcp/4001/p2p/12D3KooWDDLF8wFXnSpwtxSek3E3zwYueKgPyxLAdokXemnmBbgx',
+]
+
 export interface Libp2pDagFetchOptions {
   /** Root of the DAG to fetch. */
   cid: string
   /** Blocks the DAG must contain, for example every block of the CAR that was uploaded. */
   expectedBlockCids?: readonly string[]
-  /** Multiaddrs to dial in addition to Helia's own bootstrap peers. */
+  /** Multiaddrs to dial before fetching, in addition to Helia's bootstrap peers. Defaults to ALEPH_IPFS_PEERS. */
   peers?: readonly string[]
   /** Time allowed for the whole DAG. */
   timeoutMs?: number
@@ -112,13 +124,14 @@ export async function fetchDagOverLibp2p(
   const node = await (dependencies.createNode ?? createHeliaWithoutHttp)()
 
   try {
-    for (const address of options.peers ?? []) {
+    const peers = options.peers ?? ALEPH_IPFS_PEERS
+    await Promise.all(peers.map(async (address) => {
       try {
         await node.libp2p.dial(multiaddr(address), { signal: AbortSignal.timeout(dialTimeoutMs) })
       } catch (error) {
         log(`libp2p dial to ${address} failed: ${describe(error)}`)
       }
-    }
+    }))
 
     const signal = AbortSignal.timeout(timeoutMs)
     const session = node.blockstore.createSession(root, { signal })

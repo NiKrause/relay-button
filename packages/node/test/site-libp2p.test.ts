@@ -5,7 +5,7 @@ import { CID } from "multiformats/cid"
 import * as raw from "multiformats/codecs/raw"
 import { sha256 } from "multiformats/hashes/sha2"
 
-import { fetchDagOverLibp2p, type Libp2pDagFetchNode } from "../src/site-libp2p.ts"
+import { ALEPH_IPFS_PEERS, fetchDagOverLibp2p, type Libp2pDagFetchNode } from "../src/site-libp2p.ts"
 
 const PEER = '/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWHWNCn8t9NKQPBPZU61Fq6BoVw9XV37YsWTuMLwZXrEtj'
 
@@ -61,6 +61,13 @@ test('fetchDagOverLibp2p walks the DAG through one session and stops the node', 
   assert.deepEqual(calls.sessions, [root.toString()])
   assert.deepEqual(calls.gets.sort(), [leaf.toString(), root.toString()].sort())
   assert.equal(calls.stopped, true)
+})
+
+test('fetchDagOverLibp2p dials Aleph\'s IPFS nodes when no peers are given', async () => {
+  const { root, blocks } = await siteDag()
+  const { node, calls } = fakeNode(blocks)
+  await fetchDagOverLibp2p({ cid: root.toString() }, { createNode: async () => node })
+  assert.deepEqual([...calls.dials].sort(), [...ALEPH_IPFS_PEERS].sort())
 })
 
 test('fetchDagOverLibp2p keeps going when an extra peer cannot be dialed', async () => {

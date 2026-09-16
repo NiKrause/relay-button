@@ -921,10 +921,11 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env, o
     if (processed) {
       storeStatus = 'processed'
       if (verifyMode === 'libp2p') {
+        const libp2pPeers = parseCsvOrWhitespaceList(optionalEnv('ALEPH_SITE_LIBP2P_PEERS', '', env)).filter(Boolean)
         const retrieval = await (options.fetchDagOverLibp2p ?? fetchDagOverLibp2p)({
           cid: cidV1,
           expectedBlockCids: car.blockCids,
-          peers: parseCsvOrWhitespaceList(optionalEnv('ALEPH_SITE_LIBP2P_PEERS', '', env)).filter(Boolean),
+          peers: libp2pPeers.length > 0 ? libp2pPeers : undefined,
           timeoutMs: positiveNumberEnv('ALEPH_SITE_LIBP2P_TIMEOUT_MS', 10 * 60 * 1000, env),
         })
         libp2pBlocks = retrieval.blocks

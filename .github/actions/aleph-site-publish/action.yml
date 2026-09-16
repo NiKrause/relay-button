@@ -65,7 +65,7 @@ inputs:
     required: false
     default: gateway
   libp2p_peers:
-    description: Comma or whitespace separated multiaddrs the libp2p check dials in addition to Helia's bootstrap peers
+    description: Comma or whitespace separated multiaddrs the libp2p check dials first; empty dials Aleph's IPFS nodes (ALEPH_IPFS_PEERS)
     required: false
     default: ''
   libp2p_timeout_ms:
