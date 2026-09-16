@@ -60,6 +60,18 @@ inputs:
     description: Allow an accepted but pending STORE; never enable before domain linking
     required: false
     default: 'false'
+  verify:
+    description: How to check the processed site - gateway (HTTP request to its Aleph gateway URL) or libp2p (fetch every block over libp2p with Helia, no HTTP gateway)
+    required: false
+    default: gateway
+  libp2p_peers:
+    description: Comma or whitespace separated multiaddrs the libp2p check dials in addition to Helia's bootstrap peers
+    required: false
+    default: ''
+  libp2p_timeout_ms:
+    description: Time the libp2p check may take to fetch the whole site
+    required: false
+    default: '600000'
 
 outputs:
   ipfs_cid:
@@ -83,6 +95,9 @@ outputs:
   store_processed:
     description: true when the STORE is processed and safe to link
     value: ${{ steps.publish.outputs.store_processed }}
+  libp2p_verified:
+    description: true when every block of the site was fetched over libp2p
+    value: ${{ steps.publish.outputs.libp2p_verified }}
   aleph_api_host:
     description: Aleph API host that accepted the upload
     value: ${{ steps.publish.outputs.aleph_api_host }}
@@ -127,6 +142,9 @@ runs:
         ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS: ${{ inputs.gateway_wait_attempts }}
         ALEPH_SITE_GATEWAY_WAIT_DELAY_MS: ${{ inputs.gateway_wait_delay_ms }}
         ALEPH_SITE_ALLOW_PENDING_STORE: ${{ inputs.allow_pending_store }}
+        ALEPH_SITE_VERIFY: ${{ inputs.verify }}
+        ALEPH_SITE_LIBP2P_PEERS: ${{ inputs.libp2p_peers }}
+        ALEPH_SITE_LIBP2P_TIMEOUT_MS: ${{ inputs.libp2p_timeout_ms }}
       run: >-
         node --input-type=module -e
         "import('${{ github.action_path }}/../../../packages/node/src/index.ts')

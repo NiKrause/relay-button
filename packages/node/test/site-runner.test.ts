@@ -776,3 +776,198 @@ test('parseLastJsonObject parses multiline trailing JSON output', () => {
   const payload = parseLastJsonObject('prefix\n{\n  "item_hash": "abc123",\n  "content": {\n    "item_hash": "QmExample"\n  }\n}')
   assert.equal(payload.item_hash, 'abc123')
 })
+
+function authenticatedCarFetch(calls: string[]) {
+  let storeHash = ''
+  return (async (input, init) => {
+    const url = String(input)
+    calls.push(url)
+    if (url.includes('.ipfs.aleph.sh')) {
+      throw new Error(`HTTP gateway must not be used: ${url}`)
+    }
+    if (url === 'https://api2.aleph.im/api/v0/ipfs/add_car') {
+      assert.ok(init?.body instanceof FormData)
+      const metadata = init.body.get('metadata')
+      assert.ok(metadata instanceof Blob)
+      const envelope = JSON.parse(await metadata.text()) as { message?: Record<string, unknown> }
+      storeHash = String(envelope.message?.item_hash ?? '')
+      return new Response(JSON.stringify({ status: 'success', hash: ONE_FILE_SITE_CID }), { status: 200 })
+    }
+    if (url === `https://api2.aleph.im/api/v0/messages/${storeHash}`) {
+      return new Response(JSON.stringify({ status: 'processed' }), { status: 200 })
+    }
+    throw new Error(`Unexpected fetch call: ${url}`)
+  }) as typeof fetch
+}
+
+async function oneFileSite(prefix: string) {
+  const { dir, outputFile, summaryFile } = await createOutputEnv(prefix)
+  const siteDir = join(dir, 'dist')
+  await mkdir(siteDir, { recursive: true })
+  await writeFile(join(siteDir, 'index.html'), '<!doctype html><title>blog</title>')
+  return {
+    outputFile,
+    summaryFile,
+    env: {
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_SITE_DIRECTORY: siteDir,
+      ALEPH_SITE_PIN: 'true',
+      ALEPH_SITE_ENDPOINT_PAIRS: JSON.stringify([{ ipfsGateway: 'https://ipfs-2.aleph.im', apiHost: 'https://api2.aleph.im' }]),
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+    } as NodeJS.ProcessEnv,
+  }
+}
+
+test('runSitePublishMode verifies a processed STORE over libp2p without any HTTP gateway request', async () => {
+  const { outputFile, summaryFile, env } = await oneFileSite('site-publish-libp2p-')
+  const calls: string[] = []
+  const fetches: Array<Record<string, unknown>> = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = authenticatedCarFetch(calls)
+  try {
+    await runSitePublishModeCar({
+      ...env,
+      ALEPH_SITE_VERIFY: 'libp2p',
+      ALEPH_SITE_LIBP2P_PEERS: '/ip4/192.0.2.1/tcp/4001/p2p/12D3KooWHWNCn8t9NKQPBPZU61Fq6BoVw9XV37YsWTuMLwZXrEtj',
+      ALEPH_SITE_LIBP2P_TIMEOUT_MS: '1000',
+    }, {
+      fetchDagOverLibp2p: async (options) => {
+        fetches.push(options as unknown as Record<string, unknown>)
+        return { cid: options.cid, blocks: 2, connectedPeers: 3, durationMs: 5 }
+      },
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  assert.equal(calls.some((url) => url.includes('.ipfs.aleph.sh')), false)
+  assert.equal(fetches.length, 1)
+  assert.equal(fetches[0]?.cid, ONE_FILE_SITE_CID)
+  assert.equal(fetches[0]?.timeoutMs, 1000)
+  assert.deepEqual(fetches[0]?.peers, ['/ip4/192.0.2.1/tcp/4001/p2p/12D3KooWHWNCn8t9NKQPBPZU61Fq6BoVw9XV37YsWTuMLwZXrEtj'])
+  const expected = fetches[0]?.expectedBlockCids as string[]
+  assert.equal(expected.length, 2)
+  assert.ok(expected.includes(ONE_FILE_SITE_CID))
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, /store_processed=true/)
+  assert.match(outputs, /site_verify_mode=libp2p/)
+  assert.match(outputs, /libp2p_verified=true/)
+  assert.match(outputs, /libp2p_blocks=2/)
+  assert.match(outputs, /direct_gateway_verified=false/)
+  const summary = await readFile(summaryFile, 'utf8')
+  assert.match(summary, /Fetched over libp2p: `2 blocks`/)
+})
+
+test('runSitePublishMode fails when the libp2p fetch fails', async () => {
+  const { outputFile, env } = await oneFileSite('site-publish-libp2p-fail-')
+  const calls: string[] = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = authenticatedCarFetch(calls)
+  try {
+    await assert.rejects(
+      runSitePublishModeCar({ ...env, ALEPH_SITE_VERIFY: 'libp2p' }, {
+        fetchDagOverLibp2p: async () => {
+          throw new Error('Fetching over libp2p failed after 1000 ms: Want was aborted')
+        },
+      }),
+      /Want was aborted/,
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.doesNotMatch(outputs, /store_processed=true/)
+  assert.equal(calls.some((url) => url.includes('.ipfs.aleph.sh')), false)
+})
+
+test('runSitePublishMode rejects an unknown verification mode before uploading', async () => {
+  const { env } = await oneFileSite('site-publish-verify-mode-')
+  const calls: string[] = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = authenticatedCarFetch(calls)
+  try {
+    await assert.rejects(
+      runSitePublishModeCar({ ...env, ALEPH_SITE_VERIFY: 'http' }),
+      /ALEPH_SITE_VERIFY must be gateway or libp2p, not "http"/,
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  assert.deepEqual(calls, [])
+})
+
+function domainLinkFetch(calls: string[]) {
+  return (async (input) => {
+    const url = String(input)
+    calls.push(url)
+    if (url === 'https://api2.aleph.im/api/v0/messages/abcd1234') {
+      return new Response(JSON.stringify({ status: 'processed' }), { status: 200 })
+    }
+    if (url === 'https://api2.aleph.im/api/v0/messages') {
+      return new Response(JSON.stringify({ item_hash: 'domain-msg', message_status: 'processed' }), { status: 200 })
+    }
+    throw new Error(`Unexpected fetch call: ${url}`)
+  }) as typeof fetch
+}
+
+test('runDomainLinkMode checks a custom domain through its DNSLink record instead of HTTPS', async () => {
+  const { outputFile, summaryFile } = await createOutputEnv('site-domain-dnslink-')
+  const calls: string[] = []
+  const lookups: string[] = []
+  const answers = [
+    ['dnslink=/ipfs/bafybeibijbzrkewear2lkoylctlf6v4atsukit4c36dsxpeq4ndj66gqzi'],
+    [`dnslink=/ipfs/${ONE_FILE_SITE_CID}`],
+  ]
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = domainLinkFetch(calls)
+  try {
+    await runDomainLinkMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+      ALEPH_SITE_DOMAIN: 'relay.example.com',
+      ALEPH_SITE_ITEM_HASH: 'abcd1234',
+      ALEPH_SITE_IPFS_CID: ONE_FILE_SITE_CID,
+      ALEPH_SITE_DOMAIN_VERIFY: 'dnslink',
+      ALEPH_SITE_DNSLINK_WAIT_DELAY_MS: '1',
+    }, {
+      resolveDnslink: async (domain) => {
+        lookups.push(domain)
+        return answers.shift() ?? []
+      },
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  assert.deepEqual(lookups, ['relay.example.com', 'relay.example.com'])
+  assert.equal(calls.some((url) => url.startsWith('https://relay.example.com')), false)
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, /domain_verified=true/)
+  assert.match(outputs, /domain_verify_mode=dnslink/)
+  assert.match(outputs, new RegExp(`domain_verified_cid=${ONE_FILE_SITE_CID}`))
+})
+
+test('runDomainLinkMode fails when the DNSLink record never points at the new CID', async () => {
+  const { outputFile, summaryFile } = await createOutputEnv('site-domain-dnslink-stale-')
+  const calls: string[] = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = domainLinkFetch(calls)
+  try {
+    await assert.rejects(runDomainLinkMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+      ALEPH_SITE_DOMAIN: 'relay.example.com',
+      ALEPH_SITE_ITEM_HASH: 'abcd1234',
+      ALEPH_SITE_IPFS_CID: ONE_FILE_SITE_CID,
+      ALEPH_SITE_DOMAIN_VERIFY: 'dnslink',
+      ALEPH_SITE_DNSLINK_WAIT_ATTEMPTS: '2',
+      ALEPH_SITE_DNSLINK_WAIT_DELAY_MS: '1',
+    }, {
+      resolveDnslink: async () => ['dnslink=/ipfs/bafybeibijbzrkewear2lkoylctlf6v4atsukit4c36dsxpeq4ndj66gqzi'],
+    }), /did not point its DNSLink at bafybeiab5vrtxat6w4pmynetb4g6x5iirj3dtpnz74pgdupansxehuh72m/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  assert.equal(calls.some((url) => url.startsWith('https://relay.example.com')), false)
+})

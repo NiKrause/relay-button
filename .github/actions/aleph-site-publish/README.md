@@ -15,5 +15,8 @@ environment mapping, STORE polling, gateway verification, or retention logic.
     retention_keep_count: '2'
 ```
 
+Set `verify: libp2p` to check the processed site by fetching every block over
+libp2p with Helia instead of requesting it from Aleph's HTTP gateway.
+
 The default endpoint order is `api2.aleph.im` followed by `api.aleph.im`.
 `api3.aleph.im` is unsupported and rejected by the shared runner.
