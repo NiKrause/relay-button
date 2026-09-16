@@ -15,6 +15,8 @@ import { appendGithubOutput, appendGithubSummary } from "./github-outputs.ts"
 import type { RelayProbeResult } from "./relay-probe.ts"
 import { createPrivateKeyIdentity } from "./signer.ts"
 import { attachAlephDomain } from "./domain-link.ts"
+import { dnslinkCid, resolveDnslink } from "./dnslink.ts"
+import { fetchDagOverLibp2p, type Libp2pDagFetchOptions, type Libp2pDagFetchResult } from "./site-libp2p.ts"
 
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 const BASE32_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567'
@@ -208,6 +210,63 @@ async function waitForPublicCid(args: {
   throw new Error(`${args.label} did not serve expected CID ${args.cidV0}: ${lastEvidence}`)
 }
 
+export interface SiteRunnerOptions {
+  /** Replaces the libp2p fetch, for tests. */
+  fetchDagOverLibp2p?: (options: Libp2pDagFetchOptions) => Promise<Libp2pDagFetchResult>
+  /** Replaces the DNSLink lookup, for tests. */
+  resolveDnslink?: (domain: string) => Promise<string[]>
+}
+
+type SiteVerifyMode = 'gateway' | 'libp2p'
+type DomainVerifyMode = 'https' | 'dnslink'
+
+function positiveNumberEnv(name: string, fallback: number, env: NodeJS.ProcessEnv): number {
+  const raw = optionalEnv(name, '', env).trim()
+  if (!raw) return fallback
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be a positive number.`)
+  return value
+}
+
+function siteVerifyMode(env: NodeJS.ProcessEnv): SiteVerifyMode {
+  const mode = optionalEnv('ALEPH_SITE_VERIFY', '', env).trim() || 'gateway'
+  if (mode !== 'gateway' && mode !== 'libp2p') {
+    throw new Error(`ALEPH_SITE_VERIFY must be gateway or libp2p, not "${mode}".`)
+  }
+  return mode
+}
+
+function domainVerifyMode(env: NodeJS.ProcessEnv): DomainVerifyMode {
+  const mode = optionalEnv('ALEPH_SITE_DOMAIN_VERIFY', '', env).trim() || 'https'
+  if (mode !== 'https' && mode !== 'dnslink') {
+    throw new Error(`ALEPH_SITE_DOMAIN_VERIFY must be https or dnslink, not "${mode}".`)
+  }
+  return mode
+}
+
+async function waitForDnslink(args: {
+  domain: string
+  cid: string
+  env: NodeJS.ProcessEnv
+  resolve: (domain: string) => Promise<string[]>
+}): Promise<void> {
+  const expected = CID.parse(args.cid).toV1().toString()
+  const attempts = positiveNumberEnv('ALEPH_SITE_DNSLINK_WAIT_ATTEMPTS', 60, args.env)
+  const delayMs = positiveNumberEnv('ALEPH_SITE_DNSLINK_WAIT_DELAY_MS', 5000, args.env)
+  let lastEvidence = 'no answer'
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const records = await args.resolve(args.domain)
+      if (records.map(dnslinkCid).includes(expected)) return
+      lastEvidence = records.length > 0 ? records.join(', ') : 'no dnslink TXT record'
+    } catch (error) {
+      lastEvidence = error instanceof Error ? error.message : String(error)
+    }
+    if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+  throw new Error(`Custom domain ${args.domain} did not point its DNSLink at ${expected}: ${lastEvidence}`)
+}
+
 interface SitePublishResult {
   cidV0: string
   cidV1: string
@@ -226,6 +285,7 @@ interface StaticSiteCar {
   rootCid: any
   rootCidV0: string
   rootCidV1: string
+  blockCids: string[]
   bytes: Uint8Array
 }
 
@@ -357,7 +417,7 @@ export async function buildStaticSiteCar(directory: string): Promise<StaticSiteC
   await writer.close()
   const rootCidV1 = rootCid.toString()
   const rootCidV0 = rootCid.toV0().toString()
-  return { rootCid, rootCidV0, rootCidV1, bytes: await chunksPromise }
+  return { rootCid, rootCidV0, rootCidV1, blockCids: [...blockstore.blocks.keys()], bytes: await chunksPromise }
 }
 
 export async function computeStaticSiteDirectoryCid(directory: string): Promise<SitePublishResult> {
@@ -801,7 +861,8 @@ async function uploadStaticSiteCarAuthenticatedWithFallback(args: {
   )
 }
 
-export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): Promise<void> {
+export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env, options: SiteRunnerOptions = {}): Promise<void> {
+  const verifyMode = siteVerifyMode(env)
   const projectDir = optionalEnv('ALEPH_SITE_PROJECT_DIR', process.cwd(), env)
   const siteDirectoryInput = requiredEnv('ALEPH_SITE_DIRECTORY', env)
   const siteDirectory = isAbsolute(siteDirectoryInput)
@@ -850,6 +911,8 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
   let websiteAggregateHash = ''
   let storeStatus = pin ? 'pending' : 'not-requested'
   let directGatewayVerified = false
+  let libp2pVerified = false
+  let libp2pBlocks = 0
   if (pin) {
     if (!pinned) throw new Error('Static site upload completed without an Aleph STORE result.')
     itemHash = pinned.itemHash
@@ -857,13 +920,25 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
     const processed = await waitForAlephMessage(itemHash, pinned.apiHost, env)
     if (processed) {
       storeStatus = 'processed'
-      await waitForPublicCid({
-        url: `https://${cidV1}.ipfs.aleph.sh`,
-        cidV0: cidV1,
-        env,
-        label: 'Direct CID gateway',
-      })
-      directGatewayVerified = true
+      if (verifyMode === 'libp2p') {
+        const libp2pPeers = parseCsvOrWhitespaceList(optionalEnv('ALEPH_SITE_LIBP2P_PEERS', '', env)).filter(Boolean)
+        const retrieval = await (options.fetchDagOverLibp2p ?? fetchDagOverLibp2p)({
+          cid: cidV1,
+          expectedBlockCids: car.blockCids,
+          peers: libp2pPeers.length > 0 ? libp2pPeers : undefined,
+          timeoutMs: positiveNumberEnv('ALEPH_SITE_LIBP2P_TIMEOUT_MS', 10 * 60 * 1000, env),
+        })
+        libp2pBlocks = retrieval.blocks
+        libp2pVerified = true
+      } else {
+        await waitForPublicCid({
+          url: `https://${cidV1}.ipfs.aleph.sh`,
+          cidV0: cidV1,
+          env,
+          label: 'Direct CID gateway',
+        })
+        directGatewayVerified = true
+      }
       websiteAggregateHash = await publishWebsiteAggregate({ itemHash, apiHost: pinned.apiHost, env })
       await retainRecentSiteStores({ currentItemHash: itemHash, apiHost: pinned.apiHost, env })
     } else {
@@ -882,6 +957,9 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
   await appendGithubOutput('store_status', storeStatus, env)
   await appendGithubOutput('store_processed', String(storeStatus === 'processed'), env)
   await appendGithubOutput('direct_gateway_verified', String(directGatewayVerified), env)
+  await appendGithubOutput('site_verify_mode', verifyMode, env)
+  await appendGithubOutput('libp2p_verified', String(libp2pVerified), env)
+  await appendGithubOutput('libp2p_blocks', String(libp2pBlocks), env)
   await appendGithubOutput('website_aggregate_hash', websiteAggregateHash, env)
 
   await appendGithubSummary([
@@ -896,12 +974,14 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env): 
     `- Aleph STORE status: \`${storeStatus}\``,
     `- Endpoint pair: \`${endpointPair.ipfsGateway} + ${endpointPair.apiHost}\``,
     `- Upload driver: \`${uploadDriver}\``,
+    `- Verification: \`${verifyMode}\``,
     `- Direct CID gateway verified: \`${directGatewayVerified}\``,
+    `- Fetched over libp2p: \`${libp2pVerified ? `${libp2pBlocks} blocks` : 'no'}\``,
     `- Website aggregate hash: \`${websiteAggregateHash || 'not-requested'}\``,
   ], env)
 }
 
-export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): Promise<void> {
+export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env, options: SiteRunnerOptions = {}): Promise<void> {
   const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
   const domain = requiredEnv('ALEPH_SITE_DOMAIN', env)
   const itemHash = requiredEnv('ALEPH_SITE_ITEM_HASH', env)
@@ -910,6 +990,7 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): P
     optionalEnv('ALEPH_SITE_IPFS_CID_V0', '', env).trim()
   )
   const catchAllPath = optionalEnv('ALEPH_SITE_DOMAIN_CATCH_ALL_PATH', '/index.html', env)
+  const verifyMode = domainVerifyMode(env)
   const identity = await createPrivateKeyIdentity(privateKey)
 
   const { result: attachPublication } = await withAlephApiHostFallback({
@@ -946,11 +1027,21 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): P
 
   let domainVerified = false
   if (cidV0) {
-    await waitForPublicCid({ url: `https://${attachPublication.domain}`, cidV0, env, label: 'Custom domain' })
+    if (verifyMode === 'dnslink') {
+      await waitForDnslink({
+        domain: attachPublication.domain,
+        cid: cidV0,
+        env,
+        resolve: options.resolveDnslink ?? ((domain) => resolveDnslink(domain)),
+      })
+    } else {
+      await waitForPublicCid({ url: `https://${attachPublication.domain}`, cidV0, env, label: 'Custom domain' })
+    }
     domainVerified = true
     await appendGithubOutput('domain_verified_cid', cidV0, env)
   }
   await appendGithubOutput('domain_verified', String(domainVerified), env)
+  await appendGithubOutput('domain_verify_mode', verifyMode, env)
 
   await appendGithubSummary([
     '## Aleph Site Runner',
@@ -960,6 +1051,7 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env): P
     `- Domain aggregate hash: \`${attachPublication.aggregateItemHash}\``,
     `- Verified domain CID: \`${cidV0 || 'not-requested'}\``,
     `- Public domain verified: \`${domainVerified}\``,
+    `- Domain verification: \`${verifyMode}\``,
     `- Catch-all path: \`${catchAllPath}\``,
   ], env)
 }

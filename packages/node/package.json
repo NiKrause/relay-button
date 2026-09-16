@@ -16,6 +16,7 @@
 		"@helia/unixfs": "^7.2.1",
 		"@helia/utils": "^2.5.2",
 		"@ipld/car": "^5.4.6",
+		"@ipld/dag-pb": "^4.1.7",
 		"@le-space/core": "workspace:*",
 		"@le-space/libp2p-bootstrap": "npm:@libp2p/bootstrap@^12.0.25",
 		"@le-space/libp2p-identify": "npm:@libp2p/identify@^4.1.8",
@@ -41,6 +42,7 @@
 		"blockstore-core": "^6.1.3",
 		"datastore-core": "^11.0.4",
 		"ethers": "^6.15.0",
+		"helia": "^6.1.4",
 		"ipfs-unixfs-importer": "^16.1.5",
 		"libp2p": "^2.8.3",
 		"libp2p-helia": "npm:libp2p@^3.3.4",
@@ -48,7 +50,7 @@
 		"undici": "^6.28.0"
 	},
 	"scripts": {
-		"build": "node --check ./src/index.ts && node --check ./src/env.ts && node --check ./src/aleph-api-hosts.ts && node --check ./src/github-outputs.ts && node --check ./src/signer.ts && node --check ./src/deploy-outputs.ts && node --check ./src/deploy-plan.ts && node --check ./src/deploy-executor.ts && node --check ./src/action-runner.ts && node --check ./src/rootfs-runner.ts && node --check ./src/relay-probe.ts && node --check ./src/site-runner.ts && node --check ./src/ucan-store-bootstrap.ts",
+		"build": "node --check ./src/index.ts && node --check ./src/env.ts && node --check ./src/aleph-api-hosts.ts && node --check ./src/github-outputs.ts && node --check ./src/signer.ts && node --check ./src/deploy-outputs.ts && node --check ./src/deploy-plan.ts && node --check ./src/deploy-executor.ts && node --check ./src/action-runner.ts && node --check ./src/rootfs-runner.ts && node --check ./src/relay-probe.ts && node --check ./src/site-runner.ts && node --check ./src/site-libp2p.ts && node --check ./src/dnslink.ts && node --check ./src/ucan-store-bootstrap.ts",
 		"build:publish": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.publish.json",
 		"test": "node --test ./test/**/*.test.ts",
 		"lint": "echo \"node lint placeholder\""

@@ -123,6 +123,39 @@ link a pending target.
 | `item_hash` | Aleph STORE message hash; this is the domain target |
 | `store_status` | `processed`, `pending`, or `not-requested` |
 | `store_processed` | `true` only when the STORE is safe to link |
+| `libp2p_verified` | `true` when every block was fetched over libp2p (`verify: libp2p`) |
+
+## Checking without HTTP gateways
+
+By default the publisher checks a processed STORE with an HTTP request to
+`https://<CID>.ipfs.aleph.sh`, and `site-domain-link` requests
+`https://<domain>`. Both go through Aleph's public gateway. Two settings do
+the same checks without it:
+
+| Setting | Check |
+| --- | --- |
+| `verify: libp2p` (`ALEPH_SITE_VERIFY=libp2p`) | Fetches every block of the site from the IPFS network over libp2p and compares the blocks with the uploaded CAR |
+| `ALEPH_SITE_DOMAIN_VERIFY=dnslink` | Reads the domain's `_dnslink` TXT record and waits until it names the new CID |
+
+The libp2p check starts a standard Helia node from `libp2pDefaults()` and
+`createHelia()` with Bitswap and the DHT only: no trustless gateway, no HTTP
+gateway routing, no delegated HTTP routing. AutoTLS and UPnP are left out as
+well, because a short-lived check needs no certificate and should not open
+router ports. One Helia session fetches the whole DAG; the checked sites took
+about six seconds.
+
+Before fetching, the check dials Aleph's own IPFS nodes (`ALEPH_IPFS_PEERS` in
+`@le-space/node`). They are DHT servers that hold what Aleph pins, so the check
+does not depend on the public IPFS bootstrap nodes, which Shipyard stops
+operating on 30 September 2026. With those bootstrap nodes refused, each Aleph
+node alone was enough to find providers and fetch a pinned site. `libp2p_peers`
+(`ALEPH_SITE_LIBP2P_PEERS`) replaces that list, and `libp2p_timeout_ms`
+(`ALEPH_SITE_LIBP2P_TIMEOUT_MS`, default 10 minutes) bounds the fetch.
+
+The DNSLink check follows the CNAME of `_dnslink.<domain>` and asks the
+nameservers of the target zone directly, so a cached answer from before the
+link cannot pass for the new one. `ALEPH_SITE_DNSLINK_WAIT_ATTEMPTS` (60) and
+`ALEPH_SITE_DNSLINK_WAIT_DELAY_MS` (5000) set how long it waits.
 
 ## Pending STORE behavior
 
