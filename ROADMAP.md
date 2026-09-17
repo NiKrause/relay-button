@@ -1,5 +1,57 @@
 # Roadmap
 
+## 0.9.9 — a site keeps its newest uploads, and lets the rest go
+
+Every static-site publish adds a STORE message, and Aleph bills each one for
+as long as it is kept. Nothing ever forgot the old ones. Retention existed,
+but it had three problems:
+
+- It matched STOREs on a `ref` that uploads have not carried since the
+  authenticated CAR upload.
+- It was off unless configured.
+- It read a single page of 100 messages.
+
+Measured on 2026-09-17, on the address that publishes the le-space.de sites:
+569 STOREs for 13 websites, 557 of them stale, billed at 2,845 credits an
+hour. When the credits ran low, `add_car` answered `HTTP 402 Payment
+Required`, and a production deploy failed twice. A second address held 342
+STOREs for four live sites.
+
+Retention now follows `ALEPH_SITE_NAME` (#144). The runner already records
+each upload under `websites[name]`, together with the history of the earlier
+ones. From that history retention:
+
+- keeps the newest `ALEPH_SITE_RETENTION_KEEP_COUNT` uploads, three unless
+  configured, and forgets the rest in batches of 50
+- never forgets an upload that the address's `websites` or `domains`
+  aggregate still points to, so a domain whose link job did not run keeps its
+  site
+- skips uploads Aleph has already forgotten
+
+A failure shows in the step summary and in the new `retention_forgotten`
+output instead of failing the publish. `ALEPH_SITE_REF` is ignored, the
+action's `site_ref` input is deprecated, and `retention_keep_count` now
+defaults to 3.
+
+The first publish after upgrading forgets every older upload of that site
+beyond the newest three. Without `ALEPH_SITE_NAME`, retention does nothing.
+
+Also in this release:
+
+- **`ALEPH_SITE_VERIFY=libp2p` (#142).** It checks a published site by
+  fetching every block over libp2p into an empty Helia node, instead of
+  requesting it from Aleph's HTTP gateway. `ALEPH_SITE_DOMAIN_VERIFY=dnslink`
+  checks a linked domain through its `_dnslink` record. `helia` is now a
+  dependency of `@le-space/node` and loads when the runner is imported. The
+  built packages were installed with npm into an empty prefix, as consumer
+  workflows install them, and the runner imported cleanly on Node 22.21.
+- **The AutoTLS certificate is checked on the port the listener is bound to
+  (#140).** A relay advertises an AutoTLS address only after a TLS handshake
+  proves the certificate serves. That loopback handshake dialled the announced
+  port, which exists only on the host's NAT, so the address was never
+  advertised.
+- **The `qs` override is raised to `^6.16.0` (#139)**, past the advisory.
+
 ## 0.9.8 — a relay publishes its websocket address the moment it has one
 
 A relay refreshes its bootstrap registration on a timer: once about twenty
