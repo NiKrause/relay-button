@@ -80,8 +80,7 @@ jobs:
           directory: build
           project_dir: ${{ github.workspace }}
           aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
-          site_ref: my-site
-          retention_keep_count: '2'
+          site_name: my-site
 
   link-domain:
     needs: publish
@@ -106,6 +105,30 @@ The composite action is the recommended consumer interface. It runs the
 `@le-space/node` implementation from the pinned `relay-button` ref and keeps
 dependency installation, API fallback, polling, gateway verification, outputs,
 and retention behavior in one shared place.
+
+## Retention
+
+Every publish adds a STORE message, and Aleph bills each one for as long as it
+is kept. Nothing forgets the old uploads unless retention does.
+
+- **Which uploads belong to a site.** With `site_name` set, each publish records
+  its upload under `websites[site_name]`, together with the history of the
+  earlier ones. Retention reads that history. The STORE messages themselves
+  carry no mark of their site.
+- **What is kept.** The newest `retention_keep_count` uploads, 3 by default. The
+  older ones are forgotten.
+- **What is never forgotten.** An upload that a domain or any website of the
+  address still points to. This covers a domain whose link step did not run.
+  Uploads Aleph has already forgotten are skipped.
+- **Turning it off.** `retention_keep_count: '0'` keeps every upload. Without
+  `site_name` nothing is forgotten, because nothing says which uploads are the
+  site's.
+- **When it fails.** A failure is reported in the step summary and does not fail
+  the publish, so the domain can still be linked. The `retention_forgotten`
+  output says how many uploads were forgotten.
+
+`site_ref` is no longer used. The retention it drove matched on a `ref` field
+that uploads have not carried since the authenticated CAR upload.
 
 The `if` condition documents the dependency in the workflow. The domain-link
 runner still performs its own STORE check, so bypassing the condition cannot

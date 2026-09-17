@@ -13,17 +13,17 @@ inputs:
     description: Hex EVM private key used to sign the Aleph STORE message
     required: true
   site_ref:
-    description: Stable site identifier used to scope retention cleanup
+    description: Deprecated and ignored; retention follows site_name
     required: false
     default: ''
   site_name:
-    description: Optional website name stored in Aleph metadata
+    description: Website name stored in the Aleph websites aggregate; its upload history is what retention keeps and forgets, so without it nothing is forgotten
     required: false
     default: ''
   retention_keep_count:
-    description: Number of current STORE messages to keep for site_ref; zero disables retention
+    description: Newest uploads of site_name to keep; older ones are forgotten unless a domain or website still points to them. 0 keeps every upload
     required: false
-    default: '0'
+    default: '3'
   pin:
     description: Upload and pin the static site through Aleph
     required: false
@@ -104,6 +104,9 @@ outputs:
   ipfs_gateway:
     description: IPFS gateway paired with the successful Aleph API host
     value: ${{ steps.publish.outputs.ipfs_gateway }}
+  retention_forgotten:
+    description: How many older uploads of site_name retention forgot
+    value: ${{ steps.publish.outputs.retention_forgotten }}
 
 runs:
   using: composite

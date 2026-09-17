@@ -274,8 +274,7 @@ Requirements:
    - directory: <YOUR_BUILD_DIR>
    - project_dir: ${{ github.workspace }}
    - aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
-   - site_ref: <STABLE_SITE_IDENTIFIER>
-   - retention_keep_count: '2'
+   - site_name: <STABLE_SITE_NAME>
    Expose item_hash, ipfs_cid_v0 and store_processed as job outputs.
 3. Job `link-domain`, with `needs: publish` and
    `if: needs.publish.outputs.store_processed == 'true'`. It runs the

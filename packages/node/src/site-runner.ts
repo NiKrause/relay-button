@@ -295,7 +295,6 @@ interface AlephStoreContent {
   item_type: 'ipfs'
   item_hash: string
   payment: { type: 'credit' }
-  ref?: string
 }
 
 function encodeVarint(value: number): Uint8Array {
@@ -507,19 +506,6 @@ async function uploadStaticSiteDirectoryWithGatewayFallback(
   )
 }
 
-interface AlephMessageListEntry {
-  item_hash?: unknown
-  time?: unknown
-  sender?: unknown
-  item_content?: unknown
-  content?: unknown
-}
-
-interface ScopedSiteStoreRecord {
-  itemHash: string
-  time: number
-}
-
 function mergedAddrs(env: NodeJS.ProcessEnv = process.env): string[] {
   const combined: string[] = []
   for (const key of ['PROBE_MULTIADDRS_JSON', 'BROWSER_BOOTSTRAP_MULTIADDRS_JSON']) {
@@ -584,106 +570,156 @@ function defaultHasher(payload: string): string {
   return createHash('sha256').update(payload).digest('hex')
 }
 
-function parseJsonRecord(value: unknown): Record<string, unknown> | null {
-  if (!value) return null
-  if (typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value) as unknown
-      return parseJsonRecord(parsed)
-    } catch {
-      return null
+/** How many of a site's newest uploads retention keeps when nothing else is set. */
+const DEFAULT_SITE_RETENTION_KEEP_COUNT = 3
+
+/** Hashes per STORE lookup and per FORGET message. */
+const SITE_RETENTION_BATCH_SIZE = 50
+
+/**
+ * How many of a site's newest uploads to keep. `0` keeps every upload.
+ *
+ * Read before anything is uploaded, so a value that cannot be a count fails the
+ * publish instead of turning retention off without a word. A retention setting
+ * that silently did nothing is how 557 stale uploads piled up on one address.
+ */
+function siteRetentionKeepCount(env: NodeJS.ProcessEnv): number {
+  const raw = optionalEnv('ALEPH_SITE_RETENTION_KEEP_COUNT', '', env).trim()
+  if (!raw) return DEFAULT_SITE_RETENTION_KEEP_COUNT
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`ALEPH_SITE_RETENTION_KEEP_COUNT must be a whole number, not "${raw}". 0 keeps every upload.`)
+  }
+  return Number(raw)
+}
+
+interface PublishedWebsite {
+  name: string
+  /** The AGGREGATE message that recorded this upload under `websites[name]`. */
+  aggregateHash: string
+  /** The STORE message of this upload. */
+  volumeId: string
+  /** The site's earlier uploads by version, as just written to the aggregate. */
+  history: Record<string, string>
+}
+
+interface SiteRetentionResult {
+  forgotten: string[]
+  /** Why retention stopped early, when it did. */
+  stopped: string | null
+}
+
+function inBatches<T>(items: T[], size: number): T[][] {
+  const batches: T[][] = []
+  for (let start = 0; start < items.length; start += size) batches.push(items.slice(start, start + size))
+  return batches
+}
+
+/** Every STORE message the sender's websites and domains point to right now. */
+async function fetchLinkedStoreHashes(args: { sender: string; apiHost: string }): Promise<Set<string>> {
+  const requestUrl = new URL(`/api/v0/aggregates/${args.sender}.json`, args.apiHost)
+  requestUrl.searchParams.set('keys', 'websites,domains')
+  const response = await fetch(requestUrl, { cache: 'no-cache' })
+  if (!response.ok) throw new Error(`Aleph websites and domains request failed: ${response.status}`)
+
+  const payload = await response.json() as Record<string, any>
+  const data = payload.data ?? payload
+  const linked = new Set<string>()
+  for (const website of Object.values(data?.websites ?? {}) as Array<Record<string, unknown> | null>) {
+    if (typeof website?.volume_id === 'string') linked.add(website.volume_id)
+  }
+  for (const domain of Object.values(data?.domains ?? {}) as Array<Record<string, unknown> | null>) {
+    if (typeof domain?.message_id === 'string') linked.add(domain.message_id)
+  }
+  return linked
+}
+
+/** Which of these STORE messages Aleph still keeps for the sender. Forgotten ones are not listed. */
+async function fetchStoredHashes(args: { sender: string; hashes: string[]; apiHost: string }): Promise<Set<string>> {
+  const stored = new Set<string>()
+  for (const batch of inBatches(args.hashes, SITE_RETENTION_BATCH_SIZE)) {
+    const requestUrl = new URL('/api/v0/messages.json', args.apiHost)
+    requestUrl.searchParams.set('msgTypes', 'STORE')
+    requestUrl.searchParams.set('addresses', args.sender)
+    requestUrl.searchParams.set('hashes', batch.join(','))
+    requestUrl.searchParams.set('pagination', String(SITE_RETENTION_BATCH_SIZE))
+    requestUrl.searchParams.set('page', '1')
+    const response = await fetch(requestUrl, { cache: 'no-cache' })
+    if (!response.ok) throw new Error(`Aleph STORE lookup failed: ${response.status}`)
+
+    const payload = await response.json() as { messages?: Array<{ item_hash?: unknown }> }
+    for (const message of payload.messages ?? []) {
+      if (typeof message.item_hash === 'string') stored.add(message.item_hash)
     }
   }
-  if (typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>
-  }
-  return null
+  return stored
 }
 
-function parseMessageTime(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
-async function fetchScopedSiteStoreRecords(args: {
-  sender: string
-  ref: string
-  apiHost: string
-}): Promise<ScopedSiteStoreRecord[]> {
-  const requestUrl = new URL('/api/v0/messages.json', args.apiHost)
-  requestUrl.searchParams.set('msgTypes', 'STORE')
-  requestUrl.searchParams.set('addresses', args.sender)
-  requestUrl.searchParams.set('message_statuses', 'processed,pending')
-  requestUrl.searchParams.set('pagination', '100')
-  requestUrl.searchParams.set('page', '1')
-  requestUrl.searchParams.set('sortOrder', '-1')
-
-  const response = await fetch(requestUrl, { cache: 'no-cache' })
-  if (!response.ok) {
-    throw new Error(`Aleph STORE list request failed: ${response.status}`)
-  }
-
-  const payload = (await response.json()) as { messages?: AlephMessageListEntry[] }
-  const messages = Array.isArray(payload.messages) ? payload.messages : []
-
-  return messages.flatMap((message) => {
-    const itemHash = typeof message.item_hash === 'string' && message.item_hash.trim() ? message.item_hash : null
-    if (!itemHash) return []
-    const itemContent = parseJsonRecord(message.item_content) ?? parseJsonRecord(message.content)
-    if (!itemContent) return []
-    if (itemContent.item_type !== 'ipfs') return []
-    if (itemContent.ref !== args.ref) return []
-    return [{
-      itemHash,
-      time: Math.max(parseMessageTime(message.time), parseMessageTime(itemContent.time)),
-    }]
-  })
-}
-
+/**
+ * Forget this site's uploads that are older than its newest `keepCount`.
+ *
+ * Which uploads are the site's comes from the history `publishWebsiteAggregate`
+ * keeps under `websites[name]`, not from the STORE list. An upload carries no
+ * mark of its site, so the filter on `ALEPH_SITE_REF` this replaces matched
+ * nothing and forgot nothing, on every address that published a site.
+ *
+ * Two kinds of older upload are left alone. One that a domain or any website
+ * still points to stays, because a domain whose link step failed is still on
+ * it. One Aleph has already forgotten is skipped, because naming it again only
+ * risks a FORGET that Aleph refuses.
+ *
+ * A failure here is reported, not thrown. By now the site is published and its
+ * aggregate written, and failing the job over housekeeping would also stop the
+ * domain from being linked to the new upload.
+ */
 async function retainRecentSiteStores(args: {
-  currentItemHash: string
+  website: PublishedWebsite
+  keepCount: number
   apiHost: string
-  env?: NodeJS.ProcessEnv
-}): Promise<void> {
-  const env = args.env ?? process.env
-  const keepCount = Number(optionalEnv('ALEPH_SITE_RETENTION_KEEP_COUNT', '0', env))
-  if (!Number.isFinite(keepCount) || keepCount <= 0) return
+  env: NodeJS.ProcessEnv
+}): Promise<SiteRetentionResult> {
+  const uploads = [...new Set([
+    args.website.volumeId,
+    ...Object.entries(args.website.history)
+      .map(([version, hash]) => ({ version: Number(version), hash }))
+      .filter(({ version, hash }) => Number.isFinite(version) && typeof hash === 'string' && hash !== '')
+      .sort((left, right) => right.version - left.version)
+      .map(({ hash }) => hash),
+  ])]
+  const older = uploads.slice(args.keepCount)
+  const forgotten: string[] = []
+  if (older.length === 0) return { forgotten, stopped: null }
 
-  const ref = optionalEnv('ALEPH_SITE_REF', '', env).trim()
-  if (!ref) {
-    throw new Error('ALEPH_SITE_RETENTION_KEEP_COUNT requires ALEPH_SITE_REF so retention only forgets uploads for one site.')
-  }
+  try {
+    const identity = await createPrivateKeyIdentity(requiredEnv('ALEPH_PRIVATE_KEY', args.env))
+    const channel = optionalEnv('ALEPH_SITE_CHANNEL', DEFAULT_ALEPH_CHANNEL, args.env)
+    const linked = await fetchLinkedStoreHashes({ sender: identity.address, apiHost: args.apiHost })
+    const unlinked = older.filter((hash) => !linked.has(hash))
+    const stored = unlinked.length > 0
+      ? await fetchStoredHashes({ sender: identity.address, hashes: unlinked, apiHost: args.apiHost })
+      : new Set<string>()
 
-  const privateKey = requiredEnv('ALEPH_PRIVATE_KEY', env)
-  const channel = optionalEnv('ALEPH_SITE_CHANNEL', DEFAULT_ALEPH_CHANNEL, env)
-  const identity = await createPrivateKeyIdentity(privateKey)
-  const records = await fetchScopedSiteStoreRecords({
-    sender: identity.address,
-    ref,
-    apiHost: args.apiHost,
-  })
-
-  const overflowHashes = records
-    .filter((record) => record.itemHash !== args.currentItemHash)
-    .sort((left, right) => right.time - left.time)
-    .slice(Math.max(keepCount - 1, 0))
-    .map((record) => record.itemHash)
-
-  if (overflowHashes.length === 0) return
-
-  const result = await forgetAlephMessages({
-    sender: identity.address,
-    hashes: overflowHashes,
-    reason: `Retain only the latest ${keepCount} site upload(s) for ${ref}`,
-    signer: identity.signer,
-    hasher: async (payload) => defaultHasher(payload),
-    fetch,
-    channel,
-    apiHost: args.apiHost,
-    sync: true,
-  })
-
-  if (result.status === 'rejected') {
-    throw new Error(`Aleph site retention forget was rejected: ${JSON.stringify(result.response ?? {})}`)
+    for (const batch of inBatches(unlinked.filter((hash) => stored.has(hash)), SITE_RETENTION_BATCH_SIZE)) {
+      const result = await forgetAlephMessages({
+        sender: identity.address,
+        hashes: batch,
+        reason: `Keep the newest ${args.keepCount} uploads of ${args.website.name}`,
+        signer: identity.signer,
+        hasher: async (payload) => defaultHasher(payload),
+        fetch,
+        channel,
+        apiHost: args.apiHost,
+        sync: true,
+      })
+      if (result.status === 'rejected') {
+        throw new Error(`FORGET was rejected: ${JSON.stringify(result.response ?? {})}`)
+      }
+      forgotten.push(...batch)
+    }
+    return { forgotten, stopped: null }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    console.warn(`Aleph site retention for ${args.website.name} stopped after forgetting ${forgotten.length} uploads: ${reason}`)
+    return { forgotten, stopped: reason }
   }
 }
 
@@ -691,10 +727,10 @@ async function publishWebsiteAggregate(args: {
   itemHash: string
   apiHost: string
   env?: NodeJS.ProcessEnv
-}): Promise<string> {
+}): Promise<PublishedWebsite | null> {
   const env = args.env ?? process.env
   const name = optionalEnv('ALEPH_SITE_NAME', '', env).trim()
-  if (!name) return ''
+  if (!name) return null
   const identity = await createPrivateKeyIdentity(requiredEnv('ALEPH_PRIVATE_KEY', env))
   const channel = optionalEnv('ALEPH_SITE_CHANNEL', DEFAULT_ALEPH_CHANNEL, env)
   const now = Date.now() / 1000
@@ -738,7 +774,7 @@ async function publishWebsiteAggregate(args: {
     broadcastAttempts: 3,
   })
   if (result.status === 'rejected') throw new Error(`Aleph websites aggregate was rejected: ${JSON.stringify(result.response ?? {})}`)
-  return result.itemHash
+  return { name, aggregateHash: result.itemHash, volumeId: args.itemHash, history }
 }
 
 async function buildSiteStoreMessage(cid: string, env: NodeJS.ProcessEnv = process.env) {
@@ -863,6 +899,10 @@ async function uploadStaticSiteCarAuthenticatedWithFallback(args: {
 
 export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env, options: SiteRunnerOptions = {}): Promise<void> {
   const verifyMode = siteVerifyMode(env)
+  const keepCount = siteRetentionKeepCount(env)
+  if (optionalEnv('ALEPH_SITE_REF', '', env).trim()) {
+    console.warn('ALEPH_SITE_REF is no longer used: retention follows ALEPH_SITE_NAME.')
+  }
   const projectDir = optionalEnv('ALEPH_SITE_PROJECT_DIR', process.cwd(), env)
   const siteDirectoryInput = requiredEnv('ALEPH_SITE_DIRECTORY', env)
   const siteDirectory = isAbsolute(siteDirectoryInput)
@@ -909,6 +949,8 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env, o
 
   let itemHash = ''
   let websiteAggregateHash = ''
+  let retentionSummary = 'not-requested'
+  let retentionForgotten = 0
   let storeStatus = pin ? 'pending' : 'not-requested'
   let directGatewayVerified = false
   let libp2pVerified = false
@@ -939,8 +981,18 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env, o
         })
         directGatewayVerified = true
       }
-      websiteAggregateHash = await publishWebsiteAggregate({ itemHash, apiHost: pinned.apiHost, env })
-      await retainRecentSiteStores({ currentItemHash: itemHash, apiHost: pinned.apiHost, env })
+      const website = await publishWebsiteAggregate({ itemHash, apiHost: pinned.apiHost, env })
+      websiteAggregateHash = website?.aggregateHash ?? ''
+      if (!website) {
+        retentionSummary = 'off, because ALEPH_SITE_NAME is not set'
+      } else if (keepCount === 0) {
+        retentionSummary = 'off, because ALEPH_SITE_RETENTION_KEEP_COUNT is 0'
+      } else {
+        const retention = await retainRecentSiteStores({ website, keepCount, apiHost: pinned.apiHost, env })
+        retentionForgotten = retention.forgotten.length
+        retentionSummary = `kept the newest ${keepCount} uploads of \`${website.name}\`, forgot ${retentionForgotten}` +
+          (retention.stopped ? `, then stopped: ${retention.stopped}` : '')
+      }
     } else {
       const allowPending = optionalEnv('ALEPH_SITE_ALLOW_PENDING_STORE', 'false', env) === 'true'
       if (!allowPending) {
@@ -961,6 +1013,7 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env, o
   await appendGithubOutput('libp2p_verified', String(libp2pVerified), env)
   await appendGithubOutput('libp2p_blocks', String(libp2pBlocks), env)
   await appendGithubOutput('website_aggregate_hash', websiteAggregateHash, env)
+  await appendGithubOutput('retention_forgotten', String(retentionForgotten), env)
 
   await appendGithubSummary([
     '## Aleph Site Runner',
@@ -978,6 +1031,7 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env, o
     `- Direct CID gateway verified: \`${directGatewayVerified}\``,
     `- Fetched over libp2p: \`${libp2pVerified ? `${libp2pBlocks} blocks` : 'no'}\``,
     `- Website aggregate hash: \`${websiteAggregateHash || 'not-requested'}\``,
+    `- Retention: ${retentionSummary}`,
   ], env)
 }
 
