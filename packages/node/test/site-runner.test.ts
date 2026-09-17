@@ -689,89 +689,6 @@ test('runDomainLinkMode refuses to link a pending STORE', async () => {
   }
 })
 
-test('runSitePublishMode forgets older STORE messages for the same ALEPH_SITE_REF only', async () => {
-  const { dir, outputFile, summaryFile } = await createOutputEnv('site-publish-retention-')
-  const siteDir = join(dir, 'dist')
-  await mkdir(siteDir, { recursive: true })
-  await writeFile(join(siteDir, 'index.html'), '<!doctype html><title>blog</title>')
-
-  const originalFetch = globalThis.fetch
-  const calls: Array<{ url: string; init?: RequestInit }> = []
-  globalThis.fetch = (async (input, init) => {
-    const url = String(input)
-    calls.push({ url, init })
-    if (url.includes('.ipfs.aleph.sh')) {
-      return new Response('<!doctype html><title>blog</title>', { status: 200, headers: { 'x-ipfs-roots': ONE_FILE_SITE_CID } })
-    }
-    if (url.startsWith('https://ipfs-2.aleph.im/api/v0/add')) {
-      return new Response(JSON.stringify({ Name: '', Hash: ONE_FILE_SITE_CID }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
-    }
-    if (url === 'https://api2.aleph.im/api/v0/messages' && init?.method === 'POST') {
-      const body = JSON.parse(String(init.body ?? '{}')) as { message?: { type?: string; item_content?: string } }
-      const message = body.message ?? {}
-      if (message.type === 'STORE') {
-        return new Response(JSON.stringify({ item_hash: 'store123' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      if (message.type === 'FORGET') {
-        const itemContent = JSON.parse(String(message.item_content ?? '{}')) as { hashes?: string[] }
-        assert.deepEqual(itemContent.hashes, ['old-2', 'old-3'])
-        return new Response(JSON.stringify({ item_hash: 'forget123', message_status: 'processed' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-    }
-    if (url === 'https://api2.aleph.im/api/v0/messages/store123') {
-      return new Response(JSON.stringify({ status: 'processed' }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
-    }
-    if (url.startsWith('https://api2.aleph.im/api/v0/messages.json?')) {
-      const parsedUrl = new URL(url)
-      assert.equal(parsedUrl.searchParams.get('msgTypes'), 'STORE')
-      assert.equal(parsedUrl.searchParams.get('pagination'), '100')
-      return new Response(JSON.stringify({
-        messages: [
-          { item_hash: 'store123', time: 500, item_content: JSON.stringify({ item_type: 'ipfs', item_hash: 'QmCurrent', ref: 'orbit-blog-prod', time: 500 }) },
-          { item_hash: 'old-1', time: 400, item_content: JSON.stringify({ item_type: 'ipfs', item_hash: 'QmOld1', ref: 'orbit-blog-prod', time: 400 }) },
-          { item_hash: 'old-2', time: 300, item_content: JSON.stringify({ item_type: 'ipfs', item_hash: 'QmOld2', ref: 'orbit-blog-prod', time: 300 }) },
-          { item_hash: 'other-app', time: 250, item_content: JSON.stringify({ item_type: 'ipfs', item_hash: 'QmOther', ref: 'uc-prod', time: 250 }) },
-          { item_hash: 'old-3', time: 200, item_content: JSON.stringify({ item_type: 'ipfs', item_hash: 'QmOld3', ref: 'orbit-blog-prod', time: 200 }) },
-        ],
-      }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
-    }
-    throw new Error(`Unexpected fetch call: ${url}`)
-  }) as typeof fetch
-
-  try {
-    await runSitePublishMode({
-      GITHUB_OUTPUT: outputFile,
-      GITHUB_STEP_SUMMARY: summaryFile,
-      ALEPH_SITE_PROJECT_DIR: dir,
-      ALEPH_SITE_DIRECTORY: siteDir,
-      ALEPH_SITE_IPFS_GATEWAY: 'https://ipfs-2.aleph.im',
-      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
-      ALEPH_SITE_PIN: 'true',
-      ALEPH_SITE_REF: 'orbit-blog-prod',
-      ALEPH_SITE_RETENTION_KEEP_COUNT: '2',
-    })
-  } finally {
-    globalThis.fetch = originalFetch
-  }
-
-  assert.equal(calls.filter((call) => call.url === 'https://api2.aleph.im/api/v0/messages').length, 2)
-})
-
 test('parseLastJsonObject parses multiline trailing JSON output', () => {
   const payload = parseLastJsonObject('prefix\n{\n  "item_hash": "abc123",\n  "content": {\n    "item_hash": "QmExample"\n  }\n}')
   assert.equal(payload.item_hash, 'abc123')
@@ -913,6 +830,206 @@ test('runSitePublishMode rejects an unknown verification mode before uploading',
   } finally {
     globalThis.fetch = originalFetch
   }
+  assert.deepEqual(calls, [])
+})
+
+/** A STORE item hash that is easy to tell apart in an assertion: upload(3) is the site's third. */
+const upload = (version: number) => version.toString(16).padStart(64, '0')
+
+/** What `websites.blog` holds before this publish: `versions` uploads, the newest of them current. */
+function blogBefore(versions: number) {
+  const history: Record<string, string> = {}
+  for (let version = 1; version < versions; version++) history[String(version)] = upload(version)
+  return { version: versions, volume_id: upload(versions), history }
+}
+
+/**
+ * The Aleph API as site retention sees it.
+ *
+ * `previous` is the websites aggregate entry before this publish, `linked` what
+ * the websites and domains aggregates point to, and `stored` which STORE
+ * messages Aleph still keeps. Every FORGET is recorded by the hashes it names.
+ */
+function siteRetentionFetch(args: {
+  calls: string[]
+  forgotten: string[][]
+  previous?: Record<string, unknown>
+  linked?: { websites?: Record<string, unknown>; domains?: Record<string, unknown> }
+  stored?: (hash: string) => boolean
+}) {
+  let storeHash = ''
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  return (async (input, init) => {
+    const url = String(input)
+    args.calls.push(url)
+    if (url.includes('.ipfs.aleph.sh')) {
+      throw new Error(`HTTP gateway must not be used: ${url}`)
+    }
+    if (url === 'https://api2.aleph.im/api/v0/ipfs/add_car') {
+      assert.ok(init?.body instanceof FormData)
+      const metadata = init.body.get('metadata')
+      assert.ok(metadata instanceof Blob)
+      const envelope = JSON.parse(await metadata.text()) as { message?: Record<string, unknown> }
+      storeHash = String(envelope.message?.item_hash ?? '')
+      return json({ status: 'success', hash: ONE_FILE_SITE_CID })
+    }
+    if (url === `https://api2.aleph.im/api/v0/messages/${storeHash}`) {
+      return json({ status: 'processed' })
+    }
+    const aggregate = /^https:\/\/api2\.aleph\.im\/api\/v0\/aggregates\/0x[0-9a-fA-F]{40}\.json\?keys=(.+)$/.exec(url)
+    if (aggregate) {
+      const keys = decodeURIComponent(aggregate[1] ?? '')
+      if (keys === 'websites') return json({ data: { websites: args.previous ? { blog: args.previous } : {} } })
+      if (keys === 'websites,domains') {
+        return json({ data: { websites: args.linked?.websites ?? {}, domains: args.linked?.domains ?? {} } })
+      }
+    }
+    if (url.startsWith('https://api2.aleph.im/api/v0/messages.json?')) {
+      const params = new URL(url).searchParams
+      assert.equal(params.get('msgTypes'), 'STORE')
+      assert.match(params.get('addresses') ?? '', /^0x[0-9a-fA-F]{40}$/)
+      const asked = (params.get('hashes') ?? '').split(',').filter(Boolean)
+      return json({ messages: asked.filter((hash) => args.stored?.(hash) ?? true).map((hash) => ({ item_hash: hash })) })
+    }
+    if (url === 'https://api2.aleph.im/api/v0/messages' && init?.method === 'POST') {
+      const body = JSON.parse(String(init.body ?? '{}')) as { message?: { type?: string; item_hash?: string; item_content?: string } }
+      const message = body.message ?? {}
+      if (message.type === 'AGGREGATE') {
+        return json({ item_hash: message.item_hash, message_status: 'processed' })
+      }
+      if (message.type === 'FORGET') {
+        args.forgotten.push((JSON.parse(String(message.item_content ?? '{}')) as { hashes: string[] }).hashes)
+        return json({ item_hash: message.item_hash, message_status: 'processed' })
+      }
+    }
+    throw new Error(`Unexpected fetch call: ${url}`)
+  }) as typeof fetch
+}
+
+async function publishWith(env: NodeJS.ProcessEnv, fetchImpl: typeof fetch) {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = fetchImpl
+  try {
+    await runSitePublishModeCar({ ...env, ALEPH_SITE_VERIFY: 'libp2p' }, {
+      fetchDagOverLibp2p: async (options) => ({ cid: options.cid, blocks: 2, connectedPeers: 1, durationMs: 1 }),
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
+
+test('runSitePublishMode keeps the newest three uploads of a site and forgets the older ones', async () => {
+  const { outputFile, summaryFile, env } = await oneFileSite('site-retention-default-')
+  const calls: string[] = []
+  const forgotten: string[][] = []
+
+  await publishWith({ ...env, ALEPH_SITE_NAME: 'blog' }, siteRetentionFetch({ calls, forgotten, previous: blogBefore(5) }))
+
+  // This upload and the two before it stay. Nothing needed configuring beyond the name.
+  assert.deepEqual(forgotten, [[upload(3), upload(2), upload(1)]])
+  assert.match(await readFile(outputFile, 'utf8'), /retention_forgotten=3/)
+  assert.match(await readFile(summaryFile, 'utf8'), /Retention: kept the newest 3 uploads of `blog`, forgot 3/)
+})
+
+test('runSitePublishMode never forgets an upload that a domain or a website still points to', async () => {
+  const { env } = await oneFileSite('site-retention-linked-')
+  const calls: string[] = []
+  const forgotten: string[][] = []
+
+  // A domain whose link step never ran still names an older upload.
+  await publishWith({ ...env, ALEPH_SITE_NAME: 'blog' }, siteRetentionFetch({
+    calls,
+    forgotten,
+    previous: blogBefore(5),
+    linked: {
+      domains: { 'blog.example.com': { type: 'ipfs', message_id: upload(2) } },
+      websites: { docs: { volume_id: upload(1) } },
+    },
+  }))
+
+  assert.deepEqual(forgotten, [[upload(3)]])
+})
+
+test('runSitePublishMode leaves out uploads Aleph no longer stores', async () => {
+  const { env } = await oneFileSite('site-retention-gone-')
+  const calls: string[] = []
+  const forgotten: string[][] = []
+
+  await publishWith({ ...env, ALEPH_SITE_NAME: 'blog' }, siteRetentionFetch({
+    calls,
+    forgotten,
+    previous: blogBefore(5),
+    stored: (hash) => hash !== upload(2) && hash !== upload(1),
+  }))
+
+  assert.deepEqual(forgotten, [[upload(3)]])
+})
+
+test('runSitePublishMode sends no FORGET when every older upload is already gone', async () => {
+  const { outputFile, env } = await oneFileSite('site-retention-nothing-left-')
+  const calls: string[] = []
+  const forgotten: string[][] = []
+
+  await publishWith({ ...env, ALEPH_SITE_NAME: 'blog' }, siteRetentionFetch({
+    calls,
+    forgotten,
+    previous: blogBefore(5),
+    stored: (hash) => ![upload(1), upload(2), upload(3)].includes(hash),
+  }))
+
+  assert.deepEqual(forgotten, [])
+  assert.match(await readFile(outputFile, 'utf8'), /retention_forgotten=0/)
+})
+
+test('runSitePublishMode checks and forgets a long history in batches of 50', async () => {
+  const { env } = await oneFileSite('site-retention-batches-')
+  const calls: string[] = []
+  const forgotten: string[][] = []
+
+  await publishWith({ ...env, ALEPH_SITE_NAME: 'blog' }, siteRetentionFetch({ calls, forgotten, previous: blogBefore(122) }))
+
+  // 123 uploads with this one, three kept.
+  assert.deepEqual(forgotten.map((batch) => batch.length), [50, 50, 20])
+  assert.equal(calls.filter((url) => url.includes('/api/v0/messages.json?')).length, 3)
+})
+
+test('runSitePublishMode keeps every upload when ALEPH_SITE_RETENTION_KEEP_COUNT is 0', async () => {
+  const { env } = await oneFileSite('site-retention-off-')
+  const calls: string[] = []
+  const forgotten: string[][] = []
+
+  await publishWith(
+    { ...env, ALEPH_SITE_NAME: 'blog', ALEPH_SITE_RETENTION_KEEP_COUNT: '0' },
+    siteRetentionFetch({ calls, forgotten, previous: blogBefore(5) }),
+  )
+
+  assert.deepEqual(forgotten, [])
+  assert.equal(calls.some((url) => url.includes('/api/v0/messages.json?')), false)
+})
+
+test('runSitePublishMode forgets nothing without ALEPH_SITE_NAME, because nothing says which uploads are the site', async () => {
+  const { env } = await oneFileSite('site-retention-no-name-')
+  const calls: string[] = []
+  const forgotten: string[][] = []
+
+  await publishWith(env, siteRetentionFetch({ calls, forgotten }))
+
+  assert.deepEqual(forgotten, [])
+  assert.equal(calls.some((url) => url.includes('/api/v0/aggregates/')), false)
+})
+
+test('runSitePublishMode rejects an ALEPH_SITE_RETENTION_KEEP_COUNT that is not a whole number before uploading', async () => {
+  const { env } = await oneFileSite('site-retention-invalid-')
+  const calls: string[] = []
+  const forgotten: string[][] = []
+
+  await assert.rejects(
+    publishWith(
+      { ...env, ALEPH_SITE_NAME: 'blog', ALEPH_SITE_RETENTION_KEEP_COUNT: 'three' },
+      siteRetentionFetch({ calls, forgotten, previous: blogBefore(5) }),
+    ),
+    /ALEPH_SITE_RETENTION_KEEP_COUNT must be a whole number, not "three"/,
+  )
   assert.deepEqual(calls, [])
 })
 
