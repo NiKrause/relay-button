@@ -1,4 +1,5 @@
 import type { EthereumProviderLike, EthereumTransactionRequest } from './types'
+import { getEthereumProvider } from './wallet'
 
 function ensureHexQuantity(value: bigint): `0x${string}` {
   return `0x${value.toString(16)}`
@@ -51,7 +52,7 @@ export async function sendTransaction(
 export async function personalSign(
   address: string,
   message: string,
-  provider: EthereumProviderLike | null | undefined
+  provider: EthereumProviderLike | null | undefined = getEthereumProvider()
 ): Promise<string> {
   assertProvider(provider)
 

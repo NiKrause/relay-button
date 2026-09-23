@@ -152,15 +152,24 @@ Current responsibilities:
   - `ethCall`
   - `sendTransaction`
   - `personalSign`
+- browser-safe wallet connection helpers:
+  - `getEthereumProvider`
+  - `connectWallet`
+  - `watchWallet`
 - browser-safe prepaid vault protocol helpers:
   - chain-id mapping
   - budget formatting
   - vault balance/reservation reads
   - vault transaction helpers
 
-Keep local to apps for now:
+Connecting is here; deciding what a connection means is not. Keep local to
+apps:
 
-- wallet-provider UX and account connection flow
+- wallet-provider UX — when to prompt, what to say when a wallet is missing,
+  whether to ask for a chain switch
+- address formatting, including checksumming: this package carries no runtime
+  dependencies, so `connectWallet` takes a `normaliseAddress` function rather
+  than pulling in viem
 - prepaid enforcement policy and warnings
 - UI state and rendering
 

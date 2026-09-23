@@ -215,7 +215,7 @@ exposes:
 | Entrypoint | Contents |
 | --- | --- |
 | `@le-space/ui` | Alias of `/shared`. |
-| `@le-space/ui/shared` | Framework-agnostic layer: `createSponsorRelayController`, `SponsorRelayController`, the `SponsorRelayProps` / `SponsorRelayState` types, `rootfsHealth`, wallet helpers (`connectWallet`, `personalSign`, `watchWallet`, `getEthereumProvider`), formatters (`shortHash`, `formatNumber`, `formatDateTime`, `formatTierSpecLabel`, `joinMappedPorts`, `joinRequiredPortForwards`, `buildSshCommand`), `resolveManifestSource`, `createDeploymentProgressEmitter`, `UI_PACKAGE_VERSION`, and the `DEFAULT_*` constants. |
+| `@le-space/ui/shared` | Framework-agnostic layer: `createSponsorRelayController`, `SponsorRelayController`, the `SponsorRelayProps` / `SponsorRelayState` types, `rootfsHealth`, wallet helpers re-exported from `@le-space/browser` (`connectWallet`, `personalSign`, `watchWallet`, `getEthereumProvider`) — `connectWallet` here adds viem checksumming via `toChecksumAddress`, formatters (`shortHash`, `formatNumber`, `formatDateTime`, `formatTierSpecLabel`, `joinMappedPorts`, `joinRequiredPortForwards`, `buildSshCommand`), `resolveManifestSource`, `createDeploymentProgressEmitter`, `UI_PACKAGE_VERSION`, and the `DEFAULT_*` constants. |
 | `@le-space/ui/svelte` | `SponsorRelayFab` (default and named export), uncompiled `.svelte` source. |
 | `@le-space/ui/react` | `SponsorRelayFab` (default and named export) plus the `useSponsorRelayController` hook. |
 | `@le-space/ui/styles.css` | The Svelte theme tokens as a standalone stylesheet, for host pages that want the `--relay-*` palette without the component. |

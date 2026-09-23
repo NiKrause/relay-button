@@ -1,23 +1,16 @@
 import { getAddress } from "viem";
+import {
+  connectWallet as connectBrowserWallet,
+  getEthereumProvider,
+  personalSign,
+  watchWallet,
+} from "../../../browser/src/index.ts";
 
+import type { EthereumProviderLike } from "../../../browser/src/types.ts";
 import type { SponsorRelayWalletState } from "./types";
 
-export interface EthereumProviderLike {
-  isMetaMask?: boolean;
-  request<T = unknown>(args: {
-    method: string;
-    params?: unknown[] | Record<string, unknown>;
-  }): Promise<T>;
-  on?(event: string, listener: (...args: unknown[]) => void): void;
-  removeListener?(event: string, listener: (...args: unknown[]) => void): void;
-}
-
-export function getEthereumProvider(): EthereumProviderLike | null {
-  return (
-    (globalThis as { window?: { ethereum?: EthereumProviderLike } }).window
-      ?.ethereum ?? null
-  );
-}
+export type { EthereumProviderLike };
+export { getEthereumProvider, personalSign, watchWallet };
 
 export function toChecksumAddress(address: string): string {
   try {
@@ -27,58 +20,14 @@ export function toChecksumAddress(address: string): string {
   }
 }
 
+/**
+ * The wallet helpers live in `@le-space/browser`, which carries no runtime
+ * dependencies. Checksumming needs viem, so this package supplies it.
+ */
 export async function connectWallet(
   provider = getEthereumProvider(),
 ): Promise<SponsorRelayWalletState> {
-  if (!provider) {
-    throw new Error("MetaMask provider not found.");
-  }
-
-  const accounts = await provider.request<string[]>({
-    method: "eth_requestAccounts",
+  return connectBrowserWallet(provider, {
+    normaliseAddress: toChecksumAddress,
   });
-  const chainId = await provider.request<string>({ method: "eth_chainId" });
-  const address = accounts[0] ? toChecksumAddress(accounts[0]) : null;
-  return {
-    connected: Boolean(address),
-    address,
-    chainId,
-    isMetaMask: Boolean(provider.isMetaMask),
-  };
-}
-
-export async function personalSign(
-  address: string,
-  message: string,
-  provider = getEthereumProvider(),
-): Promise<string> {
-  if (!provider) {
-    throw new Error("MetaMask provider not found.");
-  }
-
-  const payload = `0x${Array.from(new TextEncoder().encode(message))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")}`;
-
-  return provider.request<string>({
-    method: "personal_sign",
-    params: [payload, address],
-  });
-}
-
-export function watchWallet(
-  onChange: () => void,
-  provider = getEthereumProvider(),
-): () => void {
-  if (!provider?.on || !provider?.removeListener) {
-    return () => {};
-  }
-
-  provider.on("accountsChanged", onChange);
-  provider.on("chainChanged", onChange);
-
-  return () => {
-    provider.removeListener?.("accountsChanged", onChange);
-    provider.removeListener?.("chainChanged", onChange);
-  };
 }
