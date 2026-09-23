@@ -49,6 +49,7 @@ outage and a broken app.
 | `client` | `createAlephBrowserClient`, the composed API surface |
 | `aleph-api` | Endpoint paths and defaults the client is built from |
 | `evm` | `ethCall`, `sendTransaction`, `personalSign` over EIP-1193 |
+| `wallet` | `getEthereumProvider`, `connectWallet`, `watchWallet` |
 | `prepaid` | Credit balances, budget formatting, payment chain from chain id |
 | `pricing` | `fetchInstancePricing`, `parseInstancePricing` |
 | `rootfs` | Manifest loading and the item-hash conventions |
@@ -62,15 +63,42 @@ need to use.
 
 ## Wallet transport
 
-`evm` deliberately stays thin. It does not manage connection state, prompt for
-a chain switch, or remember an address — an app already has opinions about all
+`wallet` finds the injected provider, connects to it, and tells you when the
+account or the chain changes. `evm` speaks to a provider once you have one.
+Both stay thin: they do not remember an address, prompt for a chain switch, or
+decide what a disconnection means — an app already has opinions about all
 three, and a library that also has them fights the app.
 
 ```js
-import { personalSign } from '@le-space/browser'
+import { connectWallet, watchWallet, personalSign } from '@le-space/browser'
 
-const signature = await personalSign({ provider, address, message })
+const wallet = await connectWallet()
+// { connected: true, address: '0x…', chainId: '0x2105', isMetaMask: true }
+
+const stop = watchWallet(() => {
+  // the account or the chain changed; read it again
+})
+
+const signature = await personalSign(wallet.address, 'message', provider)
 ```
+
+Every function takes the provider as its last argument and falls back to
+`getEthereumProvider()` — `window.ethereum`, or `null` off a browser — so a
+page that only ever talks to the injected wallet can leave it out, and a page
+with its own provider passes it in.
+
+The address comes back exactly as the wallet reported it. This package has no
+runtime dependencies and checksumming needs one, so `connectWallet` takes the
+normaliser instead:
+
+```js
+import { getAddress } from 'viem'
+
+const wallet = await connectWallet(provider, { normaliseAddress: getAddress })
+```
+
+That is what `@le-space/ui` does, which is why `connectWallet` from the UI
+package returns a checksummed address and this one does not.
 
 State belongs to the caller. `@le-space/ui` keeps its own wallet state on top
 of these functions rather than inside them.

@@ -11,7 +11,17 @@ export const BROWSER_PACKAGE_PLAN: BrowserPackagePlan = {
 }
 
 export interface EthereumProviderLike {
+  isMetaMask?: boolean
   request<T = unknown>(args: { method: string; params?: unknown[] | Record<string, unknown> }): Promise<T>
+  on?(event: string, listener: (...args: unknown[]) => void): void
+  removeListener?(event: string, listener: (...args: unknown[]) => void): void
+}
+
+export interface WalletState {
+  connected: boolean
+  address: string | null
+  chainId: string | null
+  isMetaMask: boolean
 }
 
 export interface EthereumTransactionRequest {
