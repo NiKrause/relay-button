@@ -1,0 +1,53 @@
+name: Daily Aleph Profile Smoke Test
+
+on:
+  schedule:
+    # 03:17 UTC avoids the busiest top-of-hour GitHub Actions window.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: daily-aleph-profile-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: ${{ matrix.profile }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: orbitdb-relay
+            project_repository: NiKrause/orbitdb-relay
+            project_ref: main
+            rootfs_contract_path: aleph/contract.json
+          - profile: uc-go-peer
+            project_repository: NiKrause/universal-connectivity
+            project_ref: main
+            rootfs_contract_path: go-peer/aleph/uc-go-peer.json
+          - profile: ucan-store
+            project_repository: NomadKids/ucan-store
+            project_ref: main
+            rootfs_contract_path: aleph/ucan-store.json
+    uses: ./.github/workflows/aleph-rootfs-build-publish-deploy.yml
+    with:
+      profile: ${{ matrix.profile }}
+      project_repository: ${{ matrix.project_repository }}
+      project_ref: ${{ matrix.project_ref }}
+      rootfs_contract_path: ${{ matrix.rootfs_contract_path }}
+      tooling_repository: NiKrause/relay-button
+      tooling_ref: ${{ github.ref_name }}
+      publish: true
+      deploy_vm: true
+      cleanup_after_run: true
+      artifact_retention_days: 1
+      rootfs_upload_driver: aleph-ipfs
+      rootfs_require_processed_store: true
+      vm_name: daily-smoke-${{ matrix.profile }}
+      vm_channel: TEST
+      retain_successful_deployments: "0"
+    secrets: inherit
