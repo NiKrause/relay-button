@@ -266,6 +266,7 @@ jobs:
           section "modules"; lsmod 2>&1 | head -40
           section "kernel features"; for f in overlay nf_tables bridge veth fuse; do printf '%s: ' "$f"; grep -qw "$f" /proc/filesystems /proc/modules 2>/dev/null && echo yes || { [ -d "/sys/module/$f" ] && echo builtin || echo no; }; done
           section "memory and disk"; free -m; lsblk 2>/dev/null; df -h /; cat /var/log/resize2fs.log
+          section "resize diagnostics"; ls -l /etc/mtab 2>&1; grep cryptroot /proc/self/mountinfo; stat -c '%d %t:%T' / /dev/mapper/cryptroot; resize2fs -d 8 /dev/mapper/cryptroot 2>&1 | tail -8; df -h /
           section "docker info"; docker info 2>&1 | grep -E 'Server Version|Storage Driver|Cgroup|Kernel|ERROR|WARNING' || tail -20 /var/log/dockerd.log
           section "docker run (host network)"; docker run --rm --network host hello-world > /tmp/hello.txt 2>&1; grep -m1 -E "Hello from Docker|rror" /tmp/hello.txt
           section "docker run (host network, outbound)"; docker run --rm --network host busybox:1.36 wget -qO /tmp/x -T 10 http://example.com > /tmp/wget.txt 2>&1 && echo "outbound from a container: ok" || tail -3 /tmp/wget.txt
