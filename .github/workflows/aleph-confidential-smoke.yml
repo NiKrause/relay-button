@@ -234,9 +234,17 @@ jobs:
         id: probe
         if: inputs.image == 'debian-docker'
         env:
-          HOST: ${{ steps.execution.outputs.host_ipv4 }}
-          PORT: ${{ steps.execution.outputs.ssh_port }}
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+          CRN_URL: ${{ steps.execution.outputs.crn_url }}
         run: |
+          # The node can report the instance running before its port mapping.
+          for i in $(seq 1 18); do
+            entry="$(curl -fsS --max-time 15 "$CRN_URL/v2/about/executions/list" | jq -c --arg h "$ITEM_HASH" '.[$h] // {}' || echo '{}')"
+            HOST="$(jq -r '.networking.host_ipv4 // empty' <<<"$entry")"
+            PORT="$(jq -r '.networking.mapped_ports["22"].host // empty' <<<"$entry")"
+            [ -n "$HOST" ] && [ -n "$PORT" ] && break
+            sleep 10
+          done
           [ -n "$HOST" ] && [ -n "$PORT" ] || { echo "::error::no host address or mapped SSH port"; exit 1; }
           ssh_guest() {
             ssh -i "$RUNNER_TEMP/smoke_ed25519" -p "$PORT" -o BatchMode=yes -o ConnectTimeout=15 \
