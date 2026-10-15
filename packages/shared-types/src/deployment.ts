@@ -80,6 +80,36 @@ export interface AlephAggregateContent<T = Record<string, unknown>> {
   time: number;
 }
 
+/** TEE mode on the wire; absent or "sev" is the legacy SEV / SEV-ES flow. */
+export type TeeMode = "sev" | "sev_snp" | "tdx";
+
+/** Expected launch registers of a measured mode (sev_snp declares `launch`). */
+export interface LaunchMeasurement {
+  platform: "sev_snp" | "tdx";
+  registers: Record<string, string>;
+  /** QEMU CPU model the registers were computed for, e.g. "EPYC-v4". */
+  vcpu_type?: string;
+}
+
+/**
+ * `environment.trusted_execution` of a confidential instance, as aleph-rs
+ * (`aleph-types`, TrustedExecutionEnvironment) serialises it. Legacy SEV uses
+ * `firmware` and `policy`; the measured modes (sev_snp, tdx) need `runtime`
+ * and `measurements` instead.
+ */
+export interface TrustedExecution {
+  /** OVMF firmware item hash (legacy SEV only). */
+  firmware?: string;
+  /** AMD SEV policy bits (legacy) or the SEV-SNP 64-bit guest policy. */
+  policy?: number;
+  mode?: TeeMode;
+  /** STORE item hash of the measured runtime bundle (measured modes only). */
+  runtime?: string;
+  measurements?: LaunchMeasurement[];
+  /** In-guest attestation port; the runtime bundle's default (8443) if absent. */
+  attestation_port?: number;
+}
+
 export interface AlephInstanceContent {
   address: string;
   time: number;
@@ -92,7 +122,7 @@ export interface AlephInstanceContent {
     reproducible?: boolean;
     shared_cache?: boolean;
     hypervisor: "qemu";
-    trusted_execution?: Record<string, unknown>;
+    trusted_execution?: TrustedExecution;
   };
   resources: {
     vcpus: number;
