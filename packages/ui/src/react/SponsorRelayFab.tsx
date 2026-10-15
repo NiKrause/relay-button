@@ -7,6 +7,7 @@ import {
   formatTierSpecLabel,
   joinMappedPorts,
   joinRequiredPortForwards,
+  formatCrnOptionLabel,
   shortHash,
   anchorPanelToLauncher,
   clampToViewport,
@@ -1411,6 +1412,20 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
               </div>
               <div>{state.rootfsHealth.label}</div>
               <div>
+                <label>
+                  <input
+                    type="checkbox"
+                    aria-label="Confidential VM"
+                    checked={state.confidential}
+                    disabled={state.busy.refreshing || state.busy.deploying}
+                    onChange={(event) =>
+                      void controller.setConfidential(event.currentTarget.checked)
+                    }
+                  />{" "}
+                  Confidential VM (AMD SEV-SNP)
+                </label>
+              </div>
+              <div>
                 <select
                   style={fieldStyle}
                   aria-label="Select CRN"
@@ -1424,8 +1439,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   </option>
                   {state.crnOptions.map((option) => (
                     <option style={optionStyle} key={option.hash} value={option.hash}>
-                      {(option.name ?? option.hash.slice(0, 8)) +
-                        (option.score != null ? ` · ${option.score.toFixed(2)}` : "")}
+                      {formatCrnOptionLabel(option, state.confidential)}
                     </option>
                   ))}
                 </select>
