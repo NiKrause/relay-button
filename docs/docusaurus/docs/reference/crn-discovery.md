@@ -122,7 +122,20 @@ inside the image. The relay profiles' Debian images rely on both, which means a
 confidential relay needs its own image flavour. With `image: debian-docker` the
 smoke workflow builds a Debian rootfs under a small foreground init with sshd
 and Docker, logs in after the unlock and reports what the guest offers a
-workload: network, DNS, cgroups, kernel modules, and whether containers run.
+workload. What it found (aleph CLI v0.22.0, runtime `snp-1.2`, kernel 6.18):
+
+| | |
+| --- | --- |
+| Network | IPv4 behind NAT and a public IPv6, DNS, outbound HTTPS; mapped ports (22) reachable; no guest firewall |
+| Image size | the CCN takes at most **1 GiB per upload**, so the encrypted image must stay below it |
+| Disk | the CRN grows the LUKS volume to the instance disk, **not** the ext4 inside; `resize2fs` refuses in the chroot (it does not see `/` as mounted), the `EXT4_IOC_RESIZE_FS` ioctl grows it online |
+| Kernel | cgroup v2 (cpuset, cpu, io, memory, pids); **no** nftables, bridge, veth, overlayfs or FUSE |
+| Docker | runs with `--iptables=false --bridge=none --storage-driver=vfs`; containers use the host network and reach the internet |
+
+So a confidential workload ships a small image and pulls its containers
+after the unlock, onto the encrypted disk. Compose services need
+`network_mode: host`, which is also what Aleph's own `aleph.compose/1`
+programs require.
 
 ## The reachability probe
 
