@@ -31,6 +31,7 @@ private key and a browser holding a MetaMask connection.
 | --- | --- |
 | `manifests` | `validateRootfsManifest`, `verifyRootfsExists` — a manifest is checked before anything is signed |
 | `crns` | `fetchCrnsFromList`, `filterDeployableCrns` — candidate discovery and compatibility |
+| `confidential` | `isConfidentialCrn`, `enrichCrnsWithTee`, `assertValidTrustedExecution` — which nodes can take a confidential instance, and a `trusted_execution` block Aleph will accept ([CRN discovery](./crn-discovery.md#confidential-nodes)) |
 | `instance-deployment` | Building the `INSTANCE` message, SSH key normalisation |
 | `broadcast` | Publishing a signed message and waiting for Aleph to process it |
 | `deployment-inspection` | Reading back what a deployment actually became |

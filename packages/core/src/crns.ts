@@ -1,5 +1,6 @@
 import type { CrnRecord } from '@le-space/shared-types'
 
+import { isConfidentialCrn, type ConfidentialRequirement } from './confidential.ts'
 import { DEFAULT_ALEPH_API_HOST, type FetchLike } from './manifests.ts'
 
 export const DEFAULT_CRN_LIST_URL = 'https://crns-list.aleph.sh/crns.json'
@@ -159,10 +160,15 @@ export function filterDeployableCrns<TCrn extends CrnRecord>(
   options: {
     excludedHashes?: ReadonlyArray<string>
     spec?: CrnCapacitySpec | null
+    /** Keep only nodes that can take a confidential instance (see isConfidentialCrn). */
+    confidential?: ConfidentialRequirement | null
   } = {}
 ): TCrn[] {
+  const confidential = options.confidential
   return scoreSortedCrns(
-    compatibleCrns(crns, options.excludedHashes).filter((crn) => hasCrnCapacity(crn, options.spec))
+    compatibleCrns(crns, options.excludedHashes)
+      .filter((crn) => hasCrnCapacity(crn, options.spec))
+      .filter((crn) => !confidential || isConfidentialCrn(crn, confidential))
   )
 }
 

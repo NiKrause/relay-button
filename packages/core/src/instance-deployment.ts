@@ -5,10 +5,12 @@ import type {
   DeploymentIntentEnvelope,
   DeploymentResult,
   MessageHasher,
-  MessageSigner
+  MessageSigner,
+  TrustedExecution
 } from '@le-space/shared-types'
 
 import { broadcastAlephMessage } from './broadcast.ts'
+import { assertValidTrustedExecution } from './confidential.ts'
 import { extractInsufficientBalanceMessage } from './aleph-normalizers.ts'
 import { DEFAULT_ALEPH_CHANNEL } from './constants.ts'
 export const SSH_PUBLIC_KEY_PATTERN =
@@ -163,6 +165,8 @@ export function createInstanceContent(args: {
   crnHash?: string
   deployer?: string
   now?: number
+  /** Makes the instance confidential; validated before anything is built. */
+  trustedExecution?: TrustedExecution
 }): AlephInstanceContent {
   const sshKey = normalizeSshPublicKey(args.sshPublicKey)
   if (!sshKey) {
@@ -173,6 +177,9 @@ export function createInstanceContent(args: {
   }
   if (!args.rootfsItemHash || !/^[a-fA-F0-9]{64}$/.test(args.rootfsItemHash)) {
     throw new Error('rootfsItemHash must be a 64-character Aleph item hash.')
+  }
+  if (args.trustedExecution) {
+    assertValidTrustedExecution(args.trustedExecution)
   }
 
   return {
@@ -186,7 +193,8 @@ export function createInstanceContent(args: {
       aleph_api: true,
       hypervisor: 'qemu',
       reproducible: false,
-      shared_cache: false
+      shared_cache: false,
+      ...(args.trustedExecution ? { trusted_execution: args.trustedExecution } : {})
     },
     resources: {
       vcpus: Number(args.vcpus),

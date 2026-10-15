@@ -69,6 +69,40 @@ So defaulting to the aggregate would trade a **rare** outage for a
 **permanent** rise in failed first attempts. The fallback buys the resilience
 without paying that cost on every healthy day.
 
+## Confidential nodes
+
+A confidential instance (AMD SEV-SNP, or legacy SEV / SEV-ES) can only land
+on a node whose CPU supports it, and only on an aleph-vm that protects it.
+Neither source says that well: crns.json has one `confidential_support` flag
+that does not tell SEV-SNP from SEV, and the aggregate has nothing. The node
+itself does: `GET /about/usage/system` reports `properties.cpu.features`
+(e.g. `["sev", "sev_es", "sev_snp"]`) and, on SEV-SNP nodes, a
+`properties.tee.sev_snp` block with the supported vCPU models; `GET
+/status/config` reports `version`.
+
+- `enrichCrnsWithTee()` reads both from the nodes whose TEE support or version
+  is not known yet, a few at a time, keeping the order. `probeCrnTee()` does
+  one node.
+- `filterDeployableCrns(crns, { confidential: {} })` then keeps only nodes for
+  which `isConfidentialCrn()` holds: SEV-SNP evidence (the TEE block or the
+  `sev_snp` feature) and aleph-vm at least `MIN_CONFIDENTIAL_ALEPH_VM_VERSION`
+  (2.1.2 — before it, a host-supplied LUKS2 header with a null cipher was
+  accepted, aleph-im/aleph-vm#1280). `{ mode: 'sev' }` also takes SEV / SEV-ES
+  nodes and the crns.json flag.
+- Unknown is refused, not kept. This is the opposite of `qemu_support` and
+  `system_usage` above on purpose: a confidential workload on a node that
+  cannot protect it is worse than no deploy.
+- `createInstanceContent({ …, trustedExecution })` puts the block into
+  `environment.trusted_execution` after `assertValidTrustedExecution()` has
+  checked it: legacy SEV needs a firmware hash; `sev_snp` and `tdx` need the
+  runtime bundle's item hash and expected measurements for their platform.
+
+Surveyed on 2026-10-15 through the aggregate (crns.json answered 500 that
+day): of 193 nodes that answered, 12 reported SEV-SNP, 10 of them on aleph-vm
+2.1.4; 3 more reported only SEV / SEV-ES. Measuring the launch, attesting the
+guest and injecting secrets are not part of this package yet
+([#154](https://github.com/NiKrause/relay-button/issues/154)).
+
 ## The reachability probe
 
 The aggregate has no liveness signal, so when candidates come from it, the

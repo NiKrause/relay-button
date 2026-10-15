@@ -30,6 +30,20 @@ export interface CrnRecord {
   resolved_ip?: string | null
   geo_source?: string | null
   system_usage?: CrnSystemUsage | null
+  /** aleph-vm version, from crns.json or the node's /status/config. */
+  version?: string | null
+  /** crns.json's flag; does not say whether SEV-SNP or only SEV / SEV-ES. */
+  confidential_support?: boolean
+  /** CPU features from /about/usage/system, e.g. ["sev", "sev_es", "sev_snp"]. */
+  cpu_features?: string[] | null
+  /** TEE properties from /about/usage/system; present for SEV-SNP nodes. */
+  tee?: CrnTeeProperties | null
+}
+
+export interface CrnTeeProperties {
+  sev_snp?: {
+    supported_vcpu_types?: string[]
+  }
 }
 
 export type ReferenceStatus = 'processed' | 'pending' | 'rejected' | 'removing' | 'removed' | 'unknown' | 'missing'

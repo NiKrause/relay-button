@@ -1,6 +1,7 @@
 export * from './constants.ts'
 export * from './manifests.ts'
 export * from './crns.ts'
+export * from './confidential.ts'
 export * from './port-forwarding.ts'
 export * from './aleph-normalizers.ts'
 export * from './deployment-inspection.ts'
