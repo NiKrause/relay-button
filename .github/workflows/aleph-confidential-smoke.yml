@@ -136,7 +136,15 @@ jobs:
           exec /usr/sbin/sshd -D -e
           EOF
           sudo chmod 755 "$root/sbin/init"
-          size_mib=$(( $(sudo du -sm "$root" | cut -f1) + 512 ))
+          # The CCN takes at most 1 GiB per upload (pyaleph
+          # DEFAULT_MAX_UPLOAD_FILE_SIZE) and the CRN grows the filesystem to
+          # the instance disk, so ship the image tight and pull containers later.
+          sudo rm -rf "$root"/var/cache/apt/* "$root"/var/lib/apt/lists/* \
+            "$root"/usr/share/doc/* "$root"/usr/share/man/* "$root"/usr/share/info/* \
+            "$root"/usr/share/locale/*
+          size_mib=$(( $(sudo du -sm "$root" | cut -f1) * 110 / 100 + 64 ))
+          echo "rootfs content: $(sudo du -sh "$root" | cut -f1), image ${size_mib} MiB"
+          [ "$size_mib" -le 900 ] || { echo "::error::the plain image (${size_mib} MiB) would exceed the 1 GiB upload limit once encrypted"; exit 1; }
           truncate -s "${size_mib}M" "$RUNNER_TEMP/plain.ext4"
           sudo mkfs.ext4 -q -d "$root" "$RUNNER_TEMP/plain.ext4"
           sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/plain.ext4"
