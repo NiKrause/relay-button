@@ -103,6 +103,8 @@ jobs:
             --wait 600 2>&1 | tee "$RUNNER_TEMP/create.log" || status=$?
           hash="$(grep -oE 'Item hash: +[0-9a-f]{64}' "$RUNNER_TEMP/create.log" | grep -oE '[0-9a-f]{64}' | head -1 || true)"
           echo "item_hash=$hash" >> "$GITHUB_OUTPUT"
+          store="$(grep -oE 'Uploaded encrypted rootfs: +[0-9a-f]{64}' "$RUNNER_TEMP/create.log" | grep -oE '[0-9a-f]{64}' | head -1 || true)"
+          echo "rootfs_store=$store" >> "$GITHUB_OUTPUT"
           [ -n "$hash" ] || { echo "::error::no INSTANCE item hash in the CLI output"; exit 1; }
           exit "${status:-0}"
 
@@ -164,6 +166,15 @@ jobs:
           ITEM_HASH: ${{ steps.create.outputs.item_hash }}
         run: |
           echo y | aleph instance delete "$ITEM_HASH" --reason "confidential smoke test ${GITHUB_RUN_ID}" --chain eth
+
+      - name: Forget the encrypted rootfs
+        # The STORE of the uploaded image outlives the instance and keeps
+        # costing credits until it is forgotten.
+        if: always() && steps.create.outputs.rootfs_store != ''
+        env:
+          ROOTFS_STORE: ${{ steps.create.outputs.rootfs_store }}
+        run: |
+          echo y | aleph message forget "$ROOTFS_STORE" --reason "confidential smoke test rootfs ${GITHUB_RUN_ID}" --chain eth
 
       - name: Summary
         if: always()
