@@ -132,6 +132,10 @@ jobs:
           mountpoint -q /sys/fs/cgroup || mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null
           hostname -F /etc/hostname 2>/dev/null
           # The CRN grows the disk, not the filesystem inside the LUKS volume.
+          # The measured init mounted it at /mnt/root before the chroot, which
+          # is the path /proc/mounts shows; make that path exist in here so
+          # resize2fs finds the mount and grows it online.
+          mkdir -p /mnt/root && mount --bind / /mnt/root
           resize2fs /dev/mapper/cryptroot > /var/log/resize2fs.log 2>&1
           echo "smoke-init: $(uname -r), starting dockerd and sshd" > /dev/console
           # The measured runtime kernel has no nftables, bridge or overlayfs:
@@ -263,8 +267,8 @@ jobs:
           section "kernel features"; for f in overlay nf_tables bridge veth fuse; do printf '%s: ' "$f"; grep -qw "$f" /proc/filesystems /proc/modules 2>/dev/null && echo yes || { [ -d "/sys/module/$f" ] && echo builtin || echo no; }; done
           section "memory and disk"; free -m; lsblk 2>/dev/null; df -h /; cat /var/log/resize2fs.log
           section "docker info"; docker info 2>&1 | grep -E 'Server Version|Storage Driver|Cgroup|Kernel|ERROR|WARNING' || tail -20 /var/log/dockerd.log
-          section "docker run (host network)"; docker run --rm --network host hello-world 2>&1 | head -5
-          section "docker run (host network, outbound)"; docker run --rm --network host busybox:1.36 wget -qO- -T 10 http://example.com 2>&1 | head -3
+          section "docker run (host network)"; docker run --rm --network host hello-world > /tmp/hello.txt 2>&1; grep -m1 -E "Hello from Docker|rror" /tmp/hello.txt
+          section "docker run (host network, outbound)"; docker run --rm --network host busybox:1.36 wget -qO /tmp/x -T 10 http://example.com > /tmp/wget.txt 2>&1 && echo "outbound from a container: ok" || tail -3 /tmp/wget.txt
           section "dockerd log tail"; tail -15 /var/log/dockerd.log
           EOF
           cat "$RUNNER_TEMP/probe.txt"
