@@ -13,6 +13,7 @@ import {
   type InstanceMessage,
   type RootfsManifest,
   type RootfsManifestState,
+  fetchWithTimeout,
 } from "../../../browser/src/index.ts";
 import {
   appendDeploymentTokenToSshPublicKey,
@@ -30,6 +31,7 @@ import {
   fetchVmRuntime,
   fetchRelayMetadataForRuntime,
   fetchUcGoPeerMetadata,
+  enrichCrnsWithTee,
   filterDeployableCrns,
   forgetAlephMessages,
   listStaleVmBootstrapConfigAggregateMessageHashes,
@@ -407,6 +409,7 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     instanceName: props.instanceName ?? DEFAULT_INSTANCE_NAME,
     ucanStoreBootstrap: defaultUcanStoreBootstrapInput(props),
     tierId: DEFAULT_TIER_ID,
+    confidential: props.confidential ?? false,
     showAdvanced: false,
     showInstances: props.showInstances ?? true,
     showPasteManifest: Boolean(props.manifestJson?.trim()),
@@ -1039,7 +1042,45 @@ function compatibleCrnsForTier(crns: Crn[], state: SponsorRelayState): Crn[] {
     state.pricingSummary.pricing,
     state.pricingSummary.tier,
   );
-  return filterDeployableCrns(crns, { spec });
+  return filterDeployableCrns(crns, {
+    spec,
+    confidential: state.confidential ? {} : null,
+  });
+}
+
+// How many of the best-scored nodes to ask about their TEE when the source
+// gives no hint (the corechannel aggregate carries none).
+const CONFIDENTIAL_PROBE_LIMIT = 80;
+
+/**
+ * The nodes that might take a confidential instance, asked about their TEE
+ * and aleph-vm version. crns.json flags candidates with confidential_support;
+ * without such a flag the best-scored nodes are probed. Nodes that cannot be
+ * confidential are dropped here; filterDeployableCrns checks the rest.
+ */
+async function confidentialCandidates(crns: Crn[]): Promise<Crn[]> {
+  const flagged = crns.filter(
+    (crn) =>
+      crn.confidential_support === true ||
+      (crn.cpu_features ?? []).some((feature) => feature.startsWith("sev")),
+  );
+  const score = (crn: Crn) => Number(crn.score ?? Number.NEGATIVE_INFINITY);
+  const pool =
+    flagged.length > 0
+      ? flagged
+      : [...crns]
+          .sort((left, right) => score(right) - score(left))
+          .slice(0, CONFIDENTIAL_PROBE_LIMIT);
+  return enrichCrnsWithTee(pool, {
+    fetch: (url, init) => fetchWithTimeout(url, init, 8000),
+  });
+}
+
+function shortOperator(address: string | null | undefined): string | null {
+  if (!address) return null;
+  return address.length > 12
+    ? `${address.slice(0, 6)}…${address.slice(-4)}`
+    : address;
 }
 
 const UI_DEPLOY_WAIT_ATTEMPTS = 60;
@@ -2618,6 +2659,9 @@ export class SponsorRelayController {
       hash: crn.hash,
       name: crn.name ?? null,
       score: typeof crn.score === "number" ? crn.score : null,
+      country: crn.country_code ?? null,
+      version: crn.version ?? null,
+      operator: shortOperator(crn.owner ?? crn.payment_receiver_address),
     }));
 
     this.patch({
@@ -2634,6 +2678,21 @@ export class SponsorRelayController {
       },
       selectedCrn,
     });
+  }
+
+  /**
+   * Switch between a normal and a confidential VM. Pricing and the node list
+   * differ between the two, so both are loaded again.
+   */
+  async setConfidential(confidential: boolean): Promise<void> {
+    if (confidential === this.state.confidential) return;
+    this.patch({
+      confidential,
+      crnPinnedByUser: false,
+      selectedCrn: null,
+      crnOptions: [],
+    });
+    await this.refresh();
   }
 
   /** Pin a specific CRN as the first deploy attempt (null = automatic). */
@@ -2728,10 +2787,17 @@ export class SponsorRelayController {
 
     try {
       const [pricingSummary, crnList] = await Promise.all([
-        fetchInstancePricing(this.client.apiHost),
+        fetchInstancePricing(
+          this.client.apiHost,
+          undefined,
+          this.state.confidential ? "instance_confidential" : "instance",
+        ),
         this.client.fetchCrnsWithSource(crnSourcePreference(this.props)),
       ]);
-      const { crns, source: crnSource } = crnList;
+      const { source: crnSource } = crnList;
+      const crns = this.state.confidential
+        ? await confidentialCandidates(crnList.crns)
+        : crnList.crns;
       if (crnList.listError) {
         this.trace("crns:fallback", {
           source: crnSource,
@@ -2958,6 +3024,16 @@ export class SponsorRelayController {
     });
     if (!this.state.wallet.address) {
       this.patch({ errorText: "Connect MetaMask before deploying." });
+      return;
+    }
+    if (this.state.confidential) {
+      // Starting a VM that looks confidential but whose launch nobody checked
+      // would be worse than not starting: refuse until the measured launch and
+      // attestation exist.
+      this.patch({
+        errorText:
+          "A confidential start needs a measured launch and attestation, which this button cannot do yet (relay-button#154). The node list already shows which nodes qualify.",
+      });
       return;
     }
     if (

@@ -47,6 +47,14 @@ export interface SponsorRelayProps {
    * fallback. `localStorage.LE_SPACE_CRN_SOURCE` overrides this at runtime.
    */
   crnSource?: CrnSourcePreference
+  /**
+   * Ask for a confidential VM (AMD SEV-SNP): only nodes that report SEV-SNP and
+   * run a patched aleph-vm are offered, and pricing uses Aleph's
+   * `instance_confidential` entry. The person can switch it in the panel too.
+   * A start is refused until the measured launch and attestation exist
+   * (relay-button#154).
+   */
+  confidential?: boolean
   schedulerApiHost?: string
   twoN6ApiHost?: string
   /**
@@ -171,6 +179,8 @@ export interface SponsorRelayState {
   instanceName: string
   ucanStoreBootstrap: SponsorRelayUcanStoreBootstrapInput
   tierId: string
+  /** Confidential VM requested (AMD SEV-SNP); see the `confidential` prop. */
+  confidential: boolean
   showAdvanced: boolean
   showInstances: boolean
   showPasteManifest: boolean
@@ -194,7 +204,17 @@ export interface SponsorRelayState {
   /** Which source the current `crns` came from; `null` until the first load. */
   crnSource: CrnSource | null
   selectedCrn: Crn | null
-  crnOptions: Array<{ hash: string; name: string | null; score: number | null }>
+  crnOptions: Array<{
+    hash: string
+    name: string | null
+    score: number | null
+    /** ISO country code, when known. */
+    country: string | null
+    /** aleph-vm version, when known. */
+    version: string | null
+    /** Shortened owner / reward address: nodes of one operator share it. */
+    operator: string | null
+  }>
   crnPinnedByUser: boolean
   instances: CompactInstanceRecord[]
   bootstrapRegistrations: CompactBootstrapRegistrationRecord[]
