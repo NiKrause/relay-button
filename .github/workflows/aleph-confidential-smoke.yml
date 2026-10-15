@@ -99,7 +99,7 @@ jobs:
             --size "$SIZE" \
             --crn "$CRN" \
             --ssh-pubkey-file "$RUNNER_TEMP/smoke_ed25519.pub" \
-            --chain ETH \
+            --chain eth \
             --wait 600 2>&1 | tee "$RUNNER_TEMP/create.log" || status=$?
           hash="$(grep -oE 'Item hash: +[0-9a-f]{64}' "$RUNNER_TEMP/create.log" | grep -oE '[0-9a-f]{64}' | head -1 || true)"
           echo "item_hash=$hash" >> "$GITHUB_OUTPUT"
@@ -145,7 +145,7 @@ jobs:
         env:
           ITEM_HASH: ${{ steps.create.outputs.item_hash }}
         run: |
-          aleph instance unlock "$ITEM_HASH" --crn "$CRN" --passphrase-file "$RUNNER_TEMP/luks.pass" --chain ETH
+          aleph instance unlock "$ITEM_HASH" --crn "$CRN" --passphrase-file "$RUNNER_TEMP/luks.pass" --chain eth
 
       - name: Check that it keeps running
         env:
@@ -163,7 +163,7 @@ jobs:
         env:
           ITEM_HASH: ${{ steps.create.outputs.item_hash }}
         run: |
-          echo y | aleph instance delete "$ITEM_HASH" --reason "confidential smoke test ${GITHUB_RUN_ID}" --chain ETH
+          echo y | aleph instance delete "$ITEM_HASH" --reason "confidential smoke test ${GITHUB_RUN_ID}" --chain eth
 
       - name: Summary
         if: always()
