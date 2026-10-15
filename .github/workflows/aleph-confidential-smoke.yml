@@ -131,8 +131,14 @@ jobs:
           mount -t devpts -o gid=5,mode=620,ptmxmode=666 devpts /dev/pts 2>/dev/null
           mountpoint -q /sys/fs/cgroup || mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null
           hostname -F /etc/hostname 2>/dev/null
+          # The CRN grows the disk, not the filesystem inside the LUKS volume.
+          resize2fs /dev/mapper/cryptroot > /var/log/resize2fs.log 2>&1
           echo "smoke-init: $(uname -r), starting dockerd and sshd" > /dev/console
-          dockerd > /var/log/dockerd.log 2>&1 &
+          # The measured runtime kernel has no nftables, bridge or overlayfs:
+          # Docker runs without its own networking, on the vfs driver, and
+          # containers use the host network.
+          dockerd --iptables=false --ip6tables=false --bridge=none --storage-driver=vfs \
+            > /var/log/dockerd.log 2>&1 &
           exec /usr/sbin/sshd -D -e
           EOF
           sudo chmod 755 "$root/sbin/init"
@@ -246,10 +252,11 @@ jobs:
           section "filesystems"; grep -E 'overlay|cgroup|ext4' /proc/filesystems
           section "cgroups"; cat /sys/fs/cgroup/cgroup.controllers 2>&1
           section "modules"; lsmod 2>&1 | head -40
-          section "memory and disk"; free -m; df -h /
+          section "kernel features"; for f in overlay nf_tables bridge veth fuse; do printf '%s: ' "$f"; grep -qw "$f" /proc/filesystems /proc/modules 2>/dev/null && echo yes || { [ -d "/sys/module/$f" ] && echo builtin || echo no; }; done
+          section "memory and disk"; free -m; lsblk 2>/dev/null; df -h /; cat /var/log/resize2fs.log
           section "docker info"; docker info 2>&1 | grep -E 'Server Version|Storage Driver|Cgroup|Kernel|ERROR|WARNING' || tail -20 /var/log/dockerd.log
           section "docker run (host network)"; docker run --rm --network host hello-world 2>&1 | head -5
-          section "docker run (bridge)"; docker run --rm busybox:1.36 wget -qO- -T 10 http://example.com 2>&1 | head -3
+          section "docker run (host network, outbound)"; docker run --rm --network host busybox:1.36 wget -qO- -T 10 http://example.com 2>&1 | head -3
           section "dockerd log tail"; tail -15 /var/log/dockerd.log
           EOF
           cat "$RUNNER_TEMP/probe.txt"
