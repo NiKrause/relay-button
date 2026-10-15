@@ -103,6 +103,16 @@ day): of 193 nodes that answered, 12 reported SEV-SNP, 10 of them on aleph-vm
 guest and injecting secrets are not part of this package yet
 ([#154](https://github.com/NiKrause/relay-button/issues/154)).
 
+Until they are, the workflow **Aleph Confidential Smoke**
+(`.github/workflows/aleph-confidential-smoke.yml`, started by hand) runs the
+whole path with Aleph's own CLI: it LUKS-encrypts a minimal busybox rootfs,
+starts it on a chosen SEV-SNP node, attests it (AMD certificate chain, launch
+measurement, policy), injects the passphrase over the attested channel, checks
+that the instance keeps running and forgets it again. Each run spends a few
+cents of credits from the account behind `ALEPH_PRIVATE_KEY`. Starting a
+confidential instance from a plain image (`--confidential --image ubuntu26`)
+failed on two SEV-SNP nodes of different operators in October 2026.
+
 ## The reachability probe
 
 The aggregate has no liveness signal, so when candidates come from it, the
