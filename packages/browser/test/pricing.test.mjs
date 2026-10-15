@@ -64,3 +64,15 @@ test('fetchInstancePricing requests the pricing aggregate and returns pricing st
     Date.now = originalNow
   }
 })
+
+test('parseInstancePricing reads the confidential entry when asked', () => {
+  const payload = {
+    pricing: {
+      instance: { price: { compute_unit: { credit: '14250' } }, compute_unit: { vcpus: 1, memory_mib: 2048, disk_mib: 20480 }, tiers: [{ id: 'tier-1', compute_units: 1 }] },
+      instance_confidential: { price: { compute_unit: { credit: '28500' } }, compute_unit: { vcpus: 1, memory_mib: 2048, disk_mib: 20480 }, tiers: [{ id: 'tier-1', compute_units: 1 }] }
+    }
+  }
+  assert.equal(parseInstancePricing(payload).price.compute_unit.credit, '14250')
+  assert.equal(parseInstancePricing(payload, 'instance_confidential').price.compute_unit.credit, '28500')
+  assert.throws(() => parseInstancePricing({ pricing: { instance: payload.pricing.instance } }, 'instance_confidential'), /instance_confidential/)
+})

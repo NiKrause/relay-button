@@ -30,6 +30,10 @@ export interface CrnRecord {
   resolved_ip?: string | null
   geo_source?: string | null
   system_usage?: CrnSystemUsage | null
+  /** Registered owner of the node (corechannel aggregate). */
+  owner?: string | null
+  /** Where the node's rewards go (crns.json); names the operator when owner is absent. */
+  payment_receiver_address?: string | null
   /** aleph-vm version, from crns.json or the node's /status/config. */
   version?: string | null
   /** crns.json's flag; does not say whether SEV-SNP or only SEV / SEV-ES. */

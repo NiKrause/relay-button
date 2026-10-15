@@ -1,7 +1,7 @@
 <script>
   import { onDestroy, onMount } from 'svelte'
 
-  import { UI_PACKAGE_VERSION, anchorPanelToLauncher, clampToViewport, createSponsorRelayController, readStoredPosition, resolveCornerPlacement, writeStoredPosition, formatDateTime, formatNumber, formatTierSpecLabel, joinMappedPorts, joinRequiredPortForwards, shortHash } from '../shared/index'
+  import { UI_PACKAGE_VERSION, anchorPanelToLauncher, clampToViewport, createSponsorRelayController, readStoredPosition, resolveCornerPlacement, writeStoredPosition, formatDateTime, formatNumber, formatTierSpecLabel, joinMappedPorts, joinRequiredPortForwards, formatCrnOptionLabel, shortHash } from '../shared/index'
   import AccordionSection from './components/AccordionSection.svelte'
   import CopyButton from './components/CopyButton.svelte'
   import LauncherButton from './components/LauncherButton.svelte'
@@ -404,6 +404,16 @@ export let apiHosts = undefined
       </div>
       <div class="metric-card">
         <span>CRN</span>
+        <label class="confidential-toggle">
+          <input
+            type="checkbox"
+            aria-label="Confidential VM"
+            checked={state.confidential}
+            disabled={state.busy.refreshing || state.busy.deploying}
+            on:change={(event) => controller.setConfidential(event.currentTarget.checked)}
+          />
+          Confidential VM (AMD SEV-SNP)
+        </label>
         <select
           class="crn-select"
           aria-label="Select CRN"
@@ -413,7 +423,7 @@ export let apiHosts = undefined
           <option value="">Auto ({state.crnOptions[0]?.name ?? 'best score'})</option>
           {#each state.crnOptions as option (option.hash)}
             <option value={option.hash}>
-              {option.name ?? option.hash.slice(0, 8)}{option.score != null ? ` · ${option.score.toFixed(2)}` : ''}
+              {formatCrnOptionLabel(option, state.confidential)}
             </option>
           {/each}
         </select>

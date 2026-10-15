@@ -234,7 +234,8 @@ test('mapResourceNodesToCrns keeps linked compute nodes and drops the rest', () 
       status: 'linked',
       type: 'compute',
       parent: 'ccn-1',
-      inactive_since: null
+      inactive_since: null,
+      owner: '0x1111111111111111111111111111111111111111'
     },
     { hash: 'crn-waiting', address: 'https://waiting.example.com', status: 'waiting', parent: 'ccn-1' },
     { hash: 'crn-orphan', address: 'https://orphan.example.com', status: 'linked', parent: null },
@@ -250,6 +251,9 @@ test('mapResourceNodesToCrns keeps linked compute nodes and drops the rest', () 
   )
   assert.equal(result[0].address, 'https://linked.example.com')
   assert.equal(result[0].score, 0.91)
+  // The owner names the operator in a confidential node picker.
+  assert.equal(result[0].owner, '0x1111111111111111111111111111111111111111')
+  assert.equal(result[1].owner, undefined)
   // A schemeless registry address still has to become a usable base URL.
   assert.equal(result[1].address, 'https://bare.example.com')
   assert.equal(result[1].score, 0.8)

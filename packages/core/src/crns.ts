@@ -35,6 +35,7 @@ type CoreChannelResourceNode = {
   inactive_since?: unknown
   parent?: unknown
   locked?: unknown
+  owner?: unknown
 }
 
 type CoreChannelAggregatePayload = {
@@ -319,6 +320,9 @@ export function mapResourceNodesToCrns(resourceNodes: unknown): CrnRecord[] {
 
       const score = aggregateScore(node)
       if (score != null) record.score = score
+
+      const owner = asString(node.owner)
+      if (owner) record.owner = owner
 
       // qemu_support and system_usage only exist in the polled list. Leaving
       // them undefined keeps filterDeployableCrns permissive instead of

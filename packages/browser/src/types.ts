@@ -131,7 +131,13 @@ export interface Crn {
   gpu_support?: boolean
   system_usage?: CrnUsage | null
   payment_receiver_address?: string | null
+  /** Registered owner (corechannel aggregate). */
+  owner?: string | null
   version?: string | null
+  /** CPU features from the node's /about/usage/system, e.g. ["sev", "sev_es", "sev_snp"]. */
+  cpu_features?: string[] | null
+  /** TEE properties from /about/usage/system; present on SEV-SNP nodes. */
+  tee?: { sev_snp?: { supported_vcpu_types?: string[] } } | null
   city?: string | null
   region?: string | null
   country?: string | null

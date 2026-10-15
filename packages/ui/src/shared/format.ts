@@ -92,3 +92,29 @@ export function joinRequiredPortForwards(
     })
     .join(" · ");
 }
+
+/**
+ * One line per node in the CRN picker: name and score, and for a confidential
+ * VM also country, aleph-vm version and operator — few nodes qualify, often
+ * several from one operator, and the person should see that.
+ */
+export function formatCrnOptionLabel(
+  option: {
+    hash: string
+    name: string | null
+    score: number | null
+    country?: string | null
+    version?: string | null
+    operator?: string | null
+  },
+  confidential = false
+): string {
+  const parts = [option.name ?? option.hash.slice(0, 8)]
+  if (option.score != null) parts.push(option.score.toFixed(2))
+  if (confidential) {
+    if (option.country) parts.push(option.country)
+    if (option.version) parts.push(`aleph-vm ${option.version}`)
+    if (option.operator) parts.push(`operator ${option.operator}`)
+  }
+  return parts.join(' · ')
+}
