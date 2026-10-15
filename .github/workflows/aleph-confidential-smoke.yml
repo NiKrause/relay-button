@@ -132,11 +132,12 @@ jobs:
           mountpoint -q /sys/fs/cgroup || mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null
           hostname -F /etc/hostname 2>/dev/null
           # The CRN grows the disk, not the filesystem inside the LUKS volume.
-          # The measured init mounted it at /mnt/root before the chroot, which
-          # is the path /proc/mounts shows; make that path exist in here so
-          # resize2fs finds the mount and grows it online.
-          mkdir -p /mnt/root && mount --bind / /mnt/root
-          resize2fs /dev/mapper/cryptroot > /var/log/resize2fs.log 2>&1
+          # resize2fs does not see the chroot's root as mounted and refuses,
+          # so ask the kernel to grow it online (EXT4_IOC_RESIZE_FS).
+          bs=$(tune2fs -l /dev/mapper/cryptroot | sed -n 's/^Block size: *//p')
+          blocks=$(( $(blockdev --getsize64 /dev/mapper/cryptroot) / bs ))
+          perl -e 'sysopen(my $f, "/", 0) or die "open: $!"; ioctl($f, 0x40086610, pack("Q", $ARGV[0])) or die "EXT4_IOC_RESIZE_FS: $!\n"' "$blocks" \
+            > /var/log/resize2fs.log 2>&1 && echo "grown to $blocks blocks of $bs" >> /var/log/resize2fs.log
           echo "smoke-init: $(uname -r), starting dockerd and sshd" > /dev/console
           # The measured runtime kernel has no nftables, bridge or overlayfs:
           # Docker runs without its own networking, on the vfs driver, and
@@ -156,7 +157,7 @@ jobs:
           echo "rootfs content: $(sudo du -sh "$root" | cut -f1), image ${size_mib} MiB"
           [ "$size_mib" -le 900 ] || { echo "::error::the plain image (${size_mib} MiB) would exceed the 1 GiB upload limit once encrypted"; exit 1; }
           truncate -s "${size_mib}M" "$RUNNER_TEMP/plain.ext4"
-          sudo mkfs.ext4 -q -d "$root" "$RUNNER_TEMP/plain.ext4"
+          sudo mkfs.ext4 -q -b 4096 -T default -d "$root" "$RUNNER_TEMP/plain.ext4"
           sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/plain.ext4"
           ls -lh "$RUNNER_TEMP/plain.ext4"
 
@@ -266,7 +267,6 @@ jobs:
           section "modules"; lsmod 2>&1 | head -40
           section "kernel features"; for f in overlay nf_tables bridge veth fuse; do printf '%s: ' "$f"; grep -qw "$f" /proc/filesystems /proc/modules 2>/dev/null && echo yes || { [ -d "/sys/module/$f" ] && echo builtin || echo no; }; done
           section "memory and disk"; free -m; lsblk 2>/dev/null; df -h /; cat /var/log/resize2fs.log
-          section "resize diagnostics"; ls -l /etc/mtab 2>&1; grep cryptroot /proc/self/mountinfo; stat -c '%d %t:%T' / /dev/mapper/cryptroot; resize2fs -d 8 /dev/mapper/cryptroot 2>&1 | tail -8; df -h /
           section "docker info"; docker info 2>&1 | grep -E 'Server Version|Storage Driver|Cgroup|Kernel|ERROR|WARNING' || tail -20 /var/log/dockerd.log
           section "docker run (host network)"; docker run --rm --network host hello-world > /tmp/hello.txt 2>&1; grep -m1 -E "Hello from Docker|rror" /tmp/hello.txt
           section "docker run (host network, outbound)"; docker run --rm --network host busybox:1.36 wget -qO /tmp/x -T 10 http://example.com > /tmp/wget.txt 2>&1 && echo "outbound from a container: ok" || tail -3 /tmp/wget.txt
