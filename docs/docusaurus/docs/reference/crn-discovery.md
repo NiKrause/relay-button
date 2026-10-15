@@ -109,9 +109,20 @@ whole path with Aleph's own CLI: it LUKS-encrypts a minimal busybox rootfs,
 starts it on a chosen SEV-SNP node, attests it (AMD certificate chain, launch
 measurement, policy), injects the passphrase over the attested channel, checks
 that the instance keeps running and forgets it again. Each run spends a few
-cents of credits from the account behind `ALEPH_PRIVATE_KEY`. Starting a
-confidential instance from a plain image (`--confidential --image ubuntu26`)
-failed on two SEV-SNP nodes of different operators in October 2026.
+cents of credits from the account behind `ALEPH_PRIVATE_KEY`, and it also
+forgets the uploaded image. Starting a confidential instance from a plain image
+(`--confidential --image ubuntu26`) failed on two SEV-SNP nodes of different
+operators in October 2026.
+
+An encrypted rootfs is not booted like a normal instance. The measured init
+unlocks it, chroots into it and runs its `/sbin/init`, which must be a regular
+file that stays in the foreground. **systemd cannot run there** (it is not
+PID 1), and there is no cloud-init, so SSH keys and all configuration must be
+inside the image. The relay profiles' Debian images rely on both, which means a
+confidential relay needs its own image flavour. With `image: debian-docker` the
+smoke workflow builds a Debian rootfs under a small foreground init with sshd
+and Docker, logs in after the unlock and reports what the guest offers a
+workload: network, DNS, cgroups, kernel modules, and whether containers run.
 
 ## The reachability probe
 
