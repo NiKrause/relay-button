@@ -1,0 +1,191 @@
+name: Aleph Confidential Smoke
+
+# Starts one SEV-SNP instance from an encrypted rootfs with Aleph's own CLI,
+# attests it, unlocks it, and forgets it again (#154). Run by hand: every run
+# spends a few cents of credits from the account behind ALEPH_PRIVATE_KEY.
+
+on:
+  workflow_dispatch:
+    inputs:
+      crn:
+        description: SEV-SNP node hash (or a unique prefix) to pin the instance to
+        required: true
+        default: 42c53b2d5adb42dc8bc848bdccdec951308fc9dfc6c250c7d2533dbaf75d058e
+        type: string
+      size:
+        description: Instance size slug
+        required: false
+        default: 1vcpu-2gb
+        type: string
+      keep_minutes:
+        description: Minutes to keep the instance running after unlock before it is forgotten (0-30)
+        required: false
+        default: "0"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aleph-confidential-smoke
+  cancel-in-progress: false
+
+env:
+  ALEPH_CLI_VERSION: v0.22.0
+  # sha256 of aleph-cli-linux-x86_64 for ALEPH_CLI_VERSION, as the release lists it
+  ALEPH_CLI_SHA256: 41b8ced717d9962683ce2d4409725774e826643be0bae1bfc623f6c0c7fb19d7
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+      CRN: ${{ inputs.crn }}
+      SIZE: ${{ inputs.size }}
+      KEEP_MINUTES: ${{ inputs.keep_minutes }}
+    steps:
+      - name: Check inputs
+        run: |
+          [ -n "$ALEPH_PRIVATE_KEY" ] || { echo "::error::ALEPH_PRIVATE_KEY is not set"; exit 1; }
+          [[ "$CRN" =~ ^[0-9a-f]{8,64}$ ]] || { echo "::error::crn must be a hex node hash or prefix"; exit 1; }
+          [[ "$SIZE" =~ ^[0-9]+vcpu-[0-9]+gb$ ]] || { echo "::error::size must look like 1vcpu-2gb"; exit 1; }
+          [[ "$KEEP_MINUTES" =~ ^[0-9]+$ ]] && [ "$KEEP_MINUTES" -le 30 ] || { echo "::error::keep_minutes must be 0-30"; exit 1; }
+
+      - name: Install the aleph CLI
+        run: |
+          curl -fsSL -o /usr/local/bin/aleph \
+            "https://github.com/aleph-im/aleph-rs/releases/download/${ALEPH_CLI_VERSION}/aleph-cli-linux-x86_64"
+          echo "${ALEPH_CLI_SHA256}  /usr/local/bin/aleph" | sha256sum -c -
+          chmod +x /usr/local/bin/aleph
+          aleph --version
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq busybox-static cryptsetup e2fsprogs jq >/dev/null
+
+      - name: Build a minimal plain rootfs
+        # busybox and an init that stays in the foreground: the measured init
+        # chroots into the unlocked rootfs and execs /sbin/init.
+        run: |
+          root="$RUNNER_TEMP/rootfs"
+          mkdir -p "$root"/{bin,sbin,proc,sys,dev,tmp,etc}
+          cp /bin/busybox "$root/bin/busybox"
+          for app in sh sleep mount echo cat date uname; do ln -s busybox "$root/bin/$app"; done
+          cat > "$root/sbin/init" <<'EOF'
+          #!/bin/sh
+          mount -t proc proc /proc 2>/dev/null
+          echo "relay-button confidential smoke: rootfs unlocked, $(uname -r)" > /dev/console
+          while true; do sleep 3600; done
+          EOF
+          chmod +x "$root/sbin/init"
+          truncate -s 64M "$RUNNER_TEMP/plain.ext4"
+          mkfs.ext4 -q -d "$root" "$RUNNER_TEMP/plain.ext4"
+
+      - name: Generate a passphrase and an SSH key for this run
+        run: |
+          pass="$(openssl rand -hex 32)"
+          echo "::add-mask::$pass"
+          printf '%s' "$pass" > "$RUNNER_TEMP/luks.pass"
+          chmod 600 "$RUNNER_TEMP/luks.pass"
+          ssh-keygen -q -t ed25519 -N '' -C relay-button-confidential-smoke -f "$RUNNER_TEMP/smoke_ed25519"
+
+      - name: Create the confidential instance
+        id: create
+        run: |
+          set -o pipefail
+          aleph instance create "rb-confidential-smoke-${GITHUB_RUN_ID}" \
+            --confidential \
+            --encrypt-rootfs "$RUNNER_TEMP/plain.ext4" \
+            --passphrase-file "$RUNNER_TEMP/luks.pass" \
+            --size "$SIZE" \
+            --crn "$CRN" \
+            --ssh-pubkey-file "$RUNNER_TEMP/smoke_ed25519.pub" \
+            --chain ETH \
+            --wait 600 2>&1 | tee "$RUNNER_TEMP/create.log" || status=$?
+          hash="$(grep -oE 'Item hash: +[0-9a-f]{64}' "$RUNNER_TEMP/create.log" | grep -oE '[0-9a-f]{64}' | head -1 || true)"
+          echo "item_hash=$hash" >> "$GITHUB_OUTPUT"
+          [ -n "$hash" ] || { echo "::error::no INSTANCE item hash in the CLI output"; exit 1; }
+          exit "${status:-0}"
+
+      - name: Wait for the node to start the instance
+        id: execution
+        env:
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+        run: |
+          crn_url="$(curl -fsS 'https://api2.aleph.im/api/v0/aggregates/0xa1B3bb7d2332383D96b7796B908fB7f7F3c2Be10.json?keys=corechannel' \
+            | jq -r --arg p "$CRN" '.data.corechannel.resource_nodes[] | select(.hash | startswith($p)) | .address' | head -1)"
+          crn_url="${crn_url%/}"
+          echo "crn_url=$crn_url" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            entry="$(curl -fsS --max-time 15 "$crn_url/v2/about/executions/list" | jq -c --arg h "$ITEM_HASH" '.[$h] // empty' || true)"
+            [ -n "$entry" ] || entry='{}'
+            state="$(jq -r '.state // "unknown"' <<<"$entry")"
+            echo "[$i] $(jq -c '{state, running, awaiting_confidential_init, allocation}' <<<"$entry")"
+            [ "$(jq -r '.running' <<<"$entry")" = true ] && break
+            [ "$(jq -r '.awaiting_confidential_init' <<<"$entry")" = true ] && break
+            sleep 10
+          done
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+
+      - name: Attest
+        id: attest
+        env:
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if aleph instance attest "$ITEM_HASH" --crn "$CRN" --json > "$RUNNER_TEMP/attest.json" 2> "$RUNNER_TEMP/attest.err"; then
+              jq . "$RUNNER_TEMP/attest.json"
+              exit 0
+            fi
+            cat "$RUNNER_TEMP/attest.err"
+            sleep 20
+          done
+          exit 1
+
+      - name: Unlock
+        env:
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+        run: |
+          aleph instance unlock "$ITEM_HASH" --crn "$CRN" --passphrase-file "$RUNNER_TEMP/luks.pass" --chain ETH
+
+      - name: Check that it keeps running
+        env:
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+          CRN_URL: ${{ steps.execution.outputs.crn_url }}
+        run: |
+          sleep 60
+          entry="$(curl -fsS --max-time 15 "$CRN_URL/v2/about/executions/list" | jq -c --arg h "$ITEM_HASH" '.[$h] // empty')"
+          jq '{state, running, awaiting_confidential_init, allocation}' <<<"$entry"
+          [ "$(jq -r '.running' <<<"$entry")" = true ] || { echo "::error::the instance is not running a minute after unlock"; exit 1; }
+          if [ "$KEEP_MINUTES" -gt 0 ]; then sleep $((KEEP_MINUTES * 60)); fi
+
+      - name: Forget the instance
+        if: always() && steps.create.outputs.item_hash != ''
+        env:
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+        run: |
+          echo y | aleph instance delete "$ITEM_HASH" --reason "confidential smoke test ${GITHUB_RUN_ID}" --chain ETH
+
+      - name: Summary
+        if: always()
+        env:
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+          STATE: ${{ steps.execution.outputs.state }}
+          ATTEST: ${{ steps.attest.outcome }}
+        run: |
+          {
+            echo "## Confidential smoke"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| CLI | \`${ALEPH_CLI_VERSION}\` |"
+            echo "| Node | \`${CRN}\` |"
+            echo "| Instance | \`${ITEM_HASH:-none}\` |"
+            echo "| Execution state before attest | \`${STATE:-unknown}\` |"
+            echo "| Attestation | ${ATTEST:-skipped} |"
+            if [ -s "$RUNNER_TEMP/attest.json" ]; then
+              echo
+              echo '```json'
+              cat "$RUNNER_TEMP/attest.json"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
