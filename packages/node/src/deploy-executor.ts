@@ -468,6 +468,12 @@ function shouldWaitForProxyActivationBeforeConfigure(plan: DeployPlan): boolean 
 // back as a result and not yet forgotten. Anything that throws between those
 // points (a failed /configure, a metadata timeout) would otherwise leave it
 // running and paid for.
+export interface DeployPhaseTiming {
+  phase: string;
+  ms: number;
+  crn: string | null;
+}
+
 interface DeployCleanupState {
   activeItemHash: string | null;
   forget: ((itemHash: string, reason: string) => Promise<void>) | null;
@@ -571,7 +577,16 @@ async function runDeployPlan(
   // The runner never attested its own registration anyway — it passes no
   // relayProof — so no attestation is lost; the guest's refresh remains the
   // dual-key-attested source of truth.
+  // Phase timestamps for benchmarking (timings_json): milliseconds since the
+  // deploy started, with the node each attempt ran on.
+  const startedAt = Date.now();
+  const timings: DeployPhaseTiming[] = [];
+  let timingCrn: string | null = null;
+  const mark = (phase: string) => {
+    timings.push({ phase, ms: Date.now() - startedAt, crn: timingCrn });
+  };
   const placementCandidates = await deploymentPlacementsForPlan(plan, fetchImpl);
+  mark("candidates");
   if (placementCandidates.length === 0) {
     throw new Error("No compatible CRN was available for deployment.");
   }
@@ -606,6 +621,7 @@ async function runDeployPlan(
   for (const [candidateIndex, placement] of placementCandidates.entries()) {
     const candidateCrn = placement.crn;
     const placementLabel = placement.label;
+    timingCrn = candidateCrn?.hash ?? null;
     log(
       placement.strategy === "scheduler"
         ? `[deploy] attempting scheduler placement ${candidateIndex + 1}/${placementCandidates.length}`
@@ -637,6 +653,7 @@ async function runDeployPlan(
           channel: plan.channel,
         });
         deployment = { itemHash, status: "unknown" };
+        mark("created");
         log(
           `[deploy] created confidential INSTANCE ${itemHash} via ${placementLabel} (aleph CLI, measured launch)`,
         );
@@ -672,6 +689,7 @@ async function runDeployPlan(
       log(
         `[deploy] broadcasted INSTANCE message ${deployment.itemHash} via ${placementLabel}`,
       );
+      mark("created");
       }
 
       inspection = await waitForDeploymentResult(deployment.itemHash, {
@@ -755,6 +773,7 @@ async function runDeployPlan(
     }
 
     state.activeItemHash = deployment.itemHash;
+    mark("processed");
     let portForwarding: DeployOutputResult["portForwarding"] = null;
     let instanceDomain: DeployOutputResult["instanceDomain"] = null;
     const attachInstanceCustomDomain = async () => {
@@ -837,7 +856,11 @@ async function runDeployPlan(
           attempts: 12,
           delayMs: 15_000,
           sleep: sleepImpl,
-          log,
+          log: (message: string) => {
+            if (message.startsWith("[deploy] attested ")) mark("attested");
+            if (message.startsWith("[deploy] unlocked ")) mark("unlocked");
+            log(message);
+          },
         });
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
@@ -880,6 +903,7 @@ async function runDeployPlan(
         );
       },
     }).catch(() => null);
+    if (runtime) mark("runtime");
 
     const runtimeMetadata: NonNullable<DeployOutputResult["runtime"]> = runtime
       ? {
@@ -1014,6 +1038,7 @@ async function runDeployPlan(
         });
 
         runtimeMetadata.setupHealth = setupHealth;
+        if (setupHealth.ok) mark("setup_endpoint");
         if (!setupHealth.ok) {
           log(
             `[deploy] setup endpoint never became reachable; cleaning up ${deployment.itemHash}`,
@@ -1185,6 +1210,7 @@ async function runDeployPlan(
                 timeoutMs: plan.configureTimeoutMs,
               });
 
+        mark("configured");
         log(`[deploy] polling guest /metadata until ready`);
         const metadataResult = await fetchUcGoPeerMetadata({
           hostIpv4: runtime.hostIpv4,
@@ -1274,6 +1300,7 @@ async function runDeployPlan(
                   });
             if (latestVerification?.ok) {
               log(`[deploy] reachability verification succeeded`);
+              mark("verified");
               break;
             }
             if (attempt < plan.verifyAttempts - 1) {
@@ -1527,6 +1554,7 @@ async function runDeployPlan(
       });
 
     await attachInstanceCustomDomain();
+    mark("done");
 
     return {
       sender: identity.address,
@@ -1542,6 +1570,7 @@ async function runDeployPlan(
       runtime: runtimeMetadata,
       configuration,
       verification,
+      timings,
     };
   }
 

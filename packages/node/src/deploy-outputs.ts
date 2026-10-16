@@ -69,6 +69,8 @@ export interface DeployOutputResult {
     ok?: boolean
     [key: string]: unknown
   } | null
+  /** Milliseconds since the deploy started at each phase, per attempted node. */
+  timings?: Array<{ phase: string; ms: number; crn: string | null }>
 }
 
 export async function emitDeployOutputs(
@@ -119,6 +121,7 @@ export async function emitDeployOutputs(
   await appendGithubOutput('verification_ok', deployResult?.verification?.ok ?? '', env)
   await appendGithubOutput('port_forwarding_json', portForwardingJson, env)
   await appendGithubOutput('runtime_json', runtimeJson, env)
+  await appendGithubOutput('timings_json', JSON.stringify(deployResult?.timings ?? []), env)
 
   await appendGithubSummary([
     '## Aleph VM deployment',
@@ -150,7 +153,15 @@ export async function emitDeployOutputs(
     '',
     '```json',
     verificationJson,
-    '```'
+    '```',
+    '',
+    '### Phase timings',
+    '',
+    '| Phase | Seconds since start | Node |',
+    '| --- | --- | --- |',
+    ...(deployResult?.timings ?? []).map(
+      (timing) => `| ${timing.phase} | ${(timing.ms / 1000).toFixed(1)} | ${timing.crn ? `\`${timing.crn.slice(0, 12)}\`` : '-'} |`
+    )
   ], env)
 
   return { runtimeJson, verificationJson }

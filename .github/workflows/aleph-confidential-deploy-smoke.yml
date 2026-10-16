@@ -7,14 +7,37 @@ name: Aleph Confidential Deploy Smoke
 # configures the relay through its setup endpoint, registers its bootstrap
 # record and verifies reachability. Everything is forgotten afterwards. Part
 # of #154. Run by hand: it spends a few cents of credits from ALEPH_PRIVATE_KEY.
+#
+# Benchmark (action against the CLI on a local machine, same image and node):
+# run once with prepare_only to build one encrypted rootfs, keyed with the
+# CONFIDENTIAL_BENCH_PASSPHRASE secret and kept; then run with
+# rootfs_item_hash and crn_hash, and run scripts/bench-confidential-local.sh
+# locally with the same two values and passphrase. Compare the timings. Forget
+# the kept rootfs afterwards with forget_rootfs.
 
 on:
   workflow_dispatch:
     inputs:
       source_store:
-        description: Item hash of the STORE message of a published plain orbitdb-relay rootfs
-        required: true
+        description: Item hash of the STORE message of a published plain orbitdb-relay rootfs (to build an encrypted one)
+        required: false
+        default: ''
         type: string
+      rootfs_item_hash:
+        description: An encrypted rootfs built before with prepare_only (skips the build; uses CONFIDENTIAL_BENCH_PASSPHRASE)
+        required: false
+        default: ''
+        type: string
+      prepare_only:
+        description: Only build the encrypted rootfs with CONFIDENTIAL_BENCH_PASSPHRASE and keep it, for benchmarking
+        required: false
+        default: false
+        type: boolean
+      forget_rootfs:
+        description: Forget the given rootfs_item_hash and do nothing else (end of a benchmark)
+        required: false
+        default: false
+        type: boolean
       crn_hash:
         description: SEV-SNP node to pin to (empty picks one of the confidential candidates)
         required: false
@@ -34,13 +57,36 @@ jobs:
     timeout-minutes: 75
     env:
       SOURCE_STORE: ${{ inputs.source_store }}
+      GIVEN_ROOTFS: ${{ inputs.rootfs_item_hash }}
+      PREPARE_ONLY: ${{ inputs.prepare_only }}
+      FORGET_ROOTFS: ${{ inputs.forget_rootfs }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Forget a kept benchmark rootfs
+        if: inputs.forget_rootfs
+        env:
+          ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+        run: |
+          [[ "$GIVEN_ROOTFS" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::set rootfs_item_hash"; exit 1; }
+          curl -fsSL -o "$RUNNER_TEMP/aleph" https://github.com/aleph-im/aleph-rs/releases/download/v0.22.0/aleph-cli-linux-x86_64
+          echo "41b8ced717d9962683ce2d4409725774e826643be0bae1bfc623f6c0c7fb19d7  $RUNNER_TEMP/aleph" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/aleph"
+          echo y | "$RUNNER_TEMP/aleph" message forget "$GIVEN_ROOTFS" --reason "end of confidential benchmark" --chain eth
+
       - name: Generate a passphrase and an SSH key for this run
         id: keys
+        if: ${{ !inputs.forget_rootfs }}
+        env:
+          BENCH_PASSPHRASE: ${{ secrets.CONFIDENTIAL_BENCH_PASSPHRASE }}
         run: |
-          pass="$(openssl rand -hex 32)"
+          if [ "$PREPARE_ONLY" = true ] || [ -n "$GIVEN_ROOTFS" ]; then
+            [ -n "$BENCH_PASSPHRASE" ] || { echo "::error::set the CONFIDENTIAL_BENCH_PASSPHRASE secret for benchmark runs"; exit 1; }
+            pass="$BENCH_PASSPHRASE"
+          else
+            [ -n "$SOURCE_STORE" ] || { echo "::error::set source_store or rootfs_item_hash"; exit 1; }
+            pass="$(openssl rand -hex 32)"
+          fi
           echo "::add-mask::$pass"
           echo "luks_passphrase=$pass" >> "$GITHUB_OUTPUT"
           ssh-keygen -q -t ed25519 -N '' -C relay-button-confidential-deploy -f "$RUNNER_TEMP/deploy_ed25519"
@@ -49,6 +95,7 @@ jobs:
 
       - name: Encrypted confidential rootfs
         id: rootfs
+        if: ${{ !inputs.forget_rootfs && inputs.rootfs_item_hash == '' }}
         uses: ./.github/actions/aleph-confidential-rootfs
         with:
           source_store: ${{ env.SOURCE_STORE }}
@@ -58,6 +105,7 @@ jobs:
 
       - name: Deploy, confidential
         id: deploy
+        if: ${{ !inputs.forget_rootfs && !inputs.prepare_only }}
         uses: ./.github/actions/aleph-vm-deploy
         with:
           confidential: 'true'
@@ -66,7 +114,7 @@ jobs:
           profile: orbitdb-relay
           name: rb-confidential-deploy-${{ github.run_id }}
           ssh_public_key: ${{ steps.keys.outputs.ssh_public_key }}
-          rootfs_item_hash: ${{ steps.rootfs.outputs.rootfs_item_hash }}
+          rootfs_item_hash: ${{ inputs.rootfs_item_hash || steps.rootfs.outputs.rootfs_item_hash }}
           rootfs_version: confidential-smoke
           rootfs_size_mib: '20480'
           vcpus: '2'
@@ -86,12 +134,15 @@ jobs:
         env:
           ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
           INSTANCE: ${{ steps.deploy.outputs.instance_item_hash }}
-          STORE: ${{ steps.rootfs.outputs.rootfs_item_hash }}
+          DEPLOYER: ${{ steps.deploy.outputs.deployer_address }}
+          # A prepared benchmark rootfs is kept; a given one belongs to the caller.
+          STORE: ${{ !inputs.prepare_only && steps.rootfs.outputs.rootfs_item_hash || '' }}
         run: |
           aleph="${ALEPH_VM_ALEPH_CLI:-}"
           [ -x "$aleph" ] || exit 0
           # A failed deploy sets no outputs, so find this run's instances by name.
-          address="$(cd "$RUNNER_TEMP/confidential-store" 2>/dev/null && node -e 'console.log(new (require("ethers").Wallet)(process.env.ALEPH_PRIVATE_KEY).address)' || true)"
+          address="$DEPLOYER"
+          [ -n "$address" ] || address="$(cd "$RUNNER_TEMP/confidential-store" 2>/dev/null && node -e 'console.log(new (require("ethers").Wallet)(process.env.ALEPH_PRIVATE_KEY).address)' || true)"
           hashes="$INSTANCE"
           if [ -n "$address" ]; then
             hashes="$hashes $("$aleph" instance list --address "$address" --json 2>/dev/null \
@@ -117,10 +168,22 @@ jobs:
           PEER: ${{ steps.deploy.outputs.relay_peer_id }}
           VERIFIED: ${{ steps.deploy.outputs.verification_ok }}
           MULTIADDRS: ${{ steps.deploy.outputs.probe_multiaddrs_json }}
+          TIMINGS: ${{ steps.deploy.outputs.timings_json }}
+          PREPARED: ${{ inputs.prepare_only && steps.rootfs.outputs.rootfs_item_hash || '' }}
         run: |
           {
             echo "## Confidential deploy smoke"
             echo
+            if [ -n "$PREPARED" ]; then
+              echo "Prepared benchmark rootfs (kept, keyed with CONFIDENTIAL_BENCH_PASSPHRASE): \`$PREPARED\`"
+              echo
+            fi
+            if [ -n "$TIMINGS" ] && [ "$TIMINGS" != "[]" ]; then
+              echo '```json'
+              echo "$TIMINGS"
+              echo '```'
+              echo
+            fi
             echo "| | |"
             echo "|---|---|"
             echo "| Instance | \`${INSTANCE:-none}\` (${STATUS:-?}) |"
