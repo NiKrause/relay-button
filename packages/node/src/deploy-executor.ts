@@ -10,10 +10,12 @@ import {
   createRelayBootstrapRegistrationId,
   createInstanceContent,
   deployInstance,
+  enrichCrnsWithTee,
   ensureInstancePortForwards,
   fetchVmRuntime,
   fetchCrnsWithSource,
   fetchUcGoPeerMetadata,
+  filterDeployableCrns,
   filterReachableCrns,
   notifyCrnAllocationWithRetry,
   publishRelayBootstrapRegistration,
@@ -43,6 +45,12 @@ import { deriveBootstrapPublisherPrivateKey } from "./bootstrap-publisher.ts";
 import { createPrivateKeyIdentity } from "./signer.ts";
 import { deriveLibp2pSecp256k1IdentityFromEvmKey } from "./relay-identity.ts";
 import { attachAlephDomain, normalizeDomainName } from "./domain-link.ts";
+import {
+  attestAndUnlock,
+  createConfidentialInstance,
+  runAlephCli,
+  type AlephCliRunner,
+} from "./confidential-cli.ts";
 
 const UCAN_STORE_CUSTOM_DOMAIN_MIN_ATTEMPTS = 120;
 
@@ -59,6 +67,8 @@ export interface DeployExecutorDependencies {
   hasher?: MessageHasher;
   manifest?: RootfsManifest | null;
   log?: (message: string) => void;
+  /** Runs the aleph CLI on the confidential path; tests replace it. */
+  alephCli?: AlephCliRunner;
 }
 
 type AlephBalanceSnapshot = {
@@ -315,7 +325,8 @@ async function deploymentPlacementsForPlan(
   plan: DeployPlan,
   fetchImpl: typeof fetch,
 ): Promise<DeploymentPlacementCandidate[]> {
-  if (plan.placementStrategy === "scheduler" && !plan.crnHash) {
+  // A confidential instance must be pinned to a node that can protect it.
+  if (plan.placementStrategy === "scheduler" && !plan.crnHash && !plan.confidential) {
     return [
       {
         strategy: "scheduler",
@@ -326,13 +337,25 @@ async function deploymentPlacementsForPlan(
     ];
   }
 
-  const { crns, source } = await fetchCrnsWithSource({
+  const { crns: listedCrns, source } = await fetchCrnsWithSource({
     url: plan.crnListUrl,
     fetch: fetchImpl,
     preferAggregate: plan.crnSource === "aggregate",
     onDiagnostic: (message) => console.log(`[deploy] ${message}`),
   });
-  console.log(`[deploy] CRN candidates: ${crns.length} from ${source}`);
+  console.log(`[deploy] CRN candidates: ${listedCrns.length} from ${source}`);
+  let crns = listedCrns;
+  if (plan.confidential) {
+    // Neither source says whether a node runs SEV-SNP on a safe aleph-vm, so
+    // each node is asked; unknown is refused (isConfidentialCrn).
+    const probeFetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+      fetchImpl(input, { ...init, signal: AbortSignal.timeout(8000) })) as typeof fetch;
+    crns = filterDeployableCrns(
+      await enrichCrnsWithTee(listedCrns, { fetch: probeFetch, concurrency: 16 }),
+      { confidential: {} },
+    );
+    console.log(`[deploy] confidential: ${crns.length} SEV-SNP candidates`);
+  }
 
   if (plan.crnHash) {
     const explicit = crns.find((crn) => crn.hash === plan.crnHash);
@@ -454,6 +477,12 @@ export async function executeDeployPlan(
   const sleepImpl =
     dependencies.sleep ?? ((ms) => sleep(ms).then(() => undefined));
   const log = dependencies.log ?? ((message: string) => console.log(message));
+  const alephCli = dependencies.alephCli ?? runAlephCli(plan.alephCli);
+  if (plan.confidential && !plan.luksPassphrase) {
+    throw new Error(
+      "A confidential deployment needs the LUKS passphrase of its encrypted rootfs (luks_passphrase).",
+    );
+  }
   const resolvedBootstrapPublisherPrivateKey =
     plan.bootstrapPublisherPrivateKey ||
     deriveBootstrapPublisherPrivateKey({
@@ -536,6 +565,27 @@ export async function executeDeployPlan(
       placementAttempt <= placementAttemptLimit;
       placementAttempt += 1
     ) {
+      if (plan.confidential) {
+        if (!candidateCrn) {
+          throw new Error("A confidential deployment needs a pinned SEV-SNP node.");
+        }
+        const itemHash = await createConfidentialInstance({
+          run: alephCli,
+          privateKey: plan.privateKey,
+          name: plan.name,
+          rootfsItemHash: plan.rootfsItemHash,
+          rootfsSizeMiB: plan.rootfsSizeMiB,
+          vcpus: plan.vcpus,
+          memoryMiB: plan.memoryMiB,
+          crnHash: candidateCrn.hash,
+          sshPublicKey: plan.sshPublicKey,
+          channel: plan.channel,
+        });
+        deployment = { itemHash, status: "unknown" };
+        log(
+          `[deploy] created confidential INSTANCE ${itemHash} via ${placementLabel} (aleph CLI, measured launch)`,
+        );
+      } else {
       const content = createInstanceContent({
         address: identity.address,
         name: plan.name,
@@ -567,6 +617,7 @@ export async function executeDeployPlan(
       log(
         `[deploy] broadcasted INSTANCE message ${deployment.itemHash} via ${placementLabel}`,
       );
+      }
 
       inspection = await waitForDeploymentResult(deployment.itemHash, {
         rootfsRef: plan.rootfsItemHash,
@@ -717,6 +768,37 @@ export async function executeDeployPlan(
         itemHash: deployment.itemHash,
         fetch: fetchImpl,
       }).catch(() => null);
+    }
+
+    if (plan.confidential && candidateCrn) {
+      try {
+        await attestAndUnlock({
+          run: alephCli,
+          privateKey: plan.privateKey,
+          itemHash: deployment.itemHash,
+          crnHash: candidateCrn.hash,
+          luksPassphrase: plan.luksPassphrase,
+          attempts: 12,
+          delayMs: 15_000,
+          sleep: sleepImpl,
+          log,
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        log(`[deploy] confidential start via ${placementLabel} failed: ${reason}`);
+        await cleanupFailedDeploymentForPlan(plan, log, {
+          sender: identity.address,
+          instanceItemHash: deployment.itemHash,
+          reason: "Confidential attestation or unlock failed",
+          signer: identity.signer,
+          hasher,
+          fetch: fetchImpl,
+          channel: plan.channel,
+          apiHost: plan.apiHost,
+        });
+        lastError = new Error(`Confidential start via ${placementLabel} failed: ${reason}`);
+        continue;
+      }
     }
 
     log(

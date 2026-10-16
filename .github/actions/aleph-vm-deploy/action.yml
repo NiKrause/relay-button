@@ -220,6 +220,17 @@ inputs:
     description: Optional bearer token that enables the ucan-store admin delegation issuance API.
     required: false
     default: ''
+  confidential:
+    description: >-
+      Start an AMD SEV-SNP confidential instance. rootfs_item_hash must then be a LUKS-encrypted
+      rootfs (see .github/actions/aleph-confidential-rootfs); only SEV-SNP nodes are candidates, the
+      instance is created, attested and unlocked with Aleph's own CLI, then set up as usual.
+    required: false
+    default: 'false'
+  luks_passphrase:
+    description: LUKS passphrase of the encrypted rootfs; sent to the guest only after its attestation verified. Required with confidential.
+    required: false
+    default: ''
 
 outputs:
   deployer_address:
@@ -337,6 +348,22 @@ runs:
       run: |
         pnpm install --dir "${{ github.action_path }}/../../.." --frozen-lockfile
 
+    - name: Install the aleph CLI (confidential)
+      if: inputs.confidential == 'true'
+      shell: bash
+      env:
+        ALEPH_CLI_VERSION: v0.22.0
+        # sha256 of aleph-cli-linux-x86_64 for ALEPH_CLI_VERSION, as the release lists it
+        ALEPH_CLI_SHA256: 41b8ced717d9962683ce2d4409725774e826643be0bae1bfc623f6c0c7fb19d7
+      run: |
+        bin="$RUNNER_TEMP/aleph-cli/aleph"
+        mkdir -p "$(dirname "$bin")"
+        curl -fsSL -o "$bin" "https://github.com/aleph-im/aleph-rs/releases/download/${ALEPH_CLI_VERSION}/aleph-cli-linux-x86_64"
+        echo "${ALEPH_CLI_SHA256}  $bin" | sha256sum -c -
+        chmod +x "$bin"
+        "$bin" --version
+        echo "ALEPH_VM_ALEPH_CLI=$bin" >> "$GITHUB_ENV"
+
     - name: Run shared action runner
       id: run_action
       shell: bash
@@ -394,5 +421,7 @@ runs:
         ALEPH_VM_UCAN_STORE_DERIVATION_SALT: ${{ inputs.ucan_store_derivation_salt }}
         ALEPH_VM_UCAN_STORE_SPACE_DID_MODE: ${{ inputs.ucan_store_space_did_mode }}
         ALEPH_VM_UCAN_STORE_ADMIN_API_TOKEN: ${{ inputs.ucan_store_admin_api_token }}
+        ALEPH_VM_CONFIDENTIAL: ${{ inputs.confidential }}
+        ALEPH_VM_LUKS_PASSPHRASE: ${{ inputs.luks_passphrase }}
       run: |
         node "${{ github.action_path }}/../../../packages/node/src/action-runner.ts"
