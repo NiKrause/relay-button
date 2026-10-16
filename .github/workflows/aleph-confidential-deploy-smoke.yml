@@ -1,0 +1,130 @@
+name: Aleph Confidential Deploy Smoke
+
+# The whole relay-button deploy, confidential: a published orbitdb-relay rootfs
+# becomes an encrypted confidential rootfs (aleph-confidential-rootfs), and
+# aleph-vm-deploy with confidential true picks an SEV-SNP node, creates the
+# instance with Aleph's CLI, attests and unlocks it, publishes port forwards,
+# configures the relay through its setup endpoint, registers its bootstrap
+# record and verifies reachability. Everything is forgotten afterwards. Part
+# of #154. Run by hand: it spends a few cents of credits from ALEPH_PRIVATE_KEY.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_store:
+        description: Item hash of the STORE message of a published plain orbitdb-relay rootfs
+        required: true
+        type: string
+      crn_hash:
+        description: SEV-SNP node to pin to (empty picks one of the confidential candidates)
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aleph-confidential-smoke
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      SOURCE_STORE: ${{ inputs.source_store }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate a passphrase and an SSH key for this run
+        id: keys
+        run: |
+          pass="$(openssl rand -hex 32)"
+          echo "::add-mask::$pass"
+          echo "luks_passphrase=$pass" >> "$GITHUB_OUTPUT"
+          ssh-keygen -q -t ed25519 -N '' -C relay-button-confidential-deploy -f "$RUNNER_TEMP/deploy_ed25519"
+          echo "ssh_public_key=$(cat "$RUNNER_TEMP/deploy_ed25519.pub")" >> "$GITHUB_OUTPUT"
+          echo "required_ports_json=$(jq -c .ports packages/rootfs/reference/orbitdb-relay/contract.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Encrypted confidential rootfs
+        id: rootfs
+        uses: ./.github/actions/aleph-confidential-rootfs
+        with:
+          source_store: ${{ env.SOURCE_STORE }}
+          ssh_public_key: ${{ steps.keys.outputs.ssh_public_key }}
+          luks_passphrase: ${{ steps.keys.outputs.luks_passphrase }}
+          aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
+
+      - name: Deploy, confidential
+        id: deploy
+        uses: ./.github/actions/aleph-vm-deploy
+        with:
+          confidential: 'true'
+          luks_passphrase: ${{ steps.keys.outputs.luks_passphrase }}
+          aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          profile: orbitdb-relay
+          name: rb-confidential-deploy-${{ github.run_id }}
+          ssh_public_key: ${{ steps.keys.outputs.ssh_public_key }}
+          rootfs_item_hash: ${{ steps.rootfs.outputs.rootfs_item_hash }}
+          rootfs_version: confidential-smoke
+          rootfs_size_mib: '20480'
+          vcpus: '2'
+          memory_mib: '4096'
+          crn_hash: ${{ inputs.crn_hash }}
+          crn_source: aggregate
+          max_crn_attempts: '5'
+          channel: TEST
+          enable_caddy_proxy: 'false'
+          auto_configure: 'true'
+          verify_reachability: 'true'
+          publish_port_forwards: 'true'
+          required_ports_json: ${{ steps.keys.outputs.required_ports_json }}
+
+      - name: Forget the instance and the encrypted rootfs
+        if: always()
+        env:
+          ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          INSTANCE: ${{ steps.deploy.outputs.instance_item_hash }}
+          STORE: ${{ steps.rootfs.outputs.rootfs_item_hash }}
+        run: |
+          aleph="${ALEPH_VM_ALEPH_CLI:-}"
+          [ -x "$aleph" ] || exit 0
+          # A failed deploy sets no outputs, so find this run's instances by name.
+          address="$(cd "$RUNNER_TEMP/confidential-store" 2>/dev/null && node -e 'console.log(new (require("ethers").Wallet)(process.env.ALEPH_PRIVATE_KEY).address)' || true)"
+          hashes="$INSTANCE"
+          if [ -n "$address" ]; then
+            hashes="$hashes $("$aleph" instance list --address "$address" --json 2>/dev/null \
+              | jq -r --arg n "rb-confidential-deploy-${GITHUB_RUN_ID}" '.[] | select((.name // .metadata.name // "") == $n) | (.item_hash // .hash)' || true)"
+          fi
+          for h in $(printf '%s\n' $hashes | sort -u); do
+            echo y | "$aleph" instance delete "$h" --reason "confidential deploy smoke ${GITHUB_RUN_ID}" --chain eth || true
+          done
+          # Aleph refuses to forget a STORE an instance still uses ("forget: not
+          # allowed"), so retry until the instance's FORGET has gone through.
+          if [ -n "$STORE" ]; then
+            for i in 1 2 3 4 5 6; do
+              echo y | "$aleph" message forget "$STORE" --reason "confidential deploy smoke rootfs ${GITHUB_RUN_ID}" --chain eth && break
+              sleep 20
+            done
+          fi
+
+      - name: Summary
+        if: always()
+        env:
+          INSTANCE: ${{ steps.deploy.outputs.instance_item_hash }}
+          STATUS: ${{ steps.deploy.outputs.instance_status }}
+          PEER: ${{ steps.deploy.outputs.relay_peer_id }}
+          VERIFIED: ${{ steps.deploy.outputs.verification_ok }}
+          MULTIADDRS: ${{ steps.deploy.outputs.probe_multiaddrs_json }}
+        run: |
+          {
+            echo "## Confidential deploy smoke"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Instance | \`${INSTANCE:-none}\` (${STATUS:-?}) |"
+            echo "| Relay peer | \`${PEER:-none}\` |"
+            echo "| Reachability verified | ${VERIFIED:-?} |"
+            echo "| Multiaddrs | \`${MULTIADDRS:-[]}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

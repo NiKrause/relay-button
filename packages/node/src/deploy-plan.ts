@@ -69,6 +69,16 @@ export interface DeployPlan {
   preserveFailedDeployment: boolean;
   requiredPorts: RootfsRequiredPortForward[];
   publishPortForwards: boolean;
+  /**
+   * Start an AMD SEV-SNP confidential instance from an already LUKS-encrypted
+   * rootfs: only nodes that can take one, created through the aleph CLI (it
+   * computes the launch measurements), attested and unlocked before setup.
+   */
+  confidential: boolean;
+  /** LUKS passphrase of the encrypted rootfs; injected only after attestation. */
+  luksPassphrase: string;
+  /** The aleph CLI binary (aleph-rs) used for the confidential path. */
+  alephCli: string;
 }
 
 export type DeploymentPlacementStrategy = "scheduler" | "manual";
@@ -348,5 +358,8 @@ export function parseDeployPlan(
       true,
       env,
     ),
+    confidential: booleanEnv("ALEPH_VM_CONFIDENTIAL", false, env),
+    luksPassphrase: optionalEnv("ALEPH_VM_LUKS_PASSPHRASE", "", env),
+    alephCli: optionalEnv("ALEPH_VM_ALEPH_CLI", "aleph", env),
   };
 }

@@ -9,7 +9,8 @@
 # - /sbin/init becomes confidential-init.sh (a regular file, as the measured
 #   init requires): systemd cannot be PID 1 in the chroot.
 # - /usr/bin/systemctl and /usr/bin/journalctl become docker-systemctl-
-#   replacement, pinned below, so the profile's units and scripts keep working.
+#   replacement, pinned below, behind confidential-systemctl.py, which runs
+#   .timer units; the profile's units and scripts keep working.
 # - cloud-init and the systemd services that manage what the measured init
 #   already did (network, DNS, getty, timesyncd) are no longer started.
 # - root's authorized_keys come from the caller: nothing provisions an
@@ -76,10 +77,14 @@ for bin in systemctl journalctl; do
     [ -e "$root/$dir/$bin" ] && [ ! -L "$root/$dir/$bin" ] && mv "$root/$dir/$bin" "$root/$dir/$bin.systemd"
   done
 done
-install -m 755 "$work/systemctl3.py" "$root/usr/bin/systemctl"
+install -d "$root/usr/lib/confidential"
+install -m 755 "$work/systemctl3.py" "$root/usr/lib/confidential/systemctl3.py"
+# The replacement does not run .timer units; this wrapper does, and passes
+# everything else on.
+install -m 755 "$here/confidential-systemctl.py" "$root/usr/bin/systemctl"
 install -m 755 "$work/journalctl3.py" "$root/usr/bin/journalctl"
 # journalctl3.py calls systemctl3.py from its own directory.
-ln -sf systemctl "$root/usr/bin/systemctl3.py"
+ln -sf /usr/lib/confidential/systemctl3.py "$root/usr/bin/systemctl3.py"
 [ -x "$root/usr/bin/python3" ] || { echo "the image has no python3, which the systemctl replacement needs" >&2; exit 1; }
 
 # 4. Stop starting what the measured init already did, or what has no place here.

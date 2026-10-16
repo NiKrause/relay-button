@@ -1,0 +1,152 @@
+name: Aleph Confidential Rootfs
+description: >-
+  Turn a relay profile image into a LUKS-encrypted confidential rootfs and publish it on Aleph:
+  convert (packages/rootfs/reference/confidential), encrypt, add to IPFS, STORE. The result is the
+  rootfs_item_hash for aleph-vm-deploy with confidential true.
+
+inputs:
+  source_store:
+    description: Item hash of the STORE message of a published plain profile rootfs (qcow2 or raw). Either this or image_path.
+    required: false
+    default: ''
+  image_path:
+    description: Path to a profile image built in this job (qcow2 or raw). Either this or source_store.
+    required: false
+    default: ''
+  ssh_public_key:
+    description: SSH public key baked into the image as root's authorized_keys (an encrypted rootfs cannot be provisioned from outside)
+    required: true
+  luks_passphrase:
+    description: LUKS passphrase for the encrypted rootfs; the same value goes to aleph-vm-deploy
+    required: true
+  aleph_private_key:
+    description: Hex EVM private key that signs and pays (credits) for the STORE message
+    required: true
+  api_host:
+    description: Aleph API host for the STORE message
+    required: false
+    default: https://api2.aleph.im
+  ipfs_add_url:
+    description: IPFS add endpoint for the encrypted image (no 1 GiB limit, unlike the CCN upload)
+    required: false
+    default: https://ipfs.aleph.cloud/api/v0/add
+  channel:
+    description: Aleph channel for the STORE message
+    required: false
+    default: ALEPH-CLOUDSOLUTIONS
+
+outputs:
+  rootfs_item_hash:
+    description: Item hash of the STORE message of the encrypted rootfs
+    value: ${{ steps.publish.outputs.rootfs_item_hash }}
+  rootfs_size_mib:
+    description: Size of the encrypted rootfs in MiB
+    value: ${{ steps.encrypt.outputs.size_mib }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install image tools
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq cryptsetup e2fsprogs jq qemu-utils rsync >/dev/null
+
+    - name: Get the profile image
+      id: source
+      shell: bash
+      env:
+        SOURCE_STORE: ${{ inputs.source_store }}
+        IMAGE_PATH: ${{ inputs.image_path }}
+        API_HOST: ${{ inputs.api_host }}
+      run: |
+        if [ -n "$IMAGE_PATH" ]; then
+          echo "image=$IMAGE_PATH" >> "$GITHUB_OUTPUT"; exit 0
+        fi
+        [[ "$SOURCE_STORE" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::set image_path or a 64-hex source_store"; exit 1; }
+        msg="$(curl -fsS "$API_HOST/api/v0/messages/$SOURCE_STORE")"
+        file_hash="$(jq -r '(.message.content // .content).item_hash' <<<"$msg")"
+        image="$RUNNER_TEMP/confidential-source.img"
+        curl -fsSL --retry 3 -o "$image" "$API_HOST/api/v0/storage/raw/$file_hash" \
+          || curl -fsSL --retry 3 -o "$image" "https://ipfs.aleph.im/ipfs/$file_hash"
+        echo "image=$image" >> "$GITHUB_OUTPUT"
+
+    - name: Convert to a confidential rootfs
+      shell: bash
+      env:
+        IMAGE: ${{ steps.source.outputs.image }}
+        SSH_PUBLIC_KEY: ${{ inputs.ssh_public_key }}
+      run: |
+        printf '%s\n' "$SSH_PUBLIC_KEY" > "$RUNNER_TEMP/confidential-authorized_keys"
+        sudo MAX_PLAIN_MIB=3500 "${{ github.action_path }}/../../../packages/rootfs/reference/confidential/make-confidential-rootfs.sh" \
+          "$IMAGE" "$RUNNER_TEMP/confidential-plain.ext4" "$RUNNER_TEMP/confidential-authorized_keys"
+
+    - name: Encrypt
+      id: encrypt
+      shell: bash
+      env:
+        LUKS_PASSPHRASE: ${{ inputs.luks_passphrase }}
+      # Same container as `aleph instance create --encrypt-rootfs` and aleph-vm's
+      # examples/instance_confidential_snp/build_luks_rootfs.sh: whole-device
+      # LUKS2, aes-xts-plain64 spelled out (the measured init rejects any other
+      # cipher), ext4 inside.
+      run: |
+        plain="$RUNNER_TEMP/confidential-plain.ext4"
+        luks="$RUNNER_TEMP/confidential-rootfs.luks"
+        pass="$RUNNER_TEMP/confidential-luks.pass"
+        ( umask 077; printf '%s' "$LUKS_PASSPHRASE" > "$pass" )
+        size_mib=$(( $(sudo stat -c%s "$plain") / 1048576 + 64 ))
+        truncate -s "${size_mib}M" "$luks"
+        loop="$(sudo losetup --find --show "$luks")"
+        sudo cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --batch-mode "$loop" "$pass"
+        sudo cryptsetup luksOpen --key-file "$pass" "$loop" rb-confidential-build
+        sudo dd if="$plain" of=/dev/mapper/rb-confidential-build bs=4M conv=fsync status=none
+        sudo e2fsck -fp /dev/mapper/rb-confidential-build || [ $? -lt 4 ]
+        sudo resize2fs /dev/mapper/rb-confidential-build
+        sudo cryptsetup luksClose rb-confidential-build
+        sudo losetup -d "$loop"
+        sudo rm -f "$plain" "$pass"
+        sudo chown "$(id -u):$(id -g)" "$luks"
+        echo "size_mib=$size_mib" >> "$GITHUB_OUTPUT"
+        ls -lh "$luks"
+
+    - name: Publish on Aleph
+      id: publish
+      shell: bash
+      env:
+        ALEPH_PRIVATE_KEY: ${{ inputs.aleph_private_key }}
+        ALEPH_API: ${{ inputs.api_host }}
+        IPFS_ADD_URL: ${{ inputs.ipfs_add_url }}
+        CHANNEL: ${{ inputs.channel }}
+      run: |
+        luks="$RUNNER_TEMP/confidential-rootfs.luks"
+        cid="$(curl -fsS --retry 2 --max-time 3600 -F "file=@$luks" "${IPFS_ADD_URL}?pin=true&cid-version=0" | jq -r .Hash)"
+        [ -n "$cid" ] && [ "$cid" != null ] || { echo "::error::IPFS add returned no CID"; exit 1; }
+        rm -f "$luks"
+        echo "cid: $cid"
+        dir="$RUNNER_TEMP/confidential-store"
+        mkdir -p "$dir" && cd "$dir"
+        npm init -y >/dev/null && npm install --silent ethers@6.13.4 >/dev/null
+        CID="$cid" node --input-type=module > store.json <<'EOF'
+        import { createHash } from 'node:crypto'
+        import { Wallet } from 'ethers'
+        const wallet = new Wallet(process.env.ALEPH_PRIVATE_KEY)
+        const time = Date.now() / 1000
+        const content = { address: wallet.address, time, item_type: 'ipfs', item_hash: process.env.CID, payment: { type: 'credit' } }
+        const item_content = JSON.stringify(content)
+        const item_hash = createHash('sha256').update(item_content).digest('hex')
+        const message = { sender: wallet.address, chain: 'ETH', type: 'STORE', item_hash, item_type: 'inline', item_content, time, channel: process.env.CHANNEL }
+        const signature = await wallet.signMessage([message.chain, message.sender, message.type, message.item_hash].join('\n'))
+        const res = await fetch(`${process.env.ALEPH_API}/api/v0/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sync: true, message: { ...message, signature } }) })
+        console.log(JSON.stringify({ item_hash, status: res.status }))
+        EOF
+        store="$(jq -r .item_hash store.json)"
+        echo "rootfs_item_hash=$store" >> "$GITHUB_OUTPUT"
+        for i in $(seq 1 60); do
+          status="$(curl -fsS "$ALEPH_API/api/v0/messages/$store" | jq -r .status || true)"
+          echo "[$i] STORE $store: $status"
+          [ "$status" = processed ] && exit 0
+          [ "$status" = rejected ] && { echo "::error::the STORE was rejected"; exit 1; }
+          sleep 20
+        done
+        echo "::error::the STORE was not processed within 20 minutes"; exit 1
