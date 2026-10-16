@@ -468,6 +468,12 @@ jobs:
             echo "deploy_vm=true requires an SSH public key (vm_ssh_public_key input or VM_SSH_PUBLIC_KEY secret)." >&2
             exit 1
           fi
+          if [[ "${{ inputs.confidential }}" == "true" && "${{ inputs.vm_memory_mib }}" -lt 2048 ]]; then
+            # The measured init and the unlocked workload share the guest's RAM; with
+            # 1024 MiB the orbitdb-relay setup endpoint never came up (4096 MiB works).
+            echo "confidential=true needs vm_memory_mib of at least 2048 (4096 tested for orbitdb-relay)." >&2
+            exit 1
+          fi
           if [[ "${{ inputs.confidential }}" == "true" && -z "${{ secrets.CONFIDENTIAL_LUKS_PASSPHRASE }}" ]]; then
             echo "confidential=true requires the CONFIDENTIAL_LUKS_PASSPHRASE secret." >&2
             exit 1
