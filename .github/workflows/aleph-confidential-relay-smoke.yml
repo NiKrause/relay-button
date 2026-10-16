@@ -7,10 +7,6 @@ name: Aleph Confidential Relay Smoke
 # hand: every run spends a few cents of credits from ALEPH_PRIVATE_KEY.
 
 on:
-  # TEMPORARY: lets the branch test itself before the workflow is on main; removed before merge.
-  push:
-    branches: [feat/confidential-relay-rootfs]
-    paths: [.github/workflows/aleph-confidential-relay-smoke.yml, packages/rootfs/reference/confidential/**]
   workflow_dispatch:
     inputs:
       rootfs_store:
@@ -52,10 +48,10 @@ jobs:
     timeout-minutes: 60
     env:
       ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
-      ROOTFS_STORE: ${{ inputs.rootfs_store || '4da693e425b8f5f4465f17b6fb1f6d3c1a0078496ba68ecb6d817a8634e1821c' }}
-      CRN: ${{ inputs.crn || '42c53b2d5adb42dc8bc848bdccdec951308fc9dfc6c250c7d2533dbaf75d058e' }}
-      SIZE: ${{ inputs.size || '2vcpu-4gb' }}
-      KEEP_MINUTES: ${{ inputs.keep_minutes || '0' }}
+      ROOTFS_STORE: ${{ inputs.rootfs_store }}
+      CRN: ${{ inputs.crn }}
+      SIZE: ${{ inputs.size }}
+      KEEP_MINUTES: ${{ inputs.keep_minutes }}
     steps:
       - name: Check inputs
         run: |
