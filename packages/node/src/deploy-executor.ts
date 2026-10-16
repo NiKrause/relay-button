@@ -838,11 +838,23 @@ async function runDeployPlan(
 
     if (candidateCrn?.address) {
       log(`[deploy] notifying CRN allocation endpoint ${candidateCrn.address}`);
-      await notifyCrnAllocationWithRetry({
+      const notified = notifyCrnAllocationWithRetry({
         crnUrl: candidateCrn.address,
         itemHash: deployment.itemHash,
         fetch: fetchImpl,
-      }).catch(() => null);
+      })
+        .catch(() => null)
+        .then((result) => {
+          mark("notified");
+          return result;
+        });
+      // A confidential start goes straight on to attestation, which polls the
+      // guest until it answers: the notify call can block until the node has
+      // booted the VM (about 70 s in the benchmark against 20 s of boot), and
+      // waiting for it before attesting only added that time.
+      if (!plan.confidential) {
+        await notified;
+      }
     }
 
     if (plan.confidential && candidateCrn) {
