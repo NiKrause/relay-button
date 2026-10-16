@@ -82,7 +82,9 @@ jobs:
         run: |
           if [ "$PREPARE_ONLY" = true ] || [ -n "$GIVEN_ROOTFS" ]; then
             [ -n "$BENCH_PASSPHRASE" ] || { echo "::error::set the CONFIDENTIAL_BENCH_PASSPHRASE secret for benchmark runs"; exit 1; }
-            pass="$BENCH_PASSPHRASE"
+            # The CLI trims a trailing newline from a passphrase file; a secret
+            # set from such a file must be trimmed the same way here.
+            pass="$(printf '%s' "$BENCH_PASSPHRASE" | tr -d '\r\n')"
           else
             [ -n "$SOURCE_STORE" ] || { echo "::error::set source_store or rootfs_item_hash"; exit 1; }
             pass="$(openssl rand -hex 32)"
