@@ -556,6 +556,8 @@ jobs:
 
       - name: Export rootfs manifest content
         id: export_manifest
+        # Nothing was built when an encrypted rootfs of this version is reused.
+        if: ${{ !(inputs.confidential && inputs.confidential_rootfs_item_hash != '') }}
         shell: bash
         run: |
           manifest_path='${{ steps.run_rootfs.outputs.rootfs_manifest_path }}'
