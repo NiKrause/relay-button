@@ -173,6 +173,15 @@ The deploy then differs in three places and is the same everywhere else:
 Port forwards, the setup endpoint, bootstrap registration and the
 reachability check run as for any deploy.
 
+**Timings.** Every deploy emits `timings_json`: milliseconds since the start
+at each phase (`candidates`, `created`, `processed`, `attested`, `unlocked`,
+`runtime`, `setup_endpoint`, `configured`, `verified`, `done`), with the node of
+each attempt; the job summary shows them as a table. To compare the action
+with Aleph's CLI on a local machine, the deploy smoke builds one encrypted
+rootfs with `prepare_only`, deploys it with `rootfs_item_hash` and `crn_hash`,
+and `scripts/bench-confidential-local.sh` drives the same phases locally
+against the same image and node.
+
 **What is forgotten, and when.** Any deploy, confidential or not, forgets the
 instance of an attempt that fails after Aleph processed it (a refused
 attestation, a setup endpoint that never answers, a failing `/configure`, a

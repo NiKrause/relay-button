@@ -1273,6 +1273,13 @@ test('executeDeployPlan configures orbitdb relay after mapped ports appear', asy
   )
 
   assert.equal(result.itemHash, 'hash-o1')
+  const phases = (result.timings ?? []).map((timing) => timing.phase)
+  assert.deepEqual(
+    phases.filter((phase) => ['candidates', 'created', 'processed', 'runtime', 'setup_endpoint', 'configured', 'done'].includes(phase)),
+    ['candidates', 'created', 'processed', 'runtime', 'setup_endpoint', 'configured', 'done'],
+  )
+  assert.ok((result.timings ?? []).every((timing, index, all) => index === 0 || timing.ms >= all[index - 1]!.ms))
+  assert.equal(result.timings?.find((timing) => timing.phase === 'created')?.crn, 'crn-1')
   assert.equal(result.configuration?.metadata?.peer_id, expectedRelayIdentity.peerId)
   assert.equal(result.runtime?.hostIpv4, '203.0.113.8')
   assert.equal(result.verification?.ok, true)
