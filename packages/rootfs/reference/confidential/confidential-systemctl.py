@@ -8,7 +8,10 @@ their configure scripts, under `set -e`. This wrapper handles start, restart,
 stop, enable, disable, is-active, is-enabled and status for .timer units: each
 started timer is a small background loop that starts its service after
 OnBootSec / OnActiveSec and then every OnUnitActiveSec, with
-RandomizedDelaySec. All other calls go to the replacement unchanged.
+RandomizedDelaySec. All other calls go to the replacement unchanged, except
+that --no-block is honoured: the replacement ignores it and would wait for a
+oneshot unit to finish (the AutoTLS refresh waits for its certificate), so the
+call is run in the background and returns at once, as it does under systemd.
 """
 
 import os
@@ -183,6 +186,12 @@ def main(argv):
     command = words[0] if words else ""
     timers = [word for word in words[1:] if word.endswith(".timer")]
     others = [word for word in words[1:] if not word.endswith(".timer")]
+    if "--no-block" in argv:
+        rest = [arg for arg in argv if arg != "--no-block"]
+        subprocess.Popen([sys.executable, os.path.abspath(__file__)] + rest,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        return 0
     if not timers:
         os.execv(sys.executable, [sys.executable, REAL] + argv)
     code = handle_timers(command, timers, "--now" in argv)
