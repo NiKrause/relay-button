@@ -106,7 +106,11 @@ importers:
         specifier: ^6.16.0
         version: 6.16.0
 
-  packages/browser: {}
+  packages/browser:
+    devDependencies:
+      '@le-space/attest-wasm':
+        specifier: workspace:*
+        version: link:../attest-wasm
 
   packages/core:
     dependencies:
