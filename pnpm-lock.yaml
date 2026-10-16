@@ -91,6 +91,8 @@ importers:
         specifier: ^2.53.1
         version: 2.53.1(typescript@5.9.3)
 
+  packages/attest-wasm: {}
+
   packages/browser: {}
 
   packages/core:

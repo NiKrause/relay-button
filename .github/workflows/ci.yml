@@ -35,6 +35,56 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+  attest-wasm:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: packages/attest-wasm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Rust with the wasm32 target
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          rustup default stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/wasm-bindgen
+            packages/attest-wasm/target
+          key: attest-wasm-${{ hashFiles('packages/attest-wasm/Cargo.lock') }}
+
+      - name: Install wasm-bindgen-cli (same version as the crate)
+        run: |
+          version="$(grep -A1 'name = "wasm-bindgen"$' Cargo.lock | sed -n 's/version = "\(.*\)"/\1/p')"
+          if ! wasm-bindgen --version 2>/dev/null | grep -q "$version"; then
+            cargo install wasm-bindgen-cli --version "$version" --locked --force
+          fi
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      - name: Build
+        run: |
+          cargo build --target wasm32-unknown-unknown --release
+          wasm-bindgen --target web --out-dir pkg target/wasm32-unknown-unknown/release/relay_button_attest.wasm
+          wasm-bindgen --target nodejs --out-dir pkg-node target/wasm32-unknown-unknown/release/relay_button_attest.wasm
+          # The Node bindings are CommonJS; the package itself is "type": "module".
+          echo '{"type":"commonjs"}' > pkg-node/package.json
+          ls -l pkg/relay_button_attest_bg.wasm
+
+      - name: Test (cargo, then the WASM in Node)
+        run: |
+          cargo test
+          node --test ./test/*.test.mjs
+
   publish-preview:
     runs-on: ubuntu-24.04
     steps:
