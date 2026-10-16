@@ -15,6 +15,9 @@ mkdir -p /run/sshd /run/lock
 mount -t devpts -o gid=5,mode=620,ptmxmode=666 devpts /dev/pts 2>/dev/null
 mountpoint -q /sys/fs/cgroup || mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null
 [ -s /etc/hostname ] && hostname -F /etc/hostname 2>/dev/null
+# Units that bind low ports rely on AmbientCapabilities=CAP_NET_BIND_SERVICE,
+# which the systemctl replacement does not apply (relay-button#168).
+echo 0 > /proc/sys/net/ipv4/ip_unprivileged_port_start 2>/dev/null
 
 # The CRN grows the disk, not the filesystem inside the LUKS volume, and
 # resize2fs refuses in the chroot (it does not see / as mounted), so ask the

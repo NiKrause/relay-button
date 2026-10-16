@@ -13,6 +13,8 @@
 #   .timer units; the profile's units and scripts keep working.
 # - cloud-init and the systemd services that manage what the measured init
 #   already did (network, DNS, getty, timesyncd) are no longer started.
+# - Type=notify units run as Type=simple, and the init lets any user bind
+#   ports below 1024 (the replacement has neither sd_notify nor capabilities).
 # - root's authorized_keys come from the caller: nothing provisions an
 #   encrypted rootfs from outside. Host keys are removed and made on first boot.
 # - Kernel, modules, docs and caches go: the guest runs the runtime's measured
@@ -100,6 +102,19 @@ find "$root/etc/systemd" "$root/lib/systemd/system" "$root/usr/lib/systemd/syste
   -name 'cloud-*' \( -type l -o -type f \) -delete 2>/dev/null || true
 rm -f "$root/usr/bin/cloud-init" "$root/usr/bin/cloud-id"
 [ -s "$root/etc/hostname" ] || echo relay > "$root/etc/hostname"
+
+# 4b. Units the replacement cannot run as written (relay-button#168): it does
+# not receive sd_notify readiness, so Type=notify becomes Type=simple (a
+# reverse proxy such as Caddy needs no readiness handshake here); and it does
+# not apply AmbientCapabilities, so low ports are opened to every user by the
+# init (net.ipv4.ip_unprivileged_port_start=0) instead.
+for dir in "$root/etc/systemd/system" "$root/lib/systemd/system" "$root/usr/lib/systemd/system"; do
+  [ -d "$dir" ] || continue
+  grep -rlE '^Type=notify(-reload)?$' "$dir" --include='*.service' 2>/dev/null | while read -r unit; do
+    sed -i -E 's/^Type=notify(-reload)?$/Type=simple/; /^NotifyAccess=/d' "$unit"
+    echo "Type=notify -> simple: ${unit#$root}"
+  done
+done
 
 # 5. Init, DNS placeholder, SSH.
 rm -f "$root/sbin/init"

@@ -33,6 +33,11 @@ on:
         required: false
         default: false
         type: boolean
+      enable_caddy_proxy:
+        description: Configure the relay with the Caddy proxy (WSS on 443), as the widget does
+        required: false
+        default: false
+        type: boolean
       forget_rootfs:
         description: Forget the given rootfs_item_hash and do nothing else (end of a benchmark)
         required: false
@@ -123,7 +128,7 @@ jobs:
           crn_source: aggregate
           max_crn_attempts: '5'
           channel: TEST
-          enable_caddy_proxy: 'false'
+          enable_caddy_proxy: ${{ inputs.enable_caddy_proxy && 'true' || 'false' }}
           auto_configure: 'true'
           verify_reachability: 'true'
           publish_port_forwards: 'true'
