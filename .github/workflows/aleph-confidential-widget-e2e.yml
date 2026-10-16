@@ -1,0 +1,140 @@
+name: Aleph Confidential Widget E2E
+
+# A confidential start from the widget, in Chromium, against a real SEV-SNP
+# node (relay-button#169, step 4): the browser computes the launch
+# measurements, signs the INSTANCE with an injected test wallet, attests the
+# guest through the attest relay, unlocks it and hands it the SSH key with the
+# bootstrap token. Green means the relay registered itself with that token.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_store:
+        description: Item hash of the STORE message of a published plain orbitdb-relay rootfs (encrypted for this run)
+        required: false
+        default: ''
+        type: string
+      rootfs_item_hash:
+        description: An encrypted rootfs keyed with CONFIDENTIAL_BENCH_PASSPHRASE instead (kept)
+        required: false
+        default: ''
+        type: string
+      crn_hash:
+        description: SEV-SNP node to pin to (empty lets the widget pick)
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aleph-confidential-smoke
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      SOURCE_STORE: ${{ inputs.source_store }}
+      GIVEN_ROOTFS: ${{ inputs.rootfs_item_hash }}
+      E2E_INSTANCE_NAME: rb-confidential-e2e-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate a passphrase and an SSH key for this run
+        id: keys
+        env:
+          BENCH_PASSPHRASE: ${{ secrets.CONFIDENTIAL_BENCH_PASSPHRASE }}
+        run: |
+          if [ -n "$GIVEN_ROOTFS" ]; then
+            [[ "$GIVEN_ROOTFS" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::rootfs_item_hash is not an item hash"; exit 1; }
+            [ -n "$BENCH_PASSPHRASE" ] || { echo "::error::set the CONFIDENTIAL_BENCH_PASSPHRASE secret"; exit 1; }
+            pass="$BENCH_PASSPHRASE"
+          else
+            [[ "$SOURCE_STORE" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::set source_store or rootfs_item_hash"; exit 1; }
+            pass="$(openssl rand -hex 32)"
+          fi
+          echo "::add-mask::$pass"
+          echo "luks_passphrase=$pass" >> "$GITHUB_OUTPUT"
+          ssh-keygen -q -t ed25519 -N '' -C relay-button-confidential-e2e -f "$RUNNER_TEMP/e2e_ed25519"
+          echo "ssh_public_key=$(cat "$RUNNER_TEMP/e2e_ed25519.pub")" >> "$GITHUB_OUTPUT"
+
+      - name: Encrypted confidential rootfs
+        id: rootfs
+        if: ${{ inputs.rootfs_item_hash == '' }}
+        uses: ./.github/actions/aleph-confidential-rootfs
+        with:
+          source_store: ${{ env.SOURCE_STORE }}
+          ssh_public_key: ${{ steps.keys.outputs.ssh_public_key }}
+          luks_passphrase: ${{ steps.keys.outputs.luks_passphrase }}
+          aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      - name: Build the attestation WASM (web target) and install the harness
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          rustup default stable
+          version="$(grep -A1 'name = "wasm-bindgen"$' packages/attest-wasm/Cargo.lock | sed -n 's/version = "\(.*\)"/\1/p')"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+          pnpm install --frozen-lockfile --prefer-offline --filter @le-space/e2e-confidential...
+          (cd packages/attest-wasm \
+            && cargo build --target wasm32-unknown-unknown --release \
+            && wasm-bindgen --target web --out-dir pkg target/wasm32-unknown-unknown/release/relay_button_attest.wasm)
+          cd packages/e2e-confidential
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Deploy, attest, unlock and register from the widget
+        working-directory: packages/e2e-confidential
+        env:
+          E2E_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          E2E_LUKS_PASSPHRASE: ${{ steps.keys.outputs.luks_passphrase }}
+          E2E_SSH_PUBLIC_KEY: ${{ steps.keys.outputs.ssh_public_key }}
+          E2E_ROOTFS_ITEM_HASH: ${{ inputs.rootfs_item_hash || steps.rootfs.outputs.rootfs_item_hash }}
+          E2E_CRN_HASH: ${{ inputs.crn_hash }}
+        run: pnpm run e2e
+
+      - name: Upload the Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: confidential-widget-e2e-${{ github.run_id }}
+          path: |
+            packages/e2e-confidential/playwright-report
+            packages/e2e-confidential/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Forget what is left (instance by name, this run's rootfs)
+        if: always()
+        env:
+          ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          # A given rootfs belongs to the caller.
+          STORE: ${{ steps.rootfs.outputs.rootfs_item_hash }}
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/aleph" https://github.com/aleph-im/aleph-rs/releases/download/v0.22.0/aleph-cli-linux-x86_64
+          echo "41b8ced717d9962683ce2d4409725774e826643be0bae1bfc623f6c0c7fb19d7  $RUNNER_TEMP/aleph" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/aleph"
+          aleph="$RUNNER_TEMP/aleph"
+          address="$(cd packages/e2e-confidential && node -e 'import("viem/accounts").then(({ privateKeyToAccount }) => console.log(privateKeyToAccount(process.env.ALEPH_PRIVATE_KEY.startsWith("0x") ? process.env.ALEPH_PRIVATE_KEY : `0x${process.env.ALEPH_PRIVATE_KEY}`).address))' 2>/dev/null || true)"
+          if [ -n "$address" ]; then
+            for h in $("$aleph" instance list --address "$address" --json 2>/dev/null \
+                | jq -r --arg n "$E2E_INSTANCE_NAME" '.[] | select((.name // .metadata.name // "") == $n) | (.item_hash // .hash)' | sort -u); do
+              echo y | "$aleph" instance delete "$h" --reason "confidential widget e2e ${GITHUB_RUN_ID}" --chain eth || true
+            done
+          fi
+          # Aleph refuses to forget a STORE an instance still uses, so retry.
+          if [ -n "$STORE" ]; then
+            for i in 1 2 3 4 5 6; do
+              echo y | "$aleph" message forget "$STORE" --reason "confidential widget e2e rootfs ${GITHUB_RUN_ID}" --chain eth && break
+              sleep 20
+            done
+          fi
