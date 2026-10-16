@@ -240,6 +240,9 @@ jobs:
           section "unit states"; for u in $(ls /etc/systemd/system/multi-user.target.wants/ | grep '\.service$'); do printf '%-48s %s\n' "$u" "$(systemctl is-active "$u" 2>&1)"; done
           section "listening"; ss -ltnup 2>/dev/null
           section processes; ps -eo pid,user,etime,args --sort=pid | grep -v -E '\[.*\]$' | head -40
+          section "start the enabled units that are not running"; for u in $(ls /etc/systemd/system/multi-user.target.wants/ | grep '\.service$'); do [ "$(systemctl is-active "$u" 2>/dev/null)" = active ] || { printf '%s: ' "$u"; systemctl start "$u" 2>&1 | tail -2; }; done; sleep 20
+          section "unit states after start"; for u in $(ls /etc/systemd/system/multi-user.target.wants/ | grep '\.service$'); do printf '%-48s %s\n' "$u" "$(systemctl is-active "$u" 2>&1)"; done
+          section "listening after start"; ss -ltnup 2>/dev/null
           section "journal of failed units"; for u in $(ls /etc/systemd/system/multi-user.target.wants/ | grep '\.service$'); do [ "$(systemctl is-active "$u" 2>/dev/null)" = active ] || { echo "-- $u"; journalctl -u "$u" -n 15 --no-pager 2>&1 | tail -15; }; done
           EOF
           cat "$RUNNER_TEMP/probe.txt"

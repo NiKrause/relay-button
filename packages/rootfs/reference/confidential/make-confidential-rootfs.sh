@@ -78,6 +78,8 @@ for bin in systemctl journalctl; do
 done
 install -m 755 "$work/systemctl3.py" "$root/usr/bin/systemctl"
 install -m 755 "$work/journalctl3.py" "$root/usr/bin/journalctl"
+# journalctl3.py calls systemctl3.py from its own directory.
+ln -sf systemctl "$root/usr/bin/systemctl3.py"
 [ -x "$root/usr/bin/python3" ] || { echo "the image has no python3, which the systemctl replacement needs" >&2; exit 1; }
 
 # 4. Stop starting what the measured init already did, or what has no place here.
@@ -88,7 +90,11 @@ find "$wants" -path '*.wants/*' \( \
   -o -name 'serial-getty@*' -o -name 'e2scrub*' -o -name 'fstrim*' -o -name 'apt-daily*' \
   -o -name 'man-db*' -o -name 'unattended-upgrades*' -o -name 'systemd-pstore*' \
   -o -name 'qemu-guest-agent*' -o -name 'remote-fs.target' \) -delete
-touch "$root/etc/cloud/cloud-init.disabled" 2>/dev/null || true
+# cloud-init is also pulled in from units under /lib; nothing may start it.
+find "$root/etc/systemd" "$root/lib/systemd/system" "$root/usr/lib/systemd/system" \
+  -name 'cloud-*' \( -type l -o -type f \) -delete 2>/dev/null || true
+rm -f "$root/usr/bin/cloud-init" "$root/usr/bin/cloud-id"
+[ -s "$root/etc/hostname" ] || echo relay > "$root/etc/hostname"
 
 # 5. Init, DNS placeholder, SSH.
 rm -f "$root/sbin/init"
