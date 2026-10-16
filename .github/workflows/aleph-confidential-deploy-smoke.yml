@@ -81,7 +81,7 @@ jobs:
           memory_mib: '4096'
           crn_hash: ${{ inputs.crn_hash }}
           crn_source: aggregate
-          max_crn_attempts: '2'
+          max_crn_attempts: '5'
           channel: TEST
           enable_caddy_proxy: 'false'
           auto_configure: 'true'

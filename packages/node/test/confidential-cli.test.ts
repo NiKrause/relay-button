@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import {
   attestAndUnlock,
   createConfidentialInstance,
+  isPermanentAttestationFailure,
   parseInstanceItemHash,
   type AlephCliRunner,
 } from "../src/confidential-cli.ts";
@@ -111,4 +112,26 @@ test("parseDeployPlan reads the confidential settings", () => {
   assert.equal(plan.luksPassphrase, "secret");
   assert.equal(plan.alephCli, "aleph");
   assert.equal(parseDeployPlan({ ALEPH_VM_PRIVATE_KEY: KEY, ALEPH_VM_NAME: "r", ALEPH_VM_SSH_PUBLIC_KEY: "ssh-ed25519 AAAATest", ALEPH_VM_ROOTFS_ITEM_HASH: "b".repeat(64) }).confidential, false);
+});
+
+test("a node that cannot be trusted is refused at once, not retried", async () => {
+  const floor = new Error("aleph instance attest failed: Error: attestation failed: SEV-SNP TCB below the required floor: launch TCB below floor (Bootloader 7<9, Microcode 22<25)");
+  const { run, calls } = recorder([floor, floor, floor]);
+  await assert.rejects(
+    attestAndUnlock({
+      run,
+      privateKey: KEY,
+      itemHash: ITEM_HASH,
+      crnHash: "c".repeat(64),
+      luksPassphrase: "secret",
+      attempts: 3,
+      delayMs: 0,
+      sleep: async () => {},
+      log: () => {},
+    }),
+    /TCB below the required floor/,
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(isPermanentAttestationFailure("failed to fetch VCEK certificate from AMD KDS: AMD KDS returned HTTP 404 Not Found"), true);
+  assert.equal(isPermanentAttestationFailure("RA-TLS HTTP request failed: error sending request"), false);
 });

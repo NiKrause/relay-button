@@ -85,6 +85,16 @@ export async function createConfidentialInstance(args: {
   }
 }
 
+// Failures that say the node cannot be trusted as it is (outdated firmware,
+// no AMD certificate for its TCB, a measurement or policy that does not
+// match): retrying cannot fix them, so the deploy moves to the next node.
+const PERMANENT_ATTESTATION_FAILURE =
+  /TCB below the required floor|AMD KDS returned HTTP 4\d\d|measurement (?:does not match|mismatch)|policy (?:does not match|mismatch)|certificate chain|signature/iu;
+
+export function isPermanentAttestationFailure(message: string): boolean {
+  return PERMANENT_ATTESTATION_FAILURE.test(message);
+}
+
 export interface ConfidentialAttestation {
   verified: boolean;
   measurement: string | null;
@@ -126,7 +136,12 @@ export async function attestAndUnlock(args: {
       break;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      args.log(`[deploy] attestation ${attempt}/${args.attempts} for ${args.itemHash} not yet: ${lastError.message.split("\n").at(-1)}`);
+      const reason = lastError.message.split("\n").at(-1) ?? lastError.message;
+      if (isPermanentAttestationFailure(lastError.message)) {
+        args.log(`[deploy] attestation of ${args.itemHash} refused: ${reason}`);
+        break;
+      }
+      args.log(`[deploy] attestation ${attempt}/${args.attempts} for ${args.itemHash} not yet: ${reason}`);
       if (attempt < args.attempts) await args.sleep(args.delayMs);
     }
   }
