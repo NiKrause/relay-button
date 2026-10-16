@@ -8,6 +8,9 @@ name: Aleph Confidential Smoke
 # rootfs with sshd and Docker under a small foreground init (the measured init
 # chroots into the rootfs, so systemd cannot be PID 1 there), logs in over SSH
 # after the unlock and reports what the guest offers a workload.
+# image=paperless does the same, then runs Paperless-ngx with Postgres and
+# Valkey on the host network, reaches it through an SSH tunnel and checks that
+# an uploaded image is OCR'd.
 
 on:
   workflow_dispatch:
@@ -25,6 +28,7 @@ on:
         options:
           - busybox
           - debian-docker
+          - paperless
       size:
         description: Instance size slug
         required: false
@@ -51,7 +55,7 @@ env:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
       CRN: ${{ inputs.crn }}
@@ -104,7 +108,7 @@ jobs:
           mkfs.ext4 -q -d "$root" "$RUNNER_TEMP/plain.ext4"
 
       - name: Build a Debian rootfs with sshd and Docker
-        if: inputs.image == 'debian-docker'
+        if: inputs.image != 'busybox'
         # No systemd and no cloud-init in a confidential instance: /sbin/init
         # is a script that mounts what a workload needs, starts dockerd in
         # the background and keeps sshd in the foreground. The run's SSH key
@@ -237,7 +241,7 @@ jobs:
 
       - name: Probe the guest over SSH
         id: probe
-        if: inputs.image == 'debian-docker'
+        if: inputs.image != 'busybox'
         env:
           ITEM_HASH: ${{ steps.create.outputs.item_hash }}
           CRN_URL: ${{ steps.execution.outputs.crn_url }}
@@ -274,6 +278,109 @@ jobs:
           EOF
           cat "$RUNNER_TEMP/probe.txt"
           grep -q "Hello from Docker" "$RUNNER_TEMP/probe.txt" && echo "docker=ok" >> "$GITHUB_OUTPUT" || echo "docker=failed" >> "$GITHUB_OUTPUT"
+          echo "host=$HOST" >> "$GITHUB_OUTPUT"
+          echo "port=$PORT" >> "$GITHUB_OUTPUT"
+
+      - name: Run Paperless and OCR a test receipt
+        id: paperless
+        if: inputs.image == 'paperless'
+        env:
+          HOST: ${{ steps.probe.outputs.host }}
+          PORT: ${{ steps.probe.outputs.port }}
+          PAPERLESS_IMAGE: ghcr.io/paperless-ngx/paperless-ngx:3.2.1
+          POSTGRES_IMAGE: docker.io/library/postgres:18
+          VALKEY_IMAGE: docker.io/valkey/valkey:9-alpine
+        # There is no guest firewall and the guest has a public IPv6 address,
+        # so every service binds to 127.0.0.1 and Paperless is reached through
+        # an SSH tunnel, never through a public port.
+        run: |
+          out="$RUNNER_TEMP/paperless.txt"
+          log() { echo "$*" | tee -a "$out"; }
+          ssh_guest() {
+            ssh -i "$RUNNER_TEMP/smoke_ed25519" -p "$PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+              -o ServerAliveInterval=30 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "root@$HOST" "$@"
+          }
+          for v in DBPASS ADMIN_PASS SECRET; do
+            val="$(openssl rand -hex 24)"; echo "::add-mask::$val"; printf -v "$v" '%s' "$val"
+          done
+
+          t0=$(date +%s)
+          ssh_guest "PAPERLESS_IMAGE=$PAPERLESS_IMAGE POSTGRES_IMAGE=$POSTGRES_IMAGE VALKEY_IMAGE=$VALKEY_IMAGE sh -s" <<'EOF' 2>&1 | tee -a "$out"
+          set -e
+          for img in "$VALKEY_IMAGE" "$POSTGRES_IMAGE" "$PAPERLESS_IMAGE"; do
+            s=$(date +%s); docker pull -q "$img" >/dev/null; echo "pulled $img in $(( $(date +%s) - s ))s"
+          done
+          EOF
+          t_pull=$(( $(date +%s) - t0 ))
+          log "pull total: ${t_pull}s"
+
+          t1=$(date +%s)
+          ssh_guest "DBPASS=$DBPASS ADMIN_PASS=$ADMIN_PASS SECRET=$SECRET PAPERLESS_IMAGE=$PAPERLESS_IMAGE POSTGRES_IMAGE=$POSTGRES_IMAGE VALKEY_IMAGE=$VALKEY_IMAGE sh -s" <<'EOF' 2>&1 | tee -a "$out"
+          set -e
+          mkdir -p /srv/paperless/data /srv/paperless/media /srv/paperless/consume /srv/paperless/export /srv/paperless/pg
+          docker run -d --name valkey --network host "$VALKEY_IMAGE" valkey-server --bind 127.0.0.1 --protected-mode yes >/dev/null
+          docker run -d --name db --network host \
+            -e POSTGRES_DB=paperless -e POSTGRES_USER=paperless -e POSTGRES_PASSWORD="$DBPASS" \
+            -v /srv/paperless/pg:/var/lib/postgresql "$POSTGRES_IMAGE" -c listen_addresses=127.0.0.1 >/dev/null
+          docker run -d --name paperless --network host \
+            -e PAPERLESS_REDIS=redis://127.0.0.1:6379 -e PAPERLESS_DBHOST=127.0.0.1 -e PAPERLESS_DBPASS="$DBPASS" \
+            -e PAPERLESS_SECRET_KEY="$SECRET" -e PAPERLESS_ADMIN_USER=admin -e PAPERLESS_ADMIN_PASSWORD="$ADMIN_PASS" \
+            -e PAPERLESS_BIND_ADDR=127.0.0.1 -e PAPERLESS_PORT=8000 -e PAPERLESS_OCR_LANGUAGE=deu+eng \
+            -e PAPERLESS_URL=http://127.0.0.1:18000 \
+            -v /srv/paperless/data:/usr/src/paperless/data -v /srv/paperless/media:/usr/src/paperless/media \
+            -v /srv/paperless/consume:/usr/src/paperless/consume -v /srv/paperless/export:/usr/src/paperless/export \
+            "$PAPERLESS_IMAGE" >/dev/null
+          echo "containers started"
+          EOF
+
+          ssh -i "$RUNNER_TEMP/smoke_ed25519" -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -f -N -L 18000:127.0.0.1:8000 "root@$HOST"
+          api=http://127.0.0.1:18000/api
+          up=""
+          for i in $(seq 1 90); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$api/" || true)"
+            if [ "$code" = 401 ] || [ "$code" = 200 ]; then up=1; break; fi
+            sleep 10
+          done
+          t_up=$(( $(date +%s) - t1 ))
+          if [ -z "$up" ]; then
+            log "Paperless did not answer within 15 minutes"
+            ssh_guest 'docker ps -a; docker logs --tail 40 paperless' 2>&1 | tee -a "$out"
+            exit 1
+          fi
+          log "Paperless answering after ${t_up}s (migrations included)"
+
+          token="$(curl -fsS --max-time 30 -d username=admin --data-urlencode "password=$ADMIN_PASS" "$api/token/" | jq -r .token)"
+          echo "::add-mask::$token"
+          auth=(-H "Authorization: Token $token" -H "Accept: application/json; version=9")
+
+          command -v convert >/dev/null || sudo apt-get install -y -qq imagemagick >/dev/null
+          convert -size 1400x520 xc:white -fill black -pointsize 52 \
+            -annotate +60+120 'Wolkenfabrik Hosting GmbH' \
+            -annotate +60+230 'Rechnung Nr. 2026-0001' \
+            -annotate +60+340 'Betrag: 12,34 EUR' "$RUNNER_TEMP/receipt.png"
+
+          t2=$(date +%s)
+          task="$(curl -fsS --max-time 60 "${auth[@]}" -F "document=@$RUNNER_TEMP/receipt.png" -F title=confidential-smoke "$api/documents/post_document/" | tr -d '"')"
+          doc=""
+          for i in $(seq 1 60); do
+            t="$(curl -fsS --max-time 15 "${auth[@]}" "$api/tasks/?task_id=$task" | jq -c '.[0] // {}')"
+            status="$(jq -r '.status // "PENDING"' <<<"$t")"
+            if [ "$status" = SUCCESS ]; then doc="$(jq -r '.related_document' <<<"$t")"; break; fi
+            if [ "$status" = FAILURE ]; then log "consumption failed: $(jq -r '.result' <<<"$t")"; exit 1; fi
+            sleep 5
+          done
+          [ -n "$doc" ] || { log "the document was not consumed within 5 minutes"; exit 1; }
+          t_ocr=$(( $(date +%s) - t2 ))
+          content="$(curl -fsS --max-time 15 "${auth[@]}" "$api/documents/$doc/" | jq -r .content)"
+          log "document $doc consumed in ${t_ocr}s; OCR text:"
+          log "$content"
+          ssh_guest 'echo; echo "disk:"; df -h / | tail -1; echo "docker:"; docker system df; echo "memory:"; free -m | sed -n 2p; docker stats --no-stream --format "{{.Name}} {{.MemUsage}}"' 2>&1 | tee -a "$out"
+          if grep -qi wolkenfabrik <<<"$content" && grep -q '12,34' <<<"$content"; then
+            echo "ocr=ok" >> "$GITHUB_OUTPUT"
+          else
+            echo "ocr=mismatch" >> "$GITHUB_OUTPUT"; exit 1
+          fi
 
       - name: Keep it running
         if: inputs.keep_minutes != '0'
@@ -302,6 +409,7 @@ jobs:
           STATE: ${{ steps.execution.outputs.state }}
           ATTEST: ${{ steps.attest.outcome }}
           DOCKER: ${{ steps.probe.outputs.docker }}
+          OCR: ${{ steps.paperless.outputs.ocr }}
         run: |
           {
             echo "## Confidential smoke"
@@ -314,11 +422,19 @@ jobs:
             echo "| Execution state before attest | \`${STATE:-unknown}\` |"
             echo "| Image | \`${IMAGE}\` |"
             echo "| Attestation | ${ATTEST:-skipped} |"
-            [ "$IMAGE" = debian-docker ] && echo "| Docker in the guest | ${DOCKER:-not probed} |"
+            [ "$IMAGE" != busybox ] && echo "| Docker in the guest | ${DOCKER:-not probed} |"
+            [ "$IMAGE" = paperless ] && echo "| Paperless OCR of a test receipt | ${OCR:-not reached} |"
             if [ -s "$RUNNER_TEMP/attest.json" ]; then
               echo
               echo '```json'
               cat "$RUNNER_TEMP/attest.json"
+              echo '```'
+            fi
+            if [ -s "$RUNNER_TEMP/paperless.txt" ]; then
+              echo
+              echo "### Paperless"
+              echo '```'
+              cat "$RUNNER_TEMP/paperless.txt"
               echo '```'
             fi
             if [ -s "$RUNNER_TEMP/probe.txt" ]; then
