@@ -1,0 +1,35 @@
+#!/bin/sh
+# /sbin/init of a confidential (SEV-SNP) relay rootfs.
+#
+# Aleph's measured init unlocks the LUKS rootfs, chroots into it and runs this
+# file. It is not PID 1, so systemd cannot run; docker-systemctl-replacement
+# (installed as /usr/bin/systemctl) starts the enabled units instead and keeps
+# answering the `systemctl` and `journalctl` calls the profile scripts make.
+# This script must stay in the foreground: when it exits, the VM powers off.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+mkdir -p /run /dev/pts /sys/fs/cgroup /var/log
+mount -t tmpfs -o mode=755 tmpfs /run
+mkdir -p /run/sshd /run/lock
+mount -t devpts -o gid=5,mode=620,ptmxmode=666 devpts /dev/pts 2>/dev/null
+mountpoint -q /sys/fs/cgroup || mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null
+[ -s /etc/hostname ] && hostname -F /etc/hostname 2>/dev/null
+
+# The CRN grows the disk, not the filesystem inside the LUKS volume, and
+# resize2fs refuses in the chroot (it does not see / as mounted), so ask the
+# kernel to grow it online (EXT4_IOC_RESIZE_FS).
+if [ -b /dev/mapper/cryptroot ]; then
+  bs=$(tune2fs -l /dev/mapper/cryptroot 2>/dev/null | sed -n 's/^Block size: *//p')
+  if [ -n "$bs" ]; then
+    blocks=$(( $(blockdev --getsize64 /dev/mapper/cryptroot) / bs ))
+    perl -e 'sysopen(my $f, "/", 0) or die "open: $!"; ioctl($f, 0x40086610, pack("Q", $ARGV[0])) or die "EXT4_IOC_RESIZE_FS: $!\n"' "$blocks" \
+      > /var/log/confidential-resize.log 2>&1
+  fi
+fi
+
+# Host keys are made on the first boot, inside the encrypted disk, so they
+# never exist outside it.
+ls /etc/ssh/ssh_host_*_key >/dev/null 2>&1 || ssh-keygen -A > /dev/null 2>&1
+
+echo "confidential-init: $(uname -r), starting the enabled units" > /dev/console
+exec /usr/bin/python3 /usr/bin/systemctl init

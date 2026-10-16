@@ -1,0 +1,216 @@
+name: Aleph Confidential Relay Smoke
+
+# Takes a relay profile image that is already published on Aleph, turns it
+# into a confidential rootfs (packages/rootfs/reference/confidential), and
+# starts, attests and unlocks it on an SEV-SNP node with Aleph's own CLI. Then
+# it logs in and reports which of the profile's units run. Part of #154. Run by
+# hand: every run spends a few cents of credits from ALEPH_PRIVATE_KEY.
+
+on:
+  # TEMPORARY: lets the branch test itself before the workflow is on main; removed before merge.
+  push:
+    branches: [feat/confidential-relay-rootfs]
+    paths: [.github/workflows/aleph-confidential-relay-smoke.yml, packages/rootfs/reference/confidential/**]
+  workflow_dispatch:
+    inputs:
+      rootfs_store:
+        description: Item hash of the STORE message of a published relay rootfs (qcow2 or raw)
+        required: true
+        type: string
+      crn:
+        description: SEV-SNP node hash (or a unique prefix) to pin the instance to
+        required: true
+        default: 42c53b2d5adb42dc8bc848bdccdec951308fc9dfc6c250c7d2533dbaf75d058e
+        type: string
+      size:
+        description: Instance size slug
+        required: false
+        default: 2vcpu-4gb
+        type: string
+      keep_minutes:
+        description: Minutes to keep the instance running after the probe before it is forgotten (0-30)
+        required: false
+        default: "0"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aleph-confidential-smoke
+  cancel-in-progress: false
+
+env:
+  ALEPH_CLI_VERSION: v0.22.0
+  # sha256 of aleph-cli-linux-x86_64 for ALEPH_CLI_VERSION, as the release lists it
+  ALEPH_CLI_SHA256: 41b8ced717d9962683ce2d4409725774e826643be0bae1bfc623f6c0c7fb19d7
+  ALEPH_API: https://api2.aleph.im
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+      ROOTFS_STORE: ${{ inputs.rootfs_store || '4da693e425b8f5f4465f17b6fb1f6d3c1a0078496ba68ecb6d817a8634e1821c' }}
+      CRN: ${{ inputs.crn || '42c53b2d5adb42dc8bc848bdccdec951308fc9dfc6c250c7d2533dbaf75d058e' }}
+      SIZE: ${{ inputs.size || '2vcpu-4gb' }}
+      KEEP_MINUTES: ${{ inputs.keep_minutes || '0' }}
+    steps:
+      - name: Check inputs
+        run: |
+          [ -n "$ALEPH_PRIVATE_KEY" ] || { echo "::error::ALEPH_PRIVATE_KEY is not set"; exit 1; }
+          [[ "$ROOTFS_STORE" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::rootfs_store must be a 64-hex item hash"; exit 1; }
+          [[ "$CRN" =~ ^[0-9a-f]{8,64}$ ]] || { echo "::error::crn must be a hex node hash or prefix"; exit 1; }
+          [[ "$SIZE" =~ ^[0-9]+vcpu-[0-9]+gb$ ]] || { echo "::error::size must look like 2vcpu-4gb"; exit 1; }
+          [[ "$KEEP_MINUTES" =~ ^[0-9]+$ ]] && [ "$KEEP_MINUTES" -le 30 ] || { echo "::error::keep_minutes must be 0-30"; exit 1; }
+
+      - uses: actions/checkout@v4
+
+      - name: Install the aleph CLI and image tools
+        run: |
+          curl -fsSL -o /usr/local/bin/aleph \
+            "https://github.com/aleph-im/aleph-rs/releases/download/${ALEPH_CLI_VERSION}/aleph-cli-linux-x86_64"
+          echo "${ALEPH_CLI_SHA256}  /usr/local/bin/aleph" | sha256sum -c -
+          chmod +x /usr/local/bin/aleph
+          aleph --version
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cryptsetup e2fsprogs jq qemu-utils rsync >/dev/null
+
+      - name: Generate a passphrase and an SSH key for this run
+        run: |
+          pass="$(openssl rand -hex 32)"
+          echo "::add-mask::$pass"
+          printf '%s' "$pass" > "$RUNNER_TEMP/luks.pass"
+          chmod 600 "$RUNNER_TEMP/luks.pass"
+          ssh-keygen -q -t ed25519 -N '' -C relay-button-confidential-smoke -f "$RUNNER_TEMP/smoke_ed25519"
+
+      - name: Download the published rootfs
+        run: |
+          msg="$(curl -fsS "$ALEPH_API/api/v0/messages/$ROOTFS_STORE")"
+          [ "$(jq -r '.message.type // .type' <<<"$msg")" = STORE ] || { echo "::error::$ROOTFS_STORE is not a STORE message"; exit 1; }
+          file_hash="$(jq -r '(.message.content // .content).item_hash' <<<"$msg")"
+          echo "file: $file_hash"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/profile.img" "$ALEPH_API/api/v0/storage/raw/$file_hash" \
+            || curl -fsSL --retry 3 -o "$RUNNER_TEMP/profile.img" "https://ipfs.aleph.im/ipfs/$file_hash"
+          ls -lh "$RUNNER_TEMP/profile.img"
+          qemu-img info "$RUNNER_TEMP/profile.img"
+
+      - name: Make it a confidential rootfs
+        run: |
+          sudo ./packages/rootfs/reference/confidential/make-confidential-rootfs.sh \
+            "$RUNNER_TEMP/profile.img" "$RUNNER_TEMP/plain.ext4" "$RUNNER_TEMP/smoke_ed25519.pub"
+          sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/plain.ext4"
+          rm -f "$RUNNER_TEMP/profile.img"
+
+      - name: Create the confidential instance
+        id: create
+        run: |
+          set -o pipefail
+          aleph instance create "rb-confidential-relay-${GITHUB_RUN_ID}" \
+            --confidential \
+            --encrypt-rootfs "$RUNNER_TEMP/plain.ext4" \
+            --passphrase-file "$RUNNER_TEMP/luks.pass" \
+            --size "$SIZE" \
+            --crn "$CRN" \
+            --ssh-pubkey-file "$RUNNER_TEMP/smoke_ed25519.pub" \
+            --chain eth \
+            --wait 600 2>&1 | grep -v 'uploaded [0-9]*/' | tee "$RUNNER_TEMP/create.log" || status=$?
+          hash="$(grep -oE 'Item hash: +[0-9a-f]{64}' "$RUNNER_TEMP/create.log" | grep -oE '[0-9a-f]{64}' | head -1 || true)"
+          echo "item_hash=$hash" >> "$GITHUB_OUTPUT"
+          store="$(grep -oE 'Uploaded encrypted rootfs: +[0-9a-f]{64}' "$RUNNER_TEMP/create.log" | grep -oE '[0-9a-f]{64}' | head -1 || true)"
+          echo "rootfs_store=$store" >> "$GITHUB_OUTPUT"
+          [ -n "$hash" ] || { echo "::error::no INSTANCE item hash in the CLI output"; exit 1; }
+          exit "${status:-0}"
+
+      - name: Attest and unlock
+        id: attest
+        env:
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+        run: |
+          ok=""
+          for i in 1 2 3 4 5 6 7 8 9; do
+            if aleph instance attest "$ITEM_HASH" --crn "$CRN" --json > "$RUNNER_TEMP/attest.json" 2> "$RUNNER_TEMP/attest.err"; then ok=1; break; fi
+            cat "$RUNNER_TEMP/attest.err"
+            sleep 20
+          done
+          [ -n "$ok" ] || exit 1
+          jq '{verified, measurement, policy, launch_tcb}' "$RUNNER_TEMP/attest.json"
+          aleph instance unlock "$ITEM_HASH" --crn "$CRN" --passphrase-file "$RUNNER_TEMP/luks.pass" --chain eth
+
+      - name: Probe the relay over SSH
+        id: probe
+        env:
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+        run: |
+          crn_url="$(curl -fsS "$ALEPH_API/api/v0/aggregates/0xa1B3bb7d2332383D96b7796B908fB7f7F3c2Be10.json?keys=corechannel" \
+            | jq -r --arg p "$CRN" '.data.corechannel.resource_nodes[] | select(.hash | startswith($p)) | .address' | head -1)"
+          crn_url="${crn_url%/}"
+          for i in $(seq 1 18); do
+            entry="$(curl -fsS --max-time 15 "$crn_url/v2/about/executions/list" | jq -c --arg h "$ITEM_HASH" '.[$h] // {}' || echo '{}')"
+            HOST="$(jq -r '.networking.host_ipv4 // empty' <<<"$entry")"
+            PORT="$(jq -r '.networking.mapped_ports["22"].host // empty' <<<"$entry")"
+            [ -n "$HOST" ] && [ -n "$PORT" ] && break
+            sleep 10
+          done
+          [ -n "$HOST" ] && [ -n "$PORT" ] || { echo "::error::no host address or mapped SSH port"; exit 1; }
+          ssh_guest() {
+            ssh -i "$RUNNER_TEMP/smoke_ed25519" -p "$PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+              -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "root@$HOST" "$@"
+          }
+          up=""
+          for i in $(seq 1 18); do ssh_guest true 2>/dev/null && { up=1; break; }; sleep 10; done
+          [ -n "$up" ] || { echo "::error::SSH did not come up after the unlock"; echo "ssh=failed" >> "$GITHUB_OUTPUT"; exit 1; }
+          echo "ssh=ok" >> "$GITHUB_OUTPUT"
+          sleep 30
+          ssh_guest 'sh -s' > "$RUNNER_TEMP/probe.txt" 2>&1 <<'EOF' || true
+          section() { echo; echo "### $1"; }
+          section kernel; uname -a
+          section disk; df -h / | tail -1; cat /var/log/confidential-resize.log 2>/dev/null
+          section "enabled units"; ls /etc/systemd/system/multi-user.target.wants/
+          section "unit states"; for u in $(ls /etc/systemd/system/multi-user.target.wants/ | grep '\.service$'); do printf '%-48s %s\n' "$u" "$(systemctl is-active "$u" 2>&1)"; done
+          section "listening"; ss -ltnup 2>/dev/null
+          section processes; ps -eo pid,user,etime,args --sort=pid | grep -v -E '\[.*\]$' | head -40
+          section "journal of failed units"; for u in $(ls /etc/systemd/system/multi-user.target.wants/ | grep '\.service$'); do [ "$(systemctl is-active "$u" 2>/dev/null)" = active ] || { echo "-- $u"; journalctl -u "$u" -n 15 --no-pager 2>&1 | tail -15; }; done
+          EOF
+          cat "$RUNNER_TEMP/probe.txt"
+          if [ "$KEEP_MINUTES" -gt 0 ]; then sleep $((KEEP_MINUTES * 60)); fi
+
+      - name: Forget the instance
+        if: always() && steps.create.outputs.item_hash != ''
+        env:
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+        run: |
+          echo y | aleph instance delete "$ITEM_HASH" --reason "confidential relay smoke ${GITHUB_RUN_ID}" --chain eth
+
+      - name: Forget the encrypted rootfs
+        if: always() && steps.create.outputs.rootfs_store != ''
+        env:
+          STORE: ${{ steps.create.outputs.rootfs_store }}
+        run: |
+          echo y | aleph message forget "$STORE" --reason "confidential relay smoke rootfs ${GITHUB_RUN_ID}" --chain eth
+
+      - name: Summary
+        if: always()
+        env:
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+          ATTEST: ${{ steps.attest.outcome }}
+          SSH: ${{ steps.probe.outputs.ssh }}
+        run: |
+          {
+            echo "## Confidential relay smoke"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Source rootfs | \`${ROOTFS_STORE}\` |"
+            echo "| Node | \`${CRN}\` |"
+            echo "| Instance | \`${ITEM_HASH:-none}\` |"
+            echo "| Attest and unlock | ${ATTEST:-skipped} |"
+            echo "| SSH after unlock | ${SSH:-not reached} |"
+            if [ -s "$RUNNER_TEMP/probe.txt" ]; then
+              echo
+              echo '```'
+              cat "$RUNNER_TEMP/probe.txt"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
