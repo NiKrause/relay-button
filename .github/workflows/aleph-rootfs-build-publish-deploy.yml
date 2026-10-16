@@ -420,7 +420,8 @@ jobs:
       - name: Build caller project artifacts required by the rootfs profile
         if: >-
           ${{
-            inputs.profile == 'orbitdb-relay'
+            inputs.profile == 'orbitdb-relay' &&
+            !(inputs.confidential && inputs.confidential_rootfs_item_hash != '')
           }}
         working-directory: ${{ inputs.project_checkout_path }}
         run: |
@@ -477,6 +478,8 @@ jobs:
           fi
 
       - name: Install rootfs build dependencies
+        # Reusing an encrypted rootfs built for this version skips the build.
+        if: ${{ !(inputs.confidential && inputs.confidential_rootfs_item_hash != '') }}
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -490,6 +493,7 @@ jobs:
             tar
 
       - name: Build rootfs and optional Aleph IPFS publish
+        if: ${{ !(inputs.confidential && inputs.confidential_rootfs_item_hash != '') }}
         id: run_rootfs
         working-directory: ${{ inputs.tooling_checkout_path }}
         env:
