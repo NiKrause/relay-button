@@ -97,20 +97,89 @@ jobs:
           qemu-img info "$RUNNER_TEMP/profile.img"
 
       - name: Make it a confidential rootfs
+        id: convert
         run: |
-          sudo ./packages/rootfs/reference/confidential/make-confidential-rootfs.sh \
+          sudo MAX_PLAIN_MIB=3500 ./packages/rootfs/reference/confidential/make-confidential-rootfs.sh \
             "$RUNNER_TEMP/profile.img" "$RUNNER_TEMP/plain.ext4" "$RUNNER_TEMP/smoke_ed25519.pub"
           sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/plain.ext4"
           rm -f "$RUNNER_TEMP/profile.img"
+          plain_mib=$(( $(stat -c%s "$RUNNER_TEMP/plain.ext4") / 1048576 ))
+          # The CLI uploads the encrypted image through the CCN, which takes at
+          # most 1 GiB; above that the image is encrypted here, added to IPFS and
+          # referenced by a STORE message, then started with --image.
+          if [ "$plain_mib" -gt 900 ]; then echo "large=true" >> "$GITHUB_OUTPUT"; else echo "large=false" >> "$GITHUB_OUTPUT"; fi
+          echo "plain image: ${plain_mib} MiB"
+
+      - name: Encrypt and publish a large rootfs
+        id: publish
+        if: steps.convert.outputs.large == 'true'
+        run: |
+          set -o pipefail
+          # Same container as `aleph instance create --encrypt-rootfs` and
+          # aleph-vm's examples/instance_confidential_snp/build_luks_rootfs.sh:
+          # whole-device LUKS2, aes-xts-plain64 spelled out (the measured init
+          # rejects any other cipher), ext4 inside.
+          plain="$RUNNER_TEMP/plain.ext4"
+          luks="$RUNNER_TEMP/rootfs.luks"
+          truncate -s "$(( $(stat -c%s "$plain") / 1048576 + 64 ))M" "$luks"
+          loop="$(sudo losetup --find --show "$luks")"
+          sudo cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --batch-mode "$loop" "$RUNNER_TEMP/luks.pass"
+          sudo cryptsetup luksOpen --key-file "$RUNNER_TEMP/luks.pass" "$loop" rb-confidential-build
+          sudo dd if="$plain" of=/dev/mapper/rb-confidential-build bs=4M conv=fsync status=none
+          sudo e2fsck -fp /dev/mapper/rb-confidential-build || [ $? -lt 4 ]
+          sudo resize2fs /dev/mapper/rb-confidential-build
+          sudo cryptsetup luksClose rb-confidential-build
+          sudo losetup -d "$loop"
+          sudo chown "$(id -u):$(id -g)" "$luks"
+          rm -f "$plain"
+          ls -lh "$luks"
+
+          cid="$(curl -fsS --retry 2 --max-time 3600 -F "file=@$luks" 'https://ipfs.aleph.cloud/api/v0/add?pin=true&cid-version=0' | jq -r .Hash)"
+          [ -n "$cid" ] && [ "$cid" != null ] || { echo "::error::IPFS add returned no CID"; exit 1; }
+          echo "cid: $cid"
+          rm -f "$luks"
+
+          mkdir -p "$RUNNER_TEMP/store" && cd "$RUNNER_TEMP/store"
+          npm init -y >/dev/null && npm install --silent ethers@6.13.4 >/dev/null
+          CID="$cid" node --input-type=module > store.json <<'EOF'
+          import { createHash } from 'node:crypto'
+          import { Wallet } from 'ethers'
+          const wallet = new Wallet(process.env.ALEPH_PRIVATE_KEY)
+          const time = Date.now() / 1000
+          const content = { address: wallet.address, time, item_type: 'ipfs', item_hash: process.env.CID, payment: { type: 'credit' } }
+          const item_content = JSON.stringify(content)
+          const item_hash = createHash('sha256').update(item_content).digest('hex')
+          const message = { sender: wallet.address, chain: 'ETH', type: 'STORE', item_hash, item_type: 'inline', item_content, time, channel: 'ALEPH-CLOUDSOLUTIONS' }
+          const signature = await wallet.signMessage([message.chain, message.sender, message.type, message.item_hash].join('\n'))
+          const res = await fetch(`${process.env.ALEPH_API}/api/v0/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sync: true, message: { ...message, signature } }) })
+          console.log(JSON.stringify({ item_hash, status: res.status, body: await res.json().catch(() => null) }))
+          EOF
+          cat store.json
+          store="$(jq -r .item_hash store.json)"
+          echo "rootfs_store=$store" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 60); do
+            status="$(curl -fsS "$ALEPH_API/api/v0/messages/$store" | jq -r .status || true)"
+            echo "[$i] STORE $status"
+            [ "$status" = processed ] && exit 0
+            [ "$status" = rejected ] && { curl -fsS "$ALEPH_API/api/v0/messages/$store" | jq '.error_code, .details'; exit 1; }
+            sleep 20
+          done
+          echo "::error::the STORE was not processed within 20 minutes"; exit 1
 
       - name: Create the confidential instance
         id: create
+        env:
+          PUBLISHED_STORE: ${{ steps.publish.outputs.rootfs_store }}
         run: |
           set -o pipefail
+          if [ -n "$PUBLISHED_STORE" ]; then
+            rootfs_args=(--image "$PUBLISHED_STORE")
+          else
+            rootfs_args=(--encrypt-rootfs "$RUNNER_TEMP/plain.ext4" --passphrase-file "$RUNNER_TEMP/luks.pass")
+          fi
           aleph instance create "rb-confidential-relay-${GITHUB_RUN_ID}" \
             --confidential \
-            --encrypt-rootfs "$RUNNER_TEMP/plain.ext4" \
-            --passphrase-file "$RUNNER_TEMP/luks.pass" \
+            "${rootfs_args[@]}" \
             --size "$SIZE" \
             --crn "$CRN" \
             --ssh-pubkey-file "$RUNNER_TEMP/smoke_ed25519.pub" \
@@ -119,7 +188,7 @@ jobs:
           hash="$(grep -oE 'Item hash: +[0-9a-f]{64}' "$RUNNER_TEMP/create.log" | grep -oE '[0-9a-f]{64}' | head -1 || true)"
           echo "item_hash=$hash" >> "$GITHUB_OUTPUT"
           store="$(grep -oE 'Uploaded encrypted rootfs: +[0-9a-f]{64}' "$RUNNER_TEMP/create.log" | grep -oE '[0-9a-f]{64}' | head -1 || true)"
-          echo "rootfs_store=$store" >> "$GITHUB_OUTPUT"
+          echo "rootfs_store=${store:-$PUBLISHED_STORE}" >> "$GITHUB_OUTPUT"
           [ -n "$hash" ] || { echo "::error::no INSTANCE item hash in the CLI output"; exit 1; }
           exit "${status:-0}"
 
@@ -184,9 +253,9 @@ jobs:
           echo y | aleph instance delete "$ITEM_HASH" --reason "confidential relay smoke ${GITHUB_RUN_ID}" --chain eth
 
       - name: Forget the encrypted rootfs
-        if: always() && steps.create.outputs.rootfs_store != ''
+        if: always() && (steps.create.outputs.rootfs_store != '' || steps.publish.outputs.rootfs_store != '')
         env:
-          STORE: ${{ steps.create.outputs.rootfs_store }}
+          STORE: ${{ steps.create.outputs.rootfs_store || steps.publish.outputs.rootfs_store }}
         run: |
           echo y | aleph message forget "$STORE" --reason "confidential relay smoke rootfs ${GITHUB_RUN_ID}" --chain eth
 
