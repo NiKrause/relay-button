@@ -232,7 +232,7 @@ jobs:
           [ -n "$up" ] || { echo "::error::SSH did not come up after the unlock"; echo "ssh=failed" >> "$GITHUB_OUTPUT"; exit 1; }
           echo "ssh=ok" >> "$GITHUB_OUTPUT"
           sleep 30
-          ssh_guest 'sh -s' > "$RUNNER_TEMP/probe.txt" 2>&1 <<'EOF' || true
+          ssh_guest "PUBLIC_IPV4=$HOST sh -s" > "$RUNNER_TEMP/probe.txt" 2>&1 <<'EOF' || true
           section() { echo; echo "### $1"; }
           section kernel; uname -a
           section disk; df -h / | tail -1; cat /var/log/confidential-resize.log 2>/dev/null
@@ -240,10 +240,18 @@ jobs:
           section "unit states"; for u in $(ls /etc/systemd/system/multi-user.target.wants/ | grep '\.service$'); do printf '%-48s %s\n' "$u" "$(systemctl is-active "$u" 2>&1)"; done
           section "listening"; ss -ltnup 2>/dev/null
           section processes; ps -eo pid,user,etime,args --sort=pid | grep -v -E '\[.*\]$' | head -40
-          section "start the enabled units that are not running"; for u in $(ls /etc/systemd/system/multi-user.target.wants/ | grep '\.service$'); do [ "$(systemctl is-active "$u" 2>/dev/null)" = active ] || { printf '%s: ' "$u"; systemctl start "$u" 2>&1 | tail -2; }; done; sleep 20
+          # What relay-button's configure step does after a normal deploy, with
+          # test ports: the relay's units wait for the ready file it writes.
+          section "configure (test ports)"
+          if [ -x /usr/local/sbin/orbitdb-relay-configure.sh ]; then
+            /usr/local/sbin/orbitdb-relay-configure.sh --public-ipv4 "$PUBLIC_IPV4" --tcp-port 4001 --ws-port 4002 2>&1 | tail -15
+          else
+            echo "no known configure script in this profile"
+          fi
+          sleep 30
           section "unit states after start"; for u in $(ls /etc/systemd/system/multi-user.target.wants/ | grep '\.service$'); do printf '%-48s %s\n' "$u" "$(systemctl is-active "$u" 2>&1)"; done
           section "listening after start"; ss -ltnup 2>/dev/null
-          section "journal of failed units"; for u in $(ls /etc/systemd/system/multi-user.target.wants/ | grep '\.service$'); do [ "$(systemctl is-active "$u" 2>/dev/null)" = active ] || { echo "-- $u"; journalctl -u "$u" -n 15 --no-pager 2>&1 | tail -15; }; done
+          section "journal"; for u in $(ls /etc/systemd/system/multi-user.target.wants/ | grep '\.service$'); do echo "-- $u"; journalctl -u "$u" -n 12 --no-pager 2>&1 | tail -12; done
           EOF
           cat "$RUNNER_TEMP/probe.txt"
           if [ "$KEEP_MINUTES" -gt 0 ]; then sleep $((KEEP_MINUTES * 60)); fi
