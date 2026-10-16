@@ -1,0 +1,36 @@
+[package]
+name = "relay-button-attest"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "SEV-SNP attestation verification for the browser (aleph-rs core, pure-Rust crypto, wasm32)"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# crypto_nossl: the RustCrypto backend, no OpenSSL, builds for wasm32.
+sev = { version = "8", default-features = false, features = ["snp", "crypto_nossl"] }
+x509-parser = { version = "0.16", default-features = false }
+der = "0.7"
+# RSASSA-PSS for AMD's CRL signature; replaces ring, which needs a C compiler
+# with a wasm target.
+rsa = { version = "0.9", features = ["sha2"] }
+sha2 = "0.10"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+rcgen = "0.14"
+
+[profile.release]
+opt-level = "s"
+lto = true
