@@ -7,7 +7,7 @@
 	"type": "module",
 	"main": "./js/index.mjs",
 	"scripts": {
-		"wasm:build": "cargo build --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir pkg target/wasm32-unknown-unknown/release/relay_button_attest.wasm && wasm-bindgen --target nodejs --out-dir pkg-node target/wasm32-unknown-unknown/release/relay_button_attest.wasm",
+		"wasm:build": "cargo build --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir pkg target/wasm32-unknown-unknown/release/relay_button_attest.wasm && wasm-bindgen --target nodejs --out-dir pkg-node target/wasm32-unknown-unknown/release/relay_button_attest.wasm && node -e \"require('fs').writeFileSync('pkg-node/package.json', JSON.stringify({ type: 'commonjs' }))\"",
 		"wasm:test": "cargo test && node --test ./test/*.test.mjs"
 	}
 }

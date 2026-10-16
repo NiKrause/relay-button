@@ -76,6 +76,8 @@ jobs:
           cargo build --target wasm32-unknown-unknown --release
           wasm-bindgen --target web --out-dir pkg target/wasm32-unknown-unknown/release/relay_button_attest.wasm
           wasm-bindgen --target nodejs --out-dir pkg-node target/wasm32-unknown-unknown/release/relay_button_attest.wasm
+          # The Node bindings are CommonJS; the package itself is "type": "module".
+          echo '{"type":"commonjs"}' > pkg-node/package.json
           ls -l pkg/relay_button_attest_bg.wasm
 
       - name: Test (cargo, then the WASM in Node)
