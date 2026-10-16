@@ -48,6 +48,13 @@ export interface DeployPlan {
   memoryMiB: number;
   seconds: number;
   channel: string;
+  /**
+   * Channel of the relay bootstrap posts. Not `channel`: that one carries the
+   * INSTANCE, port-forward and retention records, while browsers read
+   * bootstrap posts from DEFAULT_ALEPH_BOOTSTRAP_CHANNEL unless told otherwise.
+   * Empty means that default.
+   */
+  bootstrapChannel: string;
   instanceCustomDomain: string;
   waitAttempts: number;
   waitDelayMs: number;
@@ -321,6 +328,7 @@ export function parseDeployPlan(
     memoryMiB: integerEnv("ALEPH_VM_MEMORY_MIB", 1024, env),
     seconds: integerEnv("ALEPH_VM_SECONDS", 30, env),
     channel: optionalEnv("ALEPH_VM_CHANNEL", "TEST", env),
+    bootstrapChannel: optionalEnv("ALEPH_VM_BOOTSTRAP_CHANNEL", "", env).trim(),
     instanceCustomDomain: optionalEnv(
       "ALEPH_VM_INSTANCE_CUSTOM_DOMAIN",
       "",

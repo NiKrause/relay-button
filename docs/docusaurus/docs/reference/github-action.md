@@ -73,6 +73,11 @@ Guest access and lifecycle:
 - `required_ports_json`
 - `confidential`, `luks_passphrase` (see [Confidential deploys](#confidential-deploys))
 
+`channel` carries the INSTANCE, port-forward and retention records. Relay
+bootstrap posts go to `bootstrap_channel` instead, empty by default, which
+means the channel browsers read (`simple-todo`). Publishing, the visibility
+check and the reconcile of older registrations all use that one channel.
+
 `required_ports_json` must be a JSON array of structured objects such as:
 
 ```json

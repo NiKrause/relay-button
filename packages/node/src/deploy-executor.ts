@@ -27,7 +27,10 @@ import {
   waitForSetupEndpoint,
   waitForVmRuntime,
 } from "../../core/src/index.ts";
-import { signRelayBootstrapAuthorization } from "../../aleph-bootstrap/src/index.ts";
+import {
+  DEFAULT_ALEPH_BOOTSTRAP_CHANNEL,
+  signRelayBootstrapAuthorization,
+} from "../../aleph-bootstrap/src/index.ts";
 import type {
   CrnRecord,
   DeploymentInspectionResult,
@@ -507,6 +510,10 @@ async function runDeployPlan(
     dependencies.sleep ?? ((ms) => sleep(ms).then(() => undefined));
   const log = dependencies.log ?? ((message: string) => console.log(message));
   const alephCli = dependencies.alephCli ?? runAlephCli(plan.alephCli);
+  // Publish, wait for and reconcile bootstrap posts in one channel: the one
+  // readers use. Passing plan.channel to the wait alone made every deploy
+  // with channel != the bootstrap default report "did not become visible".
+  const bootstrapChannel = plan.bootstrapChannel || DEFAULT_ALEPH_BOOTSTRAP_CHANNEL;
   if (plan.confidential && !plan.luksPassphrase) {
     throw new Error(
       "A confidential deployment needs the LUKS passphrase of its encrypted rootfs (luks_passphrase).",
@@ -1382,6 +1389,7 @@ async function runDeployPlan(
               hasher,
               fetch: fetchImpl,
               apiHost: plan.apiHost,
+              channel: bootstrapChannel,
               peerId: metadata.peer_id,
               multiaddrs: metadata.probe_multiaddrs,
               browserMultiaddrs: metadata.browser_bootstrap_multiaddrs,
@@ -1402,7 +1410,7 @@ async function runDeployPlan(
               peerId: metadata.peer_id,
               fetch: fetchImpl,
               apiHost: plan.apiHost,
-              channel: plan.channel,
+              channel: bootstrapChannel,
               attempts: 12,
               delayMs: 2500,
               sleep: sleepImpl,
@@ -1420,7 +1428,7 @@ async function runDeployPlan(
                 hasher,
                 fetch: fetchImpl,
                 apiHost: plan.apiHost,
-                channel: plan.channel,
+                channel: bootstrapChannel,
                 profile: plan.profile,
                 ownerAddress: bootstrapOwnerIdentity?.address,
                 ownerSigner: bootstrapOwnerIdentity?.signer,
