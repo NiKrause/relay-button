@@ -3,8 +3,9 @@
 #
 # Aleph's measured init unlocks the LUKS rootfs, chroots into it and runs this
 # file. It is not PID 1, so systemd cannot run; docker-systemctl-replacement
-# (installed as /usr/bin/systemctl) starts the enabled units instead and keeps
-# answering the `systemctl` and `journalctl` calls the profile scripts make.
+# starts the enabled units instead and keeps answering the `systemctl` and
+# `journalctl` calls the profile scripts make; confidential-systemctl.py
+# (/usr/bin/systemctl) adds the .timer units it does not run.
 # This script must stay in the foreground: when it exits, the VM powers off.
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -32,4 +33,5 @@ fi
 ls /etc/ssh/ssh_host_*_key >/dev/null 2>&1 || ssh-keygen -A > /dev/null 2>&1
 
 echo "confidential-init: $(uname -r), starting the enabled units" > /dev/console
-exec /usr/bin/python3 /usr/bin/systemctl init
+/usr/bin/python3 /usr/bin/systemctl __start-enabled-timers
+exec /usr/bin/python3 /usr/lib/confidential/systemctl3.py init

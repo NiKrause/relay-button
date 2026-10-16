@@ -13,7 +13,7 @@ a plain ext4 that `aleph instance create --confidential --encrypt-rootfs` (or
 | Change | Why |
 | --- | --- |
 | `/sbin/init` → `confidential-init.sh` | a regular file that stays in the foreground: mounts `/run`, devpts and cgroup2, grows the filesystem (`EXT4_IOC_RESIZE_FS`, since `resize2fs` refuses in the chroot), makes SSH host keys on first boot, then runs `systemctl init` |
-| `systemctl`, `journalctl` → [docker-systemctl-replacement](https://github.com/gdraheim/docker-systemctl-replacement) (pinned, checksummed) | starts the enabled units and keeps answering the `systemctl` / `journalctl` calls the profile scripts make, so the profile itself does not change |
+| `systemctl`, `journalctl` → [docker-systemctl-replacement](https://github.com/gdraheim/docker-systemctl-replacement) (pinned, checksummed) behind `confidential-systemctl.py` | starts the enabled units and keeps answering the `systemctl` / `journalctl` calls the profile scripts make, so the profile itself does not change; the wrapper runs `.timer` units (OnBootSec / OnActiveSec, then OnUnitActiveSec, with RandomizedDelaySec), which the replacement does not |
 | cloud-init, networkd, resolved, timesyncd, getty, … off | the measured init already set up network and DNS |
 | root's `authorized_keys` from the caller, host keys removed | an encrypted rootfs cannot be provisioned from outside; host keys exist only inside it |
 | no kernel, modules, docs, locales, apt caches | the guest runs the runtime's measured kernel; the image should stay small |
@@ -30,7 +30,7 @@ orbitdb-relay is 1.7 GiB plain today; slimming it is #161.
 
 ## Known gaps
 
-- The systemd replacement does not run `.timer` units, so periodic jobs (the
-  bootstrap record refresh) do not fire yet.
-- The deploy action does not have a confidential mode yet: the smoke workflow
-  runs the profile's configure step itself over SSH, with test ports.
+- Timers are approximated: no OnCalendar, no Persistent catch-up across a
+  reboot (an encrypted instance re-waits for its passphrase after one anyway).
+- `aleph-vm-deploy` takes `confidential: true` with an encrypted rootfs from
+  `.github/actions/aleph-confidential-rootfs`.
