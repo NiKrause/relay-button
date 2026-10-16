@@ -12,6 +12,7 @@ import type {
 import type { CrnSource, CrnSourcePreference } from '../../../browser/src/aleph-api.ts'
 import type { DeploymentProgressEvent } from '../../../shared-types/src/deployment.ts'
 import type { FabCorner } from './fab-position'
+import type { AttestWasm } from "../../../browser/src/confidential.ts";
 
 export type SponsorRelayHealthTone = 'ok' | 'caution' | 'error' | 'idle'
 
@@ -25,6 +26,22 @@ export interface SponsorRelayUcanStoreBootstrapInput {
   maxUserDelegationExpiration: string
   pwaOrigin: string
   serviceOrigin: string
+}
+
+export interface SponsorRelayConfidentialStart {
+  /** STORE item hash of the LUKS-encrypted rootfs (aleph-confidential-rootfs, or the reusable workflow's confidential_rootfs_item_hash). */
+  rootfsItemHash: string
+  /** Its size in MiB, if larger than the manifest's rootfs. */
+  rootfsSizeMiB?: number
+  /** `wss://…/attest` of an attest relay (@le-space/attest-relay). */
+  relayUrl: string
+  /**
+   * Loads the attestation WASM, e.g.
+   * `async () => { const m = await import('@le-space/attest-wasm/pkg/relay_button_attest.js'); await m.default(); return m }`.
+   */
+  loadWasm: () => Promise<AttestWasm>
+  /** An SNP instance runtime by name (vm-images); the network's default if absent. */
+  runtimeName?: string
 }
 
 export interface SponsorRelayProps {
@@ -51,10 +68,17 @@ export interface SponsorRelayProps {
    * Ask for a confidential VM (AMD SEV-SNP): only nodes that report SEV-SNP and
    * run a patched aleph-vm are offered, and pricing uses Aleph's
    * `instance_confidential` entry. The person can switch it in the panel too.
-   * A start is refused until the measured launch and attestation exist
-   * (relay-button#154).
+   * Starting one needs `confidentialStart`; without it the panel refuses.
    */
   confidential?: boolean
+  /**
+   * What a confidential start needs (relay-button#169): the encrypted rootfs,
+   * an attest relay, and the attestation WASM. The browser computes the
+   * launch measurements for the connected wallet, signs the INSTANCE with
+   * them, verifies the guest through the relay against AMD, and unlocks it
+   * with the passphrase the person enters, signed by their wallet.
+   */
+  confidentialStart?: SponsorRelayConfidentialStart
   schedulerApiHost?: string
   twoN6ApiHost?: string
   /**
@@ -181,6 +205,10 @@ export interface SponsorRelayState {
   tierId: string
   /** Confidential VM requested (AMD SEV-SNP); see the `confidential` prop. */
   confidential: boolean
+  /** Whether the host set `confidentialStart`, so a confidential VM can start. */
+  confidentialStartAvailable: boolean
+  /** The encrypted rootfs's passphrase, held only until the unlock; never stored. */
+  confidentialPassphrase: string
   showAdvanced: boolean
   showInstances: boolean
   showPasteManifest: boolean

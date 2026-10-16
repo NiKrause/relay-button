@@ -21,6 +21,8 @@ export let apiHost = undefined
 export let apiHosts = undefined
   export let crnListUrl = undefined
   export let crnSource = undefined
+  export let confidential = undefined
+  export let confidentialStart = undefined
   export let schedulerApiHost = undefined
   export let twoN6ApiHost = undefined
   export let position = 'bottom-right'
@@ -40,6 +42,8 @@ export let apiHosts = undefined
   apiHosts,
     crnListUrl,
     crnSource,
+    confidential,
+    confidentialStart,
     schedulerApiHost,
     twoN6ApiHost
   })
@@ -414,6 +418,23 @@ export let apiHosts = undefined
           />
           Confidential VM (AMD SEV-SNP)
         </label>
+        {#if state.confidential}
+          {#if state.confidentialStartAvailable}
+            <input
+              class="crn-select"
+              type="password"
+              autocomplete="off"
+              aria-label="Rootfs passphrase"
+              placeholder="Passphrase of the encrypted rootfs"
+              value={state.confidentialPassphrase}
+              disabled={state.busy.deploying}
+              on:input={(event) => controller.setConfidentialPassphrase(event.currentTarget.value)}
+            />
+            <small>Sent only to the attested VM, after your wallet signs the unlock.</small>
+          {:else}
+            <small>This site has not set up confidential starts.</small>
+          {/if}
+        {/if}
         <select
           class="crn-select"
           aria-label="Select CRN"

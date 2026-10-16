@@ -1425,6 +1425,31 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   Confidential VM (AMD SEV-SNP)
                 </label>
               </div>
+              {state.confidential ? (
+                state.confidentialStartAvailable ? (
+                  <div>
+                    <input
+                      style={fieldStyle}
+                      type="password"
+                      autoComplete="off"
+                      aria-label="Rootfs passphrase"
+                      placeholder="Passphrase of the encrypted rootfs"
+                      value={state.confidentialPassphrase}
+                      disabled={state.busy.deploying}
+                      onChange={(event) =>
+                        controller.setConfidentialPassphrase(event.currentTarget.value)
+                      }
+                    />
+                    <small>
+                      Sent only to the attested VM, after your wallet signs the unlock.
+                    </small>
+                  </div>
+                ) : (
+                  <div>
+                    <small>This site has not set up confidential starts.</small>
+                  </div>
+                )
+              ) : null}
               <div>
                 <select
                   style={fieldStyle}

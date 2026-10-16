@@ -1265,3 +1265,75 @@ test("describeThrown says what was thrown, including when it is not an Error", (
   assert.equal(describeThrown("plain string"), "plain string");
   assert.equal(describeThrown(undefined), "undefined");
 });
+
+function readyForDeploy(controller, extra = {}) {
+  controller.patch({
+    wallet: { connected: true, address: "0x1234000000000000000000000000000000000000", chainId: "0x1", isMetaMask: true },
+    manifest: { profile: "orbitdb-relay", version: "test-v1", rootfsItemHash: "f".repeat(64), rootfsSizeMiB: 1024, createdAt: "2026-06-18T00:00:00.000Z", requiredPortForwards: [] },
+    rootfsHealth: { tone: "ok", label: "deployable", detail: "ok" },
+    pricingSummary: {
+      pricing: { compute_unit: { vcpus: 1, memory_mib: 2048, disk_mib: 20480 }, price: { compute_unit: 1 }, tiers: [{ id: "tiny", compute_units: 1 }] },
+      tier: { id: "tiny", compute_units: 1 },
+      requiredCredits: 1,
+      availableCredits: 100,
+      vcpus: 1,
+      memoryMiB: 2048,
+      diskMiB: 20480,
+    },
+    crns: [{ hash: "c".repeat(64), name: "SNP One", address: "https://crn.example.com", tee: { sev_snp: {} }, version: "2.1.4" }],
+    selectedCrn: { hash: "c".repeat(64), name: "SNP One", address: "https://crn.example.com" },
+    confidential: true,
+    ...extra,
+  });
+}
+
+test("a confidential start needs the site's confidentialStart", async () => {
+  const controller = createSponsorRelayController({ apiHost: "https://api.aleph.im", confidential: true });
+  assert.equal(controller.getState().confidentialStartAvailable, false);
+  readyForDeploy(controller);
+  await controller.deploy();
+  assert.equal(controller.getState().busy.deploying, false);
+  assert.match(controller.getState().errorText, /has not set up confidential starts/);
+});
+
+test("a confidential start needs the rootfs passphrase", async () => {
+  const controller = createSponsorRelayController({
+    apiHost: "https://api.aleph.im",
+    confidential: true,
+    confidentialStart: { rootfsItemHash: "e".repeat(64), relayUrl: "wss://relay.example/attest", loadWasm: async () => assert.fail("must not load before the passphrase") },
+  });
+  assert.equal(controller.getState().confidentialStartAvailable, true);
+  readyForDeploy(controller);
+  await controller.deploy();
+  assert.match(controller.getState().errorText, /Enter the passphrase/);
+});
+
+test("a confidential start loads the attestation WASM before anything is signed, and forgets the passphrase on failure", async () => {
+  let loaded = 0;
+  const controller = createSponsorRelayController({
+    apiHost: "https://api.aleph.im",
+    confidential: true,
+    confidentialStart: {
+      rootfsItemHash: "e".repeat(64),
+      relayUrl: "wss://relay.example/attest",
+      loadWasm: async () => {
+        loaded += 1;
+        throw new Error("the attestation module did not load");
+      },
+    },
+  });
+  readyForDeploy(controller);
+  controller.setConfidentialPassphrase("correct horse");
+  assert.equal(controller.getState().confidentialPassphrase, "correct horse");
+  const signed = [];
+  globalThis.ethereum = { request: async (call) => (signed.push(call.method), "0x") };
+  try {
+    await controller.deploy();
+  } finally {
+    delete globalThis.ethereum;
+  }
+  assert.equal(loaded, 1);
+  assert.deepEqual(signed.filter((method) => method === "personal_sign"), [], "nothing is signed before the launch is measured");
+  assert.match(controller.getState().errorText, /the attestation module did not load/);
+  assert.equal(controller.getState().confidentialPassphrase, "");
+});

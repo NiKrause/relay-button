@@ -73,6 +73,12 @@ import { createDeploymentProgressEmitter } from "./events";
 import { buildSshCommand } from "./format";
 import { resolveManifestSource } from "./manifest-source";
 import { connectWallet, personalSign, watchWallet } from "./wallet-controller";
+import {
+  confidentialTrustedExecution,
+  unlockInstance,
+  type AttestWasm,
+  type SnpTrustedExecution,
+} from "../../../browser/src/confidential.ts";
 import type {
   UcanStoreBootstrapPackage,
   UcanStoreBootstrapValidationResult,
@@ -410,6 +416,8 @@ function defaultState(props: SponsorRelayProps = {}): SponsorRelayState {
     ucanStoreBootstrap: defaultUcanStoreBootstrapInput(props),
     tierId: DEFAULT_TIER_ID,
     confidential: props.confidential ?? false,
+    confidentialStartAvailable: Boolean(props.confidentialStart),
+    confidentialPassphrase: "",
     showAdvanced: false,
     showInstances: props.showInstances ?? true,
     showPasteManifest: Boolean(props.manifestJson?.trim()),
@@ -2695,6 +2703,14 @@ export class SponsorRelayController {
     await this.refresh();
   }
 
+  /**
+   * The encrypted rootfs's passphrase for a confidential start. Kept in
+   * memory only until the unlock, then cleared; never persisted.
+   */
+  setConfidentialPassphrase(passphrase: string): void {
+    this.patch({ confidentialPassphrase: passphrase });
+  }
+
   /** Pin a specific CRN as the first deploy attempt (null = automatic). */
   selectCrn(hash: string | null): void {
     if (!hash) {
@@ -3026,15 +3042,21 @@ export class SponsorRelayController {
       this.patch({ errorText: "Connect MetaMask before deploying." });
       return;
     }
+    const confidentialStart = this.state.confidential ? this.props.confidentialStart ?? null : null;
     if (this.state.confidential) {
-      // Starting a VM that looks confidential but whose launch nobody checked
-      // would be worse than not starting: refuse until the measured launch and
-      // attestation exist.
-      this.patch({
-        errorText:
-          "A confidential start needs a measured launch and attestation, which this button cannot do yet (relay-button#154). The node list already shows which nodes qualify.",
-      });
-      return;
+      // Starting a VM that looks confidential but whose launch nobody checks
+      // would be worse than not starting.
+      if (!confidentialStart) {
+        this.patch({
+          errorText:
+            "This site has not set up confidential starts (confidentialStart: encrypted rootfs, attest relay, attestation WASM).",
+        });
+        return;
+      }
+      if (!this.state.confidentialPassphrase) {
+        this.patch({ errorText: "Enter the passphrase of the encrypted rootfs to start a confidential VM." });
+        return;
+      }
     }
     if (
       !this.state.manifest ||
@@ -3124,6 +3146,44 @@ export class SponsorRelayController {
         );
       }
 
+      // A confidential start pins the launch measurements in the INSTANCE
+      // message. They are computed here for this wallet (the same for every
+      // node attempt), so what is later attested is what this browser decided.
+      let attestWasm: AttestWasm | null = null;
+      let trustedExecution: SnpTrustedExecution | null = null;
+      if (confidentialStart) {
+        this.emitProgress({
+          stage: "preparing-confidential",
+          label: "Preparing the confidential launch",
+          progress: 10,
+          status: "info",
+          detail: "Loading the attestation module.",
+        });
+        attestWasm = await confidentialStart.loadWasm();
+        trustedExecution = await confidentialTrustedExecution({
+          wasm: attestWasm,
+          owner: this.state.wallet.address,
+          vcpus: spec.vcpus,
+          runtimeName: confidentialStart.runtimeName,
+          apiHost: this.client.apiHost,
+          onProgress: ({ detail }) =>
+            this.emitProgress({
+              stage: "preparing-confidential",
+              label: "Preparing the confidential launch",
+              progress: 12,
+              status: "info",
+              detail,
+            }),
+        });
+        this.trace("deploy:confidential-measurements", trustedExecution);
+      }
+      const rootfsItemHash = confidentialStart?.rootfsItemHash ?? this.state.manifest.rootfsItemHash;
+      const rootfsSizeMiB = Math.max(
+        confidentialStart?.rootfsSizeMiB ?? 0,
+        this.state.manifest.rootfsSizeMiB,
+        spec.diskMiB,
+      );
+
       const attemptErrors: string[] = [];
       let lastError: Error | null = null;
 
@@ -3158,15 +3218,13 @@ export class SponsorRelayController {
             address: this.state.wallet.address,
             name: this.state.instanceName.trim(),
             sshPublicKey,
-            rootfsItemHash: this.state.manifest.rootfsItemHash,
-            rootfsSizeMiB: Math.max(
-              this.state.manifest.rootfsSizeMiB,
-              spec.diskMiB,
-            ),
+            rootfsItemHash,
+            rootfsSizeMiB,
             vcpus: spec.vcpus,
             memoryMiB: spec.memoryMiB,
             rootfsVersion: this.state.manifest.version,
             crnHash: candidateCrn.hash,
+            trustedExecution: trustedExecution ?? undefined,
           });
 
           const result = await deploySharedInstance({
@@ -3195,7 +3253,7 @@ export class SponsorRelayController {
           this.lastCompletedDeploymentHash = null;
 
           const inspection = await waitForDeploymentResult(result.itemHash, {
-            rootfsRef: this.state.manifest.rootfsItemHash,
+            rootfsRef: rootfsItemHash,
             apiHost: this.client.apiHost,
             fetch: (url, init) => fetch(url, init),
             attempts: UI_DEPLOY_WAIT_ATTEMPTS,
@@ -3301,6 +3359,41 @@ export class SponsorRelayController {
                 `CRN ${crnDisplayName} did not accept the allocation for ${result.itemHash}: ${notifyResult.reason ?? "allocation notify was not confirmed"}`,
               );
             }
+          }
+
+          if (confidentialStart && attestWasm && trustedExecution) {
+            // Verify the guest against AMD through the attest relay, then
+            // unlock it: the passphrase leaves this browser only over the
+            // attested channel, and only with the wallet's signature. A failed
+            // attestation throws into the per-node failover (forget, next).
+            const unlocked = await unlockInstance({
+              wasm: attestWasm,
+              relayUrl: confidentialStart.relayUrl,
+              crnHash: candidateCrn.hash,
+              instanceItemHash: result.itemHash,
+              trustedExecution,
+              passphrase: this.state.confidentialPassphrase,
+              sign: (payload) => personalSign(this.state.wallet.address as string, payload),
+              onProgress: ({ phase, detail }) =>
+                this.emitProgress({
+                  stage: phase === "unlock" ? "unlocking-guest" : "attesting-guest",
+                  label: phase === "unlock" ? "Unlocking the confidential VM" : "Attesting the confidential VM",
+                  progress: phase === "unlock" ? 89 : 87,
+                  status: "info",
+                  itemHash: result.itemHash,
+                  detail,
+                }),
+            });
+            this.patch({ confidentialPassphrase: "" });
+            this.trace("deploy:confidential-unlocked", unlocked);
+            this.emitProgress({
+              stage: "unlocking-guest",
+              label: "Confidential VM attested and unlocked",
+              progress: 89,
+              status: "success",
+              itemHash: result.itemHash,
+              detail: `Measurement ${unlocked.measurement.slice(0, 16)}…, policy ${unlocked.policy}, TCB bootloader ${unlocked.launchTcb.bootloader} snp ${unlocked.launchTcb.snp} microcode ${unlocked.launchTcb.microcode}.`,
+            });
           }
 
           this.emitProgress({
@@ -3739,6 +3832,7 @@ export class SponsorRelayController {
         error,
       });
       this.patch({
+        confidentialPassphrase: "",
         busy: { deploying: false },
         errorText: message,
         statusText: "Deployment failed",
