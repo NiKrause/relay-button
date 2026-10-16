@@ -13,5 +13,16 @@
 	"devDependencies": {
 		"ethers": "^6.16.0",
 		"@le-space/attest-relay": "workspace:*"
+	},
+	"exports": {
+		".": "./js/index.mjs",
+		"./instance": {
+			"types": "./js/instance.d.mts",
+			"default": "./js/instance.mjs"
+		},
+		"./ratls": "./js/ratls.mjs",
+		"./runtime": "./js/runtime.mjs",
+		"./pkg/*": "./pkg/*",
+		"./package.json": "./package.json"
 	}
 }

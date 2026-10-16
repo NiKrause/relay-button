@@ -17,7 +17,7 @@ import { Wallet } from 'ethers'
 import { attachAttestRelay, resolveAttestationTarget } from '@le-space/attest-relay'
 
 import { pinnedMeasurements } from '../js/index.mjs'
-import { attestGuest, injectSecrets, websocketTransport } from '../js/ratls.mjs'
+import { unlockInstance } from '../js/instance.mjs'
 
 const require = createRequire(import.meta.url)
 const wasm = require('../pkg-node/relay_button_attest.js')
@@ -37,7 +37,6 @@ const mark = (phase) => timings.push({ phase, ms: Date.now() - started })
 const message = await (await fetch(`${API}/api/v0/messages/${vm}`)).json()
 const content = message.message?.content ?? message.content
 const expectedMeasurements = pinnedMeasurements(content)
-const expectedPolicy = content?.environment?.trusted_execution?.policy
 if (expectedMeasurements.length === 0) throw new Error('the INSTANCE message pins no SEV-SNP measurements')
 mark('message')
 
@@ -58,29 +57,21 @@ if (!url) {
   }
 }
 
-let attested = null
-for (let attempt = 1; attempt <= 12 && !attested; attempt += 1) {
-  try {
-    attested = await attestGuest({
-      wasm,
-      transport: websocketTransport(`${url}?crn=${crn}&vm=${vm}`),
-      expectedMeasurements,
-      expectedPolicy,
-    })
-  } catch (error) {
-    // The agent needs a moment after the node starts the VM; a refused
-    // attestation (chain, TCB, binding, pins) is final.
-    if (!/closed|failed|timed out|Bad Gateway|refused/i.test(error.message) || /rejected|bind|measurement|policy|floor|KDS/i.test(error.message)) throw error
-    console.error(`attempt ${attempt}: ${error.message}`)
-    await new Promise((resolve) => setTimeout(resolve, 10_000))
-  }
-}
-if (!attested) throw new Error('the guest did not answer')
-mark('attested')
-console.error(`attested: measurement=${attested.freshVerified.measurement} policy=${attested.freshVerified.policy}`)
-
-const result = await injectSecrets({ wasm, attested, secrets: { luks_passphrase: passphrase }, sign: (payload) => owner.signMessage(payload) })
+const result = await unlockInstance({
+  wasm,
+  relayUrl: url,
+  crnHash: crn,
+  instanceItemHash: vm,
+  // The script reads the pins back from the message; the widget passes the
+  // block it computed itself.
+  trustedExecution: content.environment.trusted_execution,
+  passphrase,
+  sign: (payload) => owner.signMessage(payload),
+  onProgress: ({ phase, detail }) => {
+    console.error(`${phase}: ${detail}`)
+    if (phase === 'unlock') mark('attested')
+  },
+})
 mark('unlocked')
-attested.channel.close()
 close()
-console.log(JSON.stringify({ result, measurement: attested.freshVerified.measurement, policy: attested.freshVerified.policy, launchTcb: attested.freshVerified.launchTcb, timings }))
+console.log(JSON.stringify({ result: { injected: result.injected }, measurement: result.measurement, policy: result.policy, launchTcb: result.launchTcb, timings }))
