@@ -35,6 +35,18 @@ fi
 # never exist outside it.
 ls /etc/ssh/ssh_host_*_key >/dev/null 2>&1 || ssh-keygen -A > /dev/null 2>&1
 
+# Keys injected with the passphrase over the attested channel (the widget
+# sends the deployer's key with its bootstrap token there, since nothing reads
+# the INSTANCE message's authorized_keys here). Key lines only, no options.
+if [ -s /tmp/secrets/authorized_keys ]; then
+  mkdir -p -m 700 /root/.ssh
+  touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
+  grep -E '^(ssh-(rsa|ed25519)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com) [A-Za-z0-9+/]+={0,3}( [^[:cntrl:]]*)?$' /tmp/secrets/authorized_keys \
+    | while read -r line; do
+        grep -qxF "$line" /root/.ssh/authorized_keys || printf '%s\n' "$line" >> /root/.ssh/authorized_keys
+      done
+fi
+
 echo "confidential-init: $(uname -r), starting the enabled units" > /dev/console
 /usr/bin/python3 /usr/bin/systemctl __start-enabled-timers
 exec /usr/bin/python3 /usr/lib/confidential/systemctl3.py init

@@ -52,6 +52,8 @@ export function unlockInstance(args: {
   instanceItemHash: string
   trustedExecution: SnpTrustedExecution
   passphrase: string
+  /** More secrets for the same signed injection, e.g. `authorized_keys`. */
+  secrets?: Record<string, string>
   /** EIP-191 personal_sign by the instance owner. */
   sign: (payload: string) => Promise<string>
   attempts?: number

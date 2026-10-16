@@ -3373,6 +3373,9 @@ export class SponsorRelayController {
               instanceItemHash: result.itemHash,
               trustedExecution,
               passphrase: this.state.confidentialPassphrase,
+              // The rootfs ignores the INSTANCE's authorized_keys (no
+              // cloud-init), so the key, with the bootstrap token, comes here.
+              secrets: { authorized_keys: `${sshPublicKey}\n` },
               sign: (payload) => personalSign(this.state.wallet.address as string, payload),
               onProgress: ({ phase, detail }) =>
                 this.emitProgress({
