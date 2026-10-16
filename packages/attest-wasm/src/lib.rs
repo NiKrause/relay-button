@@ -94,6 +94,20 @@ pub fn parse_product(name: &str) -> Result<AmdProduct, VerifyError> {
     }
 }
 
+/// The AMD product line from the report's CPUID family and model (reports
+/// version 3 and later, SNP firmware 1.55+): Zen 3 Milan, Zen 4 Genoa (and its
+/// Bergamo/Siena parts), Zen 5 Turin. `None` for older reports, which then
+/// need the product named.
+pub fn detect_product(report: &[u8]) -> Option<AmdProduct> {
+    let parsed = SnpReport::from_bytes(report).ok()?;
+    match (parsed.cpuid_fam_id?, parsed.cpuid_mod_id?) {
+        (0x19, 0x00..=0x0f) => Some(AmdProduct::Milan),
+        (0x19, 0x10..=0x1f | 0xa0..=0xaf) => Some(AmdProduct::Genoa),
+        (0x1a, _) => Some(AmdProduct::Turin),
+        _ => None,
+    }
+}
+
 fn parse_report(report: &[u8]) -> Result<SnpReport, VerifyError> {
     SnpReport::from_bytes(report).map_err(|e| VerifyError::Parse(e.to_string()))
 }
@@ -194,6 +208,13 @@ fn verify_with_floor(
 fn to_js<T: Serialize>(value: &T) -> Result<JsValue, JsError> {
     let json = serde_json::to_string(value).map_err(|e| JsError::new(&e.to_string()))?;
     js_sys::JSON::parse(&json).map_err(|_| JsError::new("could not hand the result to JavaScript"))
+}
+
+/// `detectProduct(report)`: "Milan", "Genoa", "Turin", or undefined when the
+/// report does not say (older firmware).
+#[wasm_bindgen(js_name = detectProduct)]
+pub fn detect_product_js(report: &[u8]) -> Option<String> {
+    detect_product(report).map(|product| product.kds_name().to_string())
 }
 
 /// `reportInfo(report, product)`: chip, TCB, claims and the KDS URLs to fetch.
@@ -332,6 +353,19 @@ mod tests {
         let info = info();
         let err = verify(&report(), AmdProduct::Milan, VCEK, CRL, NOW, &[info.measurement], None, None).unwrap_err();
         assert!(err.to_string().contains("below floor"), "{err}");
+    }
+
+    #[test]
+    fn detects_the_product_line_from_cpuid_when_the_report_has_it() {
+        // The aleph-rs fixture is a version 2 report (no CPUID): the caller
+        // must name the product; detection must not guess.
+        let report = report();
+        let parsed = SnpReport::from_bytes(&report).unwrap();
+        match (parsed.cpuid_fam_id, parsed.cpuid_mod_id) {
+            (Some(_), Some(_)) => assert_eq!(detect_product(&report), Some(AmdProduct::Milan)),
+            _ => assert_eq!(detect_product(&report), None),
+        }
+        assert_eq!(detect_product(b"not a report"), None);
     }
 
     #[test]

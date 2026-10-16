@@ -14,7 +14,7 @@
  * @param {object} args
  * @param {{ reportInfo: Function, verifyReport: Function }} args.wasm
  * @param {Uint8Array} args.report raw SNP report bytes
- * @param {'Milan'|'Genoa'|'Turin'} args.product AMD product line of the node's CPU
+ * @param {'Milan'|'Genoa'|'Turin'} [args.product] AMD product line; read from the report when omitted
  * @param {string[]} args.expectedMeasurements launch digests the INSTANCE message pins (hex)
  * @param {string|number|bigint} [args.expectedPolicy] guest policy the message pins
  * @param {[number, number, number, number]} [args.minTcb] network TCB floor [bootloader, tee, snp, microcode]
@@ -34,6 +34,8 @@ export async function verifyAttestation({
   if (!Array.isArray(expectedMeasurements) || expectedMeasurements.length === 0) {
     throw new Error('verifyAttestation needs the launch measurements the INSTANCE message pins')
   }
+  product = product ?? wasm.detectProduct(report)
+  if (!product) throw new Error('the report does not name its AMD product line (older firmware); pass product')
   const info = wasm.reportInfo(report, product)
   const [vcek, crl] = await Promise.all([
     fetchBytes(fetchImpl, info.vcekUrl, 'VCEK'),

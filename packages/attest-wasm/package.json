@@ -11,6 +11,7 @@
 		"wasm:test": "cargo test && cargo test write_ratls_fixture -- --ignored && node --test ./test/*.test.mjs"
 	},
 	"devDependencies": {
-		"ethers": "^6.16.0"
+		"ethers": "^6.16.0",
+		"@le-space/attest-relay": "workspace:*"
 	}
 }
