@@ -8,6 +8,7 @@
 //! policy against what the INSTANCE message pinned.
 
 pub mod attest;
+pub mod ratls;
 
 use serde::Serialize;
 use sev::firmware::guest::AttestationReport as SnpReport;
@@ -338,4 +339,102 @@ mod tests {
         assert!(parse_product("Naples").is_err());
         assert_eq!(parse_product("genoa").unwrap(), AmdProduct::Genoa);
     }
+}
+
+/// `new RaTlsSession(expectedMeasurements, expectedPolicy?)`: a TLS client to
+/// a guest's attestation agent that runs on bytes the caller carries (see
+/// `ratls`). Move `takeOutgoing()` to the guest and feed what comes back to
+/// `pushIncoming()`; once `isHandshaking()` is false, `certReport()` and
+/// `servedPublicKey()` hold what the handshake bound, and application data
+/// flows through `writePlaintext()` / `takePlaintext()`.
+#[wasm_bindgen]
+pub struct RaTlsSession {
+    inner: ratls::RaTlsClient,
+}
+
+fn measurements_from_hex(pins: &[String]) -> Result<Vec<[u8; 48]>, JsError> {
+    pins.iter()
+        .map(|pin| {
+            let bytes = hex::decode(pin.trim().trim_start_matches("0x"))
+                .map_err(|_| JsError::new(&format!("measurement {pin:?} is not hex")))?;
+            <[u8; 48]>::try_from(bytes.as_slice())
+                .map_err(|_| JsError::new(&format!("measurement {pin:?} is not 48 bytes")))
+        })
+        .collect()
+}
+
+fn policy_from_text(policy: Option<String>) -> Result<Option<u64>, JsError> {
+    match policy.as_deref().map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(text) => match text.strip_prefix("0x") {
+            Some(hex) => u64::from_str_radix(hex, 16),
+            None => text.parse::<u64>(),
+        }
+        .map(Some)
+        .map_err(|_| JsError::new(&format!("policy {text:?} is not a number"))),
+    }
+}
+
+#[wasm_bindgen]
+impl RaTlsSession {
+    #[wasm_bindgen(constructor)]
+    pub fn new(expected_measurements: Vec<String>, expected_policy: Option<String>) -> Result<RaTlsSession, JsError> {
+        let pins = measurements_from_hex(&expected_measurements)?;
+        let policy = policy_from_text(expected_policy)?;
+        let inner = ratls::RaTlsClient::new(pins, policy).map_err(|e| JsError::new(&e))?;
+        Ok(RaTlsSession { inner })
+    }
+
+    #[wasm_bindgen(js_name = takeOutgoing)]
+    pub fn take_outgoing(&mut self) -> Result<Vec<u8>, JsError> {
+        self.inner.take_outgoing().map_err(|e| JsError::new(&e))
+    }
+
+    #[wasm_bindgen(js_name = pushIncoming)]
+    pub fn push_incoming(&mut self, bytes: &[u8]) -> Result<(), JsError> {
+        self.inner.push_incoming(bytes).map_err(|e| JsError::new(&e))
+    }
+
+    #[wasm_bindgen(js_name = isHandshaking)]
+    pub fn is_handshaking(&self) -> bool {
+        self.inner.is_handshaking()
+    }
+
+    #[wasm_bindgen(js_name = certReport)]
+    pub fn cert_report(&self) -> Option<Vec<u8>> {
+        self.inner.captured().map(|captured| captured.report)
+    }
+
+    #[wasm_bindgen(js_name = servedPublicKey)]
+    pub fn served_public_key(&self) -> Option<Vec<u8>> {
+        self.inner.captured().map(|captured| captured.public_key)
+    }
+
+    #[wasm_bindgen(js_name = writePlaintext)]
+    pub fn write_plaintext(&mut self, data: &[u8]) -> Result<(), JsError> {
+        self.inner.write_plaintext(data).map_err(|e| JsError::new(&e))
+    }
+
+    #[wasm_bindgen(js_name = takePlaintext)]
+    pub fn take_plaintext(&mut self) -> Result<Vec<u8>, JsError> {
+        self.inner.take_plaintext().map_err(|e| JsError::new(&e))
+    }
+
+    pub fn close(&mut self) {
+        self.inner.close();
+    }
+}
+
+/// `verifyFreshBinding(report, servedPublicKey, nonce)`: throws unless the
+/// fresh report's signed report_data binds this TLS key and nonce.
+#[wasm_bindgen(js_name = verifyFreshBinding)]
+pub fn verify_fresh_binding_js(report: &[u8], served_public_key: &[u8], nonce: &[u8]) -> Result<(), JsError> {
+    ratls::verify_fresh_binding(report, served_public_key, nonce).map_err(|e| JsError::new(&e))
+}
+
+/// `injectSecretPayload(servedPublicKey, canonicalSecretsJson)`: the message
+/// the instance owner signs with `personal_sign` to unlock the guest.
+#[wasm_bindgen(js_name = injectSecretPayload)]
+pub fn inject_secret_payload_js(served_public_key: &[u8], canonical_secrets_json: &str) -> String {
+    ratls::inject_secret_payload(served_public_key, canonical_secrets_json)
 }
