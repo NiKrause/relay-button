@@ -156,7 +156,8 @@ export async function attestAndUnlock(args: {
   const dir = await mkdtemp(path.join(tmpdir(), "rb-confidential-"));
   try {
     const passphraseFile = path.join(dir, "luks.pass");
-    await writeFile(passphraseFile, args.luksPassphrase, { mode: 0o600 });
+    // Without CR/LF, exactly as aleph-confidential-rootfs encrypted with it.
+    await writeFile(passphraseFile, args.luksPassphrase.replace(/[\r\n]/gu, ""), { mode: 0o600 });
     await args.run(
       ["instance", "unlock", args.itemHash, "--crn", args.crnHash, "--passphrase-file", passphraseFile, "--chain", "eth"],
       { env: cliEnv(args.privateKey), timeoutMs: 2 * 60 * 1000 },
