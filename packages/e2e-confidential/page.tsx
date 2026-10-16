@@ -10,6 +10,8 @@ const relayUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <SponsorRelayFab
+    // The controller traces each step to the console; the spec reads them.
+    debug
     manifestJson={JSON.stringify(config.manifest)}
     crnSource="aggregate"
     confidential

@@ -62,17 +62,16 @@ test.afterAll(async () => {
 })
 
 test('a confidential relay starts from the widget: attested, unlocked, registered', async ({ page, relayLifecycle }) => {
-  forwardBrowserConsole(page, { label: 'browser', filter: /error|warn|attest|unlock|confidential|relay/i })
+  forwardBrowserConsole(page, { label: 'browser', filter: /error|warn|attest|unlock|confidential|failover|CRN/i })
+  // The page runs the widget with debug on, so the controller's trace says
+  // when the guest was attested and unlocked (the progress line is not text
+  // on the page).
+  let unlocked = false
+  page.on('console', (message) => {
+    if (message.text().includes('deploy:confidential-unlocked')) unlocked = true
+  })
   await installEip1193WalletMock(page.context(), account)
   await page.goto('/')
-
-  // The progress line is transient; watch for it from the start.
-  const unlocked = page
-    .getByText('Confidential VM attested and unlocked')
-    .first()
-    .waitFor({ state: 'attached', timeout: 40 * 60_000 })
-    .then(() => updateRelayEvidenceStep(evidence, 'unlock', 'passed'))
-  unlocked.catch(() => {})
 
   const relay = await relayLifecycle.provision(page, {
     instanceName,
@@ -80,8 +79,10 @@ test('a confidential relay starts from the widget: attested, unlocked, registere
     driver: new ConfidentialDriver(page),
     onPhase: (phase, detail) => console.log(`[e2e] ${phase}${detail ? `: ${detail}` : ''}`),
   })
-  await unlocked
+  updateRelayEvidenceStep(evidence, 'unlock', unlocked ? 'passed' : 'failed')
   updateRelayEvidenceStep(evidence, 'register', 'passed', relay.peerId)
+
+  expect(unlocked, 'the controller traced deploy:confidential-unlocked').toBe(true)
 
   expect(relay.instanceHash).toMatch(/^[0-9a-f]{64}$/)
   expect(relay.peerId).toBeTruthy()
