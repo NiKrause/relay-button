@@ -37,6 +37,16 @@ on:
         required: false
         default: ""
         type: string
+      vm_vcpus:
+        description: vCPUs of the deployed VM
+        required: false
+        default: "1"
+        type: string
+      vm_memory_mib:
+        description: Memory of the deployed VM in MiB (a confidential VM needs more; see the reusable workflow reference)
+        required: false
+        default: "1024"
+        type: string
       rootfs_contract_path:
         description: Path to the rootfs contract in this repository
         required: true
@@ -82,6 +92,8 @@ jobs:
       confidential: ${{ inputs.confidential }}
       confidential_rootfs_item_hash: ${{ inputs.confidential_rootfs_item_hash }}
       vm_ssh_public_key: ${{ inputs.vm_ssh_public_key }}
+      vm_vcpus: ${{ inputs.vm_vcpus }}
+      vm_memory_mib: ${{ inputs.vm_memory_mib }}
       rootfs_contract_path: ${{ inputs.rootfs_contract_path }}
       project_repository: ${{ inputs.project_repository }}
       project_ref: ${{ inputs.project_ref }}
