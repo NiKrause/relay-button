@@ -22,10 +22,28 @@ INSTANCE message pinned and the guest policy is the pinned one.
 expectedMeasurements, expectedPolicy, minTcb })` fetches the certificates and
 verifies.
 
-Not here yet (see #169): the RA-TLS client that takes the report out of the
-guest's TLS certificate over a WebSocket relay, and the secret injection.
+`js/ratls.mjs` adds the connection to the guest (step 2 of #169). The TLS
+client is rustls in WASM (`RaTlsSession`, RustCrypto provider), sans-IO: the
+page carries its records over a transport, in the browser a WebSocket to a
+relay that forwards them to the guest's attestation port and sees ciphertext
+only.
+
+- `attestGuest({ wasm, transport, product, expectedMeasurements, … })`: the
+  handshake checks that the report in the guest's certificate is bound to its
+  TLS key (`SHA-384("aleph-attest-tls-key-v1\0" ‖ key)`) and carries a pinned
+  measurement and the pinned policy; the certificate report is verified
+  against AMD; a fresh report for a random nonce is fetched over the same
+  channel, verified against AMD and checked to bind the key and the nonce.
+- `injectSecrets({ wasm, attested, secrets, sign })`: the instance owner signs
+  (EIP-191 `personal_sign`) `aleph-snp-inject-secret-v1|SHA-384(key)|SHA-256(secrets)`
+  and the secrets go over the attested channel to `/confidential/inject-secret`.
+- `websocketTransport(url)`: the browser transport.
+
+Domain tags, report_data constructions and the injection payload follow
+aleph-rs `ratls.rs` / `owner_auth.rs` and aleph-vm's agent byte for byte. Not
+here yet (#169): the relay itself and the widget.
 
 ```bash
 pnpm --filter @le-space/attest-wasm wasm:build   # needs rustup target wasm32-unknown-unknown and wasm-bindgen-cli 0.2.129
-pnpm --filter @le-space/attest-wasm wasm:test    # cargo tests (aleph-rs's and ours) + the WASM in Node
+pnpm --filter @le-space/attest-wasm wasm:test    # cargo tests, the RA-TLS test certificate, then the WASM in Node
 ```

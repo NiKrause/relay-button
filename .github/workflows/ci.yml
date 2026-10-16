@@ -66,10 +66,20 @@ jobs:
             cargo install wasm-bindgen-cli --version "$version" --locked --force
           fi
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
           node-version: 24.x
+          cache: pnpm
+
+      - name: Install the package's Node dependencies
+        working-directory: .
+        run: pnpm install --frozen-lockfile --prefer-offline --filter @le-space/attest-wasm
 
       - name: Build
         run: |
@@ -83,6 +93,8 @@ jobs:
       - name: Test (cargo, then the WASM in Node)
         run: |
           cargo test
+          # The RA-TLS server certificate for the Node tests (its test key is not committed).
+          cargo test write_ratls_fixture -- --ignored
           node --test ./test/*.test.mjs
 
   publish-preview:
