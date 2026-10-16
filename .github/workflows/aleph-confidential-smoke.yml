@@ -329,6 +329,7 @@ jobs:
             -e PAPERLESS_URL=http://127.0.0.1:18000 \
             -v /srv/paperless/data:/usr/src/paperless/data -v /srv/paperless/media:/usr/src/paperless/media \
             -v /srv/paperless/consume:/usr/src/paperless/consume -v /srv/paperless/export:/usr/src/paperless/export \
+            --health-cmd "curl -fs -o /dev/null http://127.0.0.1:8000 || exit 1" \
             "$PAPERLESS_IMAGE" >/dev/null
           echo "containers started"
           EOF
@@ -339,7 +340,8 @@ jobs:
           up=""
           for i in $(seq 1 90); do
             code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$api/" || true)"
-            if [ "$code" = 401 ] || [ "$code" = 200 ]; then up=1; break; fi
+            # Paperless 3.x answers /api/ with a redirect to the login page.
+            case "$code" in 200|302|401|403) up=1; break ;; esac
             [ $((i % 6)) -eq 0 ] && echo "[$i] tunnel answer: $code"
             sleep 10
           done
