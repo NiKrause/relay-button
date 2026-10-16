@@ -16,6 +16,7 @@ on:
       - .github/workflows/aleph-confidential-deploy-smoke.yml
       - .github/actions/**
       - packages/node/src/**
+      - packages/rootfs/reference/confidential/**
   workflow_dispatch:
     inputs:
       source_store:
