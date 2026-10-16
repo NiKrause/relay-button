@@ -9,14 +9,6 @@ name: Aleph Confidential Deploy Smoke
 # of #154. Run by hand: it spends a few cents of credits from ALEPH_PRIVATE_KEY.
 
 on:
-  # TEMPORARY: lets the branch test itself before the workflow is on main; removed before merge.
-  push:
-    branches: [feat/confidential-deploy-action]
-    paths:
-      - .github/workflows/aleph-confidential-deploy-smoke.yml
-      - .github/actions/**
-      - packages/node/src/**
-      - packages/rootfs/reference/confidential/**
   workflow_dispatch:
     inputs:
       source_store:
@@ -41,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     env:
-      SOURCE_STORE: ${{ inputs.source_store || '4da693e425b8f5f4465f17b6fb1f6d3c1a0078496ba68ecb6d817a8634e1821c' }}
+      SOURCE_STORE: ${{ inputs.source_store }}
     steps:
       - uses: actions/checkout@v4
 

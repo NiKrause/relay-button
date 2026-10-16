@@ -71,6 +71,7 @@ Guest access and lifecycle:
 - `verify_reachability`
 - `publish_port_forwards`
 - `required_ports_json`
+- `confidential`, `luks_passphrase` (see [Confidential deploys](#confidential-deploys))
 
 `required_ports_json` must be a JSON array of structured objects such as:
 
@@ -138,6 +139,36 @@ In deploy mode, the action can:
 5. optionally call the guest setup endpoint for `uc-go-peer`
 6. collect relay peer and bootstrap metadata
 7. optionally verify mapped ports and proxy reachability
+
+### Confidential deploys
+
+With `confidential: true` the deploy starts an AMD SEV-SNP instance whose
+rootfs the node operator cannot read. It needs two things from the caller:
+
+- `rootfs_item_hash` must be a **LUKS-encrypted** rootfs. Build it with the
+  composite action `.github/actions/aleph-confidential-rootfs`, which converts
+  a profile image (no systemd as PID 1, no cloud-init: see
+  `packages/rootfs/reference/confidential/README.md`), encrypts it and
+  publishes it through IPFS and a STORE. The same `ssh_public_key` goes into
+  both, because an encrypted image is not provisioned from outside.
+- `luks_passphrase`, the passphrase it was encrypted with.
+
+The deploy then differs in three places and is the same everywhere else:
+
+1. only nodes that report SEV-SNP on aleph-vm 2.1.2 or newer are candidates
+   (each node is asked; unknown is refused), never the scheduler;
+2. the instance is created with Aleph's own CLI (pinned, checksummed), which
+   pins the launch measurements in the message;
+3. after the node starts it, the guest is attested (AMD certificate chain,
+   measurement, policy, TCB floor) and only then is the passphrase sent, over
+   the attested channel. A node whose attestation fails for good (firmware
+   below the floor, no AMD certificate for its TCB) is forgotten at once and
+   the next candidate is tried.
+
+Port forwards, the setup endpoint, bootstrap registration and the
+reachability check run as for any deploy. The smoke workflow **Aleph
+Confidential Deploy Smoke** runs the whole path against a published
+orbitdb-relay rootfs.
 
 ### `list-crns`
 
