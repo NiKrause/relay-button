@@ -340,12 +340,13 @@ jobs:
           for i in $(seq 1 90); do
             code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$api/" || true)"
             if [ "$code" = 401 ] || [ "$code" = 200 ]; then up=1; break; fi
+            [ $((i % 6)) -eq 0 ] && echo "[$i] tunnel answer: $code"
             sleep 10
           done
           t_up=$(( $(date +%s) - t1 ))
           if [ -z "$up" ]; then
             log "Paperless did not answer within 15 minutes"
-            ssh_guest 'docker ps -a; docker logs --tail 40 paperless' 2>&1 | tee -a "$out"
+            ssh_guest 'docker ps -a; echo; echo "listening:"; ss -ltnp 2>/dev/null || netstat -ltnp; echo; echo "webserver and errors:"; docker logs paperless 2>&1 | grep -v -E "^  \. |celery\.(beat|worker|app)" | grep -i -E "granian|webserver|svc-|error|exception|traceback|fail|warn|listen|migrat" | tail -60; echo; echo "curl inside the guest:"; curl -s -o /dev/null -w "%{http_code}\n" --max-time 10 http://127.0.0.1:8000/api/' 2>&1 | tee -a "$out"
             exit 1
           fi
           log "Paperless answering after ${t_up}s (migrations included)"
