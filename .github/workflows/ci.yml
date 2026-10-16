@@ -79,7 +79,7 @@ jobs:
 
       - name: Install the package's Node dependencies
         working-directory: .
-        run: pnpm install --frozen-lockfile --prefer-offline --filter @le-space/attest-wasm
+        run: pnpm install --frozen-lockfile --prefer-offline --filter "@le-space/attest-wasm..."
 
       - name: Build
         run: |

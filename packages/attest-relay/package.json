@@ -1,0 +1,20 @@
+{
+	"name": "@le-space/attest-relay",
+	"version": "0.1.0",
+	"private": true,
+	"description": "WebSocket to TCP relay to an SEV-SNP guest's attestation port, for RA-TLS from the browser.",
+	"license": "MIT",
+	"type": "module",
+	"main": "./src/relay.ts",
+	"bin": {
+		"attest-relay": "./src/server.ts"
+	},
+	"scripts": {
+		"build": "node --check ./src/relay.ts && node --check ./src/server.ts",
+		"start": "node ./src/server.ts",
+		"test": "node --test ./test/*.test.ts"
+	},
+	"dependencies": {
+		"ws": "^8.21.2"
+	}
+}

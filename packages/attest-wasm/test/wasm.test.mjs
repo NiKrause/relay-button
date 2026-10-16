@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 
-import { pinnedMeasurements, verifyAttestation } from '../js/index.mjs'
+import { clearKdsCache, pinnedMeasurements, verifyAttestation } from '../js/index.mjs'
 
 const require = createRequire(import.meta.url)
 const wasm = require('../pkg-node/relay_button_attest.js')
@@ -48,6 +48,7 @@ test('a tampered report fails the signature check, before any TCB check', async 
 })
 
 test('a VCEK that AMD does not have is a refusal, not a pass', async () => {
+  clearKdsCache()
   const { measurement } = wasm.reportInfo(report, 'Milan')
   await assert.rejects(
     verifyAttestation({ wasm, report, product: 'Milan', expectedMeasurements: [measurement], fetch: async () => new Response('', { status: 404 }), nowSeconds: NOW }),
@@ -62,4 +63,25 @@ test('pinnedMeasurements reads the INSTANCE message', () => {
   ] } } }
   assert.deepEqual(pinnedMeasurements(content), ['aa'])
   assert.deepEqual(pinnedMeasurements({}), [])
+})
+
+test('KDS answers are cached, and a 429 is retried as AMD says', async () => {
+  clearKdsCache()
+  const { measurement } = wasm.reportInfo(report, 'Milan')
+  const requests = []
+  const waits = []
+  let limited = true
+  const flakyKds = async (url) => {
+    requests.push(String(url).endsWith('/crl') ? 'crl' : 'vcek')
+    if (limited && !String(url).endsWith('/crl')) {
+      limited = false
+      return new Response('', { status: 429, headers: { 'retry-after': '3' } })
+    }
+    return kds(url)
+  }
+  const run = () => verifyAttestation({ wasm, report, product: 'Milan', expectedMeasurements: [measurement], fetch: flakyKds, nowSeconds: NOW, sleep: async (ms) => waits.push(ms) })
+  await assert.rejects(run(), /below floor/) // reached the TCB check: fetched and verified
+  await assert.rejects(run(), /below floor/)
+  assert.deepEqual(waits, [3000], 'waited as Retry-After said')
+  assert.deepEqual(requests.sort(), ['crl', 'vcek', 'vcek'], 'the second verification used the cache')
 })

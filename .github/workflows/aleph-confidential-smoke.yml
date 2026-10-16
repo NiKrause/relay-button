@@ -34,6 +34,14 @@ on:
         required: false
         default: 1vcpu-2gb
         type: string
+      unlock_with:
+        description: Attest and unlock with Aleph's CLI, or the browser path (attest-wasm over a WebSocket through the attest relay)
+        required: false
+        default: cli
+        type: choice
+        options:
+          - cli
+          - browser
       keep_minutes:
         description: Minutes to keep the instance running after unlock before it is forgotten (0-30)
         required: false
@@ -210,6 +218,7 @@ jobs:
 
       - name: Attest
         id: attest
+        if: inputs.unlock_with != 'browser'
         env:
           ITEM_HASH: ${{ steps.create.outputs.item_hash }}
         run: |
@@ -224,10 +233,52 @@ jobs:
           exit 1
 
       - name: Unlock
+        if: inputs.unlock_with != 'browser'
         env:
           ITEM_HASH: ${{ steps.create.outputs.item_hash }}
         run: |
           aleph instance unlock "$ITEM_HASH" --crn "$CRN" --passphrase-file "$RUNNER_TEMP/luks.pass" --chain eth
+
+      - name: Checkout (browser path)
+        if: inputs.unlock_with == 'browser'
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm (browser path)
+        if: inputs.unlock_with == 'browser'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
+      - name: Set up Node 24 (browser path)
+        if: inputs.unlock_with == 'browser'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      - name: Set up Rust, pnpm and the attest-wasm build (browser path)
+        if: inputs.unlock_with == 'browser'
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          rustup default stable
+          version="$(grep -A1 'name = "wasm-bindgen"$' packages/attest-wasm/Cargo.lock | sed -n 's/version = "\(.*\)"/\1/p')"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+          pnpm install --frozen-lockfile --prefer-offline --filter @le-space/attest-wasm...
+          cd packages/attest-wasm
+          cargo build --target wasm32-unknown-unknown --release
+          wasm-bindgen --target nodejs --out-dir pkg-node target/wasm32-unknown-unknown/release/relay_button_attest.wasm
+          echo '{"type":"commonjs"}' > pkg-node/package.json
+
+      - name: Attest and unlock the browser way (WASM, WebSocket, attest relay)
+        id: browser_unlock
+        if: inputs.unlock_with == 'browser'
+        env:
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+        run: |
+          crn="$(curl -fsS 'https://api2.aleph.im/api/v0/aggregates/0xa1B3bb7d2332383D96b7796B908fB7f7F3c2Be10.json?keys=corechannel' \
+            | jq -r --arg p "$CRN" '.data.corechannel.resource_nodes[] | select(.hash | startswith($p)) | .hash' | head -1)"
+          cd packages/attest-wasm
+          set -o pipefail
+          node scripts/unlock-live.mjs "$ITEM_HASH" "$crn" "$RUNNER_TEMP/luks.pass" | tee "$RUNNER_TEMP/browser-unlock.json"
 
       - name: Check that it keeps running
         env:
@@ -410,7 +461,7 @@ jobs:
         env:
           ITEM_HASH: ${{ steps.create.outputs.item_hash }}
           STATE: ${{ steps.execution.outputs.state }}
-          ATTEST: ${{ steps.attest.outcome }}
+          ATTEST: ${{ steps.attest.outcome != 'skipped' && steps.attest.outcome || steps.browser_unlock.outcome }}
           DOCKER: ${{ steps.probe.outputs.docker }}
           OCR: ${{ steps.paperless.outputs.ocr }}
         run: |

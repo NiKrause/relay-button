@@ -3,12 +3,15 @@ import assert from 'node:assert/strict'
 import { createHash, X509Certificate } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import http from 'node:http'
 import net from 'node:net'
 import tls from 'node:tls'
 
 import { Wallet, verifyMessage } from 'ethers'
 
-import { attestGuest, canonicalSecretsJson, injectSecrets, parseResponse } from '../js/ratls.mjs'
+import { attachAttestRelay } from '@le-space/attest-relay'
+
+import { attestGuest, canonicalSecretsJson, injectSecrets, parseResponse, websocketTransport } from '../js/ratls.mjs'
 
 const require = createRequire(import.meta.url)
 const wasm = require('../pkg-node/relay_button_attest.js')
@@ -151,4 +154,29 @@ test('parseResponse handles content-length and chunked bodies', () => {
   const chunked = parseResponse(enc.encode('HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n3\r\nabc\r\n2\r\nde\r\n0\r\n\r\n'))
   assert.equal(new TextDecoder().decode(chunked.body), 'abcde')
   assert.equal(canonicalSecretsJson({ b: '2', a: '1' }), '{"a":"1","b":"2"}')
+})
+
+test('the browser path: WebSocket through the attest relay to the guest, then unlock', async () => {
+  const guest = await agent()
+  const server = http.createServer()
+  const resolved = []
+  const relay = attachAttestRelay(server, {
+    allowPrivateTargets: true, // the stand-in listens on loopback
+    resolveTarget: async (crn, vm) => (resolved.push([crn, vm]), { host: '127.0.0.1', port: guest.port }),
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const crn = 'c'.repeat(64)
+  const vm = 'a'.repeat(64)
+  const transport = websocketTransport(`ws://127.0.0.1:${server.address().port}/attest?crn=${crn}&vm=${vm}`)
+
+  const attested = await attestGuest({ wasm, transport, product: 'Milan', expectedMeasurements: [measurement], verify })
+  const result = await injectSecrets({ wasm, attested, secrets: { luks_passphrase: 'through the relay' }, sign: (payload) => owner.signMessage(payload) })
+  assert.deepEqual(result, { injected: ['luks_passphrase'] })
+  assert.deepEqual(resolved, [[crn, vm]])
+
+  attested.channel.close()
+  relay.close()
+  server.closeAllConnections()
+  server.close()
+  guest.close()
 })
