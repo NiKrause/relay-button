@@ -220,6 +220,12 @@ inputs:
     description: Optional bearer token that enables the ucan-store admin delegation issuance API.
     required: false
     default: ''
+  bootstrap_channel:
+    description: >-
+      Aleph channel of the relay bootstrap posts (publish, visibility check, reconcile). Empty uses the
+      channel browsers read by default (simple-todo); `channel` is for the INSTANCE and retention records.
+    required: false
+    default: ''
   confidential:
     description: >-
       Start an AMD SEV-SNP confidential instance. rootfs_item_hash must then be a LUKS-encrypted
@@ -421,6 +427,7 @@ runs:
         ALEPH_VM_UCAN_STORE_DERIVATION_SALT: ${{ inputs.ucan_store_derivation_salt }}
         ALEPH_VM_UCAN_STORE_SPACE_DID_MODE: ${{ inputs.ucan_store_space_did_mode }}
         ALEPH_VM_UCAN_STORE_ADMIN_API_TOKEN: ${{ inputs.ucan_store_admin_api_token }}
+        ALEPH_VM_BOOTSTRAP_CHANNEL: ${{ inputs.bootstrap_channel }}
         ALEPH_VM_CONFIDENTIAL: ${{ inputs.confidential }}
         ALEPH_VM_LUKS_PASSPHRASE: ${{ inputs.luks_passphrase }}
       run: |

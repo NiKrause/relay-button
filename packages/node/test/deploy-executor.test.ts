@@ -1634,6 +1634,184 @@ test('executeDeployPlan pushes the bootstrap owner authorization after the guest
   assert.match(String(authorization.signature ?? ''), /^0x/i)
 })
 
+test('executeDeployPlan publishes, waits for and reconciles bootstrap posts in the bootstrap channel, not the deploy channel', async () => {
+  const configureBodies: string[] = []
+  const postQueries: string[] = []
+  const publishedChannels: string[] = []
+  const derivedBootstrapPublisherPrivateKey = deriveBootstrapPublisherPrivateKey({
+    sourcePrivateKey: DEPLOY_PLAN.privateKey,
+    profile: 'orbitdb-relay',
+  })
+  const expectedRelayIdentity = deriveLibp2pSecp256k1IdentityFromEvmKey(
+    derivedBootstrapPublisherPrivateKey,
+  )
+  const expectedPublisherIdentity = await createPrivateKeyIdentity(
+    derivedBootstrapPublisherPrivateKey,
+  )
+
+  const result = await executeDeployPlan(
+    {
+      ...DEPLOY_PLAN,
+      profile: 'orbitdb-relay',
+      bootstrapPublisherPrivateKey: '',
+      bootstrapOwnerPrivateKey: '0x8b3a350cf5c34c9194ca3a9d8b5421f0b2b7215e7ff5b0e97c85af9a81d3d1ad',
+      rootfsItemHash: 'b'.repeat(64),
+      rootfsVersion: '2026.05.30',
+      requiredPorts: [
+        { port: 22, tcp: true, udp: false, purpose: 'SSH' },
+        { port: 80, tcp: true, udp: false, purpose: 'setup' },
+        { port: 443, tcp: true, udp: false, purpose: 'wss proxy' },
+        { port: 9090, tcp: true, udp: false, purpose: 'metrics' },
+        { port: 9091, tcp: true, udp: false, purpose: 'relay tcp' },
+        { port: 9092, tcp: true, udp: false, purpose: 'relay websocket' },
+        { port: 9093, tcp: false, udp: true, purpose: 'relay webrtc' },
+        { port: 9094, tcp: false, udp: true, purpose: 'relay quic' }
+      ]
+    },
+    {
+      sender: '0x1234',
+      signer: async () => '0xsigned',
+      hasher: (() => {
+        let count = 0
+        return () => `hash-d${++count}`
+      })(),
+      sleep: async () => undefined,
+      tcpProbe: async () => ({ ok: true }),
+      fetch: async (url, init) => {
+        if (init?.method === 'POST' && String(url).includes('/api/v0/messages')) {
+          const message = JSON.parse(String(init.body ?? '{}')).message ?? {}
+          if (message.type === 'POST') publishedChannels.push(message.channel)
+        }
+        if (String(url).includes('crns-list.aleph.sh')) {
+          return jsonResponse({
+            crns: [{ hash: 'crn-1', name: 'CRN One', address: 'https://crn.example.com', score: 10, country_code: 'DE' }]
+          })
+        }
+
+        if (String(url).includes('/api/v0/aggregates/0x1234.json')) {
+          return jsonResponse({})
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-d1') && !init?.method) {
+          return jsonResponse({ status: 'processed', details: { rootfs: 'b'.repeat(64) } })
+        }
+
+        if (String(url).includes('scheduler.api.aleph.cloud')) {
+          return jsonResponse({
+            node: {
+              node_id: 'crn-1',
+              url: 'https://crn.example.com'
+            }
+          })
+        }
+
+        if (String(url).includes('api.2n6.me')) {
+          return jsonResponse({
+            url: 'https://dragon-belt-friend-share.2n6.me',
+            active: true
+          })
+        }
+
+        if (String(url).includes('/v2/about/executions/list')) {
+          return jsonResponse({
+            'hash-d1': {
+              networking: {
+                host_ipv4: '203.0.113.9',
+                ipv6_ip: '2001:db8::9',
+                mapped_ports: {
+                  '80': { host: 28080, tcp: true, udp: false },
+                  '22': { host: 32022, tcp: true, udp: false },
+                  '9090': { host: 29090, tcp: true, udp: false },
+                  '9091': { host: 29091, tcp: true, udp: false },
+                  '9092': { host: 29092, tcp: true, udp: false },
+                  '443': { host: 29443, tcp: true, udp: false },
+                  '9093': { host: 29093, tcp: false, udp: true },
+                  '9094': { host: 29094, tcp: false, udp: true }
+                }
+              }
+            }
+          })
+        }
+
+        if (String(url).includes('/health')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/configure')) {
+          configureBodies.push(String(init?.body ?? ''))
+          return jsonResponse({ status: 'configured' })
+        }
+
+        if (String(url).includes('/metadata')) {
+          return jsonResponse({
+            status: 'ready',
+            metadata: {
+              peer_id: expectedRelayIdentity.peerId,
+              probe_multiaddrs: [
+                `/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`,
+              ],
+              browser_bootstrap_multiaddrs: [
+                `/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`,
+              ],
+            }
+          })
+        }
+
+        if (String(url).includes('/api/v0/posts.json')) {
+          postQueries.push(String(url))
+          // Aleph answers per channel: a post is only found where it was published.
+          if (!String(url).includes('channels=simple-todo')) return jsonResponse({ posts: [] })
+          return jsonResponse({
+            posts: [
+              {
+                item_hash: 'bootstrap-visible-hash',
+                address: expectedPublisherIdentity.address,
+                ref: 'simple-todo-bootstrap',
+                type: 'relay-bootstrap-v2',
+                content: {
+                  peerId: expectedRelayIdentity.peerId,
+                  multiaddrs: [
+                    `/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`,
+                  ],
+                  browserMultiaddrs: [
+                    `/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`,
+                  ],
+                  updatedAt: Date.now(),
+                },
+              },
+            ],
+          })
+        }
+
+        if (String(url).includes('/control/allocation/notify')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/api/v0/messages/') && !init?.method) {
+          return jsonResponse({ status: 'processed', message: { type: 'STORE' } })
+        }
+
+        return jsonResponse(
+          {
+            publication_status: { status: 'success' },
+            message_status: 'pending'
+          },
+          202
+        )
+      }
+    }
+  )
+
+  assert.equal(result.itemHash, 'hash-d1')
+  // The deploy channel is TEST; the registration still goes where readers look.
+  assert.ok(publishedChannels.length > 0, 'a bootstrap POST was published')
+  assert.ok(publishedChannels.every((channel) => channel === 'simple-todo'), `published in ${publishedChannels.join(', ')}`)
+  assert.ok(postQueries.length > 0)
+  assert.ok(postQueries.every((query) => query.includes('channels=simple-todo')), postQueries.join('\n'))
+  const registration = (result.configuration?.metadata as { bootstrap_registration?: { status?: string } } | undefined)?.bootstrap_registration
+  assert.notEqual(registration?.status, 'error')
+})
+
 test('executeDeployPlan never sends key material to the plain-HTTP guest setup endpoint', async () => {
   const configureBodies: string[] = []
   const bootstrapPublisherPrivateKey =
