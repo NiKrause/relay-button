@@ -39,6 +39,21 @@ only.
   and the secrets go over the attested channel to `/confidential/inject-secret`.
 - `websocketTransport(url)`: the browser transport.
 
+`js/runtime.mjs` builds the INSTANCE message's `trusted_execution` in the
+browser (step 4 of #169), because whoever computes the launch measurements
+decides what the owner will later accept:
+
+- `resolveInstanceRuntime()` reads the network's default SNP runtime (or one
+  by name) from the `vm-images` aggregate;
+- `fetchInstanceRuntime({ itemHash })` downloads its manifest and its bundle
+  (about 15 MB), checks the bundle against the manifest's SHA-256, unpacks
+  OVMF, kernel and initrd;
+- `trustedExecution({ wasm, runtime, owner, vcpus })` fills the boot cmdline
+  template for the owner and computes one SEV-SNP launch digest per CPU model
+  the runtime declares (`src/measure`: the sev crate's measurement code taking
+  bytes instead of file paths, Apache-2.0, see `LICENSE-sev`), giving exactly
+  the block Aleph's CLI sends (checked against its dry run for snp-1.2).
+
 Domain tags, report_data constructions and the injection payload follow
 aleph-rs `ratls.rs` / `owner_auth.rs` and aleph-vm's agent byte for byte. Not
 here yet (#169): the relay itself and the widget.

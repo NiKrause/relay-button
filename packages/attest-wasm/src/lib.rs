@@ -8,6 +8,8 @@
 //! policy against what the INSTANCE message pinned.
 
 pub mod attest;
+pub mod launch;
+pub mod measure;
 pub mod ratls;
 
 use serde::Serialize;
@@ -471,4 +473,36 @@ pub fn verify_fresh_binding_js(report: &[u8], served_public_key: &[u8], nonce: &
 #[wasm_bindgen(js_name = injectSecretPayload)]
 pub fn inject_secret_payload_js(served_public_key: &[u8], canonical_secrets_json: &str) -> String {
     ratls::inject_secret_payload(served_public_key, canonical_secrets_json)
+}
+
+/// `instanceCmdline(template, owner)`: the runtime's boot cmdline for this
+/// owner (the `{owner}` slot filled with the lowercased address).
+#[wasm_bindgen(js_name = instanceCmdline)]
+pub fn instance_cmdline_js(template: &str, owner: &str) -> Result<String, JsError> {
+    launch::instance_cmdline(template, owner).map_err(|e| JsError::new(&e))
+}
+
+/// `launchMeasurements(ovmf, kernel, initrd, cmdline, vcpus, cpuModels)`:
+/// `[{ vcpuType, launch }]`, one SEV-SNP launch digest per CPU model.
+#[wasm_bindgen(js_name = launchMeasurements)]
+pub fn launch_measurements_js(
+    ovmf: &[u8],
+    kernel: &[u8],
+    initrd: &[u8],
+    cmdline: &str,
+    vcpus: u32,
+    cpu_models: Vec<String>,
+) -> Result<JsValue, JsError> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Measurement {
+        vcpu_type: String,
+        launch: String,
+    }
+    let measurements: Vec<Measurement> = launch::launch_measurements(ovmf, kernel, initrd, cmdline, vcpus, &cpu_models)
+        .map_err(|e| JsError::new(&e))?
+        .into_iter()
+        .map(|(vcpu_type, launch)| Measurement { vcpu_type, launch })
+        .collect();
+    to_js(&measurements)
 }

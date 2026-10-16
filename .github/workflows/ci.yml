@@ -95,7 +95,9 @@ jobs:
           cargo test
           # The RA-TLS server certificate for the Node tests (its test key is not committed).
           cargo test write_ratls_fixture -- --ignored
-          node --test ./test/*.test.mjs
+          # LIVE_RUNTIME: also compute snp-1.2's measurements from the bundle on Aleph
+          # and compare them with what Aleph's CLI pinned.
+          LIVE_RUNTIME=1 node --test ./test/*.test.mjs
 
   publish-preview:
     runs-on: ubuntu-24.04
