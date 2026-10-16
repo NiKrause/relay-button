@@ -1293,6 +1293,148 @@ test('executeDeployPlan configures orbitdb relay after mapped ports appear', asy
   })
 })
 
+test('executeDeployPlan forgets the instance when a step after its start fails', async () => {
+  const configureBodies: string[] = []
+  const postedBodies: string[] = []
+  const logs: string[] = []
+  const derivedBootstrapPublisherPrivateKey = deriveBootstrapPublisherPrivateKey({
+    sourcePrivateKey: DEPLOY_PLAN.privateKey,
+    profile: 'orbitdb-relay',
+  })
+  const expectedRelayIdentity = deriveLibp2pSecp256k1IdentityFromEvmKey(
+    derivedBootstrapPublisherPrivateKey,
+  )
+  await assert.rejects(executeDeployPlan(
+    {
+      ...DEPLOY_PLAN,
+      profile: 'orbitdb-relay',
+      name: 'orbitdb-relay',
+      requiredPorts: [
+        { port: 22, tcp: true, udp: false, purpose: 'SSH' },
+        { port: 80, tcp: true, udp: false, purpose: 'Temporary setup endpoint' },
+        { port: 9090, tcp: true, udp: false, purpose: 'Metrics and health API' },
+        { port: 9091, tcp: true, udp: false, purpose: 'Relay TCP' },
+        { port: 9092, tcp: true, udp: false, purpose: 'Relay WebSocket' },
+        { port: 443, tcp: true, udp: false, purpose: 'HTTPS and WSS proxy' },
+        { port: 9093, tcp: false, udp: true, purpose: 'WebRTC' },
+        { port: 9094, tcp: false, udp: true, purpose: 'QUIC' },
+      ],
+    },
+    {
+      sender: '0x1234',
+      signer: async () => '0xsigned',
+      hasher: (() => {
+        let count = 0
+        return () => `hash-o${++count}`
+      })(),
+      sleep: async () => undefined,
+      log: (message: string) => logs.push(message),
+      tcpProbe: async () => ({ ok: true }),
+      fetch: async (url, init) => {
+        if (init?.method === 'POST' && String(url).includes('/api/v0/messages')) {
+          postedBodies.push(String(init.body ?? ''))
+        }
+        if (String(url).includes('crns-list.aleph.sh')) {
+          return jsonResponse({
+            crns: [{ hash: 'crn-1', name: 'CRN One', address: 'https://crn.example.com', score: 10, country_code: 'DE' }]
+          })
+        }
+
+        if (String(url).includes('/api/v0/aggregates/0x1234.json')) {
+          return jsonResponse({})
+        }
+
+        if (String(url).includes('/api/v0/messages/hash-o1') && !init?.method) {
+          return jsonResponse({ status: 'processed', details: { rootfs: DEPLOY_PLAN.rootfsItemHash } })
+        }
+
+        if (String(url).includes('scheduler.api.aleph.cloud')) {
+          return jsonResponse({
+            node: {
+              node_id: 'crn-1',
+              url: 'https://crn.example.com'
+            }
+          })
+        }
+
+        if (String(url).includes('api.2n6.me')) {
+          return jsonResponse({
+            url: 'https://dragon-belt-friend-share.2n6.me',
+            active: true
+          })
+        }
+
+        if (String(url).includes('/v2/about/executions/list')) {
+          return jsonResponse({
+            'hash-o1': {
+              networking: {
+                host_ipv4: '203.0.113.8',
+                ipv6_ip: '2001:db8::8',
+                mapped_ports: {
+                  '80': { host: 28080, tcp: true, udp: false },
+                  '22': { host: 32022, tcp: true, udp: false },
+                  '9090': { host: 29090, tcp: true, udp: false },
+                  '9091': { host: 29091, tcp: true, udp: false },
+                  '9092': { host: 29092, tcp: true, udp: false },
+                  '443': { host: 29443, tcp: true, udp: false },
+                  '9093': { host: 29093, tcp: false, udp: true },
+                  '9094': { host: 29094, tcp: false, udp: true }
+                }
+              }
+            }
+          })
+        }
+
+        if (String(url).includes('/health')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/configure')) {
+          configureBodies.push(String(init?.body ?? ''))
+          return jsonResponse({ status: 'error', error: 'configure script failed' }, 500)
+        }
+
+        if (String(url).includes('/metadata')) {
+          return jsonResponse({
+            status: 'ready',
+            metadata: {
+              peer_id: expectedRelayIdentity.peerId,
+              probe_multiaddrs: [
+                `/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`,
+              ],
+              browser_bootstrap_multiaddrs: [
+                `/dns4/dragon-belt-friend-share.2n6.me/tcp/443/tls/ws/p2p/${expectedRelayIdentity.peerId}`,
+              ],
+            }
+          })
+        }
+
+        if (String(url).includes('/control/allocation/notify')) {
+          return jsonResponse({ ok: true })
+        }
+
+        if (String(url).includes('/api/v0/messages/') && !init?.method) {
+          return jsonResponse({ status: 'processed', message: { type: 'STORE' } })
+        }
+
+        return jsonResponse(
+          {
+            publication_status: { status: 'success' },
+            message_status: 'pending'
+          },
+          202
+        )
+      }
+    }
+  ), /setup request failed|500/i)
+
+  assert.equal(configureBodies.length, 1)
+  const forgets = postedBodies.filter((body) => body.includes('FORGET'))
+  assert.equal(forgets.length, 1, 'exactly one FORGET for the started instance')
+  assert.ok(forgets[0]!.includes('hash-o1'))
+  assert.ok(logs.some((line) => line.includes('failed after it started; cleaning up')))
+})
+
 test('executeDeployPlan pushes the bootstrap owner authorization after the guest reports metadata', async () => {
   const configureBodies: string[] = []
   const derivedBootstrapPublisherPrivateKey = deriveBootstrapPublisherPrivateKey({

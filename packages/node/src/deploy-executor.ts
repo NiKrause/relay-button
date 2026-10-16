@@ -461,9 +461,38 @@ function shouldWaitForProxyActivationBeforeConfigure(plan: DeployPlan): boolean 
   return true;
 }
 
+// The instance of the attempt in flight: processed on Aleph, not yet handed
+// back as a result and not yet forgotten. Anything that throws between those
+// points (a failed /configure, a metadata timeout) would otherwise leave it
+// running and paid for.
+interface DeployCleanupState {
+  activeItemHash: string | null;
+  forget: ((itemHash: string, reason: string) => Promise<void>) | null;
+}
+
 export async function executeDeployPlan(
   plan: DeployPlan,
   dependencies: DeployExecutorDependencies = {},
+): Promise<DeployOutputResult> {
+  const state: DeployCleanupState = { activeItemHash: null, forget: null };
+  try {
+    return await runDeployPlan(plan, dependencies, state);
+  } catch (error) {
+    if (state.activeItemHash && state.forget) {
+      const reason = error instanceof Error ? error.message : String(error);
+      (dependencies.log ?? console.log)(
+        `[deploy] deployment ${state.activeItemHash} failed after it started; cleaning up: ${reason}`,
+      );
+      await state.forget(state.activeItemHash, `Deployment failed: ${reason}`.slice(0, 500)).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+async function runDeployPlan(
+  plan: DeployPlan,
+  dependencies: DeployExecutorDependencies,
+  state: DeployCleanupState,
 ): Promise<DeployOutputResult> {
   const fetchImpl = dependencies.fetch ?? globalThis.fetch?.bind(globalThis);
   if (typeof fetchImpl !== "function") {
@@ -496,6 +525,25 @@ export async function executeDeployPlan(
   const bootstrapPublisherIdentity = await createPrivateKeyIdentity(
     resolvedBootstrapPublisherPrivateKey,
   );
+  const forgetDeployment = async (
+    args: Parameters<typeof cleanupFailedDeployment>[0],
+  ): Promise<void> => {
+    await cleanupFailedDeploymentForPlan(plan, log, args);
+    if (state.activeItemHash === args.instanceItemHash) {
+      state.activeItemHash = null;
+    }
+  };
+  state.forget = (itemHash, reason) =>
+    forgetDeployment({
+      sender: identity.address,
+      instanceItemHash: itemHash,
+      reason,
+      signer: identity.signer,
+      hasher,
+      fetch: fetchImpl,
+      channel: plan.channel,
+      apiHost: plan.apiHost,
+    });
   const bootstrapOwnerIdentity = plan.bootstrapOwnerPrivateKey
     ? await createPrivateKeyIdentity(plan.bootstrapOwnerPrivateKey)
     : null;
@@ -683,7 +731,7 @@ export async function executeDeployPlan(
       log(
         `[deploy] deployment ${deployment.itemHash} via ${placementLabel} did not become processed; cleaning up`,
       );
-      await cleanupFailedDeploymentForPlan(plan, log, {
+      await forgetDeployment({
         sender: identity.address,
         instanceItemHash: deployment.itemHash,
         reason: `Deployment message stayed ${inspection.status}`,
@@ -699,6 +747,7 @@ export async function executeDeployPlan(
       continue;
     }
 
+    state.activeItemHash = deployment.itemHash;
     let portForwarding: DeployOutputResult["portForwarding"] = null;
     let instanceDomain: DeployOutputResult["instanceDomain"] = null;
     const attachInstanceCustomDomain = async () => {
@@ -786,7 +835,7 @@ export async function executeDeployPlan(
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         log(`[deploy] confidential start via ${placementLabel} failed: ${reason}`);
-        await cleanupFailedDeploymentForPlan(plan, log, {
+        await forgetDeployment({
           sender: identity.address,
           instanceItemHash: deployment.itemHash,
           reason: "Confidential attestation or unlock failed",
@@ -856,7 +905,7 @@ export async function executeDeployPlan(
       log(
         `[deploy] processed deployment ${deployment.itemHash} never exposed usable runtime networking via ${placementLabel}; cleaning up`,
       );
-      await cleanupFailedDeploymentForPlan(plan, log, {
+      await forgetDeployment({
         sender: identity.address,
         instanceItemHash: deployment.itemHash,
         reason: `Processed deployment never exposed runtime networking${runtime?.diagnostics?.state ? ` (${runtime.diagnostics.state})` : ""}`,
@@ -962,7 +1011,7 @@ export async function executeDeployPlan(
           log(
             `[deploy] setup endpoint never became reachable; cleaning up ${deployment.itemHash}`,
           );
-          await cleanupFailedDeploymentForPlan(plan, log, {
+          await forgetDeployment({
             sender: identity.address,
             instanceItemHash: deployment.itemHash,
             reason: "Temporary setup endpoint never became reachable",
@@ -992,7 +1041,7 @@ export async function executeDeployPlan(
             log(
               `[deploy] orbitdb relay runtime has no mapped host port for ${missing.join(" and ")}; cleaning up ${deployment.itemHash}`,
             );
-            await cleanupFailedDeploymentForPlan(plan, log, {
+            await forgetDeployment({
               sender: identity.address,
               instanceItemHash: deployment.itemHash,
               reason: "OrbitDB relay runtime missing mapped TCP/WS ports",
@@ -1015,7 +1064,7 @@ export async function executeDeployPlan(
           log(
             `[deploy] ucan-store runtime is missing a proxy URL; cleaning up ${deployment.itemHash}`,
           );
-          await cleanupFailedDeploymentForPlan(plan, log, {
+          await forgetDeployment({
             sender: identity.address,
             instanceItemHash: deployment.itemHash,
             reason: "ucan-store runtime missing proxy URL",
@@ -1269,7 +1318,7 @@ export async function executeDeployPlan(
             log(
               `[deploy] ucan-store custom domain HTTPS verification failed for ${deployment.itemHash}; cleaning up`,
             );
-            await cleanupFailedDeploymentForPlan(plan, log, {
+            await forgetDeployment({
               sender: identity.address,
               instanceItemHash: deployment.itemHash,
               reason: `ucan-store custom domain HTTPS verification failed for ${customDomainVerification.url}`,
