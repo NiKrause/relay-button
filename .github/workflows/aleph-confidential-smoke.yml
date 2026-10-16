@@ -3,6 +3,11 @@ name: Aleph Confidential Smoke
 # Starts one SEV-SNP instance from an encrypted rootfs with Aleph's own CLI,
 # attests it, unlocks it, and forgets it again (#154). Run by hand: every run
 # spends a few cents of credits from the account behind ALEPH_PRIVATE_KEY.
+#
+# image=busybox only proves the launch. image=debian-docker builds a Debian
+# rootfs with sshd and Docker under a small foreground init (the measured init
+# chroots into the rootfs, so systemd cannot be PID 1 there), logs in over SSH
+# after the unlock and reports what the guest offers a workload.
 
 on:
   workflow_dispatch:
@@ -12,6 +17,14 @@ on:
         required: true
         default: 42c53b2d5adb42dc8bc848bdccdec951308fc9dfc6c250c7d2533dbaf75d058e
         type: string
+      image:
+        description: Rootfs to encrypt and boot
+        required: false
+        default: busybox
+        type: choice
+        options:
+          - busybox
+          - debian-docker
       size:
         description: Instance size slug
         required: false
@@ -43,6 +56,7 @@ jobs:
       ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
       CRN: ${{ inputs.crn }}
       SIZE: ${{ inputs.size }}
+      IMAGE: ${{ inputs.image }}
       KEEP_MINUTES: ${{ inputs.keep_minutes }}
     steps:
       - name: Check inputs
@@ -60,9 +74,18 @@ jobs:
           chmod +x /usr/local/bin/aleph
           aleph --version
           sudo apt-get update -qq
-          sudo apt-get install -y -qq busybox-static cryptsetup e2fsprogs jq >/dev/null
+          sudo apt-get install -y -qq busybox-static cryptsetup debootstrap e2fsprogs jq >/dev/null
+
+      - name: Generate a passphrase and an SSH key for this run
+        run: |
+          pass="$(openssl rand -hex 32)"
+          echo "::add-mask::$pass"
+          printf '%s' "$pass" > "$RUNNER_TEMP/luks.pass"
+          chmod 600 "$RUNNER_TEMP/luks.pass"
+          ssh-keygen -q -t ed25519 -N '' -C relay-button-confidential-smoke -f "$RUNNER_TEMP/smoke_ed25519"
 
       - name: Build a minimal plain rootfs
+        if: inputs.image == 'busybox'
         # busybox and an init that stays in the foreground: the measured init
         # chroots into the unlocked rootfs and execs /sbin/init.
         run: |
@@ -80,13 +103,63 @@ jobs:
           truncate -s 64M "$RUNNER_TEMP/plain.ext4"
           mkfs.ext4 -q -d "$root" "$RUNNER_TEMP/plain.ext4"
 
-      - name: Generate a passphrase and an SSH key for this run
+      - name: Build a Debian rootfs with sshd and Docker
+        if: inputs.image == 'debian-docker'
+        # No systemd and no cloud-init in a confidential instance: /sbin/init
+        # is a script that mounts what a workload needs, starts dockerd in
+        # the background and keeps sshd in the foreground. The run's SSH key
+        # is baked in, since the CRN cannot provision an encrypted rootfs.
         run: |
-          pass="$(openssl rand -hex 32)"
-          echo "::add-mask::$pass"
-          printf '%s' "$pass" > "$RUNNER_TEMP/luks.pass"
-          chmod 600 "$RUNNER_TEMP/luks.pass"
-          ssh-keygen -q -t ed25519 -N '' -C relay-button-confidential-smoke -f "$RUNNER_TEMP/smoke_ed25519"
+          root="$RUNNER_TEMP/rootfs"
+          sudo debootstrap --variant=minbase \
+            --include=openssh-server,docker.io,iproute2,iputils-ping,ca-certificates,curl,procps,kmod \
+            bookworm "$root" http://deb.debian.org/debian >/dev/null
+          sudo install -d -m 700 "$root/root/.ssh"
+          sudo install -m 600 "$RUNNER_TEMP/smoke_ed25519.pub" "$root/root/.ssh/authorized_keys"
+          sudo chroot "$root" ssh-keygen -A >/dev/null
+          printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\nUseDNS no\n' | sudo tee "$root/etc/ssh/sshd_config.d/smoke.conf" >/dev/null
+          echo rb-confidential-smoke | sudo tee "$root/etc/hostname" >/dev/null
+          sudo touch "$root/etc/resolv.conf"
+          sudo rm -f "$root/sbin/init"
+          sudo tee "$root/sbin/init" >/dev/null <<'EOF'
+          #!/bin/sh
+          # Foreground init for a chrooted confidential rootfs: no systemd.
+          export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          mkdir -p /run /dev/pts /sys/fs/cgroup /var/log
+          mount -t tmpfs -o mode=755 tmpfs /run
+          mkdir -p /run/sshd
+          mount -t devpts -o gid=5,mode=620,ptmxmode=666 devpts /dev/pts 2>/dev/null
+          mountpoint -q /sys/fs/cgroup || mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null
+          hostname -F /etc/hostname 2>/dev/null
+          # The CRN grows the disk, not the filesystem inside the LUKS volume.
+          # resize2fs does not see the chroot's root as mounted and refuses,
+          # so ask the kernel to grow it online (EXT4_IOC_RESIZE_FS).
+          bs=$(tune2fs -l /dev/mapper/cryptroot | sed -n 's/^Block size: *//p')
+          blocks=$(( $(blockdev --getsize64 /dev/mapper/cryptroot) / bs ))
+          perl -e 'sysopen(my $f, "/", 0) or die "open: $!"; ioctl($f, 0x40086610, pack("Q", $ARGV[0])) or die "EXT4_IOC_RESIZE_FS: $!\n"' "$blocks" \
+            > /var/log/resize2fs.log 2>&1 && echo "grown to $blocks blocks of $bs" >> /var/log/resize2fs.log
+          echo "smoke-init: $(uname -r), starting dockerd and sshd" > /dev/console
+          # The measured runtime kernel has no nftables, bridge or overlayfs:
+          # Docker runs without its own networking, on the vfs driver, and
+          # containers use the host network.
+          dockerd --iptables=false --ip6tables=false --bridge=none --storage-driver=vfs \
+            > /var/log/dockerd.log 2>&1 &
+          exec /usr/sbin/sshd -D -e
+          EOF
+          sudo chmod 755 "$root/sbin/init"
+          # The CCN takes at most 1 GiB per upload (pyaleph
+          # DEFAULT_MAX_UPLOAD_FILE_SIZE) and the CRN grows the filesystem to
+          # the instance disk, so ship the image tight and pull containers later.
+          sudo rm -rf "$root"/var/cache/apt/* "$root"/var/lib/apt/lists/* \
+            "$root"/usr/share/doc/* "$root"/usr/share/man/* "$root"/usr/share/info/* \
+            "$root"/usr/share/locale/*
+          size_mib=$(( $(sudo du -sm "$root" | cut -f1) * 110 / 100 + 64 ))
+          echo "rootfs content: $(sudo du -sh "$root" | cut -f1), image ${size_mib} MiB"
+          [ "$size_mib" -le 900 ] || { echo "::error::the plain image (${size_mib} MiB) would exceed the 1 GiB upload limit once encrypted"; exit 1; }
+          truncate -s "${size_mib}M" "$RUNNER_TEMP/plain.ext4"
+          sudo mkfs.ext4 -q -b 4096 -T default -d "$root" "$RUNNER_TEMP/plain.ext4"
+          sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/plain.ext4"
+          ls -lh "$RUNNER_TEMP/plain.ext4"
 
       - name: Create the confidential instance
         id: create
@@ -103,6 +176,8 @@ jobs:
             --wait 600 2>&1 | tee "$RUNNER_TEMP/create.log" || status=$?
           hash="$(grep -oE 'Item hash: +[0-9a-f]{64}' "$RUNNER_TEMP/create.log" | grep -oE '[0-9a-f]{64}' | head -1 || true)"
           echo "item_hash=$hash" >> "$GITHUB_OUTPUT"
+          store="$(grep -oE 'Uploaded encrypted rootfs: +[0-9a-f]{64}' "$RUNNER_TEMP/create.log" | grep -oE '[0-9a-f]{64}' | head -1 || true)"
+          echo "rootfs_store=$store" >> "$GITHUB_OUTPUT"
           [ -n "$hash" ] || { echo "::error::no INSTANCE item hash in the CLI output"; exit 1; }
           exit "${status:-0}"
 
@@ -125,6 +200,9 @@ jobs:
             sleep 10
           done
           echo "state=$state" >> "$GITHUB_OUTPUT"
+          echo "host_ipv4=$(jq -r '.networking.host_ipv4 // empty' <<<"$entry")" >> "$GITHUB_OUTPUT"
+          echo "ssh_port=$(jq -r '.networking.mapped_ports["22"].host // empty' <<<"$entry")" >> "$GITHUB_OUTPUT"
+          echo "ipv6=$(jq -r '.networking.ipv6_ip // empty' <<<"$entry")" >> "$GITHUB_OUTPUT"
 
       - name: Attest
         id: attest
@@ -156,7 +234,50 @@ jobs:
           entry="$(curl -fsS --max-time 15 "$CRN_URL/v2/about/executions/list" | jq -c --arg h "$ITEM_HASH" '.[$h] // empty')"
           jq '{state, running, awaiting_confidential_init, allocation}' <<<"$entry"
           [ "$(jq -r '.running' <<<"$entry")" = true ] || { echo "::error::the instance is not running a minute after unlock"; exit 1; }
-          if [ "$KEEP_MINUTES" -gt 0 ]; then sleep $((KEEP_MINUTES * 60)); fi
+
+      - name: Probe the guest over SSH
+        id: probe
+        if: inputs.image == 'debian-docker'
+        env:
+          ITEM_HASH: ${{ steps.create.outputs.item_hash }}
+          CRN_URL: ${{ steps.execution.outputs.crn_url }}
+        run: |
+          # The node can report the instance running before its port mapping.
+          for i in $(seq 1 18); do
+            entry="$(curl -fsS --max-time 15 "$CRN_URL/v2/about/executions/list" | jq -c --arg h "$ITEM_HASH" '.[$h] // {}' || echo '{}')"
+            HOST="$(jq -r '.networking.host_ipv4 // empty' <<<"$entry")"
+            PORT="$(jq -r '.networking.mapped_ports["22"].host // empty' <<<"$entry")"
+            [ -n "$HOST" ] && [ -n "$PORT" ] && break
+            sleep 10
+          done
+          [ -n "$HOST" ] && [ -n "$PORT" ] || { echo "::error::no host address or mapped SSH port"; exit 1; }
+          ssh_guest() {
+            ssh -i "$RUNNER_TEMP/smoke_ed25519" -p "$PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+              -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "root@$HOST" "$@"
+          }
+          for i in $(seq 1 12); do ssh_guest true 2>/dev/null && break; sleep 10; done
+          ssh_guest 'sh -s' > "$RUNNER_TEMP/probe.txt" 2>&1 <<'EOF' || true
+          section() { echo; echo "### $1"; }
+          section kernel; uname -a
+          section network; ip -br addr; ip route; cat /etc/resolv.conf
+          section "outbound"; curl -sS -o /dev/null -w '%{http_code}\n' --max-time 15 https://example.com || echo "no outbound https"
+          section "secrets dir"; ls -la /tmp/secrets 2>&1
+          section "filesystems"; grep -E 'overlay|cgroup|ext4' /proc/filesystems
+          section "cgroups"; cat /sys/fs/cgroup/cgroup.controllers 2>&1
+          section "modules"; lsmod 2>&1 | head -40
+          section "kernel features"; for f in overlay nf_tables bridge veth fuse; do printf '%s: ' "$f"; grep -qw "$f" /proc/filesystems /proc/modules 2>/dev/null && echo yes || { [ -d "/sys/module/$f" ] && echo builtin || echo no; }; done
+          section "memory and disk"; free -m; lsblk 2>/dev/null; df -h /; cat /var/log/resize2fs.log
+          section "docker info"; docker info 2>&1 | grep -E 'Server Version|Storage Driver|Cgroup|Kernel|ERROR|WARNING' || tail -20 /var/log/dockerd.log
+          section "docker run (host network)"; docker run --rm --network host hello-world > /tmp/hello.txt 2>&1; grep -m1 -E "Hello from Docker|rror" /tmp/hello.txt
+          section "docker run (host network, outbound)"; docker run --rm --network host busybox:1.36 wget -qO /tmp/x -T 10 http://example.com > /tmp/wget.txt 2>&1 && echo "outbound from a container: ok" || tail -3 /tmp/wget.txt
+          section "dockerd log tail"; tail -15 /var/log/dockerd.log
+          EOF
+          cat "$RUNNER_TEMP/probe.txt"
+          grep -q "Hello from Docker" "$RUNNER_TEMP/probe.txt" && echo "docker=ok" >> "$GITHUB_OUTPUT" || echo "docker=failed" >> "$GITHUB_OUTPUT"
+
+      - name: Keep it running
+        if: inputs.keep_minutes != '0'
+        run: sleep $((KEEP_MINUTES * 60))
 
       - name: Forget the instance
         if: always() && steps.create.outputs.item_hash != ''
@@ -165,12 +286,22 @@ jobs:
         run: |
           echo y | aleph instance delete "$ITEM_HASH" --reason "confidential smoke test ${GITHUB_RUN_ID}" --chain eth
 
+      - name: Forget the encrypted rootfs
+        # The STORE of the uploaded image outlives the instance and keeps
+        # costing credits until it is forgotten.
+        if: always() && steps.create.outputs.rootfs_store != ''
+        env:
+          ROOTFS_STORE: ${{ steps.create.outputs.rootfs_store }}
+        run: |
+          echo y | aleph message forget "$ROOTFS_STORE" --reason "confidential smoke test rootfs ${GITHUB_RUN_ID}" --chain eth
+
       - name: Summary
         if: always()
         env:
           ITEM_HASH: ${{ steps.create.outputs.item_hash }}
           STATE: ${{ steps.execution.outputs.state }}
           ATTEST: ${{ steps.attest.outcome }}
+          DOCKER: ${{ steps.probe.outputs.docker }}
         run: |
           {
             echo "## Confidential smoke"
@@ -181,11 +312,20 @@ jobs:
             echo "| Node | \`${CRN}\` |"
             echo "| Instance | \`${ITEM_HASH:-none}\` |"
             echo "| Execution state before attest | \`${STATE:-unknown}\` |"
+            echo "| Image | \`${IMAGE}\` |"
             echo "| Attestation | ${ATTEST:-skipped} |"
+            [ "$IMAGE" = debian-docker ] && echo "| Docker in the guest | ${DOCKER:-not probed} |"
             if [ -s "$RUNNER_TEMP/attest.json" ]; then
               echo
               echo '```json'
               cat "$RUNNER_TEMP/attest.json"
+              echo '```'
+            fi
+            if [ -s "$RUNNER_TEMP/probe.txt" ]; then
+              echo
+              echo "### Guest probe"
+              echo '```'
+              cat "$RUNNER_TEMP/probe.txt"
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"

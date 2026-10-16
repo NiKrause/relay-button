@@ -109,9 +109,33 @@ whole path with Aleph's own CLI: it LUKS-encrypts a minimal busybox rootfs,
 starts it on a chosen SEV-SNP node, attests it (AMD certificate chain, launch
 measurement, policy), injects the passphrase over the attested channel, checks
 that the instance keeps running and forgets it again. Each run spends a few
-cents of credits from the account behind `ALEPH_PRIVATE_KEY`. Starting a
-confidential instance from a plain image (`--confidential --image ubuntu26`)
-failed on two SEV-SNP nodes of different operators in October 2026.
+cents of credits from the account behind `ALEPH_PRIVATE_KEY`, and it also
+forgets the uploaded image. Starting a confidential instance from a plain image
+(`--confidential --image ubuntu26`) failed on two SEV-SNP nodes of different
+operators in October 2026.
+
+An encrypted rootfs is not booted like a normal instance. The measured init
+unlocks it, chroots into it and runs its `/sbin/init`, which must be a regular
+file that stays in the foreground. **systemd cannot run there** (it is not
+PID 1), and there is no cloud-init, so SSH keys and all configuration must be
+inside the image. The relay profiles' Debian images rely on both, which means a
+confidential relay needs its own image flavour. With `image: debian-docker` the
+smoke workflow builds a Debian rootfs under a small foreground init with sshd
+and Docker, logs in after the unlock and reports what the guest offers a
+workload. What it found (aleph CLI v0.22.0, runtime `snp-1.2`, kernel 6.18):
+
+| | |
+| --- | --- |
+| Network | IPv4 behind NAT and a public IPv6, DNS, outbound HTTPS; mapped ports (22) reachable; no guest firewall |
+| Image size | the CCN takes at most **1 GiB per upload**, so the encrypted image must stay below it |
+| Disk | the CRN grows the LUKS volume to the instance disk, **not** the ext4 inside; `resize2fs` refuses in the chroot (it does not see `/` as mounted), the `EXT4_IOC_RESIZE_FS` ioctl grows it online |
+| Kernel | cgroup v2 (cpuset, cpu, io, memory, pids); **no** nftables, bridge, veth, overlayfs or FUSE |
+| Docker | runs with `--iptables=false --bridge=none --storage-driver=vfs`; containers use the host network and reach the internet |
+
+So a confidential workload ships a small image and pulls its containers
+after the unlock, onto the encrypted disk. Compose services need
+`network_mode: host`, which is also what Aleph's own `aleph.compose/1`
+programs require.
 
 ## The reachability probe
 
