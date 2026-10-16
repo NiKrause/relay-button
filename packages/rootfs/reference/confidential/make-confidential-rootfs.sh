@@ -111,7 +111,7 @@ rm -f "$root/usr/bin/cloud-init" "$root/usr/bin/cloud-id"
 for dir in "$root/etc/systemd/system" "$root/lib/systemd/system" "$root/usr/lib/systemd/system"; do
   [ -d "$dir" ] || continue
   # grep exits 1 when a directory has none; under pipefail that would end the script.
-  {   grep -rlE '^Type=notify(-reload)?$' "$dir" --include='*.service' 2>/dev/null || true; } | while read -r unit; do
+  { grep -rlE '^Type=notify(-reload)?$' "$dir" --include='*.service' 2>/dev/null || true; } | while read -r unit; do
     sed -i -E 's/^Type=notify(-reload)?$/Type=simple/; /^NotifyAccess=/d' "$unit"
     echo "Type=notify -> simple: ${unit#$root}"
   done
