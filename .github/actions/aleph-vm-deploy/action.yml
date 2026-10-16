@@ -323,6 +323,9 @@ outputs:
   runtime_json:
     description: Full runtime detail JSON
     value: ${{ steps.run_action.outputs.runtime_json }}
+  timings_json:
+    description: JSON array of deploy phases with milliseconds since the start and the node of each attempt
+    value: ${{ steps.run_action.outputs.timings_json }}
   geocoded_crns_json:
     description: Geocoded CRN payload when running in list-crns mode
     value: ${{ steps.run_action.outputs.geocoded_crns_json }}
