@@ -104,6 +104,8 @@ ln -sf /lib/systemd/system/ssh.service "$wants/multi-user.target.wants/ssh.servi
 size_mib=$(( $(du -sm "$root" | cut -f1) * 110 / 100 + 64 ))
 echo "rootfs content: $(du -sh "$root" | cut -f1), plain image ${size_mib} MiB"
 [ "$size_mib" -le "$MAX_PLAIN_MIB" ] || {
+  echo "largest directories:" >&2
+  du -xm --max-depth=4 "$root" 2>/dev/null | sort -n | tail -30 | sed "s|$root||" >&2
   echo "the plain image (${size_mib} MiB) is above ${MAX_PLAIN_MIB} MiB and would exceed the 1 GiB upload limit once encrypted" >&2
   exit 1
 }
