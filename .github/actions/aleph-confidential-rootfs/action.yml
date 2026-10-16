@@ -94,7 +94,9 @@ runs:
         plain="$RUNNER_TEMP/confidential-plain.ext4"
         luks="$RUNNER_TEMP/confidential-rootfs.luks"
         pass="$RUNNER_TEMP/confidential-luks.pass"
-        ( umask 077; printf '%s' "$LUKS_PASSPHRASE" > "$pass" )
+        # Without CR/LF, as the CLI reads a passphrase file when it unlocks, so a
+        # secret set from a file with a trailing newline still matches.
+        ( umask 077; printf '%s' "$LUKS_PASSPHRASE" | tr -d '\r\n' > "$pass" )
         size_mib=$(( $(sudo stat -c%s "$plain") / 1048576 + 64 ))
         truncate -s "${size_mib}M" "$luks"
         loop="$(sudo losetup --find --show "$luks")"

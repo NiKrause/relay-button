@@ -62,11 +62,23 @@ Current supported inputs:
   Repository that contains the shared tooling source.
 - `tooling_ref`
   Ref of the shared tooling repository to checkout.
+- `confidential`
+  Deploy an AMD SEV-SNP confidential instance (see below). Needs
+  `deploy_vm=true` and the `CONFIDENTIAL_LUKS_PASSPHRASE` secret; the plain
+  `publish` is not needed for it.
+- `confidential_rootfs_item_hash`
+  An encrypted rootfs an earlier confidential run built for the same version
+  (its `confidential_rootfs_item_hash` output). Deploys it without building or
+  encrypting again.
 
 ## Secrets
 
 - `ALEPH_PRIVATE_KEY`
   Required only when `publish=true`.
+- `CONFIDENTIAL_LUKS_PASSPHRASE`
+  Required when `confidential=true`: the passphrase the encrypted rootfs is
+  built with and unlocked with after attestation. A trailing newline is
+  ignored, so it may be set from a file.
 
 ## Outputs
 
@@ -86,6 +98,26 @@ The workflow currently exports:
 - `rootfs_manifest_gateway_url`
 - `rootfs_manifest_artifact_url`
 - `rootfs_manifest_artifact_api_zip_url`
+- `confidential_rootfs_item_hash`
+
+### Confidential deploys
+
+With `confidential: true` the workflow builds the profile image as usual,
+then `.github/actions/aleph-confidential-rootfs` converts it (no systemd as
+PID 1, no cloud-init, the deploy SSH key baked in), LUKS-encrypts it with
+`CONFIDENTIAL_LUKS_PASSPHRASE` and publishes it through IPFS and a STORE.
+`aleph-vm-deploy` then starts it on an SEV-SNP node, attests it and unlocks
+it before the usual setup (see the GitHub Action reference). Retention records
+the encrypted image as the deployment's rootfs, and never forgets one that a
+retained deployment still uses.
+
+**One image per version.** Building and uploading the encrypted image takes
+minutes (about 8 for the 1.7 GiB orbitdb-relay image); the deploy itself
+about 3. Pass the `confidential_rootfs_item_hash` of the first run to later
+deploys of the same version and they skip the build. Every deployment of that
+image shares its passphrase, which suits relays run by one operator; a
+workload whose data must be readable by one person only (one Paperless per
+user) needs its own image and passphrase per deployment.
 
 These outputs let a caller workflow continue with repo-specific steps such as:
 

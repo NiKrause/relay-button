@@ -17,6 +17,21 @@ on:
         required: false
         default: false
         type: boolean
+      confidential:
+        description: >-
+          Deploy an AMD SEV-SNP confidential instance: the built image is converted and LUKS-encrypted
+          (aleph-confidential-rootfs) with the CONFIDENTIAL_LUKS_PASSPHRASE secret, then started, attested
+          and unlocked by aleph-vm-deploy. The plain publish is not needed for it.
+        required: false
+        default: false
+        type: boolean
+      confidential_rootfs_item_hash:
+        description: >-
+          An encrypted rootfs built before for this version (the confidential_rootfs_item_hash output of an
+          earlier run, same passphrase). Deploys it without building or encrypting again.
+        required: false
+        default: ""
+        type: string
       enable_caddy_proxy:
         description: Configure the guest with proxy-backed Caddy HTTPS/WSS when deploying a VM
         required: false
@@ -230,6 +245,8 @@ on:
         required: false
       VM_SSH_PUBLIC_KEY:
         required: false
+      CONFIDENTIAL_LUKS_PASSPHRASE:
+        required: false
     outputs:
       rootfs_version:
         description: Derived or supplied rootfs version
@@ -246,6 +263,9 @@ on:
       rootfs_manifest_versioned_path:
         description: Workspace path to the copied versioned manifest when configured
         value: ${{ jobs.build-rootfs.outputs.rootfs_manifest_versioned_path }}
+      confidential_rootfs_item_hash:
+        description: Item hash of the encrypted confidential rootfs this run built or used; pass it to later runs of the same version to skip the build
+        value: ${{ jobs.build-rootfs.outputs.confidential_rootfs_item_hash }}
       rootfs_image_path:
         description: Workspace path to the generated qcow2 image
         value: ${{ jobs.build-rootfs.outputs.rootfs_image_path }}
@@ -339,6 +359,7 @@ jobs:
       rootfs_manifest_copy_target_path: ${{ steps.run_rootfs.outputs.rootfs_manifest_copy_target_path }}
       rootfs_manifest_versioned_path: ${{ steps.run_rootfs.outputs.rootfs_manifest_versioned_path }}
       rootfs_image_path: ${{ steps.run_rootfs.outputs.rootfs_image_path }}
+      confidential_rootfs_item_hash: ${{ inputs.confidential_rootfs_item_hash != '' && inputs.confidential_rootfs_item_hash || steps.confidential_rootfs.outputs.rootfs_item_hash }}
       rootfs_execution_mode: ${{ steps.run_rootfs.outputs.rootfs_execution_mode }}
       rootfs_cid: ${{ steps.run_rootfs.outputs.rootfs_cid }}
       rootfs_item_hash: ${{ steps.run_rootfs.outputs.rootfs_item_hash }}
@@ -442,7 +463,11 @@ jobs:
             echo "deploy_vm=true requires the ALEPH_PRIVATE_KEY secret." >&2
             exit 1
           fi
-          if [[ "${{ inputs.deploy_vm }}" == "true" && "${{ inputs.publish }}" != "true" && -z "${{ inputs.rootfs_item_hash }}" ]]; then
+          if [[ "${{ inputs.confidential }}" == "true" && -z "${{ secrets.CONFIDENTIAL_LUKS_PASSPHRASE }}" ]]; then
+            echo "confidential=true requires the CONFIDENTIAL_LUKS_PASSPHRASE secret." >&2
+            exit 1
+          fi
+          if [[ "${{ inputs.deploy_vm }}" == "true" && "${{ inputs.confidential }}" != "true" && "${{ inputs.publish }}" != "true" && -z "${{ inputs.rootfs_item_hash }}" ]]; then
             echo "deploy_vm=true requires either publish=true for Aleph IPFS/STORE rootfs publication or an explicit rootfs_item_hash." >&2
             exit 1
           fi
@@ -722,6 +747,16 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Build the encrypted confidential rootfs
+        id: confidential_rootfs
+        if: ${{ inputs.deploy_vm && inputs.confidential && inputs.confidential_rootfs_item_hash == '' }}
+        uses: ./shared-aleph-tooling/.github/actions/aleph-confidential-rootfs
+        with:
+          image_path: ${{ startsWith(steps.run_rootfs.outputs.rootfs_image_path, '/') && steps.run_rootfs.outputs.rootfs_image_path || format('{0}/{1}/{2}', github.workspace, inputs.tooling_checkout_path, steps.run_rootfs.outputs.rootfs_image_path) }}
+          ssh_public_key: ${{ inputs.vm_ssh_public_key != '' && inputs.vm_ssh_public_key || secrets.VM_SSH_PUBLIC_KEY }}
+          luks_passphrase: ${{ secrets.CONFIDENTIAL_LUKS_PASSPHRASE }}
+          aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
+
       - name: Deploy VM from published rootfs
         if: ${{ inputs.deploy_vm }}
         id: deploy_vm
@@ -731,7 +766,14 @@ jobs:
           profile: ${{ inputs.profile }}
           name: ${{ inputs.vm_name != '' && inputs.vm_name || inputs.profile }}
           ssh_public_key: ${{ inputs.vm_ssh_public_key != '' && inputs.vm_ssh_public_key || secrets.VM_SSH_PUBLIC_KEY }}
-          rootfs_item_hash: ${{ inputs.rootfs_item_hash != '' && inputs.rootfs_item_hash || steps.run_rootfs.outputs.rootfs_item_hash }}
+          rootfs_item_hash: >-
+            ${{
+              inputs.confidential &&
+              (inputs.confidential_rootfs_item_hash != '' && inputs.confidential_rootfs_item_hash || steps.confidential_rootfs.outputs.rootfs_item_hash) ||
+              (inputs.rootfs_item_hash != '' && inputs.rootfs_item_hash || steps.run_rootfs.outputs.rootfs_item_hash)
+            }}
+          confidential: ${{ inputs.confidential && 'true' || 'false' }}
+          luks_passphrase: ${{ inputs.confidential && secrets.CONFIDENTIAL_LUKS_PASSPHRASE || '' }}
           rootfs_version: ${{ inputs.rootfs_version != '' && inputs.rootfs_version || steps.run_rootfs.outputs.rootfs_version }}
           rootfs_size_mib: ${{ inputs.vm_rootfs_size_mib }}
           api_hosts: ${{ inputs.vm_api_hosts }}
@@ -778,7 +820,7 @@ jobs:
         if: >-
           ${{
             inputs.deploy_vm &&
-            inputs.publish &&
+            (inputs.publish || inputs.confidential) &&
             fromJSON(inputs.retain_successful_deployments) > 0
           }}
         id: retention
@@ -792,7 +834,7 @@ jobs:
           ALEPH_VM_RETENTION_KEEP_COUNT: ${{ inputs.retain_successful_deployments }}
           ALEPH_VM_RETENTION_EXTRA_FORGET_HASHES_JSON: "[]"
           ALEPH_VM_RETENTION_CURRENT_RECORD_JSON: >-
-            {"instance_item_hash":"${{ steps.deploy_vm.outputs.instance_item_hash }}","rootfs_item_hash":"${{ inputs.rootfs_item_hash != '' && inputs.rootfs_item_hash || steps.run_rootfs.outputs.rootfs_item_hash }}","rootfs_cid":"${{ steps.run_rootfs.outputs.rootfs_cid }}","site_item_hash":"","site_url":"","relay_peer_id":"${{ steps.deploy_vm.outputs.relay_peer_id }}","rootfs_version":"${{ inputs.rootfs_version != '' && inputs.rootfs_version || steps.run_rootfs.outputs.rootfs_version }}","vm_name":"${{ inputs.vm_name != '' && inputs.vm_name || inputs.profile }}","deployed_at":"${{ github.run_id }}-${{ github.run_attempt }}"}
+            {"instance_item_hash":"${{ steps.deploy_vm.outputs.instance_item_hash }}","rootfs_item_hash":"${{ inputs.confidential && (inputs.confidential_rootfs_item_hash != '' && inputs.confidential_rootfs_item_hash || steps.confidential_rootfs.outputs.rootfs_item_hash) || (inputs.rootfs_item_hash != '' && inputs.rootfs_item_hash || steps.run_rootfs.outputs.rootfs_item_hash) }}","rootfs_cid":"${{ steps.run_rootfs.outputs.rootfs_cid }}","site_item_hash":"","site_url":"","relay_peer_id":"${{ steps.deploy_vm.outputs.relay_peer_id }}","rootfs_version":"${{ inputs.rootfs_version != '' && inputs.rootfs_version || steps.run_rootfs.outputs.rootfs_version }}","vm_name":"${{ inputs.vm_name != '' && inputs.vm_name || inputs.profile }}","deployed_at":"${{ github.run_id }}-${{ github.run_attempt }}"}
         run: node ./packages/node/src/action-runner.ts
 
       - name: Summarize rootfs deployment

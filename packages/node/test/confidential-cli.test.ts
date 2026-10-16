@@ -67,7 +67,7 @@ test("attestAndUnlock retries the attestation, then injects the passphrase", asy
     privateKey: KEY,
     itemHash: ITEM_HASH,
     crnHash: "c".repeat(64),
-    luksPassphrase: "correct horse battery staple",
+    luksPassphrase: "correct horse battery staple\n",
     attempts: 3,
     delayMs: 0,
     sleep: async () => {},
