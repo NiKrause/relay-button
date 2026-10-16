@@ -100,13 +100,57 @@ Every prop is optional. The full type is `SponsorRelayProps` in
 | `apiHosts` | `string \| readonly string[]` | `['https://api2.aleph.im', 'https://api.aleph.im']` | Ordered Aleph API hosts with automatic failover on request errors. Accepts an array or a comma/whitespace-separated string. `api3.aleph.im` is filtered out. |
 | `crnListUrl` | `string` | `'https://crns-list.aleph.sh/crns.json'` | Source of the CRN (compute node) list used for compatibility filtering and scoring. When this endpoint is unreachable the client falls back to the `corechannel` aggregate read from `apiHosts`, so a crns-list outage no longer blocks deployment — see [CRN discovery](./crn-discovery.md). |
 | `crnSource` | `'auto' \| 'aggregate' \| 'list'` | `'auto'` | Which CRN source to read. `auto` falls back to the `corechannel` aggregate when `crnListUrl` is down, `aggregate` skips it, `list` disables the fallback so an outage surfaces as an error. Overridable at runtime without a reload via `localStorage.LE_SPACE_CRN_SOURCE` — see [CRN discovery](./crn-discovery.md#browser-the-live-switch). |
-| `confidential` | `boolean` | `false` | Ask for a confidential VM (AMD SEV-SNP). The panel offers only nodes that report SEV-SNP and run aleph-vm ≥ 2.1.2, labelled with country, version and operator, and quotes credits from Aleph's `instance_confidential` pricing (twice the compute price). The person can switch it in the panel. A start is refused until the measured launch and attestation exist ([#154](https://github.com/NiKrause/relay-button/issues/154)) — see [CRN discovery](./crn-discovery.md#confidential-nodes). |
+| `confidential` | `boolean` | `false` | Ask for a confidential VM (AMD SEV-SNP). The panel offers only nodes that report SEV-SNP and run aleph-vm ≥ 2.1.2, labelled with country, version and operator, and quotes credits from Aleph's `instance_confidential` pricing (twice the compute price). The person can switch it in the panel. Starting one needs `confidentialStart`; without it the panel refuses — see [Confidential starts](#confidential-starts) and [CRN discovery](./crn-discovery.md#confidential-nodes). |
+| `confidentialStart` | `SponsorRelayConfidentialStart` | — | What a confidential start needs: `rootfsItemHash` (the encrypted rootfs), `relayUrl` (an attest relay), `loadWasm` (the attestation WASM), optionally `rootfsSizeMiB` and `runtimeName`. See [Confidential starts](#confidential-starts). |
 | `schedulerApiHost` | `string` | `'https://scheduler.api.aleph.cloud'` | Aleph scheduler used to resolve the allocation for a submitted instance. |
 | `twoN6ApiHost` | `string` | `'https://api.2n6.me'` | 2n6 API used to resolve the VM's HTTPS hostname, which the controller probes before declaring a relay reachable. |
 | `ucanStoreBootstrap` | `Partial<SponsorRelayUcanStoreBootstrapInput>` | see below | Pre-fills the UCAN Store bootstrap form. Only used when the manifest declares `profile: "ucan-store"`. |
 | `position` | `'bottom-right' \| 'bottom-left' \| 'top-right' \| 'top-left'` | `'bottom-right'` | Which corner the floating launcher starts in. Ignored when `launcherMode` is `'inline'`, where your own layout places it. |
 | `draggable` | `boolean` | `false` | Let the user drag the launcher. The panel follows it and flips its open direction near an edge. |
 | `positionStorageKey` | `string` | — | `localStorage` key for the dragged position. Omit it and nothing is stored. |
+
+### Confidential starts
+
+With `confidential` on and `confidentialStart` set, the deploy runs entirely
+in the browser, with Aleph's own security model and no service in between
+that could read anything:
+
+1. The attestation WASM loads (`loadWasm`), the network's SNP runtime and its
+   bundle are fetched and checked against their manifest, and the launch
+   measurements are **computed here, for the connected wallet**. That is
+   what the guest must later prove it booted.
+2. The INSTANCE message carries them in `environment.trusted_execution` and
+   points at the encrypted rootfs; the wallet signs it as for any deploy.
+3. After the node takes it, the browser opens an RA-TLS connection to the
+   guest through the attest relay (which forwards TLS records it cannot
+   read), verifies the guest's report against AMD's certificate chain, the
+   pinned measurements and policy, and a fresh nonce.
+4. Only then does it send the passphrase the person typed, over that
+   attested channel, with the wallet's signature over it. The passphrase is
+   held in memory until the unlock and then cleared; it is never stored.
+
+A failed attestation counts as a failed attempt on that node: the instance
+is forgotten and the next node is tried.
+
+```jsx
+<SponsorRelayFab
+  confidential
+  confidentialStart={{
+    rootfsItemHash: '…', // the reusable workflow's confidential_rootfs_item_hash
+    relayUrl: 'wss://attest-relay.example/attest',
+    loadWasm: async () => {
+      const wasm = await import('@le-space/attest-wasm/pkg/relay_button_attest.js')
+      await wasm.default()
+      return wasm
+    },
+  }}
+/>
+```
+
+The encrypted rootfs is built per version by the reusable workflow
+(`confidential: true`) with the operator's passphrase, which suits relays you
+run yourself; images per visitor are still open
+([#169](https://github.com/NiKrause/relay-button/issues/169)).
 
 ### Placing the launcher
 
