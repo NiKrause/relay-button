@@ -108,6 +108,21 @@ test('runActionMode emits scaffold deploy outputs in deploy mode', async () => {
   assert.match(writes.join(''), /instanceHash/)
 })
 
+test('runActionMode does not turn a confidential deploy with missing env into a scaffold result', async () => {
+  const { env } = await createActionEnv('relay-button-action-confidential-')
+  await assert.rejects(
+    runActionMode({
+      ...env,
+      ALEPH_VM_MODE: 'deploy',
+      ALEPH_VM_CONFIDENTIAL: 'true',
+      ALEPH_VM_PRIVATE_KEY: '0xabc',
+      ALEPH_VM_NAME: 'orbitdb-relay',
+      ALEPH_VM_ROOTFS_ITEM_HASH: 'a'.repeat(64)
+    }),
+    /Missing required environment variable/
+  )
+})
+
 test('runActionMode executes the shared deploy executor when required env is present', async () => {
   const { env, outputFile } = await createActionEnv('relay-button-action-live-deploy-')
   const writes: string[] = []

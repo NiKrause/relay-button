@@ -537,6 +537,13 @@ export async function runActionMode(
         error instanceof Error &&
         error.message.includes("Missing required environment variable")
       ) {
+        // A confidential deploy is never a scaffold run: skipping it quietly
+        // made a deploy job without an SSH key report success with nothing
+        // deployed.
+        if (optionalEnv("ALEPH_VM_CONFIDENTIAL", "", env).toLowerCase() === "true") {
+          throw error;
+        }
+        console.log(`::warning::Deploy skipped, scaffold outputs only: ${error.message}`);
         deployResult = buildScaffoldDeployResult(env);
       } else {
         throw error;

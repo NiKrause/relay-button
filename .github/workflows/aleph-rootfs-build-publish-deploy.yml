@@ -463,6 +463,10 @@ jobs:
             echo "deploy_vm=true requires the ALEPH_PRIVATE_KEY secret." >&2
             exit 1
           fi
+          if [[ "${{ inputs.deploy_vm }}" == "true" && -z "${{ inputs.vm_ssh_public_key }}" && -z "${{ secrets.VM_SSH_PUBLIC_KEY }}" ]]; then
+            echo "deploy_vm=true requires an SSH public key (vm_ssh_public_key input or VM_SSH_PUBLIC_KEY secret)." >&2
+            exit 1
+          fi
           if [[ "${{ inputs.confidential }}" == "true" && -z "${{ secrets.CONFIDENTIAL_LUKS_PASSPHRASE }}" ]]; then
             echo "confidential=true requires the CONFIDENTIAL_LUKS_PASSPHRASE secret." >&2
             exit 1
