@@ -166,7 +166,17 @@ The deploy then differs in three places and is the same everywhere else:
    the next candidate is tried.
 
 Port forwards, the setup endpoint, bootstrap registration and the
-reachability check run as for any deploy. The smoke workflow **Aleph
+reachability check run as for any deploy.
+
+**What is forgotten, and when.** Any deploy, confidential or not, forgets the
+instance of an attempt that fails after Aleph processed it (a refused
+attestation, a setup endpoint that never answers, a failing `/configure`, a
+metadata timeout), unless `preserve_failed_deployment` is set. The encrypted
+rootfs STORE belongs to the caller, since one image may serve several
+attempts or deployments: retention forgets it with its instance (instances
+first, because Aleph refuses to forget a STORE an instance still uses), and a
+caller that built one image for one deploy forgets it when that deploy fails,
+as the smoke workflow does. The smoke workflow **Aleph
 Confidential Deploy Smoke** runs the whole path against a published
 orbitdb-relay rootfs.
 
