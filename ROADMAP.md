@@ -53,7 +53,7 @@ What's new, by package:
 Verified on real SEV-SNP nodes:
 
 - The CLI path.
-- Debian with Docker and Paperless-ngx in a confidential VM (#159, #160).
+- Debian with Docker and a multi-container web stack in a confidential VM (#159, #160).
 - The relay profile.
 - A Playwright E2E that deploys from the widget with an injected test wallet,
   attests, unlocks, waits for the relay's registration, and attests once more
