@@ -38,6 +38,17 @@ overrides:
   "websocket-driver": "^0.7.5"
   "ws": "^8.21.0"
 
+# @libp2p/webrtc depends on react-native-webrtc, whose peer `react-native` is
+# not marked optional, so pnpm auto-installed all of React Native into
+# @le-space/node: a Node deploy tool. react-native-webrtc is only referenced
+# from dist/src/webrtc/index.react-native.js, which is selected solely through
+# the package.json "react-native" field that Metro reads; Node never loads it.
+packageExtensions:
+  react-native-webrtc:
+    peerDependenciesMeta:
+      react-native:
+        optional: true
+
 onlyBuiltDependencies:
   - "@ipshipyard/node-datachannel"
   - "@swc/core"
