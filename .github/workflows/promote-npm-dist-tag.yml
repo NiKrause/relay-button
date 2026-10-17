@@ -29,11 +29,10 @@ jobs:
       # because the first job failed a read-back.
       fail-fast: false
       matrix:
-        # Must list every package that Release Packages actually publishes
-        # (prepare-publish.mjs strips `private` from core/node/shared-types at
-        # publish time, so those ARE on npm and need their dist-tag promoted
-        # too). Keeping this in sync with the published set prevents a split
-        # `latest` tag where some packages advance and others lag.
+        # Must list every package that Release Packages actually publishes —
+        # the `publishTargets` in scripts/prepare-publish.mjs. Keeping this in
+        # sync with the published set prevents a split `latest` tag where some
+        # packages advance and others lag.
         package_name:
           - '@le-space/aleph-bootstrap'
           - '@le-space/attest-wasm'
