@@ -42,6 +42,12 @@ export interface SponsorRelayConfidentialStart {
   loadWasm: () => Promise<AttestWasm>
   /** An SNP instance runtime by name (vm-images); the network's default if absent. */
   runtimeName?: string
+  /**
+   * localStorage key under which nodes AMD cannot vouch for (KDS has no VCEK
+   * for their chip) are remembered for a week and tried last. Omit it and
+   * they are remembered for the page only.
+   */
+  refusedNodesStorageKey?: string
 }
 
 export interface SponsorRelayProps {
