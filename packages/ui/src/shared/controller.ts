@@ -79,6 +79,12 @@ import {
   type AttestWasm,
   type SnpTrustedExecution,
 } from "../../../browser/src/confidential.ts";
+import {
+  demoteUnverifiableCrns,
+  isUnverifiableNodeError,
+  rememberUnverifiableCrn,
+  unverifiableCrnHashes,
+} from "./unverifiable-crns.ts";
 import type {
   UcanStoreBootstrapPackage,
   UcanStoreBootstrapValidationResult,
@@ -3111,10 +3117,21 @@ export class SponsorRelayController {
         },
       } as SponsorRelayState);
       const preferredCrnHash = this.state.selectedCrn?.hash ?? null;
-      const rankedCrns = [
+      const pinnedFirst = [
         ...compatibleCrns.filter((crn) => crn.hash === preferredCrnHash),
         ...compatibleCrns.filter((crn) => crn.hash !== preferredCrnHash),
-      ].slice(0, 5);
+      ];
+      // Nodes whose chip AMD has no certificate for go last on a confidential
+      // start (unverifiable-crns.ts), so a known dead end is not the first try.
+      const rankedCrns = (
+        this.state.confidential
+          ? demoteUnverifiableCrns(
+              pinnedFirst,
+              unverifiableCrnHashes(this.props.confidentialStart?.refusedNodesStorageKey),
+              this.state.crnPinnedByUser ? preferredCrnHash : null,
+            )
+          : pinnedFirst
+      ).slice(0, 5);
 
       // Aggregate records are registry entries, not health checks, so a
       // registered-but-dead node would otherwise cost a full attempt. Probing
@@ -3538,6 +3555,9 @@ export class SponsorRelayController {
           const failedDueToInvalidIpv6 =
             /not globally routable|public guest IPv6/i.test(lastError.message);
           attemptErrors.push(`${attemptLabel}: ${lastError.message}`);
+          if (this.state.confidential && isUnverifiableNodeError(lastError.message)) {
+            rememberUnverifiableCrn(candidateCrn.hash, confidentialStart?.refusedNodesStorageKey);
+          }
           this.trace("deploy:crn-attempt-error", {
             crnHash: candidateCrn.hash,
             crnName: candidateCrn.name,
