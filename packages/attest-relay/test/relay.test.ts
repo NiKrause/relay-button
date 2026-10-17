@@ -4,7 +4,7 @@ import http from 'node:http'
 import net from 'node:net'
 import type { AddressInfo } from 'node:net'
 
-import { attachAttestRelay, clientAddress, isPublicIpv4, resolveAttestationTarget, type RelayOptions } from '../src/relay.ts'
+import { attachAttestRelay, clientAddress, isPublicIpv4, isPublicIpv6, resolveAttestationTarget, type RelayOptions } from '../src/relay.ts'
 
 const CRN = 'c'.repeat(64)
 const VM = 'a'.repeat(64)
@@ -110,7 +110,7 @@ test('resolveAttestationTarget finds the mapped 8443 of the instance on the node
     }
     return { ok: false, status: 404, json: async () => ({}) }
   }
-  assert.deepEqual(await resolveAttestationTarget({ crn: CRN, vm: VM, fetch }), { host: '203.0.113.7', port: 24651 })
+  assert.deepEqual(await resolveAttestationTarget({ crn: CRN, vm: VM, fetch }), { host: '203.0.113.7', port: 24651, fallbacks: [] })
   await assert.rejects(resolveAttestationTarget({ crn: CRN, vm: 'b'.repeat(64), fetch }), /no mapped attestation port/)
   await assert.rejects(resolveAttestationTarget({ crn: 'd'.repeat(64), vm: VM, fetch }), /no https address/)
 })
@@ -129,4 +129,45 @@ test('behind a local proxy, clients are counted by the forwarded address', () =>
   assert.equal(clientAddress(request('127.0.0.1', '203.0.113.9, 198.51.100.7'), true), '198.51.100.7', 'the entry the proxy appended')
   assert.equal(clientAddress(request('203.0.113.1', '198.51.100.7'), true), '203.0.113.1', 'only a loopback peer may forward')
   assert.equal(clientAddress(request('127.0.0.1', 'not-an-ip'), true), '127.0.0.1')
+})
+
+test('falls back to the next target and replays what the client sent first', async () => {
+  const echo = await echoServer()
+  // A closed port: connecting is refused, as a node's own IPv4 is from inside its VM.
+  const closed = await echoServer()
+  closed.close()
+  const r = await relay({
+    resolveTarget: async () => ({ host: '127.0.0.1', port: closed.port, fallbacks: [{ host: '127.0.0.1', port: echo.port }] }),
+  })
+  const ws = open(r.url(`crn=${CRN}&vm=${VM}`))
+  await opened(ws)
+  const reply = nextMessage(ws)
+  ws.send(new Uint8Array([0x16, 0x03, 0x01]))
+  assert.deepEqual(Array.from(await reply), [0x16, 0x03, 0x01])
+  ws.close()
+  r.close()
+  echo.close()
+})
+
+test('resolveAttestationTarget adds the instance IPv6 on 8443 as a fallback', async () => {
+  const fetch = async (url: string) => ({
+    ok: true,
+    status: 200,
+    json: async () =>
+      url.includes('corechannel')
+        ? { data: { corechannel: { resource_nodes: [{ hash: CRN, address: 'https://crn.example' }] } } }
+        : { [VM]: { networking: { host_ipv4: '203.0.113.5', ipv6_ip: '2a01:4f8::1', mapped_ports: { '8443': { host: 24001, tcp: true } } } } },
+  })
+  assert.deepEqual(await resolveAttestationTarget({ crn: CRN, vm: VM, fetch }), {
+    host: '203.0.113.5',
+    port: 24001,
+    fallbacks: [{ host: '2a01:4f8::1', port: 8443 }],
+  })
+})
+
+test('isPublicIpv6 accepts global unicast only', () => {
+  assert.equal(isPublicIpv6('2604:f440:5:6:3:fb:8a49:af1'), true)
+  for (const host of ['::1', 'fe80::1', 'fd00::1', 'ff02::1', '2001:db8::1', '127.0.0.1', 'example.com']) {
+    assert.equal(isPublicIpv6(host), false, host)
+  }
 })

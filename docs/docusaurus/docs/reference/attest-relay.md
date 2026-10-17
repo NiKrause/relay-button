@@ -64,9 +64,12 @@ attest.example.com {
 
 - The client names a node and an instance (`/attest?crn=<node hash>&vm=<instance hash>`),
   never a host or a port. The relay looks up the node's address in Aleph's
-  corechannel aggregate and the instance's mapped port 8443 in that node's
-  executions list, and connects only to a public IPv4 address. It is not an
-  open proxy.
+  corechannel aggregate and the instance's networking in that node's
+  executions list. It connects to the node's public IPv4 on the port mapped to
+  8443, and if that fails, to the instance's own public IPv6 on 8443. A relay
+  inside a VM needs the second: it cannot reach its own node's public IPv4.
+  Private, loopback and link-local addresses are refused. It is not an open
+  proxy.
 - Each connection is limited in bytes (4 MiB per direction) and time
   (120 s). Connections are capped per client (4) and in total (256).
 - Behind a proxy on the same host (`ATTEST_RELAY_TRUST_PROXY=1`), clients are
