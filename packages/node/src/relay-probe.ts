@@ -11,7 +11,7 @@ import { ping } from '@libp2p/ping'
 import { tcp } from '@libp2p/tcp'
 import { webRTC, webRTCDirect } from '@libp2p/webrtc'
 import { webSockets } from '@libp2p/websockets'
-import { multiaddr } from '@multiformats/multiaddr'
+import { multiaddr, type Multiaddr } from '@multiformats/multiaddr'
 import { createLibp2p } from 'libp2p'
 
 import { integerEnv, jsonEnv } from './env.ts'
@@ -101,6 +101,35 @@ export function classifyRelayAddress(
   }
 }
 
+/**
+ * Protocol names of an address, in order. multiaddr 13 removed `protoNames()`;
+ * this is what it returned.
+ */
+export function multiaddrProtocols(addr: Multiaddr): string[] {
+  return addr.getComponents().map((component) => component.name)
+}
+
+/**
+ * The peer an address dials, as multiaddr 12's removed `getPeerId()` resolved
+ * it: the last `/p2p/` component, counting only those after the last
+ * `/p2p-circuit`, so a relayed address yields its target rather than the
+ * relay, and a relayed address without a target yields none. An unparseable
+ * peer id yields none as well, as it did before.
+ */
+export function targetPeerId(addr: Multiaddr): ReturnType<typeof peerIdFromString> | null {
+  let value: string | undefined
+  for (const component of addr.getComponents()) {
+    if (component.name === 'p2p') value = component.value
+    if (component.name === 'p2p-circuit') value = undefined
+  }
+  if (value == null) return null
+  try {
+    return peerIdFromString(value)
+  } catch {
+    return null
+  }
+}
+
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null
   const timeoutPromise = new Promise<T>((_, reject) => {
@@ -147,8 +176,8 @@ export async function probeRelayAddress(
   policy: RelayProbePolicy
 ): Promise<RelayProbeResult> {
   const addr = multiaddr(rawAddr)
-  const peerIdString = addr.getPeerId()
-  const protocols = addr.protoNames()
+  const peerId = targetPeerId(addr)
+  const protocols = multiaddrProtocols(addr)
   const classification = classifyRelayAddress(rawAddr, protocols, policy)
   const startedAt = Date.now()
 
@@ -169,8 +198,7 @@ export async function probeRelayAddress(
     await withTimeout(node.dial(addr), policy.timeoutMs, `dial ${rawAddr}`)
     result.dialMs = Date.now() - startedAt
 
-    if (peerIdString) {
-      const peerId = peerIdFromString(peerIdString)
+    if (peerId) {
       await sleep(policy.settleMs)
       const connections = node.getConnections(peerId)
       result.remoteAddrs = connections.map((connection) => connection.remoteAddr.toString())

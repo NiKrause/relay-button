@@ -9,19 +9,19 @@ import { bitswap } from "@helia/block-brokers";
 import { libp2pRouting } from "@helia/routers";
 import { unixfs } from "@helia/unixfs";
 import { Helia } from "@helia/utils";
-import { bootstrap } from "@le-space/libp2p-bootstrap";
-import { noise } from "@le-space/libp2p-noise";
-import { identify } from "@le-space/libp2p-identify";
-import { kadDHT } from "@le-space/libp2p-kad-dht";
-import { ping } from "@le-space/libp2p-ping";
-import { tcp } from "@le-space/libp2p-tcp";
-import { yamux } from "@le-space/libp2p-yamux";
-import { webSockets } from "@le-space/libp2p-websockets";
+import { bootstrap } from "@libp2p/bootstrap";
+import { noise } from "@chainsafe/libp2p-noise";
+import { identify } from "@libp2p/identify";
+import { kadDHT } from "@libp2p/kad-dht";
+import { ping } from "@libp2p/ping";
+import { tcp } from "@libp2p/tcp";
+import { yamux } from "@chainsafe/libp2p-yamux";
+import { webSockets } from "@libp2p/websockets";
 import { multiaddr } from "@multiformats/multiaddr";
 import { MemoryBlockstore } from "blockstore-core";
 import { MemoryDatastore } from "datastore-core";
 import { importer as importUnixfs } from "ipfs-unixfs-importer";
-import { createLibp2p as createHeliaLibp2p } from "libp2p-helia";
+import { createLibp2p as createHeliaLibp2p } from "libp2p";
 
 import {
   buildRootfs,
