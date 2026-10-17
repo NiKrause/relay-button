@@ -5,7 +5,7 @@ import { multiaddr } from "@multiformats/multiaddr"
 import { MemoryBlockstore } from "blockstore-core"
 import { MemoryDatastore } from "datastore-core"
 import { createHelia, libp2pDefaults } from "helia"
-import { createLibp2p } from "libp2p-helia"
+import { createLibp2p } from "libp2p"
 import { CID } from "multiformats/cid"
 
 /**
