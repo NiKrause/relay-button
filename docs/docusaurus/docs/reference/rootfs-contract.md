@@ -206,6 +206,7 @@ behind a bare `handle` they never match.
 | `/describe` | `uc-go-peer` | Same document as `/multiaddrs`, shared name. |
 | `/metrics`, `/pinning/*`, `/ipfs/*` | `orbitdb-relay` | Its own API surface. |
 | `/bootstrap/*` | `uc-go-peer` | Guest configuration handoff. |
+| `/attest` | `orbitdb-relay` | WebSocket upgrade to the [attest relay](./attest-relay.md) (`?crn=…&vm=…`), for confidential starts from a browser. |
 
 `/multiaddrs` is the one path a consumer can rely on across libp2p profiles.
 `orbitdb-relay` has served it natively since 0.10; `uc-go-peer` answers it from
