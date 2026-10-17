@@ -45,8 +45,15 @@ const publishTargets = [
   },
   {
     dir: 'node'
+  },
+  {
+    dir: 'attest-wasm'
   }
 ]
+
+// attest-wasm ships its sources as they are (js/ and the wasm-bindgen web
+// build in pkg/), not a tsup bundle, so it keeps its own exports map.
+const ATTEST_WASM = '@le-space/attest-wasm'
 
 async function readJson(path) {
   return JSON.parse(await readFile(path, 'utf8'))
@@ -121,11 +128,25 @@ async function main() {
       files:
         packageJson.name === '@le-space/ui'
           ? ['shared', 'react', 'svelte', 'styles.css', 'README.md']
-          : undefined,
-      main: packageJson.name === '@le-space/ui' ? './shared/index.js' : './index.js',
-      types: packageJson.name === '@le-space/ui' ? './shared/index.d.ts' : './index.d.ts',
-      exports:
+          : packageJson.name === ATTEST_WASM
+            ? ['js', 'pkg', 'README.md', 'LICENSE-aleph-rs', 'LICENSE-sev']
+            : undefined,
+      main:
         packageJson.name === '@le-space/ui'
+          ? './shared/index.js'
+          : packageJson.name === ATTEST_WASM
+            ? packageJson.main
+            : './index.js',
+      types:
+        packageJson.name === '@le-space/ui'
+          ? './shared/index.d.ts'
+          : packageJson.name === ATTEST_WASM
+            ? packageJson.types
+            : './index.d.ts',
+      exports:
+        packageJson.name === ATTEST_WASM
+          ? packageJson.exports
+          : packageJson.name === '@le-space/ui'
           ? {
               '.': {
                 types: './shared/index.d.ts',
@@ -171,6 +192,23 @@ async function main() {
 
     const readmePath = join(packageRoot, 'README.md')
     await cp(readmePath, join(distDir, 'README.md'))
+
+    if (packageJson.name === ATTEST_WASM) {
+      const wasm = join(packageRoot, 'pkg', 'relay_button_attest_bg.wasm')
+      if (!(await pathExists(wasm))) {
+        throw new Error(`${ATTEST_WASM}: ${wasm} is missing; build it first (pnpm --filter ${ATTEST_WASM} build:publish with Rust and wasm-bindgen)`)
+      }
+      await cp(join(packageRoot, 'js'), join(distDir, 'js'), { recursive: true })
+      // wasm-bindgen writes pkg/.gitignore ("*"), which npm would honour and
+      // pack nothing of; copy the files without it.
+      await cp(join(packageRoot, 'pkg'), join(distDir, 'pkg'), {
+        recursive: true,
+        filter: (source) => !source.endsWith('.gitignore')
+      })
+      for (const license of ['LICENSE-aleph-rs', 'LICENSE-sev']) {
+        await cp(join(packageRoot, license), join(distDir, license))
+      }
+    }
 
     if (packageJson.name === '@le-space/rootfs') {
       await cp(join(packageRoot, 'reference'), join(distDir, 'reference'), { recursive: true })

@@ -1,5 +1,74 @@
 # Roadmap
 
+## 0.10.0 — a confidential VM the browser checks for itself
+
+Relay Button can now start an AMD SEV-SNP confidential VM on Aleph. The person
+deploying doesn't have to trust the node operator, a server of ours or GitHub
+Actions with the image's passphrase. Their own browser checks the VM against
+AMD before anything secret leaves it (#154, #169).
+
+How a start from the widget runs:
+
+1. The browser fetches the network's SNP runtime, checks it against its
+   manifest, and **computes the launch measurements for the connected
+   wallet**. The INSTANCE message carries them in
+   `environment.trusted_execution` and points at an encrypted rootfs.
+2. Once the node runs it, the browser opens an RA-TLS connection to the
+   guest through an attest relay. The relay forwards TLS records it cannot
+   read. The browser verifies the guest's report against AMD's certificate
+   chain, the pinned measurements and policy, and a fresh nonce. The
+   verifier is aleph-rs's, compiled to WebAssembly.
+3. Only then does the wallet sign the unlock. The rootfs passphrase and the
+   SSH key carrying the deployment's bootstrap token go to the guest over
+   that attested channel.
+
+A failed attestation counts as a failed attempt on that node: the instance is
+forgotten and the next node is tried. A node whose chip AMD has no certificate
+for is tried last on later starts (#179).
+
+What's new, by package:
+
+- **`@le-space/attest-wasm` (new on npm).** Report verification, the RA-TLS
+  client, the owner-signed secret injection and the launch measurement
+  computation, all in WASM with pure-Rust crypto. `unlockInstance` and
+  `confidentialTrustedExecution` are the two calls the widget makes
+  (#170, #171, #173, #175).
+- **`@le-space/ui`.** The confidential switch shows only SEV-SNP nodes with a
+  recent aleph-vm, quotes the confidential price, and starts a confidential
+  VM when the site sets `confidentialStart` (`rootfsItemHash`, `relayUrl`,
+  `loadWasm`). It refuses when the site has not set it (#156, #176, #177).
+- **The attest relay.** Every orbitdb-relay image serves it at
+  `wss://<proxy hostname>/attest`, behind its Caddy. There is no default
+  relay: a site names its own. It runs on its own too, see the *Attest relay*
+  page (#172, #178).
+- **`aleph-vm-deploy` and the reusable workflow.** They get a confidential
+  mode: one encrypted image per version, a measured launch, attestation and
+  unlock with Aleph's CLI, then the usual setup. A failed start forgets its
+  instance. Phase timings show where the time goes (#162–#167).
+- **Confidential rootfs.** The measured init chroots into the image and runs
+  no systemd. A small systemctl replacement starts the units. Caddy runs as
+  `Type=simple` with low ports opened, and the filesystem grows to the
+  disk (#162, #177).
+
+Verified on real SEV-SNP nodes:
+
+- The CLI path.
+- Debian with Docker and Paperless-ngx in a confidential VM (#159, #160).
+- The relay profile.
+- A Playwright E2E that deploys from the widget with an injected test wallet,
+  attests, unlocks, waits for the relay's registration, and attests once more
+  through that relay's own `/attest` (*Aleph Confidential Widget E2E*).
+
+Also in this release:
+
+- **The wallet helpers moved into `@le-space/browser`** (#147).
+- **Bootstrap posts are published, awaited and reconciled in one channel**
+  (#165).
+- **undici 6.28.1** (#152).
+
+Encrypted images are built per version with the operator's passphrase.
+Images per visitor are still open (#169).
+
 ## 0.9.9 — a site keeps its newest uploads, and lets the rest go
 
 Every static-site publish adds a STORE message, and Aleph bills each one for
