@@ -48,6 +48,12 @@ export interface RelayOptions {
   maxTotal?: number
   /** Allowed Origin headers; empty or absent allows any (it carries ciphertext only). */
   allowedOrigins?: string[]
+  /**
+   * Behind a reverse proxy on the same host (Caddy in the relay image), every
+   * connection comes from loopback: count clients by the last X-Forwarded-For
+   * entry instead, which the proxy appends. Only honoured for loopback peers.
+   */
+  trustProxy?: boolean
   /** Tests only: allow loopback and private targets. */
   allowPrivateTargets?: boolean
   /** WebSocket path (default /attest). */
@@ -67,6 +73,18 @@ export function isPublicIpv4(host: string): boolean {
   if (a === 192 && b === 0) return false
   if (a === 198 && (b === 18 || b === 19)) return false
   return true
+}
+
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
+
+/** The address the per-client cap counts: the peer, or behind a local proxy the client it names. */
+export function clientAddress(request: IncomingMessage, trustProxy = false): string {
+  const peer = request.socket.remoteAddress ?? 'unknown'
+  if (!trustProxy || !LOOPBACK.has(peer)) return peer
+  const header = request.headers['x-forwarded-for']
+  const forwarded = (Array.isArray(header) ? header.join(',') : header ?? '').split(',').map((entry) => entry.trim()).filter(Boolean)
+  const last = forwarded.at(-1)
+  return last && net.isIP(last) ? last : peer
 }
 
 /**
@@ -135,7 +153,7 @@ export function attachAttestRelay(server: Server, options: RelayOptions): { clos
     if (!HASH.test(crn) || !HASH.test(vm)) return reject(socket, 400, 'Bad Request')
     const origin = request.headers.origin ?? ''
     if (allowedOrigins.size > 0 && !allowedOrigins.has(origin)) return reject(socket, 403, 'Forbidden')
-    const client = request.socket.remoteAddress ?? 'unknown'
+    const client = clientAddress(request, options.trustProxy)
     if (total >= maxTotal || (perClient.get(client) ?? 0) >= maxPerClient) {
       return reject(socket, 429, 'Too Many Requests')
     }

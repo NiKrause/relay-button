@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { rootfsBuildShellEnv } from "./build-plan.ts";
 import { referenceProfileRootfsDir, type RootfsContract } from "./contract.ts";
@@ -22,6 +24,8 @@ export interface RootfsExecutionPlan {
   mode: "host" | "docker";
   reason: string;
   referenceRootfsDir: string;
+  /** Run on the host first: files the image needs, built into the reference dir (all a Docker build sees). */
+  assetCommands?: RootfsCommandPlan[];
   prepareCommand?: RootfsCommandPlan;
   runCommand: RootfsCommandPlan;
 }
@@ -64,6 +68,25 @@ function resolveReferenceRootfsDir(contract: RootfsContract, override?: string):
   return referenceProfileRootfsDir(contract.id);
 }
 
+/**
+ * The orbitdb-relay image carries the attest relay (packages/attest-relay) as
+ * one bundled file, so browsers can reach a confidential guest's RA-TLS port
+ * at wss://<relay host>/attest. Built from this workspace when it is here; an
+ * image built without it has no attest relay (build-rootfs-image.sh says so).
+ */
+export function profileAssetCommands(contract: RootfsContract, referenceRootfsDir: string): RootfsCommandPlan[] {
+  if (contract.rootfs.profile !== "orbitdb-relay") return [];
+  const bundler = fileURLToPath(new URL("../../attest-relay/scripts/bundle.mjs", import.meta.url));
+  if (!existsSync(bundler)) return [];
+  return [
+    {
+      command: process.execPath,
+      args: [bundler, path.join(referenceRootfsDir, "attest-relay.cjs")],
+      workdir: path.dirname(bundler),
+    },
+  ];
+}
+
 export function createHostRootfsExecutionPlan(
   plan: RootfsBuildPlan,
   options: RootfsExecutionPlanOptions = {},
@@ -73,6 +96,7 @@ export function createHostRootfsExecutionPlan(
     mode: 'host',
     reason: 'Using host virt-customize/qemu-img toolchain.',
     referenceRootfsDir,
+    assetCommands: profileAssetCommands(plan.contract, referenceRootfsDir),
     runCommand: {
       command: '/bin/bash',
       args: [path.join(referenceRootfsDir, 'build-rootfs-image.sh')],
@@ -126,6 +150,7 @@ export function createDockerRootfsExecutionPlan(
     mode: 'docker',
     reason: 'Using Dockerized Debian/libguestfs builder.',
     referenceRootfsDir,
+    assetCommands: profileAssetCommands(plan.contract, referenceRootfsDir),
     prepareCommand: {
       command: 'docker',
       args: [

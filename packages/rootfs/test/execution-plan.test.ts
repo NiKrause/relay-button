@@ -113,3 +113,16 @@ test('selectRootfsExecutionPlan rejects unavailable explicit drivers', async () 
     /Docker daemon is not running/u,
   );
 });
+
+test('an orbitdb-relay build first bundles the attest relay into the reference dir', async () => {
+  const contract = await readRootfsContractFile(referenceProfileContractPath('orbitdb-relay'));
+  const plan = createRootfsBuildPlan(contract, { projectDir: '/workspace/orbitdb-relay', rootfsVersion: 'orbitdb-relay-v0.0.0', driver: 'docker' });
+  const execution = createDockerRootfsExecutionPlan(plan, { referenceRootfsDir: '/workspace/ref/orbitdb-relay/rootfs' });
+  assert.equal(execution.assetCommands?.length, 1);
+  const [bundle] = execution.assetCommands ?? [];
+  assert.match(bundle.args[0], /attest-relay\/scripts\/bundle\.mjs$/);
+  assert.equal(bundle.args[1], '/workspace/ref/orbitdb-relay/rootfs/attest-relay.cjs');
+
+  const other = createHostRootfsExecutionPlan(await loadPlan('host'), { referenceRootfsDir: '/workspace/ref/uc-go-peer/rootfs' });
+  assert.deepEqual(other.assetCommands, []);
+});

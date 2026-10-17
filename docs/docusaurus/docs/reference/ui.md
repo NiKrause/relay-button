@@ -101,7 +101,7 @@ Every prop is optional. The full type is `SponsorRelayProps` in
 | `crnListUrl` | `string` | `'https://crns-list.aleph.sh/crns.json'` | Source of the CRN (compute node) list used for compatibility filtering and scoring. When this endpoint is unreachable the client falls back to the `corechannel` aggregate read from `apiHosts`, so a crns-list outage no longer blocks deployment — see [CRN discovery](./crn-discovery.md). |
 | `crnSource` | `'auto' \| 'aggregate' \| 'list'` | `'auto'` | Which CRN source to read. `auto` falls back to the `corechannel` aggregate when `crnListUrl` is down, `aggregate` skips it, `list` disables the fallback so an outage surfaces as an error. Overridable at runtime without a reload via `localStorage.LE_SPACE_CRN_SOURCE` — see [CRN discovery](./crn-discovery.md#browser-the-live-switch). |
 | `confidential` | `boolean` | `false` | Ask for a confidential VM (AMD SEV-SNP). The panel offers only nodes that report SEV-SNP and run aleph-vm ≥ 2.1.2, labelled with country, version and operator, and quotes credits from Aleph's `instance_confidential` pricing (twice the compute price). The person can switch it in the panel. Starting one needs `confidentialStart`; without it the panel refuses — see [Confidential starts](#confidential-starts) and [CRN discovery](./crn-discovery.md#confidential-nodes). |
-| `confidentialStart` | `SponsorRelayConfidentialStart` | — | What a confidential start needs: `rootfsItemHash` (the encrypted rootfs), `relayUrl` (an attest relay), `loadWasm` (the attestation WASM), optionally `rootfsSizeMiB` and `runtimeName`. See [Confidential starts](#confidential-starts). |
+| `confidentialStart` | `SponsorRelayConfidentialStart` | — | What a confidential start needs: `rootfsItemHash` (the encrypted rootfs), `relayUrl` (an [attest relay](./attest-relay.md), no default), `loadWasm` (the attestation WASM), optionally `rootfsSizeMiB` and `runtimeName`. See [Confidential starts](#confidential-starts). |
 | `schedulerApiHost` | `string` | `'https://scheduler.api.aleph.cloud'` | Aleph scheduler used to resolve the allocation for a submitted instance. |
 | `twoN6ApiHost` | `string` | `'https://api.2n6.me'` | 2n6 API used to resolve the VM's HTTPS hostname, which the controller probes before declaring a relay reachable. |
 | `ucanStoreBootstrap` | `Partial<SponsorRelayUcanStoreBootstrapInput>` | see below | Pre-fills the UCAN Store bootstrap form. Only used when the manifest declares `profile: "ucan-store"`. |
@@ -135,12 +135,15 @@ that could read anything:
 A failed attestation counts as a failed attempt on that node: the instance
 is forgotten and the next node is tried.
 
+There is no default attest relay. Name your own, usually the `/attest` route
+of an orbitdb-relay you run; see [Attest relay](./attest-relay.md).
+
 ```jsx
 <SponsorRelayFab
   confidential
   confidentialStart={{
     rootfsItemHash: '…', // the reusable workflow's confidential_rootfs_item_hash
-    relayUrl: 'wss://attest-relay.example/attest',
+    relayUrl: 'wss://<your relay host>/attest', // every orbitdb-relay serves /attest
     loadWasm: async () => {
       const wasm = await import('@le-space/attest-wasm/pkg/relay_button_attest.js')
       await wasm.default()

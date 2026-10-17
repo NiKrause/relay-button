@@ -12,9 +12,13 @@
 	"scripts": {
 		"build": "node --check ./src/relay.ts && node --check ./src/server.ts",
 		"start": "node ./src/server.ts",
-		"test": "node --test ./test/*.test.ts"
+		"test": "node --test ./test/*.test.ts",
+		"bundle": "node ./scripts/bundle.mjs dist/attest-relay.cjs"
 	},
 	"dependencies": {
 		"ws": "^8.21.2"
+	},
+	"devDependencies": {
+		"esbuild": "^0.28.2"
 	}
 }

@@ -4,7 +4,7 @@ import http from 'node:http'
 import net from 'node:net'
 import type { AddressInfo } from 'node:net'
 
-import { attachAttestRelay, isPublicIpv4, resolveAttestationTarget, type RelayOptions } from '../src/relay.ts'
+import { attachAttestRelay, clientAddress, isPublicIpv4, resolveAttestationTarget, type RelayOptions } from '../src/relay.ts'
 
 const CRN = 'c'.repeat(64)
 const VM = 'a'.repeat(64)
@@ -120,4 +120,13 @@ test('isPublicIpv4 rejects loopback, private, link-local, CGNAT and reserved ran
     assert.equal(isPublicIpv4(host), false, host)
   }
   for (const host of ['65.108.233.158', '191.96.166.44', '172.32.0.1']) assert.equal(isPublicIpv4(host), true, host)
+})
+
+test('behind a local proxy, clients are counted by the forwarded address', () => {
+  const request = (remoteAddress: string, forwarded?: string) =>
+    ({ socket: { remoteAddress }, headers: forwarded ? { 'x-forwarded-for': forwarded } : {} }) as unknown as http.IncomingMessage
+  assert.equal(clientAddress(request('127.0.0.1', '198.51.100.7')), '127.0.0.1', 'not without trustProxy')
+  assert.equal(clientAddress(request('127.0.0.1', '203.0.113.9, 198.51.100.7'), true), '198.51.100.7', 'the entry the proxy appended')
+  assert.equal(clientAddress(request('203.0.113.1', '198.51.100.7'), true), '203.0.113.1', 'only a loopback peer may forward')
+  assert.equal(clientAddress(request('127.0.0.1', 'not-an-ip'), true), '127.0.0.1')
 })
