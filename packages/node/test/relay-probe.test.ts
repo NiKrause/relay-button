@@ -5,9 +5,13 @@ import { multiaddr } from '@multiformats/multiaddr'
 
 import {
   classifyRelayAddress,
+  hostHasGlobalIpv6,
   multiaddrProtocols,
+  probeRelayAddress,
+  quicSubstituteFor,
   relayProbePolicyFromEnv,
   targetPeerId,
+  transportOf,
 } from '../src/relay-probe.ts'
 import { deriveLibp2pSecp256k1IdentityFromEvmKey } from '../src/relay-identity.ts'
 
@@ -88,4 +92,123 @@ test('a relay derives the same libp2p identity from its EVM key as before', () =
   )
   assert.equal(identity.peerId, '16Uiu2HAmMUjGmiUhJeiZgu6ZZnLRkE2VViR2JgjqtW9aTZnHQqgg')
   assert.equal(identity.protobufBase64, 'CAISIKwJdL7Dmhfja6SmtNI4/5RLrLR4y+1e/K54TXv08v+A')
+})
+
+test('transportOf reduces an address to the transport it runs over', () => {
+  const of = (address: string) => transportOf(multiaddrProtocols(multiaddr(address)))
+  assert.equal(of(ADDRESSES.tcp), 'tcp')
+  assert.equal(of(ADDRESSES.autotlsWss), 'ws')
+  assert.equal(of(ADDRESSES.sniWss), 'ws')
+  assert.equal(of(ADDRESSES.proxyWss), 'ws')
+  assert.equal(of(ADDRESSES.webtransport), 'webtransport')
+  assert.equal(of(ADDRESSES.webrtcDirect), 'webrtc-direct')
+  assert.equal(of(ADDRESSES.quic), 'quic')
+})
+
+test('quicSubstituteFor drops webtransport and its certhashes, keeping the QUIC listener', () => {
+  assert.equal(
+    quicSubstituteFor(multiaddr(ADDRESSES.webtransport))?.toString(),
+    `/ip4/62.141.40.252/udp/63485/quic-v1/p2p/${RELAY}`,
+  )
+  assert.equal(quicSubstituteFor(multiaddr(ADDRESSES.tcp)), null)
+  assert.equal(quicSubstituteFor(multiaddr(ADDRESSES.webrtcDirect)), null)
+})
+
+// A stand-in for a libp2p node with the one behaviour #187 is about: dial()
+// returns an existing connection to the same peer instead of opening a new one
+// over the requested transport. `hangUpWorks: false` reproduces the old probe.
+function fakeNode({ hangUpWorks = true } = {}) {
+  const connections = new Map<string, { remoteAddr: ReturnType<typeof multiaddr> }>()
+  const calls: string[] = []
+  const peerOf = (ma: ReturnType<typeof multiaddr>) => targetPeerId(ma)?.toString() ?? ''
+  return {
+    calls,
+    node: {
+      async hangUp(peer: { toString(): string }) {
+        calls.push(`hangUp ${peer.toString().slice(-4)}`)
+        if (hangUpWorks) connections.delete(peer.toString())
+      },
+      async dial(ma: ReturnType<typeof multiaddr>) {
+        calls.push(`dial ${transportOf(multiaddrProtocols(ma))}`)
+        const peer = peerOf(ma)
+        const existing = connections.get(peer)
+        if (existing) return existing
+        const connection = { remoteAddr: ma }
+        connections.set(peer, connection)
+        return connection
+      },
+      getConnections(peer: { toString(): string }) {
+        const connection = connections.get(peer.toString())
+        return connection ? [connection] : []
+      },
+      services: { ping: { async ping() { return 3 } } },
+    },
+  }
+}
+
+const POLICY = relayProbePolicyFromEnv({ PROBE_SETTLE_MS: '0', PROBE_TIMEOUT_MS: '1000', PROBE_IPV6: 'true' })
+
+test('each address is dialed over its own transport, not over the previous connection', async () => {
+  const { node, calls } = fakeNode()
+  const first = await probeRelayAddress(node as never, ADDRESSES.tcp, POLICY)
+  const second = await probeRelayAddress(node as never, ADDRESSES.proxyWss, POLICY)
+
+  assert.equal(first.ok, true)
+  assert.equal(second.ok, true)
+  assert.deepEqual(second.remoteAddrs, [ADDRESSES.proxyWss])
+  // Close before each dial, and again afterwards so nothing is left to reuse.
+  const hangUp = `hangUp ${RELAY.slice(-4)}`
+  assert.deepEqual(calls, [hangUp, 'dial tcp', hangUp, hangUp, 'dial ws', hangUp])
+})
+
+test('a connection over a different transport than requested fails the address', async () => {
+  // The old behaviour: nothing closes the first connection, so the second
+  // dial gets it back. This must no longer pass as a proxy-wss success.
+  const { node } = fakeNode({ hangUpWorks: false })
+  await probeRelayAddress(node as never, ADDRESSES.tcp, POLICY)
+  const second = await probeRelayAddress(node as never, ADDRESSES.proxyWss, POLICY)
+
+  assert.equal(second.ok, false)
+  assert.match(second.error ?? '', /dial returned a tcp connection .* instead of ws/)
+})
+
+test('a webtransport address is checked over QUIC on the same port, and says so', async () => {
+  const { node, calls } = fakeNode()
+  const result = await probeRelayAddress(node as never, ADDRESSES.webtransport, POLICY)
+
+  assert.equal(result.ok, true)
+  assert.equal(result.family, 'webtransport')
+  assert.ok(calls.includes('dial quic'), `expected a QUIC dial, got ${calls.join(', ')}`)
+  assert.match(result.note ?? '', /checked over libp2p QUIC on the same UDP port/)
+  assert.match(result.note ?? '', /HTTP\/3 layer and the certhash are not/)
+})
+
+const IPV6_TCP = `/ip6/2001:db8::10/tcp/63484/p2p/${RELAY}`
+
+test('hostHasGlobalIpv6 ignores loopback, link-local and unique-local addresses', () => {
+  const entry = (address: string, internal = false) =>
+    ({ address, family: 'IPv6', internal, netmask: '', mac: '', cidr: null, scopeid: 0 }) as never
+  assert.equal(hostHasGlobalIpv6({ lo0: [entry('::1', true)], en0: [entry('fe80::1'), entry('fd00::5')] }), false)
+  assert.equal(hostHasGlobalIpv6({ en0: [entry('fe80::1'), entry('2001:db8::7')] }), true)
+  assert.equal(hostHasGlobalIpv6({}), false)
+})
+
+test('without IPv6 on the probing host an IPv6 address is reported as not checked, not as failed', async () => {
+  const { node, calls } = fakeNode()
+  const policy = relayProbePolicyFromEnv({ PROBE_SETTLE_MS: '0', PROBE_IPV6: 'false' })
+  const result = await probeRelayAddress(node as never, IPV6_TCP, policy)
+
+  assert.deepEqual(calls, [], 'nothing should be dialed')
+  assert.equal(result.ok, false)
+  assert.equal(result.required, false, 'an unchecked address cannot fail the deploy')
+  assert.match(result.note ?? '', /not checked: the probing host has no global IPv6/)
+})
+
+test('with IPv6 on the probing host an IPv6 address is dialed like any other', async () => {
+  const { node, calls } = fakeNode()
+  const result = await probeRelayAddress(node as never, IPV6_TCP, POLICY)
+
+  assert.ok(calls.includes('dial tcp'))
+  assert.equal(result.ok, true)
+  assert.equal(result.note, null)
 })
