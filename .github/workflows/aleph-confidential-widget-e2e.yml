@@ -4,7 +4,8 @@ name: Aleph Confidential Widget E2E
 # node (relay-button#169, step 4): the browser computes the launch
 # measurements, signs the INSTANCE with an injected test wallet, attests the
 # guest through the attest relay, unlocks it and hands it the SSH key with the
-# bootstrap token. Green means the relay registered itself with that token.
+# bootstrap token. Green means the relay registered itself with that token
+# and, with check_attest_route, that its own /attest attests the VM again.
 
 on:
   workflow_dispatch:
@@ -24,6 +25,11 @@ on:
         required: false
         default: ''
         type: string
+      check_attest_route:
+        description: Attest the VM again through the new relay's own wss://<host>/attest (off for images built before that route)
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -100,6 +106,7 @@ jobs:
           E2E_SSH_PUBLIC_KEY: ${{ steps.keys.outputs.ssh_public_key }}
           E2E_ROOTFS_ITEM_HASH: ${{ inputs.rootfs_item_hash || steps.rootfs.outputs.rootfs_item_hash }}
           E2E_CRN_HASH: ${{ inputs.crn_hash }}
+          E2E_CHECK_ATTEST_ROUTE: ${{ inputs.check_attest_route && '1' || '0' }}
         run: pnpm run e2e
 
       - name: Upload the Playwright report

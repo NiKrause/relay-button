@@ -1,0 +1,27 @@
+[Unit]
+Description=Attest relay: WebSocket to an SEV-SNP guest's attestation port, behind Caddy at /attest
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Loopback only: Caddy terminates TLS and proxies wss://<host>/attest here.
+Environment=ATTEST_RELAY_HOST=127.0.0.1
+Environment=ATTEST_RELAY_PORT=8787
+Environment=ATTEST_RELAY_TRUST_PROXY=1
+# Optional overrides (ATTEST_RELAY_ORIGINS, limits) for the operator.
+EnvironmentFile=-/etc/default/attest-relay
+ExecStart=/usr/bin/node /usr/local/lib/attest-relay/attest-relay.cjs
+User=nobody
+Group=nogroup
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

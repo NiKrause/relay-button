@@ -12,3 +12,4 @@ __pycache__/
 # Confidential widget E2E output
 packages/e2e-confidential/playwright-report/
 packages/e2e-confidential/test-results/
+packages/rootfs/reference/orbitdb-relay/rootfs/attest-relay.cjs

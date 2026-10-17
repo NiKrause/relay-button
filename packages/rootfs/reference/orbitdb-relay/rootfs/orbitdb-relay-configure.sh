@@ -13,6 +13,7 @@ CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 CADDY_UPSTREAM_WSS_PORT="${CADDY_UPSTREAM_WSS_PORT:-9092}"
 CADDY_UPSTREAM_HOST="${CADDY_UPSTREAM_HOST:-127.0.0.1}"
 CADDY_UPSTREAM_METRICS_PORT="${CADDY_UPSTREAM_METRICS_PORT:-9090}"
+CADDY_UPSTREAM_ATTEST_PORT="${CADDY_UPSTREAM_ATTEST_PORT:-8787}"
 # Internal libp2p listen ports. On the Aleph VM, IPv4 is NAT/port-mapped (so it
 # is announced on the externally assigned host ports), but IPv6 is globally
 # routed with NO NAT — the VM is reachable directly on the real listen ports,
@@ -156,6 +157,12 @@ https://${hostname} {
 
   handle /ipfs/* {
     reverse_proxy 127.0.0.1:${CADDY_UPSTREAM_METRICS_PORT}
+  }
+
+  # The attest relay (attest-relay.service): a browser's RA-TLS records to a
+  # confidential guest's attestation port, which it cannot dial itself.
+  handle /attest {
+    reverse_proxy 127.0.0.1:${CADDY_UPSTREAM_ATTEST_PORT}
   }
 
   reverse_proxy ${CADDY_UPSTREAM_HOST}:${CADDY_UPSTREAM_WSS_PORT}

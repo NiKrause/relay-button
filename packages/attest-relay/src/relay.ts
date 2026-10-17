@@ -9,7 +9,8 @@
 // It is not an open proxy. The client names a node and an instance
 // (`/attest?crn=<node hash>&vm=<instance hash>`), never a host or port; the
 // relay looks up where that instance's port 8443 is mapped on that node, and
-// connects only to a public IPv4 address. Each connection is bounded in time
+// connects only to public addresses: the node's IPv4 mapping, then the
+// instance's own IPv6. Each connection is bounded in time
 // and bytes, and connections are capped per client address and in total.
 
 import net from 'node:net'
@@ -27,6 +28,12 @@ const HASH = /^[0-9a-f]{64}$/u
 export interface AttestationTarget {
   host: string
   port: number
+  /**
+   * Tried in order when the target refuses or times out: the instance's own
+   * IPv6 on 8443. A relay inside a VM cannot reach its own node's public IPv4
+   * (no hairpin NAT), but it can reach the instance's IPv6.
+   */
+  fallbacks?: Array<{ host: string; port: number }>
 }
 
 export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<{
@@ -48,11 +55,27 @@ export interface RelayOptions {
   maxTotal?: number
   /** Allowed Origin headers; empty or absent allows any (it carries ciphertext only). */
   allowedOrigins?: string[]
+  /**
+   * Behind a reverse proxy on the same host (Caddy in the relay image), every
+   * connection comes from loopback: count clients by the last X-Forwarded-For
+   * entry instead, which the proxy appends. Only honoured for loopback peers.
+   */
+  trustProxy?: boolean
+  /** Milliseconds to wait for a TCP connect before the next target (default 5000). */
+  connectTimeoutMs?: number
   /** Tests only: allow loopback and private targets. */
   allowPrivateTargets?: boolean
   /** WebSocket path (default /attest). */
   path?: string
   log?: (message: string) => void
+}
+
+/** Global unicast IPv6 only (2000::/3), not the documentation range. */
+export function isPublicIpv6(host: string): boolean {
+  if (net.isIPv6(host) === false) return false
+  const first = Number.parseInt(host.split(':')[0] || '0', 16)
+  if ((first & 0xe000) !== 0x2000) return false
+  return !/^2001:0?db8:/iu.test(host)
 }
 
 /** Public, routable IPv4 only: no loopback, private, link-local, CGNAT, multicast or reserved. */
@@ -67,6 +90,18 @@ export function isPublicIpv4(host: string): boolean {
   if (a === 192 && b === 0) return false
   if (a === 198 && (b === 18 || b === 19)) return false
   return true
+}
+
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
+
+/** The address the per-client cap counts: the peer, or behind a local proxy the client it names. */
+export function clientAddress(request: IncomingMessage, trustProxy = false): string {
+  const peer = request.socket.remoteAddress ?? 'unknown'
+  if (!trustProxy || !LOOPBACK.has(peer)) return peer
+  const header = request.headers['x-forwarded-for']
+  const forwarded = (Array.isArray(header) ? header.join(',') : header ?? '').split(',').map((entry) => entry.trim()).filter(Boolean)
+  const last = forwarded.at(-1)
+  return last && net.isIP(last) ? last : peer
 }
 
 /**
@@ -98,12 +133,14 @@ export async function resolveAttestationTarget(args: {
     const response = await args.fetch(`${address}${path}`, { signal: timeout() }).catch(() => null)
     if (!response?.ok) continue
     const executions = (await response.json()) as Record<string, {
-      networking?: { host_ipv4?: string; mapped_ports?: Record<string, { host?: number; tcp?: boolean }> }
+      networking?: { host_ipv4?: string; ipv6_ip?: string; mapped_ports?: Record<string, { host?: number; tcp?: boolean }> }
     }>
     const networking = executions[args.vm]?.networking
     const host = networking?.host_ipv4
     const mapped = networking?.mapped_ports?.[ATTESTATION_PORT]
-    if (host && mapped?.host && mapped.tcp !== false) return { host, port: Number(mapped.host) }
+    const ipv6 = networking?.ipv6_ip?.trim()
+    const fallbacks = ipv6 && isPublicIpv6(ipv6) ? [{ host: ipv6, port: Number(ATTESTATION_PORT) }] : []
+    if (host && mapped?.host && mapped.tcp !== false) return { host, port: Number(mapped.host), fallbacks }
     throw new Error(`instance ${args.vm} has no mapped attestation port on node ${args.crn}`)
   }
   throw new Error(`node ${args.crn} did not list its executions`)
@@ -120,6 +157,7 @@ export function attachAttestRelay(server: Server, options: RelayOptions): { clos
   const maxSeconds = options.maxSeconds ?? 120
   const maxPerClient = options.maxPerClient ?? 4
   const maxTotal = options.maxTotal ?? 256
+  const connectTimeoutMs = options.connectTimeoutMs ?? 5000
   const path = options.path ?? '/attest'
   const allowedOrigins = new Set(options.allowedOrigins?.filter(Boolean) ?? [])
   const log = options.log ?? (() => undefined)
@@ -135,7 +173,7 @@ export function attachAttestRelay(server: Server, options: RelayOptions): { clos
     if (!HASH.test(crn) || !HASH.test(vm)) return reject(socket, 400, 'Bad Request')
     const origin = request.headers.origin ?? ''
     if (allowedOrigins.size > 0 && !allowedOrigins.has(origin)) return reject(socket, 403, 'Forbidden')
-    const client = request.socket.remoteAddress ?? 'unknown'
+    const client = clientAddress(request, options.trustProxy)
     if (total >= maxTotal || (perClient.get(client) ?? 0) >= maxPerClient) {
       return reject(socket, 429, 'Too Many Requests')
     }
@@ -157,13 +195,18 @@ export function attachAttestRelay(server: Server, options: RelayOptions): { clos
     options
       .resolveTarget(crn, vm)
       .then((target) => {
-        if (!options.allowPrivateTargets && !isPublicIpv4(target.host)) {
+        const candidates = [{ host: target.host, port: target.port }, ...(target.fallbacks ?? [])].filter(
+          (candidate) => options.allowPrivateTargets || isPublicIpv4(candidate.host) || isPublicIpv6(candidate.host),
+        )
+        if (candidates.length === 0 || candidates[0]!.host !== target.host) {
           throw new Error(`refusing non-public target ${target.host}`)
         }
-        if (!Number.isInteger(target.port) || target.port < 1 || target.port > 65535) {
-          throw new Error(`invalid target port ${target.port}`)
+        for (const candidate of candidates) {
+          if (!Number.isInteger(candidate.port) || candidate.port < 1 || candidate.port > 65535) {
+            throw new Error(`invalid target port ${candidate.port}`)
+          }
         }
-        wss.handleUpgrade(request, socket, head, (ws) => bridge(ws, target, crn, vm))
+        wss.handleUpgrade(request, socket, head, (ws) => bridge(ws, candidates, crn, vm))
       })
       .catch((error: unknown) => {
         log(`[attest-relay] ${crn.slice(0, 12)}/${vm.slice(0, 12)}: ${error instanceof Error ? error.message : String(error)}`)
@@ -171,33 +214,63 @@ export function attachAttestRelay(server: Server, options: RelayOptions): { clos
         reject(socket, 502, 'Bad Gateway')
       })
 
-    const bridge = (ws: WebSocket, target: AttestationTarget, crnHash: string, vmHash: string) => {
+    const bridge = (ws: WebSocket, targets: Array<{ host: string; port: number }>, crnHash: string, vmHash: string) => {
       let up = 0
       let down = 0
-      const tcp = net.connect(target.port, target.host)
+      let tcp: net.Socket | null = null
+      let connected = false
+      let ended = false
+      // What the browser sends before a connection is up (its ClientHello),
+      // kept so a fallback target gets it too.
+      const pending: Buffer[] = []
       const end = (why: string) => {
+        if (ended) return
+        ended = true
         clearTimeout(timer)
-        tcp.destroy()
+        tcp?.destroy()
         if (ws.readyState === ws.OPEN || ws.readyState === ws.CONNECTING) ws.close(1000, why.slice(0, 120))
         release()
       }
       const timer = setTimeout(() => end('time limit'), maxSeconds * 1000)
-      log(`[attest-relay] ${crnHash.slice(0, 12)}/${vmHash.slice(0, 12)} -> ${target.host}:${target.port}`)
-      tcp.on('data', (chunk: Buffer) => {
-        down += chunk.length
-        if (down > maxBytes) return end('byte limit')
-        ws.send(chunk, { binary: true })
-      })
-      tcp.on('error', () => end('guest connection failed'))
-      tcp.on('close', () => end('guest closed'))
+      const connect = (index: number) => {
+        const target = targets[index]
+        if (!target || ended) return end('guest connection failed')
+        log(`[attest-relay] ${crnHash.slice(0, 12)}/${vmHash.slice(0, 12)} -> ${target.host}:${target.port}`)
+        const socket = net.connect({ port: target.port, host: target.host })
+        tcp = socket
+        let abandoned = false
+        const next = () => {
+          if (abandoned || connected) return
+          abandoned = true
+          socket.destroy()
+          connect(index + 1)
+        }
+        socket.setTimeout(connectTimeoutMs, next)
+        socket.once('connect', () => {
+          socket.setTimeout(0)
+          connected = true
+          for (const chunk of pending.splice(0)) socket.write(chunk)
+        })
+        socket.on('data', (chunk: Buffer) => {
+          down += chunk.length
+          if (down > maxBytes) return end('byte limit')
+          ws.send(chunk, { binary: true })
+        })
+        socket.on('error', () => (connected && tcp === socket ? end('guest connection failed') : next()))
+        socket.on('close', () => {
+          if (connected && tcp === socket) end('guest closed')
+        })
+      }
       ws.on('message', (data: Buffer, isBinary: boolean) => {
         if (!isBinary) return end('binary frames only')
         up += data.length
         if (up > maxBytes) return end('byte limit')
-        tcp.write(data)
+        if (connected && tcp) tcp.write(data)
+        else pending.push(data)
       })
       ws.on('close', () => end('client closed'))
       ws.on('error', () => end('client error'))
+      connect(0)
     }
   })
 

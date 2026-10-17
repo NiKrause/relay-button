@@ -64,6 +64,12 @@ export async function buildRootfs(
   const pipeline = createRootfsBuildPipeline(buildPlan, availability, options);
   const executedCommands: RootfsExecutedCommand[] = [];
 
+  for (const asset of pipeline.executionPlan.assetCommands ?? []) {
+    const assetCommand: RootfsExecutedCommand = { command: asset.command, args: asset.args, workdir: asset.workdir, env: asset.env };
+    await deps.run(assetCommand);
+    executedCommands.push(assetCommand);
+  }
+
   if (pipeline.executionPlan.prepareCommand) {
     const prepareCommand: RootfsExecutedCommand = {
       command: pipeline.executionPlan.prepareCommand.command,

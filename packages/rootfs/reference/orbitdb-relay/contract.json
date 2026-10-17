@@ -71,6 +71,6 @@
   ],
   "manifest": {
     "copyTarget": "public/rootfs-manifest.json",
-    "notes": "The OrbitDB relay image prebakes Node.js, production dependencies, and Caddy into the qcow2, delays first relay start until Aleph host port mappings are known, exposes a temporary setup endpoint on port 80, and uses Caddy on port 443 to front both HTTPS helper routes and secure libp2p WSS transport for the configured proxy hostname."
+    "notes": "The OrbitDB relay image prebakes Node.js, production dependencies, and Caddy into the qcow2, delays first relay start until Aleph host port mappings are known, exposes a temporary setup endpoint on port 80, and uses Caddy on port 443 to front both HTTPS helper routes and secure libp2p WSS transport for the configured proxy hostname, and serves the attest relay (wss://<proxy hostname>/attest) that browsers use to attest and unlock confidential instances."
   }
 }

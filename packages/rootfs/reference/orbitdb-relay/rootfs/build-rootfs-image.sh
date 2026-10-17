@@ -228,6 +228,29 @@ case "${ROOTFS_PROFILE}" in
       LICENSE \
       .env.example
 
+    # The attest relay (packages/attest-relay) as one file, so browsers reach
+    # a confidential guest's RA-TLS port through wss://<relay host>/attest.
+    # The rootfs executor bundles it into this directory before the build
+    # (a Docker build sees only this directory); a host build in the
+    # workspace can bundle it here.
+    ATTEST_RELAY_BUNDLE="${ATTEST_RELAY_BUNDLE:-${SCRIPT_DIR}/attest-relay.cjs}"
+    attest_relay_bundler="${SCRIPT_DIR}/../../../../attest-relay/scripts/bundle.mjs"
+    if [ ! -s "${ATTEST_RELAY_BUNDLE}" ] && [ -f "${attest_relay_bundler}" ]; then
+      node "${attest_relay_bundler}" "${ATTEST_RELAY_BUNDLE}" || true
+    fi
+    attest_relay_args=()
+    if [ -s "${ATTEST_RELAY_BUNDLE}" ]; then
+      attest_relay_args=(
+        --mkdir /usr/local/lib/attest-relay
+        --copy-in "${ATTEST_RELAY_BUNDLE}:/usr/local/lib/attest-relay"
+        --copy-in "${SCRIPT_DIR}/attest-relay.service:/etc/systemd/system"
+        --run-command "cd /usr/local/lib/attest-relay && [ -f attest-relay.cjs ] || mv '$(basename "${ATTEST_RELAY_BUNDLE}")' attest-relay.cjs"
+        --run-command "systemctl enable attest-relay.service"
+      )
+    else
+      echo "WARNING: no attest relay bundle at ${ATTEST_RELAY_BUNDLE}; this image will not serve /attest." >&2
+    fi
+
     orbitdb_customize_args=(
       -a "${IMAGE}"
       --mkdir /opt/orbitdb-relay
@@ -262,6 +285,7 @@ case "${ROOTFS_PROFILE}" in
       --run-command "systemctl enable orbitdb-relay-bootstrap.service"
       --run-command "systemctl enable orbitdb-relay-autotls-refresh.timer"
       --run-command "systemctl enable orbitdb-relay.service"
+      "${attest_relay_args[@]}"
       --run-command "rm -f /opt/$(basename "${APP_TAR}")"
     )
 

@@ -17,6 +17,7 @@ const sidebars = {
       items: [
         'guides/ai-agent-recipes',
         'reference/ui',
+        'reference/attest-relay',
         'reference/browser',
         'reference/core',
         'reference/node-cli',

@@ -8,6 +8,8 @@
 // E2E_LUKS_PASSPHRASE  the passphrase of the encrypted rootfs
 // E2E_SSH_PUBLIC_KEY   a public key for the VM (the widget requires one)
 // E2E_CRN_HASH         optional: the node to pin
+// E2E_CHECK_ATTEST_ROUTE  1: attest the VM again through the new relay's own
+//                      wss://<host>/attest (images from before the route: 0)
 import { expect } from '@playwright/test'
 import { privateKeyToAccount } from 'viem/accounts'
 
@@ -32,6 +34,7 @@ const passphrase = required('E2E_LUKS_PASSPHRASE')
 const sshPublicKey = required('E2E_SSH_PUBLIC_KEY')
 const crnHash = process.env.E2E_CRN_HASH?.trim() ?? ''
 const instanceName = process.env.E2E_INSTANCE_NAME?.trim() || `rb-confidential-e2e-${Date.now()}`
+const checkAttestRoute = process.env.E2E_CHECK_ATTEST_ROUTE === '1'
 
 const evidence = createRelayEvidence({
   instanceName,
@@ -39,6 +42,7 @@ const evidence = createRelayEvidence({
   steps: {
     unlock: 'Guest attested against AMD and unlocked',
     register: 'Relay registered with the bootstrap token',
+    ...(checkAttestRoute ? { route: "Guest attested again through the relay's own /attest" } : {}),
   },
 })
 
@@ -66,9 +70,11 @@ test('a confidential relay starts from the widget: attested, unlocked, registere
   // The page runs the widget with debug on, so the controller's trace says
   // when the guest was attested and unlocked (the progress line is not text
   // on the page).
-  let unlocked = false
-  page.on('console', (message) => {
-    if (message.text().includes('deploy:confidential-unlocked')) unlocked = true
+  let unlocked: { measurement?: string; policy?: string | number } | null = null
+  page.on('console', async (message) => {
+    if (!message.text().includes('deploy:confidential-unlocked')) return
+    unlocked = {}
+    unlocked = ((await message.args()[2]?.jsonValue().catch(() => null)) ?? {}) as typeof unlocked
   })
   await installEip1193WalletMock(page.context(), account)
   await page.goto('/')
@@ -82,7 +88,33 @@ test('a confidential relay starts from the widget: attested, unlocked, registere
   updateRelayEvidenceStep(evidence, 'unlock', unlocked ? 'passed' : 'failed')
   updateRelayEvidenceStep(evidence, 'register', 'passed', relay.peerId)
 
-  expect(unlocked, 'the controller traced deploy:confidential-unlocked').toBe(true)
+  expect(unlocked, 'the controller traced deploy:confidential-unlocked').toBeTruthy()
+
+  if (checkAttestRoute) {
+    const { measurement, policy } = unlocked as unknown as { measurement: string; policy: string | number }
+    expect(measurement, 'the unlock trace carries the measurement').toMatch(/^[0-9a-f]{96}$/)
+    const host = relay.addresses.map((address) => /^\/dns[46]?\/([^/]+)\/tcp\/443\//.exec(address)?.[1]).find(Boolean)
+    expect(host, 'the relay advertises a wss address on 443').toBeTruthy()
+    const instance = await (await fetch(`https://api2.aleph.im/api/v0/messages/${relay.instanceHash}`)).json()
+    const crnHash = instance?.message?.content?.requirements?.node?.node_hash
+    expect(crnHash, 'the INSTANCE names its node').toMatch(/^[0-9a-f]{64}$/)
+    let reattested = ''
+    let lastError = ''
+    for (let attempt = 1; attempt <= 6 && !reattested; attempt += 1) {
+      try {
+        reattested = await page.evaluate(
+          (args) => (window as unknown as { __e2eReattest: (a: typeof args) => Promise<string> }).__e2eReattest(args),
+          { relayUrl: `wss://${host}/attest`, crnHash, instanceItemHash: relay.instanceHash, measurement, policy },
+        )
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error)
+        console.log(`[e2e] /attest attempt ${attempt}: ${lastError}`)
+        await page.waitForTimeout(15_000)
+      }
+    }
+    updateRelayEvidenceStep(evidence, 'route', reattested ? 'passed' : 'failed', reattested ? `wss://${host}/attest` : lastError)
+    expect(reattested, `attested through wss://${host}/attest`).toBe(measurement)
+  }
 
   expect(relay.instanceHash).toMatch(/^[0-9a-f]{64}$/)
   expect(relay.peerId).toBeTruthy()

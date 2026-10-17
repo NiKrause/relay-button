@@ -3,7 +3,9 @@
 //   ATTEST_RELAY_PORT=8787 ATTEST_RELAY_ORIGINS=https://example.com node src/server.ts
 //
 // GET /health answers 200; WebSocket upgrades on /attest?crn=…&vm=… are relayed.
-// Put it behind TLS (wss://) in production, e.g. Caddy.
+// Put it behind TLS (wss://) in production, e.g. Caddy on the same host with
+// ATTEST_RELAY_HOST=127.0.0.1 ATTEST_RELAY_TRUST_PROXY=1, so the per-client
+// cap counts the visitors Caddy names in X-Forwarded-For, not Caddy itself.
 
 import http from 'node:http'
 
@@ -31,6 +33,7 @@ const relay = attachAttestRelay(server, {
   maxSeconds: Number(process.env.ATTEST_RELAY_MAX_SECONDS ?? 120),
   maxPerClient: Number(process.env.ATTEST_RELAY_MAX_PER_CLIENT ?? 4),
   maxTotal: Number(process.env.ATTEST_RELAY_MAX_TOTAL ?? 256),
+  trustProxy: process.env.ATTEST_RELAY_TRUST_PROXY === '1',
   log: (message) => console.log(message),
 })
 
