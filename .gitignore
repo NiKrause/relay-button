@@ -8,3 +8,7 @@ build
 .pnpm-store
 .npm-cache
 __pycache__/
+
+# Confidential widget E2E output
+packages/e2e-confidential/playwright-report/
+packages/e2e-confidential/test-results/

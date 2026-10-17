@@ -51,6 +51,9 @@ const VERDICT = /rejected|bind|measurement|policy|floor|KDS answered 4|signature
  * `trustedExecution` this browser computed, not from an API answer), both
  * reports are verified against AMD, a fresh nonce proves liveness, then the
  * owner signs the injection of `passphrase` (`sign` is personal_sign).
+ * `secrets` go along in the same signed injection (e.g. `authorized_keys`
+ * with the deployment's bootstrap token, which a confidential rootfs takes
+ * from here because nothing provisions it from the INSTANCE message).
  */
 export async function unlockInstance({
   wasm,
@@ -59,6 +62,7 @@ export async function unlockInstance({
   instanceItemHash,
   trustedExecution: tee,
   passphrase,
+  secrets = {},
   sign,
   attempts = 12,
   delayMs = 10_000,
@@ -69,6 +73,7 @@ export async function unlockInstance({
   onProgress = () => {},
 }) {
   if (!passphrase) throw new Error('unlocking needs the passphrase of the encrypted rootfs')
+  if ('luks_passphrase' in secrets) throw new Error('pass the passphrase as passphrase, not in secrets')
   const { expectedMeasurements, expectedPolicy } = pinsOf(tee)
   const url = `${relayUrl}${relayUrl.includes('?') ? '&' : '?'}crn=${crnHash}&vm=${instanceItemHash}`
   let attested = null
@@ -92,7 +97,7 @@ export async function unlockInstance({
   }
   try {
     onProgress({ phase: 'unlock', detail: 'Sign the unlock in your wallet' })
-    const injected = await injectSecrets({ wasm, attested, secrets: { luks_passphrase: passphrase }, sign })
+    const injected = await injectSecrets({ wasm, attested, secrets: { ...secrets, luks_passphrase: passphrase }, sign })
     return {
       injected: injected.injected ?? [],
       measurement: attested.freshVerified.measurement,

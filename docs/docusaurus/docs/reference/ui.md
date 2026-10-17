@@ -128,6 +128,9 @@ that could read anything:
 4. Only then does it send the passphrase the person typed, over that
    attested channel, with the wallet's signature over it. The passphrase is
    held in memory until the unlock and then cleared; it is never stored.
+   The SSH key with the deployment's bootstrap token goes along in the same
+   signed injection (`authorized_keys`): the encrypted rootfs runs no
+   cloud-init, so it cannot read the key from the INSTANCE message.
 
 A failed attestation counts as a failed attempt on that node: the instance
 is forgotten and the next node is tried.

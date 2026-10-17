@@ -1,0 +1,23 @@
+{
+	"name": "@le-space/e2e-confidential",
+	"version": "0.0.0",
+	"private": true,
+	"description": "End-to-end test of a confidential start from the widget: a real SEV-SNP node, the attest relay, the attestation WASM, an injected test wallet.",
+	"license": "MIT",
+	"type": "module",
+	"scripts": {
+		"serve": "node ./server.mjs",
+		"e2e": "playwright test"
+	},
+	"devDependencies": {
+		"@le-space/attest-relay": "workspace:*",
+		"@le-space/attest-wasm": "workspace:*",
+		"@le-space/playwright": "workspace:*",
+		"@le-space/ui": "workspace:*",
+		"@playwright/test": "1.61.1",
+		"esbuild": "^0.28.2",
+		"react": "^18.3.1",
+		"react-dom": "^18.3.1",
+		"viem": "^2.53.1"
+	}
+}

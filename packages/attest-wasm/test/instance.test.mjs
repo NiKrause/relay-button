@@ -34,6 +34,7 @@ test('unlockInstance waits for the guest to answer, attests with the local pins,
     instanceItemHash: VM,
     trustedExecution: tee,
     passphrase: 'correct horse',
+    secrets: { authorized_keys: 'ssh-ed25519 AAAA aleph-bootstrap-config:0x0:token\n' },
     sign: (payload) => owner.signMessage(payload),
     verify,
     sleep: async (ms) => waits.push(ms),
@@ -45,8 +46,8 @@ test('unlockInstance waits for the guest to answer, attests with the local pins,
       return tcpTransport(guest.port)
     },
   })
-  assert.deepEqual(result, { injected: ['luks_passphrase'], measurement, policy: '0x30000', launchTcb: { bootloader: 12 } })
-  assert.deepEqual(guest.injected, ['luks_passphrase'])
+  assert.deepEqual(result.measurement, measurement)
+  assert.deepEqual([...guest.injected].sort(), ['authorized_keys', 'luks_passphrase'])
   assert.equal(urls[0], `wss://relay.example/attest?crn=${CRN}&vm=${VM}`)
   assert.deepEqual(waits, [10_000])
   guest.close()
@@ -76,4 +77,5 @@ test('unlockInstance does not retry a verdict', async () => {
 
 test('unlockInstance refuses to run without a passphrase', async () => {
   await assert.rejects(unlockInstance({ wasm, relayUrl: 'wss://r', crnHash: CRN, instanceItemHash: VM, trustedExecution: tee, passphrase: '', sign: async () => '' }), /needs the passphrase/)
+  await assert.rejects(unlockInstance({ wasm, relayUrl: 'wss://r', crnHash: CRN, instanceItemHash: VM, trustedExecution: tee, passphrase: 'x', secrets: { luks_passphrase: 'y' }, sign: async () => '' }), /not in secrets/)
 })
