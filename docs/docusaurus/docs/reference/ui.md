@@ -144,6 +144,8 @@ themselves is still tried first.
 There is no default attest relay. Name your own, usually the `/attest` route
 of an orbitdb-relay you run; see [Attest relay](./attest-relay.md).
 
+The WASM comes from `@le-space/attest-wasm` (`npm install @le-space/attest-wasm`).
+
 ```jsx
 <SponsorRelayFab
   confidential

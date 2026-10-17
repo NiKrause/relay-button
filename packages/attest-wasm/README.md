@@ -1,5 +1,9 @@
 # @le-space/attest-wasm
 
+```bash
+npm install @le-space/attest-wasm
+```
+
 SEV-SNP attestation verification that runs **in the browser**, so a person
 deploying a confidential Aleph instance from the widget can check the guest
 themselves before anything secret is sent to it (relay-button#169).

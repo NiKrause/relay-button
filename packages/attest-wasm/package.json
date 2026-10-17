@@ -1,14 +1,14 @@
 {
 	"name": "@le-space/attest-wasm",
-	"version": "0.1.0",
-	"private": true,
+	"version": "0.10.0",
 	"description": "SEV-SNP attestation verification in the browser: aleph-rs's verifier compiled to WebAssembly.",
 	"license": "MIT",
 	"type": "module",
 	"main": "./js/index.mjs",
 	"scripts": {
 		"wasm:build": "cargo build --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir pkg target/wasm32-unknown-unknown/release/relay_button_attest.wasm && wasm-bindgen --target nodejs --out-dir pkg-node target/wasm32-unknown-unknown/release/relay_button_attest.wasm && node -e \"require('fs').writeFileSync('pkg-node/package.json', JSON.stringify({ type: 'commonjs' }))\"",
-		"wasm:test": "cargo test && cargo test write_ratls_fixture -- --ignored && node --test ./test/*.test.mjs"
+		"wasm:test": "cargo test && cargo test write_ratls_fixture -- --ignored && node --test ./test/*.test.mjs",
+		"build:publish": "node ./scripts/build-publish.mjs"
 	},
 	"devDependencies": {
 		"ethers": "^6.16.0",
@@ -24,5 +24,6 @@
 		"./runtime": "./js/runtime.mjs",
 		"./pkg/*": "./pkg/*",
 		"./package.json": "./package.json"
-	}
+	},
+	"types": "./js/instance.d.mts"
 }

@@ -131,9 +131,20 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+      # @le-space/attest-wasm ships a WebAssembly build; without it the
+      # package must not go out (REQUIRE_WASM=1 makes its build fail instead).
+      - name: Set up Rust and wasm-bindgen for attest-wasm
+        working-directory: packages/attest-wasm
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          rustup default stable
+          version="$(grep -A1 'name = "wasm-bindgen"$' Cargo.lock | sed -n 's/version = "\(.*\)"/\1/p')"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+
       - name: Build publishable artifacts
         env:
           NPM_SCOPE: ${{ inputs.npm_scope || 'le-space' }}
+          REQUIRE_WASM: '1'
         run: pnpm publish:prepare
 
       - name: Pack dist packages
@@ -155,6 +166,7 @@ jobs:
             packages/playwright/dist/*.tgz
             packages/ui/dist/*.tgz
             packages/node/dist/*.tgz
+            packages/attest-wasm/dist/*.tgz
 
       - name: Verify npm token is configured
         if: needs.decide.outputs.publish == 'true'
