@@ -3,7 +3,6 @@
 	"version": "0.10.0",
 	"description": "Reusable Aleph deployment, runtime, and guest lifecycle logic.",
 	"license": "MIT",
-	"private": true,
 	"type": "module",
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",

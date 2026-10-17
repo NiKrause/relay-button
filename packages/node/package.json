@@ -3,7 +3,6 @@
 	"version": "0.10.0",
 	"description": "Node and GitHub Actions adapters for Relay Button deployment tooling.",
 	"license": "MIT",
-	"private": true,
 	"type": "module",
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",
