@@ -116,7 +116,7 @@ minutes (about 8 for the 1.7 GiB orbitdb-relay image); the deploy itself
 about 3. Pass the `confidential_rootfs_item_hash` of the first run to later
 deploys of the same version and they skip the build. Every deployment of that
 image shares its passphrase, which suits relays run by one operator; a
-workload whose data must be readable by one person only (one Paperless per
+workload whose data must be readable by one person only (one instance per
 user) needs its own image and passphrase per deployment.
 
 These outputs let a caller workflow continue with repo-specific steps such as:

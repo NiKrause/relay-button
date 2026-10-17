@@ -187,7 +187,7 @@ test('assertValidTrustedExecution refuses blocks Aleph would reject or weaken', 
 
 const baseContent = {
   address: '0xabc',
-  name: 'paperless',
+  name: 'confidential-app',
   sshPublicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG9A7L1fCP0f3dYxFJ0P0XrJ1hV6X4kRrS0vQd2c8mS0 user@example',
   rootfsItemHash: '380b99e0577fb7771f1b3c0a369f4abff9094e9205b0b466783453299ef9f4f2',
   rootfsSizeMiB: 40960,

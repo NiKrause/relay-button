@@ -133,13 +133,10 @@ workload. What it found (aleph CLI v0.22.0, runtime `snp-1.2`, kernel 6.18):
 | Docker | runs with `--iptables=false --bridge=none --storage-driver=vfs`; containers use the host network and reach the internet |
 
 So a confidential workload ships a small image and pulls its containers
-after the unlock, onto the encrypted disk. With `image: paperless` the smoke
-workflow does exactly that for Paperless-ngx 3.2.1, Postgres 18 and Valkey 9
-(4 vCPU, 8 GiB): pulled in about 80 s, answering 50 s later, a test receipt
-OCR'd in 7 s, about 730 MiB of memory in use. vfs stores every layer in full,
-so the 3 GB of images took 23 GB of disk. Every service binds to 127.0.0.1,
-because the guest has a public IPv6 address and no firewall; Paperless is
-reached through an SSH tunnel. Compose services need
+after the unlock, onto the encrypted disk. vfs stores every layer in full:
+in a test with about 3 GB of images, they took 23 GB of disk, so size the
+disk for it. Every service binds to 127.0.0.1, because the guest has a
+public IPv6 address and no firewall. Compose services need
 `network_mode: host`, which is also what Aleph's own `aleph.compose/1`
 programs require.
 
