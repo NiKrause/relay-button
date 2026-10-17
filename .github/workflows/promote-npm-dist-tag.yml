@@ -36,6 +36,7 @@ jobs:
         # `latest` tag where some packages advance and others lag.
         package_name:
           - '@le-space/aleph-bootstrap'
+          - '@le-space/attest-wasm'
           - '@le-space/browser'
           - '@le-space/core'
           - '@le-space/node'
