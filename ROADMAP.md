@@ -1,5 +1,79 @@
 # Roadmap
 
+## 0.11.0 — a deploy check that checks each transport
+
+The relay probe that decides whether a deployment is healthy only ever
+dialed the first address it was given (#187). It probed every address on one
+libp2p node, and `dial()` hands back an existing connection to the same peer.
+In two real universal-connectivity deploys, IPv4 TCP was dialed in 388 and
+465 ms. Everything after it reported success in 0–1 ms over that same TCP
+connection: IPv6 TCP, both proxy-wss addresses, both webtransport addresses
+and both webrtc-direct addresses. Several of this autumn's relay defects
+(#135, #137, #140) lived in exactly the transports that were never tested.
+
+Each address is now judged on its own connection (#188). Connections to the
+peer are closed before and after every dial, and the connection that comes
+back must run over the transport that was requested. Against 32 registered
+addresses, every family that used to report 0–1 ms is now dialed in 220–593
+ms over its own transport.
+
+Two things a Node-based probe cannot check get explicit handling instead of
+passing by accident:
+
+- **webtransport.** Node has no WebTransport transport. uc-go-peer serves
+  `quic-v1` and `quic-v1/webtransport` from the same QUIC listener, so the
+  probe dials that port over libp2p QUIC. That proves the port is forwarded
+  and the listener answers. It does not exercise HTTP/3 or compare the
+  certhash with the served certificate. The result says this in a new `note`
+  field.
+- **IPv6.** When the probing host has no global IPv6 address, `ip6` and
+  `dns6` addresses are reported as not checked and not required, rather than
+  failing a deploy because of the runner. `PROBE_IPV6=true|false` overrides
+  the detection.
+
+**For consumers:** universal-connectivity's required families
+(`relay-probe-policy.json`) are now actually tested. A deploy can fail on a
+real defect that used to pass, so the first deploy after upgrading deserves
+attention.
+
+Not changed: when a required address dials but then fails its ping, the
+result is still `ok: true`, with the failure recorded in `error`.
+
+### One libp2p stack in @le-space/node
+
+`@le-space/node` carried libp2p 2 for the relay probe next to libp2p 3 for
+Helia, which it reached through npm aliases (`@le-space/libp2p-*`,
+`libp2p-helia`). The probe now runs on libp2p 3, the aliases are gone, and
+68 package versions with them (#186, which was merged into a stale branch
+and re-landed in #188). multiaddr 13 removed `protoNames()` and
+`getPeerId()`. Their replacements match multiaddr 12 on 35 addresses,
+including relayed ones. A relay's peer id is derived from its EVM key, and
+that derivation is unchanged; a test pins the value computed on the old
+stack.
+
+### No React Native in @le-space/node
+
+`@libp2p/webrtc` depends on `react-native-webrtc`, whose `react-native` peer
+is not optional, so pnpm installed React Native into a Node deploy tool:
+98 package versions, including Metro and Hermes (#185). Node never loads
+that code. A `packageExtensions` entry now marks the peer optional.
+**Projects that install `@le-space/node` from npm still get React Native**,
+because npm installs non-optional peers too. `--legacy-peer-deps` avoids it.
+
+### Dependencies and advisories
+
+- 38 npm advisories closed through override floors, every target inside its
+  current major (#184), plus `@libp2p/peer-store` 11 through the stack change.
+- All overrides now live in `pnpm-workspace.yaml`. 16 of them used to be
+  only in `package.json`, which pnpm 11 no longer reads.
+- Four `rustls-webpki` advisories in `attest-wasm` were dismissed as
+  not reachable. The flagged copy is pulled in for algorithm constants only,
+  and the RA-TLS path uses its own certificate verifier (#183).
+- 9 advisories remain, each either without a published fix or needing a
+  major bump (`tinypool`, `katex`, `postcss-selector-parser` 6).
+- `core`, `node` and `shared-types` no longer carry `"private": true`.
+  They are published, and the flag never reached npm.
+
 ## 0.10.0 — a confidential VM the browser checks for itself
 
 Relay Button can now start an AMD SEV-SNP confidential VM on Aleph. The person
