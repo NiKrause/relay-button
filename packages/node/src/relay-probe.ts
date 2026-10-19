@@ -1,3 +1,4 @@
+import { networkInterfaces } from 'node:os'
 import process from 'node:process'
 import { setTimeout as sleep } from 'node:timers/promises'
 
@@ -11,7 +12,7 @@ import { ping } from '@libp2p/ping'
 import { tcp } from '@libp2p/tcp'
 import { webRTC, webRTCDirect } from '@libp2p/webrtc'
 import { webSockets } from '@libp2p/websockets'
-import { multiaddr } from '@multiformats/multiaddr'
+import { multiaddr, type Multiaddr } from '@multiformats/multiaddr'
 import { createLibp2p } from 'libp2p'
 
 import { integerEnv, jsonEnv } from './env.ts'
@@ -22,6 +23,12 @@ export interface RelayProbePolicy {
   proxyWssHostMatchers: string[]
   timeoutMs: number
   settleMs: number
+  /**
+   * Whether the probing host can reach IPv6 at all. When it cannot, IPv6
+   * addresses are reported as not checked rather than as failures: a CI runner
+   * without IPv6 says nothing about the relay.
+   */
+  ipv6Available: boolean
 }
 
 export interface RelayProbeResult {
@@ -35,6 +42,8 @@ export interface RelayProbeResult {
   remoteAddrs: string[]
   error: string | null
   warning: string | null
+  /** How the address was checked when that differs from dialing it as given. */
+  note: string | null
 }
 
 function stringArrayEnv(name: string, fallback: string, env: NodeJS.ProcessEnv = process.env): string[] {
@@ -52,7 +61,30 @@ export function relayProbePolicyFromEnv(env: NodeJS.ProcessEnv = process.env): R
     proxyWssHostMatchers: stringArrayEnv('ALEPH_RELAY_PROBE_PROXY_WSS_HOST_MATCHERS_JSON', '[".2n6.me/"]', env),
     timeoutMs: integerEnv('PROBE_TIMEOUT_MS', 20000, env),
     settleMs: integerEnv('PROBE_SETTLE_MS', 1500, env),
+    ipv6Available: env.PROBE_IPV6 === 'true' ? true : env.PROBE_IPV6 === 'false' ? false : hostHasGlobalIpv6(),
   }
+}
+
+/**
+ * True when some interface carries a global IPv6 address: not loopback, not
+ * link-local (fe80::/10) and not unique-local (fc00::/7). Set PROBE_IPV6 to
+ * override the detection.
+ */
+export function hostHasGlobalIpv6(interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces()): boolean {
+  return Object.values(interfaces)
+    .flat()
+    .some(
+      (entry) =>
+        entry != null &&
+        entry.family === 'IPv6' &&
+        !entry.internal &&
+        !/^fe[89ab]/i.test(entry.address) &&
+        !/^f[cd]/i.test(entry.address)
+    )
+}
+
+function isIpv6Address(protocols: string[]): boolean {
+  return protocols.includes('ip6') || protocols.includes('dns6')
 }
 
 export function classifyRelayAddress(
@@ -101,6 +133,35 @@ export function classifyRelayAddress(
   }
 }
 
+/**
+ * Protocol names of an address, in order. multiaddr 13 removed `protoNames()`;
+ * this is what it returned.
+ */
+export function multiaddrProtocols(addr: Multiaddr): string[] {
+  return addr.getComponents().map((component) => component.name)
+}
+
+/**
+ * The peer an address dials, as multiaddr 12's removed `getPeerId()` resolved
+ * it: the last `/p2p/` component, counting only those after the last
+ * `/p2p-circuit`, so a relayed address yields its target rather than the
+ * relay, and a relayed address without a target yields none. An unparseable
+ * peer id yields none as well, as it did before.
+ */
+export function targetPeerId(addr: Multiaddr): ReturnType<typeof peerIdFromString> | null {
+  let value: string | undefined
+  for (const component of addr.getComponents()) {
+    if (component.name === 'p2p') value = component.value
+    if (component.name === 'p2p-circuit') value = undefined
+  }
+  if (value == null) return null
+  try {
+    return peerIdFromString(value)
+  } catch {
+    return null
+  }
+}
+
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null
   const timeoutPromise = new Promise<T>((_, reject) => {
@@ -141,16 +202,68 @@ async function createProbeNode() {
   })
 }
 
+/**
+ * The transport a connection runs over, reduced to what a probe family means.
+ * Order matters: a websocket address also contains `tcp`, and a webtransport
+ * address also contains `quic-v1`.
+ */
+export function transportOf(protocols: string[]): string {
+  if (protocols.includes('p2p-circuit')) return 'circuit'
+  if (protocols.includes('webrtc-direct')) return 'webrtc-direct'
+  if (protocols.includes('webtransport')) return 'webtransport'
+  if (protocols.includes('quic-v1') || protocols.includes('quic')) return 'quic'
+  if (protocols.includes('ws') || protocols.includes('wss')) return 'ws'
+  if (protocols.includes('tcp')) return 'tcp'
+  return 'other'
+}
+
+/**
+ * Node has no WebTransport transport, so a webtransport address cannot be
+ * dialed from the probe as announced. uc-go-peer serves `quic-v1` and
+ * `quic-v1/webtransport` from the same QUIC listener on the same UDP port, so
+ * the probe dials that listener over libp2p QUIC instead. This proves the UDP
+ * port is forwarded and the listener WebTransport runs on answers; it does
+ * not exercise the HTTP/3 layer or check the certhash against the served
+ * certificate. Returns null when there is no `quic-v1` to fall back to.
+ */
+export function quicSubstituteFor(addr: Multiaddr): Multiaddr | null {
+  const components = addr.getComponents()
+  if (!components.some((c) => c.name === 'webtransport') || !components.some((c) => c.name === 'quic-v1')) {
+    return null
+  }
+  const kept = components.filter((c) => c.name !== 'webtransport' && c.name !== 'certhash')
+  return multiaddr(kept.map((c) => (c.value == null ? `/${c.name}` : `/${c.name}/${c.value}`)).join(''))
+}
+
+const QUIC_SUBSTITUTE_NOTE =
+  'webtransport checked over libp2p QUIC on the same UDP port: port forwarding and the QUIC listener are verified, ' +
+  'the HTTP/3 layer and the certhash are not (Node has no WebTransport transport)'
+
+type ProbeNode = Awaited<ReturnType<typeof createProbeNode>>
+
+/**
+ * Drop every connection to the peer. libp2p's dial() hands back an existing
+ * connection to the same peer instead of opening one over the requested
+ * transport, so without this each address after the first was judged on the
+ * first one's connection (#187).
+ */
+async function closeConnectionsTo(node: ProbeNode, peerId: NonNullable<ReturnType<typeof targetPeerId>>): Promise<void> {
+  try {
+    await node.hangUp(peerId)
+  } catch {
+    // Nothing to close, or already closing: either way no connection is left to reuse.
+  }
+}
+
 export async function probeRelayAddress(
-  node: Awaited<ReturnType<typeof createProbeNode>>,
+  node: ProbeNode,
   rawAddr: string,
   policy: RelayProbePolicy
 ): Promise<RelayProbeResult> {
   const addr = multiaddr(rawAddr)
-  const peerIdString = addr.getPeerId()
-  const protocols = addr.protoNames()
+  const peerId = targetPeerId(addr)
+  const protocols = multiaddrProtocols(addr)
   const classification = classifyRelayAddress(rawAddr, protocols, policy)
-  const startedAt = Date.now()
 
   const result: RelayProbeResult = {
     address: rawAddr,
@@ -163,14 +276,36 @@ export async function probeRelayAddress(
     remoteAddrs: [],
     error: null,
     warning: null,
+    note: null,
+  }
+
+  if (isIpv6Address(protocols) && !policy.ipv6Available) {
+    result.required = false
+    result.note = 'not checked: the probing host has no global IPv6 address, so this says nothing about the relay'
+    return result
   }
 
   try {
-    await withTimeout(node.dial(addr), policy.timeoutMs, `dial ${rawAddr}`)
+    if (peerId) await closeConnectionsTo(node, peerId)
+
+    const substitute = transportOf(protocols) === 'webtransport' ? quicSubstituteFor(addr) : null
+    const dialAddr = substitute ?? addr
+    if (substitute) result.note = QUIC_SUBSTITUTE_NOTE
+
+    const startedAt = Date.now()
+    const connection = await withTimeout(node.dial(dialAddr), policy.timeoutMs, `dial ${dialAddr.toString()}`)
     result.dialMs = Date.now() - startedAt
 
-    if (peerIdString) {
-      const peerId = peerIdFromString(peerIdString)
+    const requested = transportOf(multiaddrProtocols(dialAddr))
+    const actual = transportOf(multiaddrProtocols(connection.remoteAddr))
+    if (actual !== requested) {
+      throw new Error(
+        `dial returned a ${actual} connection (${connection.remoteAddr.toString()}) instead of ${requested}; ` +
+          'the requested transport was not used'
+      )
+    }
+
+    if (peerId) {
       await sleep(policy.settleMs)
       const connections = node.getConnections(peerId)
       result.remoteAddrs = connections.map((connection) => connection.remoteAddr.toString())
@@ -199,6 +334,9 @@ export async function probeRelayAddress(
       result.error = message
     }
     return result
+  } finally {
+    // Leave nothing behind for the next address to reuse.
+    if (peerId) await closeConnectionsTo(node, peerId)
   }
 }
 
