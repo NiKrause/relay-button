@@ -10,6 +10,7 @@ const repoRoot = path.resolve(
 );
 const nodeRunner = path.join(repoRoot, "packages/node/src/action-runner.ts");
 const rootfsRunner = path.join(repoRoot, "packages/node/src/rootfs-runner.ts");
+const githubRunner = path.join(repoRoot, "scripts/aleph-github-runner.mjs");
 
 function printHelp() {
   console.log(`relay-button CLI
@@ -24,6 +25,7 @@ Commands:
   rootfs-plan       Print the derived rootfs build plan from a rootfs contract
   rootfs-build      Build a rootfs image without publishing it
   rootfs-publish    Build and optionally publish a rootfs image
+  gh-runner         Ephemeral GitHub Actions runners on Aleph (gh-runner help)
   help              Show this help
 
 Examples:
@@ -95,6 +97,12 @@ function resolveCommand(argv) {
         script: rootfsRunner,
         env: { ALEPH_VM_MODE: "rootfs-publish" },
       };
+    case "gh-runner":
+      return {
+        script: githubRunner,
+        env: {},
+        args: argv.slice(1),
+      };
     case "help":
     case "--help":
     case "-h":
@@ -114,7 +122,7 @@ async function main() {
   }
 
   await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [resolved.script], {
+    const child = spawn(process.execPath, [resolved.script, ...(resolved.args ?? [])], {
       cwd: repoRoot,
       env: { ...process.env, ...resolved.env },
       stdio: "inherit",

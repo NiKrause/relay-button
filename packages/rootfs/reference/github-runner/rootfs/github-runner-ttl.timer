@@ -1,0 +1,10 @@
+[Unit]
+Description=Maximum lifetime for an ephemeral GitHub runner
+
+[Timer]
+OnActiveSec=360min
+AccuracySec=1min
+Unit=github-runner-ttl.service
+
+[Install]
+WantedBy=timers.target

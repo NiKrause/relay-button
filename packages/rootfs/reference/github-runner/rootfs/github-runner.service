@@ -1,0 +1,15 @@
+[Unit]
+Description=Ephemeral GitHub Actions runner (one job, then forget and power off)
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/github-runner-start
+ExecStopPost=/usr/local/sbin/github-runner-finish
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

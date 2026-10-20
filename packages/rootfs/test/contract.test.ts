@@ -154,3 +154,34 @@ test('validateRootfsContract rejects malformed contracts', () => {
   assert.ok(result.errors.some((error) => error.includes('rootfs.profile')))
   assert.ok(result.errors.some((error) => error.includes('manifest.copyTarget')))
 })
+
+test('github-runner contract exposes only SSH and ships no credential', async () => {
+  const raw = await readFile(referenceProfileContractPath('github-runner'), 'utf8')
+  const result = validateRootfsContract(JSON.parse(raw))
+  assert.equal(result.valid, true)
+  assert.equal(result.contract?.rootfs.binaryPath, '/opt/actions-runner/run.sh')
+  assert.deepEqual(result.contract?.ports.map((port) => port.port), [22])
+})
+
+test('github-runner image pins and checks the runner, and runs one job before it forgets itself', async () => {
+  const root = referenceProfileRootfsDir('github-runner')
+  const read = (name: string) => readFile(new URL(name, `file://${root}/`), 'utf8')
+  const [builder, start, finish, service, timer] = await Promise.all([
+    read('build-rootfs-image.sh'),
+    read('github-runner-start'),
+    read('github-runner-finish'),
+    read('github-runner.service'),
+    read('github-runner-ttl.timer'),
+  ])
+  assert.match(builder, /RUNNER_VERSION="\$\{RUNNER_VERSION:-\d+\.\d+\.\d+\}"/)
+  assert.match(builder, /RUNNER_SHA256="\$\{RUNNER_SHA256:-[a-f0-9]{64}\}"/)
+  assert.match(builder, /sha256sum --check --strict/)
+  assert.doesNotMatch(builder, /jitconfig|ALEPH_FORGET_KEY|registration-token/)
+  // The one-job config is read once and removed before the job starts.
+  assert.match(start, /rm -f "\$\{JIT\}"[\s\S]*run\.sh --jitconfig/)
+  assert.match(start, /runuser -u runner/)
+  assert.match(finish, /forget-self\.mjs/)
+  assert.match(finish, /systemctl poweroff/)
+  assert.match(service, /ExecStopPost=\/usr\/local\/sbin\/github-runner-finish/)
+  assert.match(timer, /OnActiveSec=\d+min/)
+})
