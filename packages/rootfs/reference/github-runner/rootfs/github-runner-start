@@ -18,6 +18,8 @@ if [ -s "${CONF_DIR}/ttl" ]; then
     systemctl daemon-reload
   fi
 fi
+# The timer already runs from boot (a VM that never gets a config still powers
+# off); restarting it counts the TTL from now.
 systemctl restart github-runner-ttl.timer
 
 config="$(cat "${JIT}")"

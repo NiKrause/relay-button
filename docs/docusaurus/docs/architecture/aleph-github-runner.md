@@ -41,7 +41,8 @@ flowchart TD
 
 ## What the image holds
 
-`packages/rootfs/reference/github-runner`: Debian 12, the GitHub
+`packages/rootfs/reference/github-runner`: Ubuntu 24.04, the system of GitHub's
+own `ubuntu-24.04` runners, so tools built for those run here; the GitHub
 `actions-runner` at a pinned version (its sha256 is checked at build time and
 the runner starts with updates off), Node.js 24, Docker, git, jq, and the tools
 for building rootfs images (`qemu-utils`, `cryptsetup`, `debootstrap`). The

@@ -1,6 +1,6 @@
 # GitHub runner RootFS
 
-Debian 12 with the GitHub `actions-runner` (pinned, sha256-checked, updates
+Ubuntu 24.04 (as GitHub's own runners) with the GitHub `actions-runner` (pinned, sha256-checked, updates
 off), Node.js 24, Docker, git, jq and rootfs build tools. It contains no
 credential.
 

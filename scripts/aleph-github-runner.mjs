@@ -195,6 +195,16 @@ async function removeVm(identity, itemHash, reason) {
   return forgotten.itemHash;
 }
 
+async function removeVmsNamed(identity, name) {
+  const strays = (await runnerInstances(identity.address).catch(() => [])).filter((instance) => instance.name === name);
+  for (const stray of strays) {
+    log(`${name}: removing ${stray.itemHash} left by the failed deploy`);
+    await removeVm(identity, stray.itemHash, `github-runner ${name} deploy failed`).catch((error) =>
+      log(`${name}: could not remove ${stray.itemHash}, run janitor: ${error.message}`),
+    );
+  }
+}
+
 async function up(options) {
   const token = await githubToken();
   const repo = await github(token, "GET", `/repos/${options.repo}`);
@@ -219,24 +229,31 @@ async function up(options) {
       const name = githubRunnerName(options.repo, now, index);
       log(`${name}: deploying`);
       let output = "";
-      await runActionMode(
-        {
-          ...process.env,
-          GITHUB_OUTPUT: "",
-          GITHUB_STEP_SUMMARY: "",
-          ...githubRunnerDeployEnv({
-            privateKey: identity.key,
-            name,
-            sshPublicKey,
-            rootfsItemHash: options.rootfsItemHash,
-            vcpus: options.vcpus,
-            memoryMiB: options.memoryMiB,
-            diskMiB: options.diskMiB,
-            apiHosts: API_HOSTS,
-          }),
-        },
-        { stdout: (text) => (output += text) },
-      );
+      try {
+        await runActionMode(
+          {
+            ...process.env,
+            GITHUB_OUTPUT: "",
+            GITHUB_STEP_SUMMARY: "",
+            ...githubRunnerDeployEnv({
+              privateKey: identity.key,
+              name,
+              sshPublicKey,
+              rootfsItemHash: options.rootfsItemHash,
+              vcpus: options.vcpus,
+              memoryMiB: options.memoryMiB,
+              diskMiB: options.diskMiB,
+              apiHosts: API_HOSTS,
+            }),
+          },
+          { stdout: (text) => (output += text) },
+        );
+      } catch (error) {
+        // A deploy can fail after one of its placements was accepted (measured:
+        // the error named a rejected node while an INSTANCE of this name ran).
+        await removeVmsNamed(identity, name);
+        throw error;
+      }
       const vm = readDeployedRunnerVm(JSON.parse(output.trim().split("\n").pop()));
       log(`${name}: INSTANCE ${vm.itemHash} on ${vm.crnName || "?"}, SSH ${vm.host}:${vm.sshPort}`);
       try {
