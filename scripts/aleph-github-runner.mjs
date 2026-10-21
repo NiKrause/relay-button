@@ -331,7 +331,8 @@ async function janitor(options) {
     removed.push({ ...candidate, forget: await removeVm(identity, candidate.itemHash, "github-runner janitor") });
   }
   // Offline runners whose VM is gone would otherwise linger in the repo settings.
-  const live = new Set(instances.map((instance) => instance.name));
+  const swept = new Set(sweep.map((candidate) => candidate.itemHash));
+  const live = new Set(instances.filter((instance) => !swept.has(instance.itemHash)).map((instance) => instance.name));
   for (const runner of runners) {
     if (runner.name.startsWith(GITHUB_RUNNER_NAME_PREFIX) && runner.status === "offline" && !live.has(runner.name)) {
       await github(token, "DELETE", `/repos/${options.repo}/actions/runners/${runner.id}`);
