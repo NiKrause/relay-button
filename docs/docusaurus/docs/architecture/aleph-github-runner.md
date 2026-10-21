@@ -64,21 +64,10 @@ image carries **no credential**.
 - **Without a forget key** the VM powers off after its job but stays allocated
   until `gh-runner down` or `gh-runner janitor` removes it.
 
-## Commands
+## Setting it up
 
-```bash
-export ALEPH_VM_PRIVATE_KEY=…          # the dedicated runner wallet
-export GH_RUNNER_ROOTFS_ITEM_HASH=…    # from the "GitHub Runner RootFS" workflow
-export GH_RUNNER_FORGET_KEY=…          # optional, see above
-pnpm relay-button gh-runner authorize-forget        # once per forget key
-pnpm relay-button gh-runner up --repo owner/name --count 2
-pnpm relay-button gh-runner list --repo owner/name
-pnpm relay-button gh-runner janitor --repo owner/name
-pnpm relay-button gh-runner down --all
-```
-
-The GitHub token comes from `GITHUB_TOKEN` or `gh auth token` and needs admin
-rights on the repository.
+Step by step, from wallet to first job:
+[Run GitHub Actions jobs on Aleph](../guides/aleph-github-runner.md).
 
 ## Public repositories
 
