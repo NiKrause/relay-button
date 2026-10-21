@@ -181,7 +181,10 @@ test('github-runner image pins and checks the runner, and runs one job before it
   assert.match(start, /rm -f "\$\{JIT\}"[\s\S]*run\.sh --jitconfig/)
   assert.match(start, /runuser -u runner/)
   assert.match(finish, /forget-self\.mjs/)
-  assert.match(finish, /systemctl poweroff/)
+  // Bounded attempts inside the unit's stop timeout, then poweroff regardless.
+  assert.match(finish, /timeout \d+ node \/opt\/github-runner\/forget-self\.mjs/)
+  assert.match(finish, /systemctl --no-block poweroff\s*$/)
+  assert.match(service, /TimeoutStopSec=\d+/)
   assert.match(service, /ExecStopPost=\/usr\/local\/sbin\/github-runner-finish/)
   assert.match(timer, /OnActiveSec=\d+min/)
 })

@@ -37,6 +37,7 @@ export interface GithubRunnerOptions {
   all: boolean;
   instances: string[];
   revoke: boolean;
+  sshKey: string;
 }
 
 const COMMANDS = new Set(["up", "list", "down", "janitor", "authorize-forget", "help"]);
@@ -67,6 +68,7 @@ export function parseGithubRunnerArgs(
     all: false,
     instances: [],
     revoke: false,
+    sshKey: "",
   };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
@@ -88,6 +90,7 @@ export function parseGithubRunnerArgs(
       case "--allow-public": options.allowPublic = true; break;
       case "--all": options.all = true; break;
       case "--revoke": options.revoke = true; break;
+      case "--ssh-key": options.sshKey = next(); break;
       default:
         if (arg.startsWith("--")) throw new Error(`Unknown option ${arg}`);
         options.instances.push(arg);
@@ -220,8 +223,13 @@ export interface SecurityAuthorization {
 
 /**
  * Aleph replaces the whole `security` aggregate's authorization list, so a
- * change has to carry every other entry along. The forget key gets FORGET
- * and nothing else.
+ * change has to carry every other entry along.
+ *
+ * FORGET alone is not enough: Aleph lets a delegate forget only what it
+ * "could have created under the owner's security aggregate" (measured
+ * 2026-10-21, relay-button#191), so the key also needs INSTANCE. That lets it
+ * start VMs paid by the owner, which is why the runner wallet holds nothing
+ * else and only a small balance.
  */
 export function mergeForgetAuthorization(
   current: SecurityAuthorization[],
@@ -229,7 +237,7 @@ export function mergeForgetAuthorization(
   revoke = false,
 ): SecurityAuthorization[] {
   const others = current.filter((entry) => entry.address.toLowerCase() !== forgetAddress.toLowerCase());
-  return revoke ? others : [...others, { address: forgetAddress, types: ["FORGET"] }];
+  return revoke ? others : [...others, { address: forgetAddress, types: ["INSTANCE", "FORGET"] }];
 }
 
 export interface RunnerInstanceCandidate {

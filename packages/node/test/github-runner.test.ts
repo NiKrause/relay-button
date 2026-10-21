@@ -85,10 +85,10 @@ test("guest files end with the jitconfig, which starts the runner", () => {
   assert.equal(githubRunnerGuestFiles({ jitConfig: "jit", ttlMinutes: 90 }).length, 2);
 });
 
-test("the forget key gets FORGET only, and other authorizations survive", () => {
+test("the forget key gets INSTANCE and FORGET, and other authorizations survive", () => {
   const pwa = { address: "0xPWA", types: ["INSTANCE"], aggregate_keys: ["port-forwarding"] };
   const merged = mergeForgetAuthorization([pwa, { address: "0xforget", types: ["INSTANCE", "FORGET"] }], "0xFORGET");
-  assert.deepEqual(merged, [pwa, { address: "0xFORGET", types: ["FORGET"] }]);
+  assert.deepEqual(merged, [pwa, { address: "0xFORGET", types: ["INSTANCE", "FORGET"] }]);
   assert.deepEqual(mergeForgetAuthorization(merged, "0xforget", true), [pwa]);
 });
 

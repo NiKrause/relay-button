@@ -29,7 +29,7 @@ flowchart TD
     Job[One job as user runner]
     Finish[github-runner-finish]
     Forget[FORGET own INSTANCE with the forget key]
-    Off[poweroff]
+    Off["poweroff (always, even when FORGET fails)"]
     TTL[TTL timer, default 6 h]
   end
 
@@ -53,11 +53,14 @@ image carries **no credential**.
   runner for one job and cannot register another. The guest deletes it as soon
   as the runner has read it.
 - **Forget key (optional).** Powering off does not end an Aleph allocation; the
-  INSTANCE has to be forgotten. The runner wallet authorizes a separate key for
-  `FORGET` only (`gh-runner authorize-forget`), and the launcher hands it to
-  each VM. A `FORGET` authorization is not limited to one message, and job code
-  can read the key. So the runner VMs belong to a **dedicated wallet** that
-  holds nothing else; images and long-lived relays stay on other wallets.
+  INSTANCE has to be forgotten. The runner wallet authorizes a separate key
+  (`gh-runner authorize-forget`), and the launcher hands it to each VM. Aleph
+  lets a delegate forget only messages it could have created itself, so the
+  key needs `INSTANCE` as well as `FORGET`: with `FORGET` alone the VM's own
+  FORGET is rejected. Job code can read the key, so it could start VMs paid by
+  the wallet or forget the wallet's other instances. The runner VMs therefore
+  belong to a **dedicated wallet** with a small balance that holds nothing
+  else; images and long-lived relays stay on other wallets.
 - **Without a forget key** the VM powers off after its job but stays allocated
   until `gh-runner down` or `gh-runner janitor` removes it.
 

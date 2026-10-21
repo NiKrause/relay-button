@@ -9,7 +9,8 @@ writes over SSH, in this order:
 
 - `/etc/github-runner/ttl`: maximum lifetime in minutes (default 360);
 - `/etc/github-runner/forget.env` (optional): `ALEPH_FORGET_KEY`, `ALEPH_OWNER`,
-  `ALEPH_INSTANCE`, a delegate key authorized for FORGET only;
+  `ALEPH_INSTANCE`, a delegate key authorized for INSTANCE and FORGET (Aleph
+  lets a delegate forget only what it could have created);
 - `/etc/github-runner/jitconfig`: a one-job just-in-time runner config.
 
 `github-runner.service` waits for the jitconfig, deletes it once read, and runs

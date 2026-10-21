@@ -10,7 +10,7 @@
 // Environment:
 //   ALEPH_VM_PRIVATE_KEY        the runner wallet (owner and payer of the VMs)
 //   GH_RUNNER_ROOTFS_ITEM_HASH  published github-runner STORE hash (or --rootfs)
-//   GH_RUNNER_FORGET_KEY        optional delegate key, authorized for FORGET only;
+//   GH_RUNNER_FORGET_KEY        optional delegate key, authorized for INSTANCE+FORGET;
 //                               with it each VM forgets itself after its job
 //   GITHUB_TOKEN                optional; defaults to `gh auth token`
 //
@@ -52,7 +52,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function help() {
   console.log(`Usage:
   gh-runner up --repo owner/name [--count N] [--labels aleph] [--ttl 360]
-               [--vcpus 2] [--memory 4096] [--disk 40960] [--rootfs <hash>] [--allow-public]
+               [--vcpus 2] [--memory 4096] [--disk 40960] [--rootfs <hash>] [--allow-public] [--ssh-key <path>]
   gh-runner list --repo owner/name
   gh-runner down <instance-hash…> | --all
   gh-runner janitor --repo owner/name
@@ -205,9 +205,11 @@ async function up(options) {
   const forgetKey = process.env.GH_RUNNER_FORGET_KEY?.trim() || "";
   if (!forgetKey) log("GH_RUNNER_FORGET_KEY not set: the VMs power off after their job but stay allocated until `down` or `janitor`.");
 
+  // A one-run SSH identity, deleted afterwards; --ssh-key keeps your own for
+  // diagnosing a runner that misbehaves.
   const workDir = await mkdtemp(path.join(tmpdir(), "gh-runner-"));
-  const keyPath = path.join(workDir, "id");
-  await run("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", "gh-runner", "-f", keyPath]);
+  const keyPath = options.sshKey || path.join(workDir, "id");
+  if (!options.sshKey) await run("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", "gh-runner", "-f", keyPath]);
   const sshPublicKey = (await readFile(`${keyPath}.pub`, "utf8")).trim();
   const now = new Date();
 

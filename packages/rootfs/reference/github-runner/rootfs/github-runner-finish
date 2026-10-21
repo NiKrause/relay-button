@@ -13,13 +13,19 @@ MARKER=/run/github-runner-finished
 [ -e "${MARKER}" ] && exit 0
 touch "${MARKER}"
 
-echo "github-runner-finish: ${reason}"
+LOG=/var/lib/github-runner/finish.log
+
+# Every attempt is bounded, and the whole loop stays well inside the unit's
+# TimeoutStopSec: if systemd kills this script, the poweroff below never runs.
+echo "$(date -Is) finish: ${reason}" | tee -a "${LOG}"
 if [ -s "${FORGET_ENV}" ]; then
-  for attempt in 1 2 3 4 5; do
-    if node /opt/github-runner/forget-self.mjs "${FORGET_ENV}" "${reason}"; then
+  for attempt in 1 2 3; do
+    # pipefail: the pipeline fails when node does.
+    if timeout 30 node /opt/github-runner/forget-self.mjs "${FORGET_ENV}" "${reason}" 2>&1 | tee -a "${LOG}"; then
       break
     fi
     sleep $((attempt * 5))
   done
 fi
-systemctl poweroff
+echo "$(date -Is) poweroff" | tee -a "${LOG}"
+systemctl --no-block poweroff

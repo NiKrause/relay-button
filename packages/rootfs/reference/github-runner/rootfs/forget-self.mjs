@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // Sends FORGET for this VM's own INSTANCE on behalf of the wallet that pays
-// for it. The key is a delegate the owner authorized for FORGET only; Aleph
-// accepts a message whose content.address is the owner when its sender holds
-// such an authorization. Usage: forget-self.mjs <env-file> [reason]
+// for it. The key is a delegate the owner authorized for INSTANCE and FORGET:
+// Aleph lets a delegate forget only messages it could have created itself. Usage: forget-self.mjs <env-file> [reason]
 //
 // env file: ALEPH_FORGET_KEY, ALEPH_OWNER, ALEPH_INSTANCE, optional ALEPH_API_HOST
 import { createHash } from 'node:crypto'
@@ -59,7 +58,8 @@ async function main() {
   const response = await fetch(`${api}/api/v0/messages`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sync: false, message })
+    body: JSON.stringify({ sync: false, message }),
+    signal: AbortSignal.timeout(20_000)
   })
   const body = await response.json().catch(() => ({}))
   console.log(`FORGET ${message.item_hash}: HTTP ${response.status} ${body.message_status ?? ''}`)

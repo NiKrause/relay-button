@@ -8,6 +8,8 @@ Type=simple
 ExecStart=/usr/local/sbin/github-runner-start
 ExecStopPost=/usr/local/sbin/github-runner-finish
 Restart=no
+# Room for github-runner-finish: three bounded FORGET attempts, then poweroff.
+TimeoutStopSec=180
 StandardOutput=journal
 StandardError=journal
 
