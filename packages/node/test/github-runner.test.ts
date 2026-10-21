@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   githubRunnerDeployEnv,
   githubRunnerGuestFiles,
+  githubRunnerLabels,
   githubRunnerName,
   githubRunnerNamePrefix,
   mergeForgetAuthorization,
@@ -110,4 +111,9 @@ test("janitor sweeps finished and expired runners, never a booting one or a stra
     ttlMs: 375 * 60_000,
   });
   assert.deepEqual(swept.map((candidate) => candidate.itemHash), ["2", "4"]);
+});
+
+test("a just-in-time runner always carries self-hosted, Linux and X64", () => {
+  assert.deepEqual(githubRunnerLabels(["aleph"]), ["self-hosted", "Linux", "X64", "aleph"]);
+  assert.deepEqual(githubRunnerLabels(["Self-Hosted", "big"]), ["self-hosted", "Linux", "X64", "big"]);
 });

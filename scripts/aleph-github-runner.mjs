@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Ephemeral GitHub Actions runners on plain Aleph VMs (relay-button#191).
 //
-//   pnpm relay-button gh-runner up --repo owner/name [--count N] [--labels aleph,linux-x64] [--ttl 360]
+//   pnpm relay-button gh-runner up --repo owner/name [--count N] [--labels aleph] [--ttl 360]
 //   pnpm relay-button gh-runner list --repo owner/name
 //   pnpm relay-button gh-runner down <instance-hash…> | --all
 //   pnpm relay-button gh-runner janitor --repo owner/name
@@ -26,6 +26,7 @@ import {
   GITHUB_RUNNER_NAME_PREFIX,
   githubRunnerDeployEnv,
   githubRunnerGuestFiles,
+  githubRunnerLabels,
   githubRunnerName,
   githubRunnerNamePrefix,
   mergeForgetAuthorization,
@@ -50,7 +51,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function help() {
   console.log(`Usage:
-  gh-runner up --repo owner/name [--count N] [--labels aleph,linux-x64] [--ttl 360]
+  gh-runner up --repo owner/name [--count N] [--labels aleph] [--ttl 360]
                [--vcpus 2] [--memory 4096] [--disk 40960] [--rootfs <hash>] [--allow-public]
   gh-runner list --repo owner/name
   gh-runner down <instance-hash…> | --all
@@ -241,7 +242,7 @@ async function up(options) {
         const jit = await github(token, "POST", `/repos/${options.repo}/actions/runners/generate-jitconfig`, {
           name,
           runner_group_id: 1,
-          labels: options.labels,
+          labels: githubRunnerLabels(options.labels),
           work_folder: "_work",
         });
         const files = githubRunnerGuestFiles({
@@ -265,7 +266,7 @@ async function up(options) {
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }
-  console.log(JSON.stringify({ repo: options.repo, labels: options.labels, runners: started }, null, 2));
+  console.log(JSON.stringify({ repo: options.repo, labels: githubRunnerLabels(options.labels), runners: started }, null, 2));
 }
 
 async function waitForOnline(token, repo, runnerId, name) {

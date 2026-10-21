@@ -4,7 +4,21 @@
 
 export const GITHUB_RUNNER_PROFILE = "github-runner";
 export const GITHUB_RUNNER_NAME_PREFIX = "gh-runner-";
-export const GITHUB_RUNNER_DEFAULT_LABELS = ["aleph", "linux-x64"];
+// A just-in-time runner gets exactly the labels it is given: GitHub does not
+// add `self-hosted`, `Linux` and `X64` as it does for a registered runner, so
+// a job on `[self-hosted, aleph]` would wait forever without them.
+export const GITHUB_RUNNER_BASE_LABELS = ["self-hosted", "Linux", "X64"];
+export const GITHUB_RUNNER_DEFAULT_LABELS = ["aleph"];
+
+export function githubRunnerLabels(labels: string[]): string[] {
+  const seen = new Set<string>();
+  return [...GITHUB_RUNNER_BASE_LABELS, ...labels].filter((label) => {
+    const key = label.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 export const GITHUB_RUNNER_PORTS = [
   { port: 22, tcp: true, udp: false, purpose: "SSH bootstrap and diagnostics" },
 ];
