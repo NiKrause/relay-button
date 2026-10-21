@@ -1,5 +1,77 @@
 # Roadmap
 
+## 0.12.0 — a GitHub runner that removes itself after one job
+
+Private repositories on GitHub Free get 2000 hosted Actions minutes a month;
+once they are used up, every job stays queued. Self-hosted runners are not
+affected. 0.12.0 runs them on plain Aleph VMs: one command starts a VM, it
+takes one job, and then it forgets its own INSTANCE (#191, #192, #195).
+
+```bash
+pnpm relay-button gh-runner up --repo owner/name
+```
+
+Setup, step by step: [Run GitHub Actions jobs on Aleph](https://nikrause.github.io/relay-button/docs/guides/aleph-github-runner/) (#193).
+
+### The image
+
+`@le-space/rootfs` gains the `github-runner` profile:
+
+- Ubuntu 24.04, the system of GitHub's own `ubuntu-24.04` runners, with
+  `actions-runner` 2.338.0 (pinned, sha256-checked, updates off), Node.js 24,
+  Docker and rootfs build tools. It carries no credential.
+- The published STORE is
+  `9ddeabdb5a6ec23f5b6676f034a84d73a2bb3b2c912d3f736bab932fe33951cd`
+  (963 MiB, close to Aleph's 1 GiB upload limit).
+- Debian 12 lacked the glibc (2.38) the aleph CLI release binary needs.
+  Debian 13's cloud image looped in GRUB on Aleph. Growing the root partition
+  with `virt-resize` produced an image that never came up, so it is grown in
+  place with `growpart`. The published image was booted under QEMU to a
+  login prompt before it was uploaded; the build workflow does not do that
+  yet.
+
+### One job, then gone
+
+- The launcher asks GitHub for a **just-in-time config**: one runner, one
+  job, unable to register another. The guest deletes it as soon as the
+  runner has read it. A just-in-time runner gets only the labels it is
+  given, so the launcher always adds `self-hosted`, `Linux` and `X64`.
+- After the job the VM sends FORGET for its own INSTANCE on behalf of the
+  runner wallet and powers off. Measured: the FORGET came 8 seconds after the
+  job, and the scheduler showed the allocation gone.
+- The poweroff always comes, also when FORGET fails. A TTL timer runs from
+  boot, so a VM that never gets a config still powers off.
+- `janitor` erases and forgets what is left, and deregisters offline runners
+  on GitHub. A failed `up` removes INSTANCEs of its name. Aleph can still
+  place one later, once credits free up, which the janitor then catches.
+
+### What Aleph requires, measured
+
+- **The forget key needs `INSTANCE` as well as `FORGET`.** Aleph lets a
+  delegate forget only messages it could have created itself; with `FORGET`
+  alone the VM's FORGET was rejected. Job code can read the key, so the
+  runner VMs belong to a dedicated wallet with a small balance.
+- **A day of credits per running VM.** Aleph accepts a new VM only while the
+  wallet could pay a day of runtime for every VM it runs. A default runner
+  costs about 28,500 credits an hour, so each concurrent runner needs about
+  684,000 credits in reserve. Only the time a VM runs is charged.
+
+### Proven on a real workflow
+
+A private repository's backup-and-restore round trip ran on two of these
+runners while its hosted minutes were blocked. It started two confidential
+VMs, backed up to Filecoin Calibration and restored with a piece-CID check.
+Both runner VMs forgot themselves and nothing was left.
+
+### Docs
+
+- Social preview cards for shared links: a site card, and one for the runner
+  pages (#194).
+- The launcher is the repository CLI (`pnpm relay-button gh-runner`, in
+  `scripts/aleph-github-runner.mjs`), used from a checkout. It is not an npm
+  binary, and `@le-space/node` does not export its helpers. On npm, the
+  `github-runner` profile ships in `@le-space/rootfs` under `reference/`.
+
 ## 0.11.0 — a deploy check that checks each transport
 
 The relay probe that decides whether a deployment is healthy only ever
