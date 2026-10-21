@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Runs once the runner has exited (its one job is done, or it failed to
+# start) and from the TTL timer. Powering off alone keeps the INSTANCE
+# allocated and billed, so when the launcher injected a forget key the VM
+# first sends FORGET for its own INSTANCE on behalf of the owner.
+set -uo pipefail
+
+reason="${1:-runner-exited}"
+FORGET_ENV=/etc/github-runner/forget.env
+MARKER=/run/github-runner-finished
+
+# The TTL path powers off, which stops the runner, which runs this again.
+[ -e "${MARKER}" ] && exit 0
+touch "${MARKER}"
+
+LOG=/var/lib/github-runner/finish.log
+
+# Every attempt is bounded, and the whole loop stays well inside the unit's
+# TimeoutStopSec: if systemd kills this script, the poweroff below never runs.
+echo "$(date -Is) finish: ${reason}" | tee -a "${LOG}"
+if [ -s "${FORGET_ENV}" ]; then
+  for attempt in 1 2 3; do
+    # pipefail: the pipeline fails when node does.
+    if timeout 30 node /opt/github-runner/forget-self.mjs "${FORGET_ENV}" "${reason}" 2>&1 | tee -a "${LOG}"; then
+      break
+    fi
+    sleep $((attempt * 5))
+  done
+fi
+echo "$(date -Is) poweroff" | tee -a "${LOG}"
+systemctl --no-block poweroff

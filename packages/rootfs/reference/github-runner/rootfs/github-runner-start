@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Waits for the launcher to inject a one-job just-in-time config, then runs
+# exactly one job as the unprivileged runner user. The config is removed as
+# soon as the runner has read it, so a job cannot find it on disk.
+set -euo pipefail
+
+CONF_DIR=/etc/github-runner
+JIT="${CONF_DIR}/jitconfig"
+
+until [ -s "${JIT}" ]; do sleep 2; done
+
+if [ -s "${CONF_DIR}/ttl" ]; then
+  ttl="$(tr -dc '0-9' <"${CONF_DIR}/ttl")"
+  if [ -n "${ttl}" ] && [ "${ttl}" -gt 0 ]; then
+    mkdir -p /run/systemd/system/github-runner-ttl.timer.d
+    printf '[Timer]\nOnActiveSec=\nOnActiveSec=%smin\n' "${ttl}" \
+      >/run/systemd/system/github-runner-ttl.timer.d/ttl.conf
+    systemctl daemon-reload
+  fi
+fi
+systemctl restart github-runner-ttl.timer
+
+config="$(cat "${JIT}")"
+rm -f "${JIT}"
+
+cd /opt/actions-runner
+exec runuser -u runner -- ./run.sh --jitconfig "${config}"

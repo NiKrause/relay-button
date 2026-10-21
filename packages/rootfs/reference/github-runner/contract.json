@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "github-runner",
+  "displayName": "Ephemeral GitHub Actions Runner",
+  "source": {
+    "repository": "NiKrause/relay-button",
+    "subdirectory": "packages/rootfs/reference/github-runner"
+  },
+  "rootfs": {
+    "profile": "github-runner",
+    "installMode": "prebaked",
+    "installDir": "/opt/actions-runner",
+    "binaryPath": "/opt/actions-runner/run.sh",
+    "dataDir": "/var/lib/github-runner",
+    "envFile": "/etc/github-runner/runner.env"
+  },
+  "services": {
+    "bootstrap": "github-runner.service",
+    "main": "github-runner.service",
+    "autotlsRefresh": "github-runner-ttl.timer"
+  },
+  "ports": [
+    {
+      "port": 22,
+      "tcp": true,
+      "udp": false,
+      "purpose": "SSH bootstrap and diagnostics"
+    }
+  ],
+  "manifest": {
+    "copyTarget": "packages/rootfs/reference/github-runner/latest.json",
+    "notes": "GitHub actions-runner 2.338.0, Node.js 24, Docker and rootfs build tools are prebaked. A one-job just-in-time runner config must be injected after boot; the image contains no credential. After its job the runner forgets its own INSTANCE when a forget key was injected, and powers off; a bounded TTL timer is the last resort."
+  }
+}

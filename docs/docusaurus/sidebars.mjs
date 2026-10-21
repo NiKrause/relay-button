@@ -36,6 +36,7 @@ const sidebars = {
         'architecture/deployment-lifecycle',
         'architecture/examples-and-integrations',
         'architecture/aleph-playwright-runner',
+        'architecture/aleph-github-runner',
       ],
     },
     {

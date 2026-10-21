@@ -1,0 +1,6 @@
+[Unit]
+Description=Stop an expired ephemeral GitHub runner
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/github-runner-finish ttl
