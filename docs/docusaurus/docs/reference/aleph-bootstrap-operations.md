@@ -25,7 +25,7 @@ Current shared producers:
 Current shared consumers:
 
 - [`universal-connectivity/js-peer`](https://github.com/NiKrause/universal-connectivity/tree/main/js-peer)
-- [`simple-todo`](https://github.com/NiKrause/simple-todo)
+- [`simple-todo`](https://github.com/Le-Space/simple-todo)
 
 Current shared deployment/rootfs profiles:
 
