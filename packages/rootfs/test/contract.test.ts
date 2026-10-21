@@ -176,6 +176,8 @@ test('github-runner image pins and checks the runner, and runs one job before it
   assert.match(builder, /RUNNER_VERSION="\$\{RUNNER_VERSION:-\d+\.\d+\.\d+\}"/)
   assert.match(builder, /RUNNER_SHA256="\$\{RUNNER_SHA256:-[a-f0-9]{64}\}"/)
   assert.match(builder, /sha256sum --check --strict/)
+  // The system of GitHub's ubuntu-24.04 runners (the aleph CLI binary needs glibc 2.38).
+  assert.match(builder, /noble-server-cloudimg-amd64\.img/)
   assert.doesNotMatch(builder, /jitconfig|ALEPH_FORGET_KEY|registration-token/)
   // The one-job config is read once and removed before the job starts.
   assert.match(start, /rm -f "\$\{JIT\}"[\s\S]*run\.sh --jitconfig/)
@@ -187,4 +189,6 @@ test('github-runner image pins and checks the runner, and runs one job before it
   assert.match(service, /TimeoutStopSec=\d+/)
   assert.match(service, /ExecStopPost=\/usr\/local\/sbin\/github-runner-finish/)
   assert.match(timer, /OnActiveSec=\d+min/)
+  // From boot, so a VM that never receives a config still powers off.
+  assert.match(builder, /systemctl enable [^"]*github-runner-ttl\.timer/)
 })

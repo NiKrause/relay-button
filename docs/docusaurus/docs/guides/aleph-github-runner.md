@@ -108,10 +108,10 @@ aggregate. The command keeps any other authorizations the wallet already has.
 Use the published image:
 
 ```bash
-export GH_RUNNER_ROOTFS_ITEM_HASH=364a840104cdf4f1f9035691a6a1656797ade8eaaa12a659d5d3b8c072a3fbe6
+export GH_RUNNER_ROOTFS_ITEM_HASH=9ddeabdb5a6ec23f5b6676f034a84d73a2bb3b2c912d3f736bab932fe33951cd
 ```
 
-It is Debian 12 with GitHub `actions-runner` 2.338.0, Node.js 24, Docker, git,
+It is Ubuntu 24.04, like GitHub's own runners, with `actions-runner` 2.338.0, Node.js 24, Docker, git,
 jq, `qemu-utils`, `cryptsetup` and `debootstrap`, and it contains no credential.
 To build your own, run the **GitHub Runner RootFS** workflow in your fork with
 `publish` checked. It needs an `ALEPH_PRIVATE_KEY` secret for the account that
@@ -162,7 +162,10 @@ pnpm relay-button gh-runner down --all                  # remove every runner VM
 
 `janitor` removes runner VMs whose job is done but that are still allocated,
 and VMs past their TTL. It also deregisters their offline runners on GitHub.
-That happens when a VM started without a forget key or its FORGET failed.
+That happens when a VM started without a forget key or its FORGET failed, and
+after a failed `up`: Aleph can place an INSTANCE of a deploy that reported a
+rejection later on, once credits free up (measured). `up` removes what it can
+find at the time; the janitor catches the rest.
 Running it every hour or so, for example from cron, keeps a forgotten runner
 from billing for long.
 

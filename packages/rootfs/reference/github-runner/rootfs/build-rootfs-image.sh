@@ -3,8 +3,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="${OUT_DIR:-${SCRIPT_DIR}/../dist-rootfs}"
-BASE_URL="${BASE_URL:-https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2}"
-BASE_IMAGE="${OUT_DIR}/debian-12-genericcloud-amd64.qcow2"
+# Ubuntu 24.04, the system of GitHub's own ubuntu-24.04 runners: jobs bring
+# tools built for it, such as the aleph CLI release binary, which needs glibc
+# 2.38 (Debian 12 has 2.36). Debian 13's cloud image did not boot on Aleph
+# nodes (reboot loop after GRUB); Aleph offers ubuntu24 as a preset.
+BASE_URL="${BASE_URL:-https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img}"
+BASE_IMAGE="${OUT_DIR}/noble-server-cloudimg-amd64.img"
 IMAGE="${OUT_DIR}/aleph-github-runner.qcow2"
 ROOTFS_IMAGE_SIZE="${ROOTFS_IMAGE_SIZE:-10G}"
 # Pinned on purpose: the runner is started with --disableupdate, so the image
@@ -46,6 +50,12 @@ echo "${RUNNER_SHA256}  ${RUNNER_TARBALL}" | sha256sum --check --strict
 
 cp "${BASE_IMAGE}" "${IMAGE}"
 qemu-img resize "${IMAGE}" "${ROOTFS_IMAGE_SIZE}"
+# Growing the file alone leaves the cloud image's ~2.5 GB root partition full
+# before Docker is unpacked. The root partition is the last one on the disk,
+# so growpart extends it in place; virt-resize would rewrite the partition
+# table, and Ubuntu's cloud image finds its root by partition UUID (a resized
+# image never brought up SSH on Aleph).
+virt-customize -a "${IMAGE}" --run-command "growpart /dev/sda 1 && resize2fs /dev/sda1"
 
 virt-customize \
   -a "${IMAGE}" \
@@ -63,6 +73,7 @@ virt-customize \
   --copy-in "${SCRIPT_DIR}/github-runner-ttl.service:/etc/systemd/system" \
   --copy-in "${SCRIPT_DIR}/github-runner-ttl.timer:/etc/systemd/system" \
   --run-command "apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg git jq unzip zip xz-utils zstd sudo python3 rsync e2fsprogs openssh-client qemu-utils cryptsetup debootstrap docker.io" \
+  --run-command "apt-get purge -y --auto-remove snapd lxd-installer || true" \
   --run-command "curl -fsSL https://deb.nodesource.com/setup_24.x | bash -" \
   --run-command "apt-get install -y --no-install-recommends nodejs" \
   --run-command "useradd --create-home --home-dir /home/runner --shell /bin/bash --groups docker runner" \
@@ -75,7 +86,7 @@ virt-customize \
   --run-command "printf '[Journal]\\nSystemMaxUse=256M\\nRuntimeMaxUse=64M\\nMaxRetentionSec=2day\\n' >/etc/systemd/journald.conf.d/github-runner.conf" \
   --run-command "npm cache clean --force" \
   --run-command "apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /root/.npm /tmp/* /var/tmp/*" \
-  --run-command "systemctl enable docker.service github-runner.service"
+  --run-command "systemctl enable docker.service github-runner.service github-runner-ttl.timer"
 
 if command -v virt-sparsify >/dev/null 2>&1; then
   SPARSE_IMAGE="${IMAGE%.qcow2}.sparse.qcow2"
