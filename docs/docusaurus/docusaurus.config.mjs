@@ -76,6 +76,9 @@ const config = {
     }
   ],
   themeConfig: {
+    // Preview card for links shared on X, Mastodon, chat apps (1200x630 PNG;
+    // SVG is not shown there). A page can set its own with `image:` in front matter.
+    image: 'img/social-card.png',
     navbar: {
       title: 'Relay Button',
       logo: {
