@@ -17,7 +17,7 @@ integration.
 
 Today it is used by:
 
-- [`simple-todo`](https://github.com/NiKrause/simple-todo)
+- [`simple-todo`](https://github.com/Le-Space/simple-todo)
 - [`universal-connectivity/js-peer`](https://github.com/NiKrause/universal-connectivity/tree/main/js-peer)
 - shared relay deployment flows in
   [`relay-button`](https://github.com/NiKrause/relay-button), including the

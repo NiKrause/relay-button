@@ -194,6 +194,12 @@ Current real references include:
   - especially the Aleph integration work in PR `#344`
 - `aleph-libp2p-relay`
   - especially `relay-deployer-pwa` as the browser/PWA reference consumer
+- [`simple-todo`](https://github.com/Le-Space/simple-todo)
+  - the ten-chapter tutorial: relay button, bootstrap discovery, Playwright
+    testkit and site-mode deploys in one repository
+- [`belege`](https://belege.le-space.de) and [`ablage`](https://ablage.le-space.de)
+  - apps published through the site-mode deploy; `ablage` also discovers
+    relays with `@le-space/aleph-bootstrap`
 
 See also:
 

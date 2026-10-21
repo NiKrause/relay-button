@@ -128,6 +128,23 @@ const config = {
               to: '/docs/reference/reusable-workflow'
             }
           ]
+        },
+        {
+          title: 'Built with it',
+          items: [
+            {
+              label: 'simple-todo tutorial',
+              href: 'https://github.com/Le-Space/simple-todo'
+            },
+            {
+              label: 'Belege',
+              href: 'https://belege.le-space.de'
+            },
+            {
+              label: 'Ablage',
+              href: 'https://ablage.le-space.de'
+            }
+          ]
         }
       ],
       copyright: `Copyright ${new Date().getFullYear()} Relay Button · Current package version v${packageVersion}`

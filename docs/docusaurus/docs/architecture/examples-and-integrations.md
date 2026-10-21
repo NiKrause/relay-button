@@ -83,6 +83,56 @@ Use it to understand:
   Caddy-backed `2n6` hostname while keeping direct libp2p AutoTLS WSS
   addresses on `*.libp2p.direct`
 
+### `simple-todo`
+
+A peer-to-peer todo list that runs entirely in the browser, written as a
+tutorial: ten chapters, each one a complete app with its own Aleph static site
+under `*.le-space.de`.
+
+- repository: [Le-Space/simple-todo](https://github.com/Le-Space/simple-todo)
+- live: [simple-todo.le-space.de](https://simple-todo.le-space.de); the chapter
+  table in the README links the other nine
+- the tutorial itself:
+  [docs/TUTORIAL.md](https://github.com/Le-Space/simple-todo/blob/main/docs/TUTORIAL.md)
+
+Use it to understand:
+
+- how a SvelteKit app mounts `SponsorRelayFab` from `@le-space/ui/svelte`, so a
+  visitor can start a relay of their own from inside the app
+- how an app finds the relays registered under its own profile with
+  `@le-space/aleph-bootstrap`
+- how `@le-space/playwright` gives each end-to-end spec a relay of its own
+- how one workflow publishes ten sites with the `@le-space/node` site mode and
+  links each of them to its custom domain
+
+### `belege`
+
+Local-first receipt matching: bank and crypto transactions, e-mail, DATEV
+export. The books live in OrbitDB in the browser; the app itself is published
+as an Aleph static site.
+
+- repository: [Le-Space/belege](https://github.com/Le-Space/belege)
+- live: [belege.le-space.de](https://belege.le-space.de)
+
+Use it to understand how an app that is not about relays at all still ships
+through the shared tooling: its deploy workflow runs the `@le-space/node` site
+mode and points the custom domain at the result, and nothing from
+`relay-button` is in the app bundle.
+
+### `ablage`
+
+A folder that stays the same on two devices. No account, nothing in the middle.
+
+- repository: [Le-Space/ablage](https://github.com/Le-Space/ablage)
+- live: [ablage.le-space.de](https://ablage.le-space.de)
+
+Use it to understand:
+
+- how `@le-space/aleph-bootstrap` is one relay source among several: loaded
+  lazily, and filtered by profile and registration id before anything is
+  dialled
+- how the same site-mode deploy publishes the app and links its domain
+
 ## What Does Not Belong In `examples/`
 
 Do not move full production apps into `relay-button/examples/` just to
