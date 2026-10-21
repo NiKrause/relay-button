@@ -1,6 +1,7 @@
 ---
 title: Run GitHub Actions jobs on Aleph
 description: Set up ephemeral self-hosted GitHub Actions runners on Aleph VMs. Each VM takes one job and then removes itself.
+image: /img/social-gh-runner.png
 ---
 
 # Run GitHub Actions jobs on Aleph
@@ -58,11 +59,20 @@ aleph account list
 ```
 
 Top up the runner wallet with credits, for example from another of your
-accounts (1,000,000 credits are about $1, roughly 35 runner hours):
+accounts (1,000,000 credits are about $1):
 
 ```bash
 aleph credit transfer --account <your-funded-account> --to gh-runner --amount 1000000
 ```
+
+:::info How many credits
+Aleph accepts a new VM only while the wallet could pay **one day** of runtime
+for every VM it runs, the new one included. A default runner costs about
+28,500 credits an hour, so each runner running at the same time needs about
+684,000 credits in the wallet. With 1,000,000 credits you can run one runner
+at a time; for `--count 2`, keep about 1,400,000. Only the time a VM actually
+runs is charged.
+:::
 
 :::danger Keep the runner wallet separate
 Aleph lets a delegate forget only messages it could have created itself, so
@@ -123,7 +133,7 @@ Useful options:
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--count N` | `1` | start N runners, one job each (at most 10) |
+| `--count N` | `1` | start N runners, one job each (at most 10; each needs a day of credits in reserve) |
 | `--labels a,b` | `aleph` | labels besides `self-hosted`, `Linux`, `X64` |
 | `--ttl M` | `360` | minutes until the VM powers off without a job |
 | `--vcpus`, `--memory`, `--disk` | `2`, `4096`, `40960` | VM size (MiB for memory and disk) |
@@ -163,5 +173,7 @@ from billing for long.
 - **A runner never comes online.** `up` removes the VM again when this happens.
   To look inside a runner, start it with `--ssh-key <path>` and log in as
   `root`. The cleanup log is `/var/lib/github-runner/finish.log`.
-- **`deploy` fails on credits.** The runner wallet needs enough credits for the
-  VM; check with `aleph account balance gh-runner`.
+- **`deploy` fails with error 6.** The wallet lacks the day of runtime Aleph
+  wants in reserve for every running VM; the rejection names
+  `required_credits`. Top up, or start fewer runners at once. Check with
+  `aleph account balance gh-runner`.

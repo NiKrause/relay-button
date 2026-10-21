@@ -1,5 +1,6 @@
 ---
 title: Ephemeral GitHub Actions runner on Aleph
+image: /img/social-gh-runner.png
 ---
 
 # Ephemeral GitHub Actions runner on Aleph
