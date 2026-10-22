@@ -16,6 +16,7 @@ owner of the app or its primary data.
 **[Read the documentation →](https://nikrause.github.io/relay-button/)**
  · [Why this exists](./docs/docusaurus/docs/overview/index.md)
  · [Getting started](./docs/docusaurus/docs/getting-started.md)
+ · [Built with it](./docs/docusaurus/docs/architecture/examples-and-integrations.md): the simple-todo tutorial, Belege, Ablage
 
 ## Quick start
 
