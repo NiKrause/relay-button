@@ -1,5 +1,20 @@
 # Roadmap
 
+## 0.12.1 — confidential rootfs images publish again
+
+Since 2026-10-26 Aleph's IPFS hosts (`ipfs.aleph.cloud`, `ipfs-2.aleph.im`,
+`ipfs.aleph.im`) answer every `/api/v0/` call with 404, so
+`aleph-confidential-rootfs` could not publish an image. It now sends the image
+and its signed STORE message in one request to an API node's
+`/api/v0/ipfs/add_file`, which takes up to 1 GiB that way and keeps the file
+in the same call. The CID is computed first, the way `ipfs add` does, because
+the node checks it (#203). Tested with an 867 MB confidential rootfs: the CIDs
+matched and the STORE was processed at once.
+
+The places that still name the dead hosts (default upload URLs, the rootfs
+manifest upload in the reusable workflow, the profiles' build scripts) are
+listed in #204.
+
 ## 0.12.0 — a GitHub runner that removes itself after one job
 
 Private repositories on GitHub Free get 2000 hosted Actions minutes a month;
