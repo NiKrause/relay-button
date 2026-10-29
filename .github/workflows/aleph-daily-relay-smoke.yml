@@ -1,0 +1,249 @@
+name: Aleph Daily Relay Smoke
+# Once a day, starts each relay profile from the rootfs it is currently
+# offered with, checks it the way a real deploy does (setup, reachability,
+# bootstrap registration, the per-transport relay probe) and forgets the
+# instance again. Nothing is built or published: the rootfs STORE is the one
+# already in use, so a red run means the live stack (Aleph API, CRNs, port
+# forwarding, AutoTLS, the image itself) broke, not this repository.
+#
+# Where each profile's rootfs comes from:
+#   uc-go-peer     the manifest the js-peer widget deploys from
+#   orbitdb-relay  the newest successful deployment that orbitdb-relay's own
+#                  workflow records (it has no published manifest)
+# Every run spends a few cents of credits from ALEPH_PRIVATE_KEY.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Profile to smoke-test
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - uc-go-peer
+          - orbitdb-relay
+      rootfs_item_hash:
+        description: Deploy this rootfs STORE instead of the current one (needs a single profile)
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aleph-daily-relay-smoke
+  cancel-in-progress: false
+
+env:
+  ALEPH_API_HOSTS: https://api2.aleph.im,https://api.aleph.im
+  UC_GO_PEER_MANIFEST_URL: https://connect.nicokrause.com/rootfs/uc-go-peer/latest.json
+  UC_GO_PEER_PROBE_POLICY_URL: https://raw.githubusercontent.com/NiKrause/universal-connectivity/main/go-peer/aleph/relay-probe-policy.json
+  ORBITDB_RELAY_CONTRACT_URL: https://raw.githubusercontent.com/NiKrause/orbitdb-relay/main/aleph/contract.json
+  # The account orbitdb-relay's aleph-deploy.yml deploys and records with.
+  ORBITDB_RELAY_DEPLOYER_ADDRESS: '0x2bd014B41FEa490320187b5FAdf413dab88f7628'
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      profiles: ${{ steps.pick.outputs.profiles }}
+    steps:
+      - name: Pick profiles
+        id: pick
+        env:
+          PROFILE: ${{ inputs.profile || 'all' }}
+          ROOTFS_OVERRIDE: ${{ inputs.rootfs_item_hash }}
+        run: |
+          if [[ "$PROFILE" == all ]]; then
+            if [[ -n "$ROOTFS_OVERRIDE" ]]; then
+              echo 'rootfs_item_hash belongs to one profile; pick that profile as well.' >&2
+              exit 1
+            fi
+            echo 'profiles=["uc-go-peer","orbitdb-relay"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "profiles=[\"$PROFILE\"]" >> "$GITHUB_OUTPUT"
+          fi
+
+  smoke:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJSON(needs.plan.outputs.profiles) }}
+    env:
+      PROFILE: ${{ matrix.profile }}
+    steps:
+      # aleph-vm-deploy sets up pnpm and Node and installs the workspace,
+      # which the probe step below reuses.
+      - uses: actions/checkout@v6
+
+      - name: Create a one-run SSH identity
+        run: |
+          ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/smoke-id"
+          echo "SMOKE_SSH_KEY=$RUNNER_TEMP/smoke-id" >> "$GITHUB_ENV"
+          echo "SMOKE_SSH_PUBLIC_KEY=$(cat "$RUNNER_TEMP/smoke-id.pub")" >> "$GITHUB_ENV"
+
+      - name: Resolve the rootfs in use, its ports and the probe policy
+        id: rootfs
+        env:
+          ROOTFS_OVERRIDE: ${{ inputs.rootfs_item_hash }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          api = os.environ["ALEPH_API_HOSTS"].split(",")[0]
+          profile = os.environ["PROFILE"]
+
+          def get(url):
+              request = urllib.request.Request(url, headers={"User-Agent": "relay-button-daily-smoke"})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          if profile == "uc-go-peer":
+              manifest = get(os.environ["UC_GO_PEER_MANIFEST_URL"])
+              item_hash, version = manifest["rootfsItemHash"], manifest["version"]
+              ports = manifest["requiredPortForwards"]
+              policy = get(os.environ["UC_GO_PEER_PROBE_POLICY_URL"])
+              required = policy["requiredFamilies"]
+              best_effort = policy["bestEffortFamilies"]
+              matchers = policy["proxyWssHostMatchers"]
+              memory_mib = "1024"
+          elif profile == "orbitdb-relay":
+              address = os.environ["ORBITDB_RELAY_DEPLOYER_ADDRESS"]
+              key = "uc-go-peer-successful-deployments"
+              aggregate = get(f"{api}/api/v0/aggregates/{address}.json?keys={key}")
+              records = [r for r in aggregate["data"][key]["deployments"] if r.get("vm_name") == "orbitdb-relay"]
+              if not records:
+                  raise SystemExit(f"No successful orbitdb-relay deployment is recorded for {address}.")
+              # deployed_at is "<run id>-<attempt>"; run ids only grow.
+              newest = max(records, key=lambda r: tuple(int(p) for p in r["deployed_at"].split("-")))
+              item_hash, version = newest["rootfs_item_hash"], newest["rootfs_version"]
+              ports = get(os.environ["ORBITDB_RELAY_CONTRACT_URL"])["ports"]
+              # As in orbitdb-relay's .github/workflows/aleph-deploy.yml.
+              required = ["tcp", "proxy-wss"]
+              best_effort = ["webrtc-direct"]
+              matchers = [".2n6.me/"]
+              memory_mib = "2048"
+          else:
+              raise SystemExit(f"Unknown profile {profile}.")
+
+          override = os.environ.get("ROOTFS_OVERRIDE", "").strip()
+          if override:
+              item_hash, version = override, f"{profile}-override"
+
+          # A rootfs that is gone is the first thing worth knowing.
+          status = get(f"{api}/api/v0/messages/{item_hash}").get("status")
+          if status != "processed":
+              raise SystemExit(f"Rootfs STORE {item_hash} ({version}) is {status!r}, not processed.")
+
+          compact = lambda value: json.dumps(value, separators=(",", ":"))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"rootfs_item_hash={item_hash}\n")
+              out.write(f"rootfs_version={version}\n")
+              out.write(f"required_ports_json={compact(ports)}\n")
+              out.write(f"required_families_json={compact(required)}\n")
+              out.write(f"best_effort_families_json={compact(best_effort)}\n")
+              out.write(f"proxy_wss_host_matchers_json={compact(matchers)}\n")
+              out.write(f"memory_mib={memory_mib}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"## {profile} daily smoke\n\n- Rootfs: `{version}` (`{item_hash}`)\n")
+              summary.write(f"- Required families: `{compact(required)}`, best effort: `{compact(best_effort)}`\n\n")
+          PY
+
+      - name: Deploy, configure and verify the relay
+        id: deploy_vm
+        uses: ./.github/actions/aleph-vm-deploy
+        with:
+          aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          profile: ${{ matrix.profile }}
+          name: smoke-${{ matrix.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
+          ssh_public_key: ${{ env.SMOKE_SSH_PUBLIC_KEY }}
+          rootfs_item_hash: ${{ steps.rootfs.outputs.rootfs_item_hash }}
+          rootfs_version: ${{ steps.rootfs.outputs.rootfs_version }}
+          rootfs_size_mib: '20480'
+          api_hosts: ${{ env.ALEPH_API_HOSTS }}
+          placement_strategy: manual
+          vcpus: '1'
+          memory_mib: ${{ steps.rootfs.outputs.memory_mib }}
+          max_crn_attempts: '5'
+          channel: TEST
+          enable_caddy_proxy: 'true'
+          auto_configure: 'true'
+          verify_reachability: 'true'
+          publish_port_forwards: 'true'
+          required_ports_json: ${{ steps.rootfs.outputs.required_ports_json }}
+
+      - name: Probe each relay transport
+        id: protocol_probe
+        env:
+          ALEPH_VM_MODE: relay-probe
+          ALEPH_RELAY_PROFILE: ${{ matrix.profile }}
+          ALEPH_RELAY_PROBE_REQUIRED_FAMILIES_JSON: ${{ steps.rootfs.outputs.required_families_json }}
+          ALEPH_RELAY_PROBE_BEST_EFFORT_FAMILIES_JSON: ${{ steps.rootfs.outputs.best_effort_families_json }}
+          ALEPH_RELAY_PROBE_PROXY_WSS_HOST_MATCHERS_JSON: ${{ steps.rootfs.outputs.proxy_wss_host_matchers_json }}
+          PROBE_TIMEOUT_MS: '20000'
+          PROBE_SETTLE_MS: '1500'
+          PROBE_MULTIADDRS_JSON: ${{ steps.deploy_vm.outputs.probe_multiaddrs_json }}
+          BROWSER_BOOTSTRAP_MULTIADDRS_JSON: ${{ steps.deploy_vm.outputs.browser_bootstrap_multiaddrs_json }}
+        run: node --input-type=module -e "import('./packages/node/src/site-runner.ts').then((m) => m.runSiteMode())"
+
+      # The relay registered itself in the bootstrap channel browsers read, and
+      # that post would stay visible for a day after the VM is gone. Stopping
+      # the guest's deregister unit runs its ExecStop, which forgets the post.
+      - name: Withdraw the relay's bootstrap registration
+        if: ${{ always() && steps.deploy_vm.outputs.instance_item_hash != '' && steps.deploy_vm.outputs.ssh_command != '' }}
+        env:
+          SSH_COMMAND: ${{ steps.deploy_vm.outputs.ssh_command }}
+        run: |
+          read -r -a ssh_command <<< "$SSH_COMMAND"
+          if ssh -i "$SMOKE_SSH_KEY" -o BatchMode=yes -o ConnectTimeout=20 \
+              -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              "${ssh_command[@]:1}" "systemctl stop ${PROFILE}-bootstrap-deregister.service"; then
+            echo "Stopped ${PROFILE}-bootstrap-deregister.service."
+          else
+            echo "::warning::Could not withdraw the bootstrap registration of the smoke relay; it expires after a day."
+          fi
+
+      # Generic despite its name: erases one exact INSTANCE on its CRN, forgets
+      # it and verifies the forget. The rootfs STORE is in use and stays.
+      - name: Erase and forget the instance
+        if: ${{ always() }}
+        uses: ./.github/actions/aleph-playwright-runner-cleanup
+        with:
+          aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          instance_item_hash: ${{ steps.deploy_vm.outputs.instance_item_hash }}
+
+      - name: Summarize
+        if: ${{ always() }}
+        env:
+          VERIFICATION_JSON: ${{ steps.deploy_vm.outputs.verification_json }}
+          PROBE_JSON: ${{ steps.protocol_probe.outputs.json }}
+        run: |
+          {
+            echo "- Instance: \`${{ steps.deploy_vm.outputs.instance_item_hash || 'not created' }}\` on \`${{ steps.deploy_vm.outputs.crn_name || 'unknown CRN' }}\`"
+            echo "- Reachability ok: \`${{ steps.deploy_vm.outputs.verification_ok || 'not checked' }}\`"
+            echo "- Relay probe ok: \`${{ steps.protocol_probe.outputs.ok || 'not run' }}\`"
+            if [[ -n "$PROBE_JSON" ]]; then
+              echo
+              echo '```json'
+              printf '%s\n' "$PROBE_JSON"
+              echo '```'
+            fi
+            if [[ -n "$VERIFICATION_JSON" ]]; then
+              echo
+              echo '<details><summary>Reachability checks</summary>'
+              echo
+              echo '```json'
+              printf '%s\n' "$VERIFICATION_JSON"
+              echo '```'
+              echo '</details>'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
