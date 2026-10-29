@@ -27,9 +27,9 @@ inputs:
     required: false
     default: https://api2.aleph.im
   ipfs_add_url:
-    description: IPFS add endpoint for the encrypted image (no 1 GiB limit, unlike the CCN upload)
+    description: Ignored since Aleph's IPFS hosts take no uploads (2026-10-26); the image goes to the API node's /api/v0/ipfs/add_file
     required: false
-    default: https://ipfs.aleph.cloud/api/v0/add
+    default: ""
   channel:
     description: Aleph channel for the STORE message
     required: false
@@ -118,30 +118,16 @@ runs:
       env:
         ALEPH_PRIVATE_KEY: ${{ inputs.aleph_private_key }}
         ALEPH_API: ${{ inputs.api_host }}
-        IPFS_ADD_URL: ${{ inputs.ipfs_add_url }}
         CHANNEL: ${{ inputs.channel }}
       run: |
+        # One signed upload to the API node (publish-store.mjs explains why).
         luks="$RUNNER_TEMP/confidential-rootfs.luks"
-        cid="$(curl -fsS --retry 2 --max-time 3600 -F "file=@$luks" "${IPFS_ADD_URL}?pin=true&cid-version=0" | jq -r .Hash)"
-        [ -n "$cid" ] && [ "$cid" != null ] || { echo "::error::IPFS add returned no CID"; exit 1; }
-        rm -f "$luks"
-        echo "cid: $cid"
         dir="$RUNNER_TEMP/confidential-store"
         mkdir -p "$dir" && cd "$dir"
-        npm init -y >/dev/null && npm install --silent ethers@6.13.4 >/dev/null
-        CID="$cid" node --input-type=module > store.json <<'EOF'
-        import { createHash } from 'node:crypto'
-        import { Wallet } from 'ethers'
-        const wallet = new Wallet(process.env.ALEPH_PRIVATE_KEY)
-        const time = Date.now() / 1000
-        const content = { address: wallet.address, time, item_type: 'ipfs', item_hash: process.env.CID, payment: { type: 'credit' } }
-        const item_content = JSON.stringify(content)
-        const item_hash = createHash('sha256').update(item_content).digest('hex')
-        const message = { sender: wallet.address, chain: 'ETH', type: 'STORE', item_hash, item_type: 'inline', item_content, time, channel: process.env.CHANNEL }
-        const signature = await wallet.signMessage([message.chain, message.sender, message.type, message.item_hash].join('\n'))
-        const res = await fetch(`${process.env.ALEPH_API}/api/v0/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sync: true, message: { ...message, signature } }) })
-        console.log(JSON.stringify({ item_hash, status: res.status }))
-        EOF
+        npm init -y >/dev/null && npm install --silent ethers@6.13.4 ipfs-unixfs-importer@17.1.1 >/dev/null
+        cp "${{ github.action_path }}/publish-store.mjs" .
+        node publish-store.mjs "$luks" > store.json
+        rm -f "$luks"
         store="$(jq -r .item_hash store.json)"
         echo "rootfs_item_hash=$store" >> "$GITHUB_OUTPUT"
         for i in $(seq 1 60); do
