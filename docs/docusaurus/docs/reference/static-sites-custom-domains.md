@@ -177,8 +177,16 @@ node alone was enough to find providers and fetch a pinned site. `libp2p_peers`
 
 The DNSLink check follows the CNAME of `_dnslink.<domain>` and asks the
 nameservers of the target zone directly, so a cached answer from before the
-link cannot pass for the new one. `ALEPH_SITE_DNSLINK_WAIT_ATTEMPTS` (60) and
-`ALEPH_SITE_DNSLINK_WAIT_DELAY_MS` (5000) set how long it waits.
+link cannot pass for the new one. `ALEPH_SITE_DNSLINK_WAIT_ATTEMPTS` (240) and
+`ALEPH_SITE_DNSLINK_WAIT_DELAY_MS` (5000) set how long it waits – 20 minutes by
+default, because Aleph moves a domain in its own time.
+
+Either way, running out of the wait is a **warning**, not a failed job: the site
+is published and the domain is linked by then, Aleph has only not started
+serving the new build yet. The job's output then says `domain_verified=false`
+and the step summary carries the note. Set
+`ALEPH_SITE_DOMAIN_VERIFY_ON_TIMEOUT=fail` for a workflow that must not pass
+with an unverified domain.
 
 ## Pending STORE behavior
 
@@ -221,8 +229,11 @@ partial `domains` update without temporarily detaching the working target.
 After STORE processing, the direct CID URL must return HTTP 200, HTML, and an
 `etag` equal to the CIDv0 or `X-Ipfs-Roots` containing it. Pass
 `ALEPH_SITE_IPFS_CID_V0` to `site-domain-link` to apply the same requirement to
-the custom domain. Configure propagation with `ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS`
-and `ALEPH_SITE_GATEWAY_WAIT_DELAY_MS`.
+the custom domain. The direct CID check waits `ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS`
+× `ALEPH_SITE_GATEWAY_WAIT_DELAY_MS` (60 × 5000 ms); the custom domain has its own
+budget, `ALEPH_SITE_DOMAIN_WAIT_ATTEMPTS` × `ALEPH_SITE_DOMAIN_WAIT_DELAY_MS`
+(240 × 5000 ms, 20 minutes), and runs out as a warning unless
+`ALEPH_SITE_DOMAIN_VERIFY_ON_TIMEOUT=fail`.
 
 The local importer calculates the DAG deterministically; it is not a durable
 provider. An ephemeral GitHub-hosted Helia node is normally not publicly

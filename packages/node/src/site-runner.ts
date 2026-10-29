@@ -189,10 +189,13 @@ async function waitForPublicCid(args: {
   cidV0: string
   env?: NodeJS.ProcessEnv
   label: string
+  /** How often to ask; the gateway wait's setting when absent. */
+  attempts?: number
+  delayMs?: number
 }): Promise<void> {
   const env = args.env ?? process.env
-  const attempts = Number(optionalEnv('ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS', '60', env))
-  const delayMs = Number(optionalEnv('ALEPH_SITE_GATEWAY_WAIT_DELAY_MS', '5000', env))
+  const attempts = args.attempts ?? Number(optionalEnv('ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS', '60', env))
+  const delayMs = args.delayMs ?? Number(optionalEnv('ALEPH_SITE_GATEWAY_WAIT_DELAY_MS', '5000', env))
   let lastEvidence = 'no response'
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -251,7 +254,9 @@ async function waitForDnslink(args: {
   resolve: (domain: string) => Promise<string[]>
 }): Promise<void> {
   const expected = CID.parse(args.cid).toV1().toString()
-  const attempts = positiveNumberEnv('ALEPH_SITE_DNSLINK_WAIT_ATTEMPTS', 60, args.env)
+  // Aleph moves a domain's DNSLink in its own time: 20 minutes, not 5, so a
+  // slow afternoon does not fail a deploy that is already published.
+  const attempts = positiveNumberEnv('ALEPH_SITE_DNSLINK_WAIT_ATTEMPTS', 240, args.env)
   const delayMs = positiveNumberEnv('ALEPH_SITE_DNSLINK_WAIT_DELAY_MS', 5000, args.env)
   let lastEvidence = 'no answer'
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -1079,20 +1084,37 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env, op
   await appendGithubOutput('url', `https://${attachPublication.domain}`, env)
   await appendGithubOutput('domain_message_hash', attachPublication.aggregateItemHash, env)
 
+  // The link is in place once attachAlephDomain returned; what follows only
+  // watches Aleph serve the new build on the domain. Aleph takes its time
+  // for that – more than five minutes was measured on 2026-10-25 and
+  // 2026-10-27 (Le-Space/landing), with the site published and the domain
+  // linked – so the wait is 20 minutes by default, and running out of it is
+  // a warning, not a failed deploy. ALEPH_SITE_DOMAIN_VERIFY_ON_TIMEOUT=fail
+  // keeps the old behaviour for a workflow that must not pass unverified.
   let domainVerified = false
+  let verificationNote = ''
   if (cidV0) {
-    if (verifyMode === 'dnslink') {
-      await waitForDnslink({
-        domain: attachPublication.domain,
-        cid: cidV0,
-        env,
-        resolve: options.resolveDnslink ?? ((domain) => resolveDnslink(domain)),
-      })
-    } else {
-      await waitForPublicCid({ url: `https://${attachPublication.domain}`, cidV0, env, label: 'Custom domain' })
+    const onTimeout = optionalEnv('ALEPH_SITE_DOMAIN_VERIFY_ON_TIMEOUT', 'warn', env)
+    const attempts = positiveNumberEnv('ALEPH_SITE_DOMAIN_WAIT_ATTEMPTS', 240, env)
+    const delayMs = positiveNumberEnv('ALEPH_SITE_DOMAIN_WAIT_DELAY_MS', 5000, env)
+    try {
+      if (verifyMode === 'dnslink') {
+        await waitForDnslink({
+          domain: attachPublication.domain,
+          cid: cidV0,
+          env,
+          resolve: options.resolveDnslink ?? ((domain) => resolveDnslink(domain)),
+        })
+      } else {
+        await waitForPublicCid({ url: `https://${attachPublication.domain}`, cidV0, env, label: 'Custom domain', attempts, delayMs })
+      }
+      domainVerified = true
+      await appendGithubOutput('domain_verified_cid', cidV0, env)
+    } catch (error) {
+      if (onTimeout !== 'warn') throw error
+      verificationNote = `${error instanceof Error ? error.message : String(error)} – the domain is linked to the new build; Aleph had not started serving it yet when the wait ran out. Check https://${attachPublication.domain} later, or set ALEPH_SITE_DOMAIN_VERIFY_ON_TIMEOUT=fail to make this a failure.`
+      console.warn(`::warning::${verificationNote}`)
     }
-    domainVerified = true
-    await appendGithubOutput('domain_verified_cid', cidV0, env)
   }
   await appendGithubOutput('domain_verified', String(domainVerified), env)
   await appendGithubOutput('domain_verify_mode', verifyMode, env)
@@ -1106,6 +1128,7 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env, op
     `- Verified domain CID: \`${cidV0 || 'not-requested'}\``,
     `- Public domain verified: \`${domainVerified}\``,
     `- Domain verification: \`${verifyMode}\``,
+    ...(verificationNote ? [`- Verification: ${verificationNote}`] : []),
     `- Catch-all path: \`${catchAllPath}\``,
   ], env)
 }

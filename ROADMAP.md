@@ -1,5 +1,16 @@
 # Roadmap
 
+## Unreleased — a slow domain is a warning, not a failed deploy
+
+`site-domain-link` published the site, linked the domain, and then failed
+when Aleph still served the previous build five minutes later – measured on
+Le-Space/landing on 2026-10-25 and 2026-10-27, with the link in place each
+time. The custom-domain wait now has its own budget of 20 minutes
+(`ALEPH_SITE_DOMAIN_WAIT_ATTEMPTS` × `ALEPH_SITE_DOMAIN_WAIT_DELAY_MS`; the
+DNSLink wait's default is 20 minutes too), and running out of it is a
+`::warning::` with `domain_verified=false` in the outputs and a note in the
+summary. `ALEPH_SITE_DOMAIN_VERIFY_ON_TIMEOUT=fail` restores the failure.
+
 ## 0.12.1 — confidential rootfs images publish again
 
 Since 2026-10-26 Aleph's IPFS hosts (`ipfs.aleph.cloud`, `ipfs-2.aleph.im`,
