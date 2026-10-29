@@ -1,6 +1,6 @@
 # Roadmap
 
-## Unreleased — a slow domain is a warning, not a failed deploy
+## 0.12.2 — a slow domain is a warning, not a failed deploy
 
 `site-domain-link` published the site, linked the domain, and then failed
 when Aleph still served the previous build five minutes later – measured on
