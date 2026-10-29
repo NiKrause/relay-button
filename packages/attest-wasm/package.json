@@ -1,6 +1,6 @@
 {
 	"name": "@le-space/attest-wasm",
-	"version": "0.12.1",
+	"version": "0.12.2",
 	"description": "SEV-SNP attestation verification in the browser: aleph-rs's verifier compiled to WebAssembly.",
 	"license": "MIT",
 	"type": "module",
