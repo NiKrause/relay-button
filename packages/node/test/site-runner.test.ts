@@ -1084,7 +1084,7 @@ test('runDomainLinkMode checks a custom domain through its DNSLink record instea
   assert.match(outputs, new RegExp(`domain_verified_cid=${ONE_FILE_SITE_CID}`))
 })
 
-test('runDomainLinkMode fails when the DNSLink record never points at the new CID', async () => {
+test('runDomainLinkMode fails when the DNSLink record never points at the new CID, when told to', async () => {
   const { outputFile, summaryFile } = await createOutputEnv('site-domain-dnslink-stale-')
   const calls: string[] = []
   const originalFetch = globalThis.fetch
@@ -1098,6 +1098,7 @@ test('runDomainLinkMode fails when the DNSLink record never points at the new CI
       ALEPH_SITE_ITEM_HASH: 'abcd1234',
       ALEPH_SITE_IPFS_CID: ONE_FILE_SITE_CID,
       ALEPH_SITE_DOMAIN_VERIFY: 'dnslink',
+      ALEPH_SITE_DOMAIN_VERIFY_ON_TIMEOUT: 'fail',
       ALEPH_SITE_DNSLINK_WAIT_ATTEMPTS: '2',
       ALEPH_SITE_DNSLINK_WAIT_DELAY_MS: '1',
     }, {
@@ -1108,3 +1109,91 @@ test('runDomainLinkMode fails when the DNSLink record never points at the new CI
   }
   assert.equal(calls.some((url) => url.startsWith('https://relay.example.com')), false)
 })
+
+test('runDomainLinkMode: a domain still serving the previous build is a warning, not a failed deploy', async () => {
+  // Measured on Le-Space/landing (2026-10-25, 2026-10-27): the site was
+  // published and the domain linked, and Aleph still served the old build
+  // when five minutes were up. The link holds; only the watching ran out.
+  const { outputFile, summaryFile } = await createOutputEnv('site-domain-dnslink-slow-')
+  const calls: string[] = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = domainLinkFetch(calls)
+  const warnings: string[] = []
+  const originalWarn = console.warn
+  console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')) }
+  try {
+    await runDomainLinkMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+      ALEPH_SITE_DOMAIN: 'relay.example.com',
+      ALEPH_SITE_ITEM_HASH: 'abcd1234',
+      ALEPH_SITE_IPFS_CID: ONE_FILE_SITE_CID,
+      ALEPH_SITE_DOMAIN_VERIFY: 'dnslink',
+      ALEPH_SITE_DNSLINK_WAIT_ATTEMPTS: '2',
+      ALEPH_SITE_DNSLINK_WAIT_DELAY_MS: '1',
+    }, {
+      resolveDnslink: async () => ['dnslink=/ipfs/bafybeibijbzrkewear2lkoylctlf6v4atsukit4c36dsxpeq4ndj66gqzi'],
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+    console.warn = originalWarn
+  }
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, /domain=relay.example.com/)
+  assert.match(outputs, /domain_verified=false/)
+  assert.doesNotMatch(outputs, /domain_verified_cid=/)
+  assert.ok(warnings.some((line) => line.startsWith('::warning::') && line.includes('did not point its DNSLink') && line.includes('the domain is linked')))
+  const summary = await readFile(summaryFile, 'utf8')
+  assert.match(summary, /Public domain verified: `false`/)
+  assert.match(summary, /Verification: .*the domain is linked/)
+})
+
+test('runDomainLinkMode over HTTPS: the custom domain wait has its own budget, and runs out as a warning', async () => {
+  const { outputFile, summaryFile } = await createOutputEnv('site-domain-https-slow-')
+  const originalFetch = globalThis.fetch
+  let domainAsked = 0
+  globalThis.fetch = (async (input, init) => {
+    if (String(input) === 'https://relay.example.com') {
+      domainAsked += 1
+      // Still the previous build.
+      return new Response('<!doctype html><title>old</title>', {
+        status: 200,
+        headers: { 'x-ipfs-roots': 'bafybeibijbzrkewear2lkoylctlf6v4atsukit4c36dsxpeq4ndj66gqzi' },
+      })
+    }
+    if (String(input) === 'https://api2.aleph.im/api/v0/messages/abcd1234') {
+      return new Response(JSON.stringify({ status: 'processed' }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    if (String(input) !== 'https://api2.aleph.im/api/v0/messages') throw new Error(`Unexpected fetch call: ${String(input)}`)
+    void init
+    return new Response(JSON.stringify({ item_hash: 'msg-1', message_status: 'processed' }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }) as typeof fetch
+  const originalWarn = console.warn
+  const warnings: string[] = []
+  console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')) }
+  const env = {
+    GITHUB_OUTPUT: outputFile,
+    GITHUB_STEP_SUMMARY: summaryFile,
+    ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+    ALEPH_SITE_DOMAIN: 'relay.example.com',
+    ALEPH_SITE_ITEM_HASH: 'abcd1234',
+    ALEPH_SITE_IPFS_CID_V0: ONE_FILE_SITE_CID,
+    ALEPH_SITE_DOMAIN_WAIT_ATTEMPTS: '3',
+    ALEPH_SITE_DOMAIN_WAIT_DELAY_MS: '1',
+    // The publish-time gateway wait is another knob and must not be read here.
+    ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS: '50',
+  }
+  try {
+    await runDomainLinkMode(env)
+    assert.equal(domainAsked, 3)
+    assert.match(await readFile(outputFile, 'utf8'), /domain_verified=false/)
+    assert.ok(warnings.some((line) => line.includes('did not serve expected CID')))
+    domainAsked = 0
+    await assert.rejects(runDomainLinkMode({ ...env, ALEPH_SITE_DOMAIN_VERIFY_ON_TIMEOUT: 'fail' }), /did not serve expected CID/)
+  } finally {
+    globalThis.fetch = originalFetch
+    console.warn = originalWarn
+  }
+})
+
