@@ -196,8 +196,12 @@ jobs:
         run: node --input-type=module -e "import('./packages/node/src/site-runner.ts').then((m) => m.runSiteMode())"
 
       # The relay registered itself in the bootstrap channel browsers read, and
-      # that post would stay visible for a day after the VM is gone. Stopping
-      # the guest's deregister unit runs its ExecStop, which forgets the post.
+      # that post would stay visible for a day after the VM is gone. The
+      # guest's deregister unit forgets it in its ExecStop. A plain stop left
+      # the posts in place: the unit's ConditionPathExists (the .ready file
+      # /configure writes) is false at boot, so it is not active and stopping
+      # it runs nothing. Start it now that the condition holds, stop it, and
+      # show what ExecStop reported.
       - name: Withdraw the relay's bootstrap registration
         if: ${{ always() && steps.deploy_vm.outputs.instance_item_hash != '' && steps.deploy_vm.outputs.ssh_command != '' }}
         env:
@@ -206,8 +210,9 @@ jobs:
           read -r -a ssh_command <<< "$SSH_COMMAND"
           if ssh -i "$SMOKE_SSH_KEY" -o BatchMode=yes -o ConnectTimeout=20 \
               -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              "${ssh_command[@]:1}" "systemctl stop ${PROFILE}-bootstrap-deregister.service"; then
-            echo "Stopped ${PROFILE}-bootstrap-deregister.service."
+              "${ssh_command[@]:1}" \
+              "unit=${PROFILE}-bootstrap-deregister.service; systemctl start \$unit && systemctl stop \$unit && journalctl -u \$unit -n 5 --no-pager -o cat"; then
+            echo "Ran ${PROFILE}-bootstrap-deregister.service."
           else
             echo "::warning::Could not withdraw the bootstrap registration of the smoke relay; it expires after a day."
           fi
