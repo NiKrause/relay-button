@@ -172,7 +172,8 @@ Hard constraints:
 - Never inline the Aleph private key or the SSH public key. They must come from
   ${{ secrets.* }} only. Do not write them into a file, an env block committed
   to the repo, or a workflow default.
-- api3.aleph.im is unsupported and rejected by the runner — never reference it.
+- API hosts: api2.aleph.im first, api.aleph.im (same backend) and api3.aleph.im
+  (a node of its own) as fallbacks.
 - If you set required_ports_json, it must be a JSON array of objects with
   port/tcp/udp/purpose keys. Raw port numbers are rejected.
 - Do not add a schedule trigger. A deployed VM consumes credits until it is
@@ -354,8 +355,8 @@ Hard constraints:
   credits until it is deallocated; the fixture's awaited teardown is what stops
   that. Never delete an instance by display name — cleanup takes the exact
   instance hash.
-- Only api2.aleph.im and api.aleph.im are supported replicas. api3.aleph.im is
-  rejected.
+- API hosts: api2.aleph.im, then api.aleph.im and api3.aleph.im as fallbacks
+  (api3 is accepted again since 0.12.3).
 
 Then show me the test file and the workflow that runs it.
 ```
@@ -443,8 +444,8 @@ both easy and expensive:
   visitor's own wallet. Any key in a bundle is a key you have published.
 - **Secrets come from repository secrets.** Not from committed files, not from
   workflow defaults, not echoed into a job summary.
-- **`api3.aleph.im` is unsupported** and is rejected before any request is made.
-  Use `api2.aleph.im` first, `api.aleph.im` as fallback.
+- **API hosts fall back in order:** `api2.aleph.im`, then `api.aleph.im` (the
+  same backend behind a load balancer), then `api3.aleph.im`, a node of its own.
 - **Port declarations are objects,** with `port`, `tcp`, `udp`, and `purpose`
   keys. Raw port numbers are rejected.
 - **Deployments cost credits until they are deleted.** Be deliberate about

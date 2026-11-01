@@ -103,15 +103,18 @@ Aleph API host fallback:
 - When `api_hosts` is set, it overrides `api_host` for the action attempt
   sequence. Each fallback attempt rebroadcasts the same action payload through
   the next API host.
-- `api3.aleph.im` is unsupported and rejected. Use `api2.aleph.im` first and
-  `api.aleph.im` as the fallback.
+- `api3.aleph.im` is a core channel node of its own and accepted again since
+  0.12.3 (it was rejected from July to November 2026). `api.aleph.im` is a load
+  balancer in front of the same backend as `api2.aleph.im`, so when that backend
+  is down, api3 is the fallback that still answers.
 
 Example:
 
 ```yaml
 api_hosts: >-
   https://api2.aleph.im,
-  https://api.aleph.im
+  https://api.aleph.im,
+  https://api3.aleph.im
 ```
 
 Polling and timeout controls:

@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 
 import { normalizeAlephApiHost } from "../src/aleph-api-hosts.ts";
 
-test("normalizeAlephApiHost accepts supported hosts and removes trailing slashes", () => {
+test("normalizeAlephApiHost trims and removes trailing slashes", () => {
   assert.equal(
-    normalizeAlephApiHost("https://api2.aleph.im/"),
+    normalizeAlephApiHost(" https://api2.aleph.im/ "),
     "https://api2.aleph.im",
   );
   assert.equal(
@@ -14,9 +14,9 @@ test("normalizeAlephApiHost accepts supported hosts and removes trailing slashes
   );
 });
 
-test("normalizeAlephApiHost rejects api3 regardless of casing or path", () => {
-  assert.throws(
-    () => normalizeAlephApiHost("https://API3.ALEPH.IM/api/v0"),
-    /api3\.aleph\.im is not supported/,
+test("normalizeAlephApiHost accepts api3 (a core channel node of its own)", () => {
+  assert.equal(
+    normalizeAlephApiHost("https://api3.aleph.im/"),
+    "https://api3.aleph.im",
   );
 });
