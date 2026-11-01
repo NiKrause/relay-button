@@ -1,5 +1,20 @@
 # Roadmap
 
+## 0.12.3 — api3.aleph.im is a fallback again
+
+On 2026-11-01 every site publish of Le-Space/landing failed in the CAR upload:
+`api2.aleph.im` answered `HTTP 502 Failed to import CAR into IPFS: malformed
+NDJSON line` for a 1 KB site as for a 10 MB one — pyaleph could not read what
+its own kubo returned from `dag/import`. `api.aleph.im` is a load balancer in
+front of the same backend and failed the same way; `api3.aleph.im`, a core
+channel node of its own, took the same signed CAR in 52 s and processed it,
+and both Aleph gateways served the result. The node package had rejected api3
+since July (#31, without a stated reason); it is accepted again, and the site
+runner's default host list is api2, api.aleph.im, api3 — one endpoint pair per
+host (the legacy pairing used to keep only the first host next to a single
+gateway). Retention, the STORE wait and the website aggregate follow the host
+that accepted the upload, as before.
+
 ## 0.12.2 — a slow domain is a warning, not a failed deploy
 
 `site-domain-link` published the site, linked the domain, and then failed

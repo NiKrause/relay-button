@@ -47,10 +47,15 @@ interface SiteEndpointPair {
   apiHost: string
 }
 
+// api2 first, then api.aleph.im (a load balancer in front of the same backend),
+// then api3, a core channel node of its own: on 2026-11-01 api2's IPFS import
+// answered every upload with HTTP 502 while api3 took the same signed CAR.
+const DEFAULT_SITE_ALEPH_API_HOSTS = 'https://api2.aleph.im,https://api.aleph.im,https://api3.aleph.im'
+
 function siteAlephApiHosts(env: NodeJS.ProcessEnv = process.env): string[] {
   const rawHosts =
     optionalEnv('ALEPH_SITE_ALEPH_API_HOSTS', '', env).trim() ||
-    optionalEnv('ALEPH_SITE_ALEPH_API_HOST', 'https://api2.aleph.im', env).trim()
+    optionalEnv('ALEPH_SITE_ALEPH_API_HOST', DEFAULT_SITE_ALEPH_API_HOSTS, env).trim()
   const hosts = uniqueNonEmptyValues(
     parseCsvOrWhitespaceList(rawHosts).map((host) => normalizeAlephApiHost(host)),
   )
@@ -87,10 +92,16 @@ function siteEndpointPairs(env: NodeJS.ProcessEnv = process.env): SiteEndpointPa
 
   const gateways = siteIpfsGateways(env)
   const apiHosts = siteAlephApiHosts(env)
-  if (gateways.length !== apiHosts.length && (gateways.length > 1 || apiHosts.length > 1)) {
+  if (gateways.length !== apiHosts.length && gateways.length > 1 && apiHosts.length > 1) {
     throw new Error('Legacy ALEPH_SITE_IPFS_GATEWAYS and ALEPH_SITE_ALEPH_API_HOSTS must have equal lengths; prefer ALEPH_SITE_ENDPOINT_PAIRS.')
   }
-  return gateways.map((ipfsGateway, index) => ({ ipfsGateway, apiHost: apiHosts[index] ?? apiHosts[0]! }))
+  // One gateway with several API hosts (the default) is one pair per host;
+  // mapping over the gateways alone used to drop every host but the first.
+  const count = Math.max(gateways.length, apiHosts.length)
+  return Array.from({ length: count }, (_, index) => ({
+    ipfsGateway: gateways[index] ?? gateways[0]!,
+    apiHost: apiHosts[index] ?? apiHosts[0]!,
+  }))
 }
 
 function siteIpfsGateways(env: NodeJS.ProcessEnv = process.env): string[] {
@@ -474,6 +485,9 @@ export async function uploadStaticSiteDirectory(directory: string, gateway: stri
   return { cidV0: parsed.toV0().toString(), cidV1: parsed.toV1().toString() }
 }
 
+/** A verdict about the build, not about a host: no other endpoint pair would answer differently. */
+class SiteVerdictError extends Error {}
+
 async function uploadStaticSiteDirectoryWithGatewayFallback(
   directory: string,
   expected: SitePublishResult,
@@ -490,11 +504,12 @@ async function uploadStaticSiteDirectoryWithGatewayFallback(
       }
       const publish = await uploadStaticSiteDirectory(directory, endpointPair.ipfsGateway)
       if (publish.cidV0 !== expected.cidV0) {
-        throw new Error(`Static site CID mismatch before STORE publication: expected ${expected.cidV1}, uploaded ${publish.cidV1}. Options: cidVersion=1, rawLeaves=true, wrapWithDirectory=true.`)
+        throw new SiteVerdictError(`Static site CID mismatch before STORE publication: expected ${expected.cidV1}, uploaded ${publish.cidV1}. Options: cidVersion=1, rawLeaves=true, wrapWithDirectory=true.`)
       }
       await onVerified?.(endpointPair, publish)
       return { publish, endpointPair }
     } catch (error) {
+      if (error instanceof SiteVerdictError) throw error
       lastError = error
       if (index < pairs.length - 1) {
         const message = error instanceof Error ? error.message : String(error)

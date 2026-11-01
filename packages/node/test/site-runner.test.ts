@@ -682,6 +682,7 @@ test('runDomainLinkMode refuses to link a pending STORE', async () => {
       ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
       ALEPH_SITE_DOMAIN: 'relay.example.com',
       ALEPH_SITE_ITEM_HASH: 'pending-store',
+      ALEPH_SITE_ALEPH_API_HOSTS: 'https://api2.aleph.im',
       ALEPH_SITE_ALEPH_MESSAGE_WAIT_ATTEMPTS: '1',
     }), /Custom domains may only target processed STORE messages/)
   } finally {
@@ -1197,3 +1198,58 @@ test('runDomainLinkMode over HTTPS: the custom domain wait has its own budget, a
   }
 })
 
+
+test('runSitePublishMode reaches api3 by default when api2 and api.aleph.im cannot import the CAR', async () => {
+  // 2026-11-01: api2 (and api.aleph.im, the same backend) answered every upload
+  // with this 502 while api3, a node of its own, took the same signed CAR.
+  const { dir, outputFile, summaryFile } = await createOutputEnv('site-publish-api3-')
+  const siteDir = join(dir, 'dist')
+  await mkdir(siteDir, { recursive: true })
+  await writeFile(join(siteDir, 'index.html'), '<!doctype html><title>blog</title>')
+  let storeHash = ''
+  const calls: string[] = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    calls.push(url)
+    if (url.endsWith('/api/v0/ipfs/add_car')) {
+      assert.ok(init?.body instanceof FormData)
+      const file = init.body.get('file')
+      const metadata = init.body.get('metadata')
+      assert.ok(file instanceof File)
+      assert.ok(metadata instanceof Blob)
+      const envelope = JSON.parse(await metadata.text()) as { message?: Record<string, unknown> }
+      storeHash = String(envelope.message?.item_hash ?? '')
+      if (!url.startsWith('https://api3.aleph.im/')) {
+        return new Response('502: Failed to import CAR into IPFS: malformed NDJSON line: Expecting value: line 1 column 1 (char 0)', { status: 502 })
+      }
+      return new Response(JSON.stringify({ status: 'success', hash: ONE_FILE_SITE_CID, size: file.size }), { status: 200 })
+    }
+    if (url === `https://api3.aleph.im/api/v0/messages/${storeHash}`) {
+      return new Response(JSON.stringify({ status: 'processed' }), { status: 200 })
+    }
+    if (url.includes('.ipfs.aleph.sh')) {
+      return new Response('<!doctype html><title>blog</title>', { status: 200, headers: { 'x-ipfs-roots': ONE_FILE_SITE_CID } })
+    }
+    throw new Error(`Unexpected fetch call: ${url}`)
+  }) as typeof fetch
+  try {
+    await runSitePublishModeCar({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      ALEPH_SITE_DIRECTORY: siteDir,
+      ALEPH_SITE_PIN: 'true',
+      ALEPH_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945382d7d3a2ab6c4b71a0f5f5d5b6d7e8f901',
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, /store_processed=true/)
+  assert.match(outputs, /aleph_api_host=https:\/\/api3\.aleph\.im/)
+  assert.deepEqual(
+    calls.filter((url) => url.endsWith('/api/v0/ipfs/add_car')),
+    ['https://api2.aleph.im/api/v0/ipfs/add_car', 'https://api.aleph.im/api/v0/ipfs/add_car', 'https://api3.aleph.im/api/v0/ipfs/add_car'],
+  )
+  assert.equal(calls.filter((url) => url.startsWith('https://api2.aleph.im/api/v0/messages/')).length, 0)
+})
