@@ -64,6 +64,67 @@ test('runProbeMode merges unique probe addresses and emits outputs', async () =>
   assert.match(outputs, /dns4\/example.com/)
 })
 
+test('runProbeMode retries failed required addresses within the retry window', async () => {
+  const { outputFile, summaryFile } = await createOutputEnv('site-probe-retry-')
+  const proxy = '/dns4/example.com/tcp/443/tls/ws/p2p/peer'
+  const direct = '/ip4/192.0.2.1/tcp/1234/p2p/peer'
+  let clock = 0
+  const probed: string[][] = []
+  await runProbeMode({
+    GITHUB_OUTPUT: outputFile,
+    GITHUB_STEP_SUMMARY: summaryFile,
+    PROBE_MULTIADDRS_JSON: JSON.stringify([direct, proxy]),
+    PROBE_RETRY_WINDOW_MS: '600000',
+    PROBE_RETRY_INTERVAL_MS: '30000',
+  }, {
+    now: () => clock,
+    sleep: async (ms) => { clock += ms },
+    probe: async (addrs) => {
+      probed.push(addrs)
+      return addrs.map((addr) => ({
+        address: addr,
+        // The proxy name becomes reachable on the third round.
+        ok: addr === direct || probed.length >= 3,
+        protocols: [],
+        family: addr === proxy ? 'proxy-wss' : 'tcp',
+        required: true,
+        dialMs: 1,
+        pingMs: 1,
+        remoteAddrs: [],
+        error: null,
+        warning: null,
+      }))
+    },
+  })
+
+  assert.deepEqual(probed, [[direct, proxy], [proxy], [proxy]])
+  assert.match(await readFile(outputFile, 'utf8'), /ok=true/)
+})
+
+test('runProbeMode fails once the retry window closes', async () => {
+  const { outputFile, summaryFile } = await createOutputEnv('site-probe-retry-fail-')
+  let clock = 0
+  let rounds = 0
+  await assert.rejects(
+    runProbeMode({
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      PROBE_MULTIADDRS_JSON: JSON.stringify(['/dns4/example.com/tcp/443/tls/ws/p2p/peer']),
+      PROBE_RETRY_WINDOW_MS: '90000',
+      PROBE_RETRY_INTERVAL_MS: '30000',
+    }, {
+      now: () => clock,
+      sleep: async (ms) => { clock += ms },
+      probe: async (addrs) => {
+        rounds += 1
+        return addrs.map((addr) => ({ address: addr, ok: false, protocols: [], family: 'proxy-wss', required: true, dialMs: null, pingMs: null, remoteAddrs: [], error: 'unreachable', warning: null }))
+      },
+    }),
+    /At least one required relay protocol probe failed/,
+  )
+  assert.equal(rounds, 4)
+})
+
 test('verifyBrowserTransportCerthashes requires uc-go-peer direct transports with certhashes', () => {
   const peerId = '12D3KooWPeer'
   const valid = verifyBrowserTransportCerthashes([

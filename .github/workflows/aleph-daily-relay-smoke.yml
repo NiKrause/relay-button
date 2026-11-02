@@ -191,6 +191,10 @@ jobs:
           ALEPH_RELAY_PROBE_PROXY_WSS_HOST_MATCHERS_JSON: ${{ steps.rootfs.outputs.proxy_wss_host_matchers_json }}
           PROBE_TIMEOUT_MS: '20000'
           PROBE_SETTLE_MS: '1500'
+          # A new 2n6.me name can take up to ~5 min to reach the VM (Aleph's
+          # gateway syncs periodically): retry failed required addresses.
+          PROBE_RETRY_WINDOW_MS: '600000'
+          PROBE_RETRY_INTERVAL_MS: '30000'
           PROBE_MULTIADDRS_JSON: ${{ steps.deploy_vm.outputs.probe_multiaddrs_json }}
           BROWSER_BOOTSTRAP_MULTIADDRS_JSON: ${{ steps.deploy_vm.outputs.browser_bootstrap_multiaddrs_json }}
         run: node --input-type=module -e "import('./packages/node/src/site-runner.ts').then((m) => m.runSiteMode())"
