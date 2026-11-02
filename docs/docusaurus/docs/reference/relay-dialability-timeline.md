@@ -89,7 +89,10 @@ sequenceDiagram
 ## What the controller does meanwhile (`@le-space/ui` ≥ 0.6.40)
 
 - Waits up to **10 minutes** for the 2n6 hostname to activate (the
-  activation latency varies with 2n6 service load).
+  activation latency varies with 2n6 service load: under a minute when the
+  service is quiet, usually within 4 minutes, longer under load). The widget
+  shows the elapsed time and this expectation while it waits, so a slow
+  activation does not read as a hang.
 - Applies the **browser-dialable-address invariant to every relay profile**:
   an acknowledgement without a dialable browser address throws inside the
   CRN loop → the failed attempt is cleaned up (config aggregate, INSTANCE
