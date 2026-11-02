@@ -181,6 +181,27 @@ jobs:
           publish_port_forwards: 'true'
           required_ports_json: ${{ steps.rootfs.outputs.required_ports_json }}
 
+      # Aleph's 2n6.me gateway picks up new instances on its periodic sync
+      # (up to ~5 min). api.2n6.me says when the route is active, so the probe
+      # starts then instead of guessing; the probe's retry window still covers
+      # Caddy's certificate order after that.
+      - name: Wait for the 2n6.me route
+        if: ${{ steps.deploy_vm.outputs.instance_item_hash != '' }}
+        env:
+          ITEM_HASH: ${{ steps.deploy_vm.outputs.instance_item_hash }}
+        run: |
+          start=$(date +%s)
+          for attempt in $(seq 1 40); do
+            route=$(curl -fsS -m 15 "https://api.2n6.me/api/hash/${ITEM_HASH}" || true)
+            if [[ "$(jq -r '.active // false' <<<"$route" 2>/dev/null)" == "true" ]]; then
+              echo "2n6 route $(jq -r .url <<<"$route") active after $(( $(date +%s) - start )) s"
+              exit 0
+            fi
+            sleep 15
+          done
+          sync=$(curl -fsS -m 15 https://api.2n6.me/api/status | jq -r '.last_sync_time // "unknown"' || echo unknown)
+          echo "::warning::2n6 route still inactive after $(( $(date +%s) - start )) s (gateway last sync: ${sync}); probing anyway"
+
       - name: Probe each relay transport
         id: protocol_probe
         env:
