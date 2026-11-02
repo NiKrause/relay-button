@@ -70,7 +70,7 @@ import {
   STALE_INSTANCE_ALLOCATION_COOLDOWN_MS,
 } from "./constants";
 import { createDeploymentProgressEmitter } from "./events";
-import { buildSshCommand } from "./format";
+import { buildSshCommand, formatElapsed } from "./format";
 import { resolveManifestSource } from "./manifest-source";
 import { connectWallet, personalSign, watchWallet } from "./wallet-controller";
 import {
@@ -1107,6 +1107,10 @@ const UI_DEPLOY_WAIT_DELAY_MS = 5_000;
 // the loop exits early the moment activation flips to active.
 const UI_RUNTIME_WAIT_ATTEMPTS = 120;
 const UI_RUNTIME_WAIT_DELAY_MS = 5_000;
+// Shown while the 2n6 wait runs, so a slow activation does not look like a
+// hang. Keep it in line with the observations above.
+const UI_2N6_ACTIVATION_HINT =
+  "This is usually done within 4 minutes, and can take up to 10 when Aleph's 2n6 service is busy. The deploy continues on its own.";
 
 type SponsorRelayStatePatch = Omit<
   Partial<SponsorRelayState>,
@@ -1602,10 +1606,10 @@ export class SponsorRelayController {
           progress: 93,
           status: "warning",
           itemHash: args.itemHash,
-          detail:
-            "The relay received a 2n6 hostname, but it is not active yet. Waiting before handing HTTPS config to the guest.",
+          detail: `The relay received a 2n6 hostname, but it is not active yet. ${UI_2N6_ACTIVATION_HINT}`,
         });
 
+        const activationStartedAt = Date.now();
         let latestRuntime = runtime;
         // Early failover during the activation wait too (relay-button#83): a
         // CRN that never scheduled the VM otherwise burns the full 2n6 window
@@ -1661,9 +1665,10 @@ export class SponsorRelayController {
               latestRuntime.webAccess?.active === true ? "info" : "warning",
             itemHash: args.itemHash,
             detail:
-              `2n6 activation ${attempt + 1}/${UI_RUNTIME_WAIT_ATTEMPTS}: ` +
-              `${latestRuntime.webAccess?.active === true ? "active" : "still pending"} ` +
-              `for ${latestRuntime.proxyUrl ?? runtime.proxyUrl ?? "reserved proxy URL"}.`,
+              `2n6 activation for ${latestRuntime.proxyUrl ?? runtime.proxyUrl ?? "reserved proxy URL"}: ` +
+              (latestRuntime.webAccess?.active === true
+                ? `active after ${formatElapsed(Date.now() - activationStartedAt)}.`
+                : `still pending after ${formatElapsed(Date.now() - activationStartedAt)}. ${UI_2N6_ACTIVATION_HINT}`),
           });
           this.trace("deploy:bootstrap-proxy-activation", {
             itemHash: args.itemHash,

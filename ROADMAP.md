@@ -12,6 +12,32 @@ carries the IPv6 into the VM record for that. The SSH wait is
 `GH_RUNNER_SSH_WAIT_ATTEMPTS` × 5 s (60 by default), with a line every
 minute while it waits.
 
+## 0.12.4 — a 2n6 wait that says how long it takes, and Svelte tabs that switch
+
+While the widget waits for a relay's 2n6.me HTTPS route, it used to show
+`2n6 activation 15/120: still pending`, a counter that read like a countdown
+toward a failure. It now shows the time spent so far and says that activation
+is usually done within 4 minutes, can take up to 10 when Aleph's 2n6 service
+is busy, and that the deploy continues on its own; once active it reports how
+long it took (#213). The wait itself is unchanged (120 × 5 s).
+
+In the Svelte build, a click on a deployment card's Multiaddresses or Health
+tab did nothing until the next state update happened to redraw the card: the
+selected tab lived in a `let` that the markup only read through a helper, and
+Svelte's legacy mode does not track that. The template reads it directly now.
+The panel's `max-height` also left out its padding and border, so it ran 34px
+past its budget — above the window in inline mode, under the launcher in
+floating mode. It uses `border-box` like the React build, and `dvh` so mobile
+browser bars do not cover its bottom (#215).
+
+`@le-space/node`'s relay probe can retry required addresses that failed:
+`PROBE_RETRY_WINDOW_MS` and `PROBE_RETRY_INTERVAL_MS` (default 30 s) probe them
+again until the window closes. Without the window, one round decides, as
+before (#214). The daily relay smoke test uses a 10-minute window, and before
+probing it waits until `api.2n6.me` reports the new instance's route active,
+because Aleph's 2n6.me gateway picks up new instances on a periodic sync of up
+to about 5 minutes (#216).
+
 ## 0.12.3 — api3.aleph.im is a fallback again
 
 On 2026-11-01 every site publish of Le-Space/landing failed in the CAR upload:

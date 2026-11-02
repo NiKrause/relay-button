@@ -101,11 +101,10 @@ export let apiHosts = undefined
   $: orphanRegistrations = state.orphanBootstrapRegistrations ?? []
 
   // Which tab each expanded deployment card is showing, keyed by item hash.
+  // The template reads it directly: a legacy-mode `let` only becomes reactive
+  // when the markup references it, and reading it through a helper function
+  // left a tab click without effect until the next state update.
   let instanceTabs = {}
-
-  function instanceTab(itemHash) {
-    return instanceTabs[itemHash] ?? 'general'
-  }
 
   function selectInstanceTab(itemHash, tab) {
     instanceTabs = { ...instanceTabs, [itemHash]: tab }
@@ -536,7 +535,7 @@ export let apiHosts = undefined
 
             {@const itemHash = entry.instance.item_hash}
             {@const addresses = addressesOf(itemHash)}
-            {@const tab = instanceTab(itemHash)}
+            {@const tab = instanceTabs[itemHash] ?? 'general'}
 
             <div class="tab-bar" role="tablist">
               <button
@@ -762,7 +761,12 @@ export let apiHosts = undefined
     bottom: 11.5rem;
     z-index: 9999;
     width: min(28rem, calc(100vw - 2rem));
+    /* The height budget includes padding and border, as in the React build;
+       otherwise the panel runs 34px past it, under the launcher or the top
+       edge. dvh leaves out the mobile browser bars that 100vh counts. */
+    box-sizing: border-box;
     max-height: calc(100vh - 12.5rem);
+    max-height: calc(100dvh - 12.5rem);
     overflow: auto;
     border: 1px solid var(--relay-panel-border);
     border-radius: 0.625rem;
@@ -1318,6 +1322,7 @@ export let apiHosts = undefined
       width: auto;
       bottom: 7.4rem;
       max-height: calc(100vh - 8.4rem);
+      max-height: calc(100dvh - 8.4rem);
     }
 
     .grid,

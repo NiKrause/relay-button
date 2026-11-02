@@ -26,3 +26,10 @@ test('formatCrnOptionLabel adds country, version and operator for a confidential
   assert.equal(formatCrnOptionLabel(option, true), 'node-1 · 0.99 · FR · aleph-vm 2.1.4 · operator 0x1234…abcd')
   assert.equal(formatCrnOptionLabel({ hash: 'abcdef0123', name: null, score: null }, true), 'abcdef01')
 })
+
+test('formatElapsed renders minutes and zero-padded seconds', async () => {
+  const { formatElapsed } = await import('../dist/shared/index.js')
+  assert.equal(formatElapsed(0), '0:00')
+  assert.equal(formatElapsed(75_000), '1:15')
+  assert.equal(formatElapsed(600_000), '10:00')
+})

@@ -49,6 +49,18 @@ COMPACT_MULTIADDR_LIMIT = int(os.environ.get("ALEPH_BOOTSTRAP_COMPACT_MULTIADDR_
 STALE_RECORD_MAX_AGE_SECONDS = int(
     os.environ.get("ALEPH_BOOTSTRAP_STALE_RECORD_MAX_AGE_SECONDS", str(6 * 60 * 60))
 )
+# What was last published, so an unchanged registration is not posted again.
+# The AutoTLS refresh starts this unit after each of its runs, every 2 min until
+# AutoTLS has a certificate; on a relay where it never gets one that meant a new
+# Aleph post every 2 min, forever. An unchanged registration is republished only
+# once it is this old, which keeps the 6 h timer's refresh (and stays below
+# STALE_RECORD_MAX_AGE_SECONDS, after which consumers drop it).
+PUBLISHED_STATE_FILE = os.environ.get(
+    "BOOTSTRAP_PUBLISHED_STATE_FILE", "/var/lib/orbitdb-relay/bootstrap-published.json"
+)
+REPUBLISH_UNCHANGED_AFTER_SECONDS = int(
+    os.environ.get("BOOTSTRAP_REPUBLISH_UNCHANGED_AFTER_SECONDS", str(5 * 60 * 60))
+)
 
 
 def parse_env_file(path: str) -> dict[str, str]:
@@ -325,6 +337,61 @@ def resolve_owner_address(
         return address_from_private_key(owner_private_key)
 
     return None
+
+
+def registration_fingerprint(
+    publisher_address: str,
+    peer_id: str,
+    multiaddrs: list[str],
+    registration_id: str | None,
+    profile: str,
+    version: str | None,
+    owner_address: str | None,
+    channel: str,
+    ref: str,
+) -> str:
+    """What a registration says, without its timestamps and signatures."""
+    return hashlib.sha256(
+        json_dumps(
+            {
+                "publisher": publisher_address.lower(),
+                "peerId": peer_id,
+                "multiaddrs": sorted(multiaddrs),
+                "registrationId": registration_id,
+                "profile": profile,
+                "version": version,
+                "owner": (owner_address or "").lower() or None,
+                "channel": channel,
+                "ref": ref,
+            }
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def recently_published(fingerprint: str, now_seconds: float) -> bool:
+    try:
+        with open(PUBLISHED_STATE_FILE, encoding="utf-8") as handle:
+            state = json.load(handle)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(state, dict) or state.get("fingerprint") != fingerprint:
+        return False
+    published_at = state.get("publishedAt")
+    if not isinstance(published_at, (int, float)):
+        return False
+    return 0 <= now_seconds - published_at < REPUBLISH_UNCHANGED_AFTER_SECONDS
+
+
+def remember_published(fingerprint: str, item_hash: str, now_seconds: float) -> None:
+    try:
+        os.makedirs(os.path.dirname(PUBLISHED_STATE_FILE) or ".", exist_ok=True)
+        tmp = f"{PUBLISHED_STATE_FILE}.tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump({"fingerprint": fingerprint, "itemHash": item_hash, "publishedAt": now_seconds}, handle)
+        os.replace(tmp, PUBLISHED_STATE_FILE)
+    except OSError:
+        # Without the state the next run publishes again, as before.
+        pass
 
 
 def post_json(url: str, body: dict[str, object]) -> tuple[int, dict]:
@@ -726,6 +793,26 @@ def attempt_publish(
     )
     owner_address = resolve_owner_address(env_values, owner_authorization)
 
+    fingerprint = registration_fingerprint(
+        publisher_address,
+        peer_id,
+        published_multiaddrs,
+        registration_id,
+        profile,
+        version,
+        owner_address,
+        channel,
+        ref,
+    )
+    if recently_published(fingerprint, now_seconds):
+        return {
+            "status": "unchanged",
+            "sender": publisher_address,
+            "peerId": peer_id,
+            "publishedMultiaddrs": published_multiaddrs,
+            "republishAfterSeconds": REPUBLISH_UNCHANGED_AFTER_SECONDS,
+        }
+
     proof_payload = relay_proof_payload(
         peer_id,
         published_multiaddrs,
@@ -762,6 +849,8 @@ def attempt_publish(
     )
     signed_message = sign_aleph_message(unsigned_message, publisher_private_key)
     http_status, response = broadcast_aleph_message(api_host, signed_message)
+    if 200 <= http_status < 300:
+        remember_published(fingerprint, str(unsigned_message["item_hash"]), now_seconds)
 
     previous_hashes = fetch_previous_hashes(
         api_host,

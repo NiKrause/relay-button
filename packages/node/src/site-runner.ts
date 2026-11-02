@@ -1150,7 +1150,11 @@ export async function runDomainLinkMode(env: NodeJS.ProcessEnv = process.env, op
 
 export async function runProbeMode(
   env: NodeJS.ProcessEnv = process.env,
-  options: { probe?: (addrs: string[], env: NodeJS.ProcessEnv) => Promise<RelayProbeResult[]> } = {}
+  options: {
+    probe?: (addrs: string[], env: NodeJS.ProcessEnv) => Promise<RelayProbeResult[]>
+    sleep?: (ms: number) => Promise<void>
+    now?: () => number
+  } = {}
 ): Promise<void> {
   const addrs = mergedAddrs(env)
   if (addrs.length === 0) throw new Error('No relay probe or browser bootstrap multiaddrs were supplied.')
@@ -1164,8 +1168,26 @@ export async function runProbeMode(
     throw new Error(`Browser transport certhash verification failed: ${certhashVerification.errors.join(' ')}`)
   }
   const probe = options.probe ?? (await import('./relay-probe.ts')).probeRelayAddrs
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  const now = options.now ?? Date.now
+  // A fresh VM's 2n6.me name can take minutes to reach it (the gateway syncs
+  // periodically), so failed required addresses are probed again until the
+  // window closes. Without PROBE_RETRY_WINDOW_MS a single round decides.
+  const retryWindowMs = optionalEnv('PROBE_RETRY_WINDOW_MS', '', env).trim() ? positiveNumberEnv('PROBE_RETRY_WINDOW_MS', 0, env) : 0
+  const retryIntervalMs = positiveNumberEnv('PROBE_RETRY_INTERVAL_MS', 30000, env)
+  const deadline = now() + retryWindowMs
   const rows = await probe(addrs, env)
   if (rows.length === 0) throw new Error('Relay probe produced no JSON output.')
+  for (let round = 2; now() < deadline; round += 1) {
+    const failed = rows.filter((row) => row.required && row.ok !== true).map((row) => row.address)
+    if (failed.length === 0) break
+    console.warn(`Relay probe round ${round}: ${failed.length} required address(es) not reachable yet; retrying in ${retryIntervalMs} ms.`)
+    await sleep(retryIntervalMs)
+    for (const retried of await probe(failed, env)) {
+      const index = rows.findIndex((row) => row.address === retried.address)
+      if (index >= 0) rows[index] = retried
+    }
+  }
 
   const json = rows.map((row) => JSON.stringify(row)).join('\n')
   if (json) process.stdout.write(`${json}\n`)
