@@ -166,6 +166,8 @@ export interface DeployedRunnerVm {
   host: string;
   sshPort: number;
   crnName: string;
+  /** The VM's public IPv6, when the deploy learned it: SSH on port 22 without the CRN's port forward. */
+  ipv6: string;
 }
 
 /**
@@ -175,7 +177,7 @@ export interface DeployedRunnerVm {
 export function readDeployedRunnerVm(result: {
   itemHash?: string;
   status?: string;
-  runtime?: { hostIpv4?: string | null; mappedPorts?: Record<string, { host?: number | string }> ; selectedCrn?: { name?: string } | null } | null;
+  runtime?: { hostIpv4?: string | null; ipv6?: string | null; mappedPorts?: Record<string, { host?: number | string }> ; selectedCrn?: { name?: string } | null } | null;
   selectedCrn?: { name?: string } | null;
 }): DeployedRunnerVm {
   const itemHash = result.itemHash ?? "";
@@ -190,6 +192,7 @@ export function readDeployedRunnerVm(result: {
     host,
     sshPort,
     crnName: result.runtime?.selectedCrn?.name ?? result.selectedCrn?.name ?? "",
+    ipv6: result.runtime?.ipv6 ?? "",
   };
 }
 

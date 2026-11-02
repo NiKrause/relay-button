@@ -66,7 +66,7 @@ test("a scaffold deploy result is never taken for a running VM", () => {
       itemHash: hash,
       runtime: { hostIpv4: "192.0.2.1", mappedPorts: { "22": { host: 24001 } }, selectedCrn: { name: "crn" } },
     }),
-    { itemHash: hash, host: "192.0.2.1", sshPort: 24001, crnName: "crn" },
+    { itemHash: hash, host: "192.0.2.1", sshPort: 24001, crnName: "crn", ipv6: "" },
   );
 });
 
