@@ -1,5 +1,17 @@
 # Roadmap
 
+## Unreleased — the runner gets in over IPv6 when the CRN's port forward stays shut
+
+On 2026-11-02, from about 14:30 UTC, every GitHub runner VM came up but
+its forwarded SSH port never did: the VM answered on its own IPv6 on port
+22 while the CRN's IPv4 port stayed "connection refused", measured on
+NodeCity3, AlephVision4 and NtS1 with the port-forwarding aggregate in
+place on api2 and api3. `gh-runner up` now tries the forwarded port and
+the VM's IPv6 in turn and keeps whichever answers first; the deploy result
+carries the IPv6 into the VM record for that. The SSH wait is
+`GH_RUNNER_SSH_WAIT_ATTEMPTS` × 5 s (60 by default), with a line every
+minute while it waits.
+
 ## 0.12.3 — api3.aleph.im is a fallback again
 
 On 2026-11-01 every site publish of Le-Space/landing failed in the CAR upload:

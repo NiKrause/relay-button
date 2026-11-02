@@ -150,13 +150,30 @@ async function ssh(keyPath, vm, command, input) {
   });
 }
 
+// 60 × 5 s by default. A CRN that has to fetch the rootfs first needs longer
+// than one that still has it cached: GH_RUNNER_SSH_WAIT_ATTEMPTS raises it.
+// The CRN forwards a host port to the VM's port 22; when that forward does not
+// come up (measured 2026-11-02 on three CRNs: the VM answered on its IPv6 while
+// the forwarded IPv4 port stayed refused), the VM's own IPv6 is the way in.
+// Every odd attempt tries the forward, every even one the IPv6; whichever
+// answers first is kept for the rest of the session.
 async function waitForSsh(keyPath, vm) {
-  for (let attempt = 1; attempt <= 60; attempt += 1) {
+  const attempts = Math.max(1, Number(process.env.GH_RUNNER_SSH_WAIT_ATTEMPTS) || 60);
+  const forwarded = { host: vm.host, sshPort: vm.sshPort };
+  const direct = vm.ipv6 ? { host: vm.ipv6, sshPort: 22 } : null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const route = direct && attempt % 2 === 0 ? direct : forwarded;
     try {
-      await ssh(keyPath, vm, "test -x /usr/local/sbin/github-runner-start");
+      await ssh(keyPath, { ...vm, ...route }, "test -x /usr/local/sbin/github-runner-start");
+      if (route !== forwarded) {
+        console.log(`[gh-runner] forwarded port ${forwarded.host}:${forwarded.sshPort} did not answer; using the VM's IPv6 ${route.host}:22`);
+        vm.host = route.host;
+        vm.sshPort = route.sshPort;
+      }
       return;
     } catch (error) {
-      if (attempt === 60) throw new Error(`SSH to ${vm.host}:${vm.sshPort} never came up: ${error.message}`);
+      if (attempt === attempts) throw new Error(`SSH to ${forwarded.host}:${forwarded.sshPort}${direct ? ` and [${direct.host}]:22` : ""} never came up after ${attempts * 5} s: ${error.message}`);
+      if (attempt % 12 === 0) console.log(`[gh-runner] still waiting for SSH on ${forwarded.host}:${forwarded.sshPort}${direct ? ` / [${direct.host}]:22` : ""} (${attempt * 5} s)`);
       await sleep(5000);
     }
   }
