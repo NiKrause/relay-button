@@ -38,6 +38,14 @@ export function formatDateTime(
   return date.toLocaleString();
 }
 
+// A wait shown to a person reads better as a clock than as a loop counter.
+export function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 export function formatTierSpecLabel(
   vcpus: number | null | undefined,
   memoryMiB: number | null | undefined,
