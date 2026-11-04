@@ -12,6 +12,13 @@ carries the IPv6 into the VM record for that. The SSH wait is
 `GH_RUNNER_SSH_WAIT_ATTEMPTS` × 5 s (60 by default), with a line every
 minute while it waits.
 
+The Playwright runner janitor takes `keep_name_prefixes`: long-lived VMs a
+wallet funds on purpose are never swept and no longer count as unswept. Since
+2026-11-02 the production relay `relay-main-ekb` runs from the same account as
+simple-todo's E2E VMs, and with `fail_on_unswept` on, every janitor run there
+was red for it while nothing was wrong. A keep prefix that a sweep prefix also
+matches is refused.
+
 ## 0.12.4 — a 2n6 wait that says how long it takes, and Svelte tabs that switch
 
 While the widget waits for a relay's 2n6.me HTTPS route, it used to show

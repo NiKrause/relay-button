@@ -180,6 +180,14 @@ confirmation, and scheduler-deallocation verification for every exact hash.
 Consumers should schedule this workflow independently so it still runs after a
 hard cancellation of their scenario workflow.
 
+`extra_name_prefixes` adds name prefixes to sweep beyond
+`playwright-<repository>-`. With `fail_on_unswept`, any instance past the TTL
+that matches no sweep prefix turns the run red, because it is credits burning
+unseen. A wallet that also funds a long-lived VM on purpose — a production relay
+deployed from the E2E account — names it in `keep_name_prefixes`: such instances
+are never swept and never reported as unswept. A keep prefix that a sweep prefix
+also matches is refused, so no name can be both expendable and kept.
+
 ## Operational troubleshooting
 
 - **WSS TLS error:** retain proxy/service logs and verify the per-run certificate
