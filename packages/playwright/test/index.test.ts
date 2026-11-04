@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  ALEPH_RUNNER_KEPT_REASON,
   buildAlephCostEvidence,
   cleanupRelay,
   connectAlephChromium,
@@ -179,6 +180,54 @@ test('Aleph runner janitor reports expired out-of-scope instances as unswept cre
   assert.deepEqual(result.expired, [])
   assert.deepEqual(result.unswept.map(({ itemHash }) => itemHash), ['a'.repeat(64), 'b'.repeat(64)])
   assert.deepEqual(result.unswept.map(({ ageMs }) => Math.round(ageMs / 3_600_000)), [47, 48])
+})
+
+test('Aleph runner janitor keeps named long-lived instances out of the sweep and the leak report', () => {
+  const ownerAddress = `0x${'ab'.repeat(20)}`
+  const base = { ownerAddress, status: 'processed' }
+  const result = selectExpiredAlephPlaywrightRunners({
+    ownerAddress,
+    repository: 'Le-Space/simple-todo',
+    now: Date.parse('2026-11-04T06:34:00.000Z'),
+    ttlMs: 60 * 60_000,
+    additionalNamePrefixes: ['simple-todo-e2e-'],
+    keepNamePrefixes: [' Relay-Main-EKB '],
+    candidates: [
+      // 2026-11-04: the production relay, deployed from the E2E account,
+      // turned every janitor run red as an unswept leak.
+      { ...base, itemHash: 'a'.repeat(64), instanceName: 'relay-main-ekb', createdAt: '2026-11-02T13:15:00.000Z' },
+      // A leaked E2E VM is still swept beside it.
+      { ...base, itemHash: 'b'.repeat(64), instanceName: 'simple-todo-e2e-1793700000000', createdAt: '2026-11-04T04:00:00.000Z' },
+      // A name nobody listed still counts as a leak.
+      { ...base, itemHash: 'c'.repeat(64), instanceName: 'relay-other', createdAt: '2026-11-02T13:15:00.000Z' },
+      // The keep prefix does not make another account's VM ours.
+      { ...base, ownerAddress: `0x${'cd'.repeat(20)}`, itemHash: 'd'.repeat(64), instanceName: 'relay-main-ekb', createdAt: '2026-11-02T13:15:00.000Z' },
+    ],
+  })
+  assert.deepEqual(result.expired.map(({ itemHash }) => itemHash), ['b'.repeat(64)])
+  assert.deepEqual(result.unswept.map(({ itemHash }) => itemHash), ['c'.repeat(64)])
+  assert.deepEqual(
+    result.retained.map(({ itemHash, reason }) => [itemHash[0], reason]),
+    [
+      ['a', ALEPH_RUNNER_KEPT_REASON],
+      ['c', 'name outside repository scope'],
+      ['d', 'different owner'],
+    ],
+  )
+})
+
+test('Aleph runner janitor refuses a keep prefix that a sweep prefix also matches', () => {
+  const ownerAddress = `0x${'ab'.repeat(20)}`
+  const options = { ownerAddress, repository: 'Le-Space/simple-todo', candidates: [] }
+  assert.throws(
+    () => selectExpiredAlephPlaywrightRunners({ ...options, additionalNamePrefixes: ['simple-todo-e2e-'], keepNamePrefixes: ['simple-todo-'] }),
+    /keep prefixes overlap the sweep prefixes: simple-todo-/,
+  )
+  assert.throws(
+    () => selectExpiredAlephPlaywrightRunners({ ...options, keepNamePrefixes: ['playwright-le-space-simple-todo-main'] }),
+    /overlap/,
+  )
+  assert.doesNotThrow(() => selectExpiredAlephPlaywrightRunners({ ...options, keepNamePrefixes: ['relay-main-ekb'] }))
 })
 
 test('resolveAlephApiHosts enforces api2 then api and excludes api3', () => {

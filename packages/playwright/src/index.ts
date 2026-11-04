@@ -107,6 +107,9 @@ export interface AlephRunnerJanitorSelection {
   unswept: Array<AlephRunnerInstanceCandidate & { ageMs: number }>
 }
 
+/** Why a long-lived instance named by a keep prefix stays untouched. */
+export const ALEPH_RUNNER_KEPT_REASON = 'kept long-lived instance'
+
 export interface RelayAddressPolicy {
   allowWebTransport?: boolean
   allowWebRtcDirect?: boolean
@@ -326,6 +329,14 @@ export function selectExpiredAlephPlaywrightRunners(options: {
    * repository prefix and so leaked forever (#88).
    */
   additionalNamePrefixes?: readonly string[]
+  /**
+   * Exact name prefixes of long-lived instances the same wallet funds on
+   * purpose — a production relay deployed from the E2E account. They are
+   * never swept and never reported as unswept, so `fail_on_unswept` can stay
+   * on for everything else. A prefix that a sweep prefix would also match is
+   * refused: a name must not be both expendable and kept.
+   */
+  keepNamePrefixes?: readonly string[]
 }): AlephRunnerJanitorSelection {
   const owner = options.ownerAddress.trim().toLowerCase()
   const repository = options.repository.trim().toLowerCase().replace(/[^a-z0-9]+/gu, '-')
@@ -335,6 +346,9 @@ export function selectExpiredAlephPlaywrightRunners(options: {
     `playwright-${repository}-`,
     ...(options.additionalNamePrefixes ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean),
   ]
+  const keep = (options.keepNamePrefixes ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean)
+  const overlap = keep.filter((kept) => prefixes.some((swept) => kept.startsWith(swept) || swept.startsWith(kept)))
+  if (overlap.length) throw new Error(`Janitor keep prefixes overlap the sweep prefixes: ${overlap.join(', ')}`)
   const now = options.now ?? Date.now()
   const ttlMs = options.ttlMs ?? 60 * 60_000
   if (!Number.isFinite(ttlMs) || ttlMs < 15 * 60_000) throw new Error('Janitor TTL must be at least 15 minutes')
@@ -345,6 +359,8 @@ export function selectExpiredAlephPlaywrightRunners(options: {
     const createdAt = Date.parse(candidate.createdAt)
     if (!/^[a-f0-9]{64}$/iu.test(candidate.itemHash)) reason = 'invalid exact INSTANCE hash'
     else if (candidate.ownerAddress.toLowerCase() !== owner) reason = 'different owner'
+    else if (keep.some((prefix) => candidate.instanceName.toLowerCase().startsWith(prefix)))
+      reason = ALEPH_RUNNER_KEPT_REASON
     else if (!prefixes.some((prefix) => candidate.instanceName.toLowerCase().startsWith(prefix)))
       reason = 'name outside repository scope'
     else if (!Number.isFinite(createdAt)) reason = 'invalid creation timestamp'

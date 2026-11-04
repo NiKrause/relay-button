@@ -21,11 +21,22 @@ on:
         required: false
         default: ''
         type: string
+      keep_name_prefixes:
+        description: >-
+          Exact instance-name prefixes of long-lived VMs the same wallet funds
+          on purpose, for example a production relay deployed from the E2E
+          account, comma or space separated. They are never swept and never
+          count as unswept, so fail_on_unswept can stay on for everything else.
+          A prefix that a sweep prefix also matches is refused.
+        required: false
+        default: ''
+        type: string
       fail_on_unswept:
         description: >-
           Fail the run when an allocated instance is past the TTL but matches no
           configured prefix. Enable for wallets that only ever hold ephemeral
-          VMs; leave off where the same wallet funds long-lived relays.
+          VMs, or name their long-lived relays in keep_name_prefixes; leave off
+          where the same wallet funds long-lived relays nobody listed.
         required: false
         default: false
         type: boolean
@@ -45,6 +56,11 @@ on:
         type: number
       extra_name_prefixes:
         description: Additional exact instance-name prefixes to sweep, comma or space separated
+        required: false
+        default: ''
+        type: string
+      keep_name_prefixes:
+        description: Exact instance-name prefixes of long-lived VMs never to sweep or report, comma or space separated
         required: false
         default: ''
         type: string
@@ -93,6 +109,7 @@ jobs:
           ALEPH_PLAYWRIGHT_JANITOR_REPOSITORY: ${{ inputs.repository_scope }}
           ALEPH_PLAYWRIGHT_JANITOR_TTL_MS: ${{ inputs.ttl_ms }}
           ALEPH_PLAYWRIGHT_JANITOR_EXTRA_NAME_PREFIXES: ${{ inputs.extra_name_prefixes }}
+          ALEPH_PLAYWRIGHT_JANITOR_KEEP_NAME_PREFIXES: ${{ inputs.keep_name_prefixes }}
           ALEPH_PLAYWRIGHT_JANITOR_FAIL_ON_UNSWEPT: ${{ inputs.fail_on_unswept }}
           ALEPH_VM_API_HOSTS: https://api2.aleph.im,https://api.aleph.im
         # shell: bash runs with -o pipefail so a node failure is not masked

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  ALEPH_RUNNER_KEPT_REASON,
   resolveAlephApiHosts,
   selectExpiredAlephPlaywrightRunners,
   waitForAlephInstanceDeletion,
@@ -56,6 +57,12 @@ const additionalNamePrefixes =
   process.env.ALEPH_PLAYWRIGHT_JANITOR_EXTRA_NAME_PREFIXES?.split(/[\s,]+/u).filter(
     Boolean,
   ) ?? [];
+// Long-lived instances the same wallet funds on purpose (a production relay
+// deployed from the E2E account): never swept, never counted as a leak.
+const keepNamePrefixes =
+  process.env.ALEPH_PLAYWRIGHT_JANITOR_KEEP_NAME_PREFIXES?.split(/[\s,]+/u).filter(
+    Boolean,
+  ) ?? [];
 const failOnUnswept =
   process.env.ALEPH_PLAYWRIGHT_JANITOR_FAIL_ON_UNSWEPT?.trim() === "true";
 
@@ -64,6 +71,7 @@ const selection = selectExpiredAlephPlaywrightRunners({
   ownerAddress: identity.address,
   repository,
   additionalNamePrefixes,
+  keepNamePrefixes,
   ttlMs: Number(process.env.ALEPH_PLAYWRIGHT_JANITOR_TTL_MS ?? 60 * 60_000),
 });
 
@@ -125,6 +133,8 @@ const evidence = {
   apiHosts,
   namePrefixes: [`playwright-${repository.toLowerCase().replace(/[^a-z0-9]+/gu, "-")}-`, ...additionalNamePrefixes],
   cleaned,
+  keptNamePrefixes: keepNamePrefixes,
+  kept: selection.retained.filter(({ reason }) => reason === ALEPH_RUNNER_KEPT_REASON),
   retained: selection.retained,
   unswept: selection.unswept,
   finishedAt: new Date().toISOString(),
@@ -150,7 +160,7 @@ if (process.env.GITHUB_STEP_SUMMARY) {
     : "";
   await appendFile(
     process.env.GITHUB_STEP_SUMMARY,
-    `## Aleph Playwright runner janitor\n\n- Repository scope: \`${repository}\`\n- Owner: \`${identity.address}\`\n- Swept name prefixes: ${evidence.namePrefixes.map((prefix) => `\`${prefix}\``).join(", ")}\n- Cleaned exact INSTANCE hashes: \`${cleaned.length}\`\n- Retained candidates: \`${selection.retained.length}\`\n- Unswept (leaking) instances: \`${selection.unswept.length}\`\n- API order: ${apiHosts.map((host) => `\`${host}\``).join(" → ")}\n${unsweptSection}`,
+    `## Aleph Playwright runner janitor\n\n- Repository scope: \`${repository}\`\n- Owner: \`${identity.address}\`\n- Swept name prefixes: ${evidence.namePrefixes.map((prefix) => `\`${prefix}\``).join(", ")}\n- Kept name prefixes: ${keepNamePrefixes.length ? keepNamePrefixes.map((prefix) => `\`${prefix}\``).join(", ") : "none"}\n- Kept long-lived instances: \`${evidence.kept.length}\`\n- Cleaned exact INSTANCE hashes: \`${cleaned.length}\`\n- Retained candidates: \`${selection.retained.length}\`\n- Unswept (leaking) instances: \`${selection.unswept.length}\`\n- API order: ${apiHosts.map((host) => `\`${host}\``).join(" → ")}\n${unsweptSection}`,
   );
 }
 

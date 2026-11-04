@@ -42,4 +42,7 @@ account is not being used concurrently.
 `selectExpiredAlephPlaywrightRunners()` is the safety boundary used by the
 retention janitor. The repository script requires an explicit repository scope
 and owner key, then erases, owner-signs FORGET for, and verifies each selected
-exact INSTANCE hash. It never cleans by display name alone.
+exact INSTANCE hash. It never cleans by display name alone. `keepNamePrefixes`
+names long-lived instances the same wallet funds on purpose; they are retained
+with the reason `ALEPH_RUNNER_KEPT_REASON` and never count as unswept, and a keep
+prefix that overlaps a sweep prefix throws.
