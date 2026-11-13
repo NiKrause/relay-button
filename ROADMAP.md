@@ -19,6 +19,15 @@ simple-todo's E2E VMs, and with `fail_on_unswept` on, every janitor run there
 was red for it while nothing was wrong. A keep prefix that a sweep prefix also
 matches is refused.
 
+`attest-wasm` takes an answer larger than 16 KiB over the attested channel.
+rustls keeps at most 16 KiB of decrypted data unread and then refuses to
+read further TLS ("received plaintext buffer full"); `pushIncoming` read
+every record of one delivery before the JS took the plaintext, so an answer
+that a relay handed over in one larger delivery failed. Unlocks and
+attestation reports are small enough that it never showed; fetching a file
+from a guest through the attest relay did (Paperless anywhere, 2026-11-13).
+The client now takes what was decrypted after every record.
+
 ## 0.12.4 — a 2n6 wait that says how long it takes, and Svelte tabs that switch
 
 While the widget waits for a relay's 2n6.me HTTPS route, it used to show

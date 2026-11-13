@@ -179,6 +179,10 @@ impl ServerCertVerifier for AttestedCertVerifier {
 pub struct RaTlsClient {
     connection: ClientConnection,
     verifier: Arc<AttestedCertVerifier>,
+    /// Application data already taken out of rustls, until `take_plaintext`.
+    /// rustls keeps at most 16 KiB of it unread and refuses to read more TLS
+    /// until it is taken, so `push_incoming` takes it after every record.
+    received: Vec<u8>,
 }
 
 impl RaTlsClient {
@@ -202,7 +206,7 @@ impl RaTlsClient {
         // The guest's certificate names no host; the name only fills SNI.
         let name = ServerName::try_from("attestation.aleph.invalid").map_err(|e| e.to_string())?;
         let connection = ClientConnection::new(Arc::new(config), name).map_err(|e| e.to_string())?;
-        Ok(RaTlsClient { connection, verifier })
+        Ok(RaTlsClient { connection, verifier, received: Vec::new() })
     }
 
     /// TLS records to send to the guest (empty when there is nothing to send).
@@ -228,8 +232,20 @@ impl RaTlsClient {
                     None => format!("TLS error: {error}"),
                 });
             }
+            // A relay may deliver far more than 16 KiB at once: take what was
+            // decrypted before reading the next record.
+            self.drain()?;
         }
         Ok(())
+    }
+
+    /// Moves what rustls decrypted into `received`.
+    fn drain(&mut self) -> Result<(), String> {
+        match self.connection.reader().read_to_end(&mut self.received) {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
+            Err(error) => Err(error.to_string()),
+        }
     }
 
     pub fn is_handshaking(&self) -> bool {
@@ -254,12 +270,8 @@ impl RaTlsClient {
 
     /// Application data received so far.
     pub fn take_plaintext(&mut self) -> Result<Vec<u8>, String> {
-        let mut out = Vec::new();
-        match self.connection.reader().read_to_end(&mut out) {
-            Ok(_) => Ok(out),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(out),
-            Err(error) => Err(error.to_string()),
-        }
+        self.drain()?;
+        Ok(std::mem::take(&mut self.received))
     }
 
     pub fn close(&mut self) {
@@ -360,6 +372,42 @@ mod tests {
         server.writer().write_all(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
         pump(&mut client, &mut server).unwrap();
         assert_eq!(client.take_plaintext().unwrap(), b"HTTP/1.1 200 OK\r\n\r\n");
+    }
+
+    /// A handshake done, and `size` bytes the server wrote, as TLS records.
+    fn large_answer(size: usize) -> (RaTlsClient, Vec<u8>, Vec<u8>) {
+        let (config, report) = server(true);
+        let mut server = ServerConnection::new(Arc::new(config)).unwrap();
+        let mut client = RaTlsClient::new(vec![measurement_of(&report)], None).unwrap();
+        pump(&mut client, &mut server).unwrap();
+        let body: Vec<u8> = (0..size).map(|n| (n % 251) as u8).collect();
+        server.set_buffer_limit(None);
+        server.writer().write_all(&body).unwrap();
+        let mut records = Vec::new();
+        while server.wants_write() {
+            server.write_tls(&mut records).unwrap();
+        }
+        (client, body, records)
+    }
+
+    #[test]
+    fn takes_an_answer_larger_than_rustls_holds_in_one_delivery() {
+        // A relay hands over what arrived in one piece; rustls keeps at most
+        // 16 KiB of plaintext unread, so the client must take it as it goes.
+        let (mut client, body, records) = large_answer(300 * 1024);
+        client.push_incoming(&records).unwrap();
+        assert_eq!(client.take_plaintext().unwrap(), body);
+    }
+
+    #[test]
+    fn takes_an_answer_delivered_in_small_slices() {
+        let (mut client, body, records) = large_answer(300 * 1024);
+        let mut got = Vec::new();
+        for slice in records.chunks(4096) {
+            client.push_incoming(slice).unwrap();
+            got.extend(client.take_plaintext().unwrap());
+        }
+        assert_eq!(got, body);
     }
 
     #[test]
