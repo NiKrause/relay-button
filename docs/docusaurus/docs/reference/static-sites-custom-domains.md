@@ -146,12 +146,21 @@ link a pending target.
 | `item_hash` | Aleph STORE message hash; this is the domain target |
 | `store_status` | `processed`, `pending`, or `not-requested` |
 | `store_processed` | `true` only when the STORE is safe to link |
-| `libp2p_verified` | `true` when every block was fetched over libp2p (`verify: libp2p`) |
+| `libp2p_verified` | `true` when every block was fetched over libp2p (`verify: libp2p`, or the fallback below) |
+| `verified_via` | The gateway URL that served the site, or `libp2p` |
 
 ## Checking without HTTP gateways
 
-By default the publisher checks a processed STORE with an HTTP request to
-`https://<CID>.ipfs.aleph.sh`, and `site-domain-link` requests
+By default the publisher checks a processed STORE over HTTP, on
+`https://<CID>.ipfs.aleph.sh` first, then on the path gateway
+(`<gateway>/ipfs/<CID>/`) of each endpoint pair and of `https://ipfs.aleph.sh`.
+Each round asks every URL in turn, each request bounded by
+`ALEPH_SITE_GATEWAY_FETCH_TIMEOUT_MS` (20000 ms), so one gateway that hangs does
+not hold up the others. If none of them serves the site, it fetches the site
+over libp2p as below; `ALEPH_SITE_VERIFY_LIBP2P_FALLBACK=false` turns that
+fallback off. A check that still fails says `Site verification failed after the
+STORE was processed`: the files are pinned, so a workflow should not upload
+them again. `site-domain-link` requests
 `https://<domain>`. Both go through Aleph's public gateway. Two settings do
 the same checks without it:
 
@@ -229,8 +238,8 @@ partial `domains` update without temporarily detaching the working target.
 After STORE processing, the direct CID URL must return HTTP 200, HTML, and an
 `etag` equal to the CIDv0 or `X-Ipfs-Roots` containing it. Pass
 `ALEPH_SITE_IPFS_CID_V0` to `site-domain-link` to apply the same requirement to
-the custom domain. The direct CID check waits `ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS`
-× `ALEPH_SITE_GATEWAY_WAIT_DELAY_MS` (60 × 5000 ms); the custom domain has its own
+the custom domain. The gateway check waits at most `ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS`
+× `ALEPH_SITE_GATEWAY_WAIT_DELAY_MS` (60 × 5000 ms) before the libp2p fallback; the custom domain has its own
 budget, `ALEPH_SITE_DOMAIN_WAIT_ATTEMPTS` × `ALEPH_SITE_DOMAIN_WAIT_DELAY_MS`
 (240 × 5000 ms, 20 minutes), and runs out as a warning unless
 `ALEPH_SITE_DOMAIN_VERIFY_ON_TIMEOUT=fail`.

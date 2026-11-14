@@ -195,33 +195,67 @@ function responseMatchesCid(response: Response, cidV0: string): boolean {
   return etag === cidV0 || roots.includes(cidV0)
 }
 
+/**
+ * Waits until one of `urls` serves the CID as a usable page; answers the URL
+ * that did. Each round asks every URL in turn, each request bounded by
+ * ALEPH_SITE_GATEWAY_FETCH_TIMEOUT_MS, so one gateway that hangs does not
+ * hold up the others; the whole wait ends after `attempts` × `delayMs`.
+ */
 async function waitForPublicCid(args: {
-  url: string
+  url?: string
+  urls?: readonly string[]
   cidV0: string
   env?: NodeJS.ProcessEnv
   label: string
   /** How often to ask; the gateway wait's setting when absent. */
   attempts?: number
   delayMs?: number
-}): Promise<void> {
+}): Promise<string> {
   const env = args.env ?? process.env
+  const urls = args.urls ?? (args.url ? [args.url] : [])
   const attempts = args.attempts ?? Number(optionalEnv('ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS', '60', env))
   const delayMs = args.delayMs ?? Number(optionalEnv('ALEPH_SITE_GATEWAY_WAIT_DELAY_MS', '5000', env))
-  let lastEvidence = 'no response'
+  const fetchTimeoutMs = positiveNumberEnv('ALEPH_SITE_GATEWAY_FETCH_TIMEOUT_MS', 20_000, env)
+  const deadline = Date.now() + attempts * delayMs
+  const evidence = new Map<string, string>(urls.map((url) => [url, 'no response']))
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      const response = await fetch(args.url, { cache: 'no-cache', redirect: 'follow' })
-      const body = response.ok ? await response.text() : ''
-      const cidMatches = responseMatchesCid(response, args.cidV0)
-      const usableIndex = /<(?:!doctype|html|head|body)\b/iu.test(body)
-      lastEvidence = `HTTP ${response.status}, cidMatches=${cidMatches}, usableIndex=${usableIndex}`
-      if (response.ok && cidMatches && usableIndex) return
-    } catch (error) {
-      lastEvidence = error instanceof Error ? error.message : String(error)
+    for (const url of urls) {
+      try {
+        const response = await fetch(url, {
+          cache: 'no-cache',
+          redirect: 'follow',
+          signal: AbortSignal.timeout(fetchTimeoutMs),
+        })
+        const body = response.ok ? await response.text() : ''
+        const cidMatches = responseMatchesCid(response, args.cidV0)
+        const usableIndex = /<(?:!doctype|html|head|body)\b/iu.test(body)
+        evidence.set(url, `HTTP ${response.status}, cidMatches=${cidMatches}, usableIndex=${usableIndex}`)
+        if (response.ok && cidMatches && usableIndex) return url
+      } catch (error) {
+        evidence.set(url, error instanceof Error ? error.message : String(error))
+      }
     }
-    if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, delayMs))
+    if (attempt >= attempts || Date.now() >= deadline) break
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
   }
-  throw new Error(`${args.label} did not serve expected CID ${args.cidV0}: ${lastEvidence}`)
+  const detail = urls.length === 1
+    ? evidence.get(urls[0]!)
+    : [...evidence].map(([url, why]) => `${url}: ${why}`).join('; ')
+  throw new Error(`${args.label} did not serve expected CID ${args.cidV0}: ${detail}`)
+}
+
+/**
+ * The gateways a published site is checked on: Aleph's subdomain gateway,
+ * then the path gateway of each endpoint pair and Aleph's own, without
+ * duplicates. A path gateway answers with the CID in `x-ipfs-roots` too.
+ */
+export function siteVerifyUrls(cidV1: string, pairs: readonly { ipfsGateway: string }[]): string[] {
+  const urls = [`https://${cidV1}.ipfs.aleph.sh`]
+  for (const gateway of [...pairs.map((pair) => pair.ipfsGateway), 'https://ipfs.aleph.sh']) {
+    const url = `${gateway.replace(/\/+$/u, '')}/ipfs/${cidV1}/`
+    if (!urls.includes(url)) urls.push(url)
+  }
+  return urls
 }
 
 export interface SiteRunnerOptions {
@@ -975,6 +1009,7 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env, o
   let directGatewayVerified = false
   let libp2pVerified = false
   let libp2pBlocks = 0
+  let verifiedVia = ''
   if (pin) {
     if (!pinned) throw new Error('Static site upload completed without an Aleph STORE result.')
     itemHash = pinned.itemHash
@@ -992,14 +1027,44 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env, o
         })
         libp2pBlocks = retrieval.blocks
         libp2pVerified = true
+        verifiedVia = 'libp2p'
       } else {
-        await waitForPublicCid({
-          url: `https://${cidV1}.ipfs.aleph.sh`,
-          cidV0: cidV1,
-          env,
-          label: 'Direct CID gateway',
-        })
-        directGatewayVerified = true
+        // The gateways first; if none serves the CID, fetch it straight from
+        // the IPFS network with Helia (ALEPH_SITE_VERIFY_LIBP2P_FALLBACK=false
+        // turns that off). A failure here comes after a processed STORE: the
+        // files are pinned, and uploading them again does not help.
+        try {
+          verifiedVia = await waitForPublicCid({
+            urls: siteVerifyUrls(cidV1, siteEndpointPairs(env)),
+            cidV0: cidV1,
+            env,
+            label: 'Gateways',
+          })
+          directGatewayVerified = verifiedVia === `https://${cidV1}.ipfs.aleph.sh`
+        } catch (gatewayError) {
+          const gatewayDetail = gatewayError instanceof Error ? gatewayError.message : String(gatewayError)
+          if (optionalEnv('ALEPH_SITE_VERIFY_LIBP2P_FALLBACK', 'true', env) === 'false') {
+            throw new Error(`Site verification failed after the STORE was processed: ${gatewayDetail}`)
+          }
+          console.warn(`${gatewayDetail}; fetching ${cidV1} over libp2p instead.`)
+          try {
+            const libp2pPeers = parseCsvOrWhitespaceList(optionalEnv('ALEPH_SITE_LIBP2P_PEERS', '', env)).filter(Boolean)
+            const retrieval = await (options.fetchDagOverLibp2p ?? fetchDagOverLibp2p)({
+              cid: cidV1,
+              expectedBlockCids: car.blockCids,
+              peers: libp2pPeers.length > 0 ? libp2pPeers : undefined,
+              timeoutMs: positiveNumberEnv('ALEPH_SITE_LIBP2P_TIMEOUT_MS', 10 * 60 * 1000, env),
+            })
+            libp2pBlocks = retrieval.blocks
+            libp2pVerified = true
+            verifiedVia = 'libp2p'
+          } catch (libp2pError) {
+            const libp2pDetail = libp2pError instanceof Error ? libp2pError.message : String(libp2pError)
+            throw new Error(
+              `Site verification failed after the STORE was processed: ${gatewayDetail}; ${libp2pDetail}`,
+            )
+          }
+        }
       }
       const website = await publishWebsiteAggregate({ itemHash, apiHost: pinned.apiHost, env })
       websiteAggregateHash = website?.aggregateHash ?? ''
@@ -1031,6 +1096,7 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env, o
   await appendGithubOutput('direct_gateway_verified', String(directGatewayVerified), env)
   await appendGithubOutput('site_verify_mode', verifyMode, env)
   await appendGithubOutput('libp2p_verified', String(libp2pVerified), env)
+  await appendGithubOutput('verified_via', verifiedVia, env)
   await appendGithubOutput('libp2p_blocks', String(libp2pBlocks), env)
   await appendGithubOutput('website_aggregate_hash', websiteAggregateHash, env)
   await appendGithubOutput('retention_forgotten', String(retentionForgotten), env)
@@ -1050,6 +1116,7 @@ export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env, o
     `- Verification: \`${verifyMode}\``,
     `- Direct CID gateway verified: \`${directGatewayVerified}\``,
     `- Fetched over libp2p: \`${libp2pVerified ? `${libp2pBlocks} blocks` : 'no'}\``,
+    `- Verified via: \`${verifiedVia || 'not verified'}\``,
     `- Website aggregate hash: \`${websiteAggregateHash || 'not-requested'}\``,
     `- Retention: ${retentionSummary}`,
   ], env)
