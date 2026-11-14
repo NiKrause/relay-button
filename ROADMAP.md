@@ -1,6 +1,6 @@
 # Roadmap
 
-## Unreleased — the runner gets in over IPv6 when the CRN's port forward stays shut
+## 0.12.5 — the runner gets in over IPv6, and large answers cross the attested channel
 
 On 2026-11-02, from about 14:30 UTC, every GitHub runner VM came up but
 its forwarded SSH port never did: the VM answered on its own IPv6 on port
@@ -10,14 +10,14 @@ place on api2 and api3. `gh-runner up` now tries the forwarded port and
 the VM's IPv6 in turn and keeps whichever answers first; the deploy result
 carries the IPv6 into the VM record for that. The SSH wait is
 `GH_RUNNER_SSH_WAIT_ATTEMPTS` × 5 s (60 by default), with a line every
-minute while it waits.
+minute while it waits (#220).
 
 The Playwright runner janitor takes `keep_name_prefixes`: long-lived VMs a
 wallet funds on purpose are never swept and no longer count as unswept. Since
 2026-11-02 the production relay `relay-main-ekb` runs from the same account as
 simple-todo's E2E VMs, and with `fail_on_unswept` on, every janitor run there
 was red for it while nothing was wrong. A keep prefix that a sweep prefix also
-matches is refused.
+matches is refused (#221).
 
 `attest-wasm` takes an answer larger than 16 KiB over the attested channel.
 rustls keeps at most 16 KiB of decrypted data unread and then refuses to
@@ -26,7 +26,7 @@ every record of one delivery before the JS took the plaintext, so an answer
 that a relay handed over in one larger delivery failed. Unlocks and
 attestation reports are small enough that it never showed; fetching a file
 from a guest through the attest relay did (Paperless anywhere, 2026-11-13).
-The client now takes what was decrypted after every record.
+The client now takes what was decrypted after every record (#222).
 
 ## 0.12.4 — a 2n6 wait that says how long it takes, and Svelte tabs that switch
 
