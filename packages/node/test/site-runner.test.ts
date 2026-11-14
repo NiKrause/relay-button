@@ -1314,3 +1314,118 @@ test('runSitePublishMode reaches api3 by default when api2 and api.aleph.im cann
   )
   assert.equal(calls.filter((url) => url.startsWith('https://api2.aleph.im/api/v0/messages/')).length, 0)
 })
+
+test('siteVerifyUrls asks the subdomain gateway first, then each path gateway once', async () => {
+  const { siteVerifyUrls } = await import('../src/site-runner.ts')
+  assert.deepEqual(
+    siteVerifyUrls('bafyroot', [
+      { ipfsGateway: 'https://ipfs-2.aleph.im' },
+      { ipfsGateway: 'https://ipfs.aleph.cloud/' },
+      { ipfsGateway: 'https://ipfs-2.aleph.im' },
+    ]),
+    [
+      'https://bafyroot.ipfs.aleph.sh',
+      'https://ipfs-2.aleph.im/ipfs/bafyroot/',
+      'https://ipfs.aleph.cloud/ipfs/bafyroot/',
+      'https://ipfs.aleph.sh/ipfs/bafyroot/',
+    ],
+  )
+})
+
+test('runSitePublishMode verifies on a path gateway when the subdomain gateway does not answer', async () => {
+  const { outputFile, summaryFile, env } = await oneFileSite('site-publish-path-gateway-')
+  const calls: string[] = []
+  const upload = authenticatedCarFetch(calls)
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    if (url === `https://ipfs-2.aleph.im/ipfs/${ONE_FILE_SITE_CID}/`) {
+      calls.push(url)
+      return new Response('<!doctype html><title>blog</title>', { status: 200, headers: { 'x-ipfs-roots': ONE_FILE_SITE_CID } })
+    }
+    return upload(input, init)
+  }) as typeof fetch
+  try {
+    await runSitePublishModeCar({ ...env, ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS: '2', ALEPH_SITE_GATEWAY_WAIT_DELAY_MS: '1' }, {
+      fetchDagOverLibp2p: async () => {
+        throw new Error('libp2p must not be needed')
+      },
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  assert.ok(calls.some((url) => url.includes('.ipfs.aleph.sh')))
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, new RegExp(`verified_via=https://ipfs-2\\.aleph\\.im/ipfs/${ONE_FILE_SITE_CID}/`))
+  assert.match(outputs, /direct_gateway_verified=false/)
+  assert.match(outputs, /libp2p_verified=false/)
+  const summary = await readFile(summaryFile, 'utf8')
+  assert.match(summary, /Verified via: `https:\/\/ipfs-2\.aleph\.im/)
+})
+
+test('runSitePublishMode fetches the site over libp2p when no gateway serves it', async () => {
+  const { outputFile, env } = await oneFileSite('site-publish-libp2p-fallback-')
+  const calls: string[] = []
+  const upload = authenticatedCarFetch(calls)
+  const fetches: string[] = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    if (url.includes(`/ipfs/${ONE_FILE_SITE_CID}`)) {
+      calls.push(url)
+      return new Response('bad gateway', { status: 502 })
+    }
+    return upload(input, init)
+  }) as typeof fetch
+  try {
+    await runSitePublishModeCar({ ...env, ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS: '2', ALEPH_SITE_GATEWAY_WAIT_DELAY_MS: '1' }, {
+      fetchDagOverLibp2p: async (options) => {
+        fetches.push(options.cid)
+        return { cid: options.cid, blocks: 2, connectedPeers: 1, durationMs: 3 }
+      },
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  assert.deepEqual(fetches, [ONE_FILE_SITE_CID])
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, /verified_via=libp2p/)
+  assert.match(outputs, /libp2p_verified=true/)
+})
+
+test('runSitePublishMode says the STORE was processed when no gateway and no libp2p fetch serves the site', async () => {
+  const { env } = await oneFileSite('site-publish-verify-fails-')
+  const calls: string[] = []
+  const upload = authenticatedCarFetch(calls)
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    if (url.includes(`/ipfs/${ONE_FILE_SITE_CID}`)) return new Response('bad gateway', { status: 502 })
+    return upload(input, init)
+  }) as typeof fetch
+  try {
+    await assert.rejects(
+      runSitePublishModeCar({ ...env, ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS: '1', ALEPH_SITE_GATEWAY_WAIT_DELAY_MS: '1' }, {
+        fetchDagOverLibp2p: async () => {
+          throw new Error('Fetching over libp2p failed after 1000 ms: Want was aborted')
+        },
+      }),
+      /Site verification failed after the STORE was processed: .*Want was aborted/,
+    )
+    await assert.rejects(
+      runSitePublishModeCar({
+        ...env,
+        ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS: '1',
+        ALEPH_SITE_GATEWAY_WAIT_DELAY_MS: '1',
+        ALEPH_SITE_VERIFY_LIBP2P_FALLBACK: 'false',
+      }, {
+        fetchDagOverLibp2p: async () => {
+          throw new Error('libp2p must not be tried')
+        },
+      }),
+      /Site verification failed after the STORE was processed: Gateways did not serve/,
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})

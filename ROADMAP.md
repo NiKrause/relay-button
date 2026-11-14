@@ -1,5 +1,22 @@
 # Roadmap
 
+## 0.12.6 — a site is checked on every gateway, and over libp2p when none answers
+
+On 2026-11-14 a Belege release uploaded its CAR through api2, Aleph processed
+the STORE, and the check that followed asked only
+`https://<CID>.ipfs.aleph.sh`, which did not answer for over half an hour
+while `ipfs.aleph.sh/ipfs/<CID>/`, `ipfs-2.aleph.im` and `ipfs.aleph.cloud`
+served the same CID. The publisher now asks the subdomain gateway and then
+the path gateway of each endpoint pair and of `ipfs.aleph.sh`, each request
+bounded by `ALEPH_SITE_GATEWAY_FETCH_TIMEOUT_MS` (20 s), and keeps whichever
+serves the site first. When none does within the gateway wait, it fetches the
+site from the IPFS network with Helia (`fetchDagOverLibp2p`, until now only
+with `ALEPH_SITE_VERIFY=libp2p`); `ALEPH_SITE_VERIFY_LIBP2P_FALLBACK=false`
+turns that off. The output `verified_via` names the URL or `libp2p`. A check
+that still fails says `Site verification failed after the STORE was
+processed`, so a workflow can tell it from a failed upload and does not upload
+and pay for the same files again.
+
 ## 0.12.5 — the runner gets in over IPv6, and large answers cross the attested channel
 
 On 2026-11-02, from about 14:30 UTC, every GitHub runner VM came up but
