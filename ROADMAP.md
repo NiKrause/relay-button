@@ -1,5 +1,17 @@
 # Roadmap
 
+## 0.12.7 — a CAR upload that hangs moves on to the next host
+
+On 2026-11-15 a Paperless anywhere release uploaded its CAR to api2, which
+took the request and never answered; the release hung there for an hour,
+until the job's timeout, without trying api or api3. Each authenticated CAR
+upload is now bounded by `ALEPH_SITE_UPLOAD_TIMEOUT_MS` (5 min), after which
+the next endpoint pair is tried. A host that has not answered after
+`ALEPH_SITE_UPLOAD_HEDGE_MS` (90 s) gets the next pair's upload alongside it;
+the first answer wins and the others are aborted (`0`: all at once, `off`:
+one after the other). All hosts get the same signed STORE envelope, so this
+stays one STORE on Aleph and never pays twice.
+
 ## 0.12.6 — a site is checked on every gateway, and over libp2p when none answers
 
 On 2026-11-14 a Belege release uploaded its CAR through api2, Aleph processed
