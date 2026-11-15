@@ -14,18 +14,24 @@ CADDY_UPSTREAM_WSS_PORT="${CADDY_UPSTREAM_WSS_PORT:-9092}"
 CADDY_UPSTREAM_HOST="${CADDY_UPSTREAM_HOST:-127.0.0.1}"
 CADDY_UPSTREAM_METRICS_PORT="${CADDY_UPSTREAM_METRICS_PORT:-9090}"
 CADDY_UPSTREAM_ATTEST_PORT="${CADDY_UPSTREAM_ATTEST_PORT:-8787}"
-# Internal libp2p listen ports. On the Aleph VM, IPv4 is NAT/port-mapped (so it
-# is announced on the externally assigned host ports), but IPv6 is globally
-# routed with NO NAT — the VM is reachable directly on the real listen ports,
-# and the mapped host ports are closed over IPv6. IPv6 must therefore be
-# announced on these internal ports, otherwise AutoNAT/AutoTLS dial-backs to the
-# IPv6 address hit a closed mapped port, the address is never confirmed, and
-# `*.libp2p.direct` AutoTLS never provisions a certificate over IPv6.
+# Internal libp2p listen ports. On the Aleph VM, IPv4 is NAT/port-mapped, so it
+# is announced on the externally assigned host ports.
 RELAY_TCP_LISTEN_PORT="${RELAY_TCP_LISTEN_PORT:-9091}"
 RELAY_WS_LISTEN_PORT="${RELAY_WS_LISTEN_PORT:-${CADDY_UPSTREAM_WSS_PORT}}"
 RELAY_WEBRTC_LISTEN_PORT="${RELAY_WEBRTC_LISTEN_PORT:-9093}"
 RELAY_QUIC_LISTEN_PORT="${RELAY_QUIC_LISTEN_PORT:-9094}"
 AUTOTLS_REFRESH_SERVICE="${AUTOTLS_REFRESH_SERVICE:-orbitdb-relay-autotls-refresh.service}"
+# The VM's own IPv6 address is routed to it without NAT, but inbound IPv6 does
+# not reach the relay's ports. Measured on 2026-11-15 from inside a running
+# relay on vm4.alephvision.eu: the relay listened on [::]:9091 and [::]:9092,
+# the guest had no firewall, and tcpdump on ens3 saw IPv6 SYNs for 22 and 443
+# arrive while those for 9090, 9091 and 9092 never did; on other CRNs nothing
+# answered over IPv6 at all. GitHub runners have no IPv6, so the deploy probe
+# reports these addresses as "not checked" and never catches it. Announcing
+# them only sends IPv6 peers to dead addresses first, so the relay neither
+# announces nor listens on raw IPv6 unless a CRN is known to pass it. Browsers
+# still reach it over IPv6 through the 2n6 proxy (/dns6/... on 443).
+ANNOUNCE_PUBLIC_IPV6="${ANNOUNCE_PUBLIC_IPV6:-0}"
 BOOTSTRAP_REFRESH_TIMER="${BOOTSTRAP_REFRESH_TIMER:-orbitdb-relay-bootstrap-refresh.timer}"
 BOOTSTRAP_REFRESH_SERVICE="${BOOTSTRAP_REFRESH_SERVICE:-orbitdb-relay-bootstrap-refresh.service}"
 BOOTSTRAP_DEREGISTER_SERVICE="${BOOTSTRAP_DEREGISTER_SERVICE:-orbitdb-relay-bootstrap-deregister.service}"
@@ -260,7 +266,7 @@ announce=(
   "/ip4/${PUBLIC_IPV4}/tcp/${TCP_PORT}"
 )
 
-if [ -n "${PUBLIC_IPV6}" ]; then
+if [ -n "${PUBLIC_IPV6}" ] && [ "${ANNOUNCE_PUBLIC_IPV6}" = "1" ]; then
   announce+=(
     "/ip6/${PUBLIC_IPV6}/tcp/${RELAY_TCP_LISTEN_PORT}"
   )
@@ -272,20 +278,20 @@ if [ -n "${PROXY_HOSTNAME}" ]; then
 fi
 
 announce+=("/ip4/${PUBLIC_IPV4}/tcp/${WS_PORT}/ws")
-if [ -n "${PUBLIC_IPV6}" ]; then
+if [ -n "${PUBLIC_IPV6}" ] && [ "${ANNOUNCE_PUBLIC_IPV6}" = "1" ]; then
   announce+=("/ip6/${PUBLIC_IPV6}/tcp/${RELAY_WS_LISTEN_PORT}/ws")
 fi
 
 if [ -n "${WEBRTC_PORT}" ]; then
   announce+=("/ip4/${PUBLIC_IPV4}/udp/${WEBRTC_PORT}/webrtc-direct")
-  if [ -n "${PUBLIC_IPV6}" ]; then
+  if [ -n "${PUBLIC_IPV6}" ] && [ "${ANNOUNCE_PUBLIC_IPV6}" = "1" ]; then
     announce+=("/ip6/${PUBLIC_IPV6}/udp/${RELAY_WEBRTC_LISTEN_PORT}/webrtc-direct")
   fi
 fi
 
 if [ -n "${QUIC_PORT}" ]; then
   announce+=("/ip4/${PUBLIC_IPV4}/udp/${QUIC_PORT}/quic-v1")
-  if [ -n "${PUBLIC_IPV6}" ]; then
+  if [ -n "${PUBLIC_IPV6}" ] && [ "${ANNOUNCE_PUBLIC_IPV6}" = "1" ]; then
     announce+=("/ip6/${PUBLIC_IPV6}/udp/${RELAY_QUIC_LISTEN_PORT}/quic-v1")
   fi
 fi
@@ -295,6 +301,13 @@ write_env_var "VITE_APPEND_ANNOUNCE" "${announce_value}"
 write_env_var "PUBLIC_IPV4" "${PUBLIC_IPV4}"
 if [ -n "${PUBLIC_IPV6}" ]; then
   write_env_var "PUBLIC_IPV6" "${PUBLIC_IPV6}"
+fi
+# Listening on [::] would put the address back: libp2p announces the global
+# IPv6 of every interface it listens on, appendAnnounce or not.
+if [ "${ANNOUNCE_PUBLIC_IPV6}" = "1" ]; then
+  write_env_var "RELAY_DISABLE_IPV6" "0"
+else
+  write_env_var "RELAY_DISABLE_IPV6" "1"
 fi
 write_env_var "EXTERNAL_RELAY_TCP_PORT" "${TCP_PORT}"
 write_env_var "EXTERNAL_RELAY_WS_PORT" "${WS_PORT}"
