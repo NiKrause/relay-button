@@ -4,7 +4,7 @@ import http from 'node:http'
 import net from 'node:net'
 import type { AddressInfo } from 'node:net'
 
-import { attachAttestRelay, clientAddress, isPublicIpv4, isPublicIpv6, resolveAttestationTarget, type RelayOptions } from '../src/relay.ts'
+import { attachAttestRelay, builderLimitsFor, clientAddress, isPublicIpv4, isPublicIpv6, resolveAttestationTarget, type RelayOptions } from '../src/relay.ts'
 
 const CRN = 'c'.repeat(64)
 const VM = 'a'.repeat(64)
@@ -170,4 +170,46 @@ test('isPublicIpv6 accepts global unicast only', () => {
   for (const host of ['::1', 'fe80::1', 'fd00::1', 'ff02::1', '2001:db8::1', '127.0.0.1', 'example.com']) {
     assert.equal(isPublicIpv6(host), false, host)
   }
+})
+
+test('gives a listed builder larger limits, and every other VM the defaults', async () => {
+  const echo = await echoServer()
+  const BUILDER = 'b'.repeat(64)
+  const r = await relay({
+    maxBytes: 8,
+    resolveTarget: async () => ({ host: '127.0.0.1', port: echo.port }),
+    limitsFor: async (_crn, vm) => (vm === BUILDER ? { maxBytes: 64, maxSeconds: 60 } : null),
+  })
+  // The builder: 32 bytes pass and come back.
+  const ws = open(r.url(`crn=${CRN}&vm=${BUILDER}`))
+  await opened(ws)
+  const back = nextMessage(ws)
+  ws.send(new Uint8Array(32).fill(7))
+  assert.equal((await back).length, 32)
+  ws.close()
+  // Any other VM: the default 8 bytes.
+  const other = open(r.url(`crn=${CRN}&vm=${VM}`))
+  await opened(other)
+  const closed = new Promise<CloseEvent>((resolve) => other.addEventListener('close', resolve, { once: true }))
+  other.send(new Uint8Array(16))
+  assert.match((await closed).reason, /byte limit/)
+  r.close()
+  echo.close()
+})
+
+test('builderLimitsFor: a processed V-PROGRAM with a listed workload root hash, nothing else', async () => {
+  const limits = { maxBytes: 256 * 1024 * 1024, maxSeconds: 600 }
+  const roothashes = new Set(['ac'.repeat(32)])
+  const answer = (body: unknown) => async () => ({ ok: true, status: 200, json: async () => body })
+  const vprogram = (roothash: string, status = 'processed', type = 'V-PROGRAM') => ({ status, message: { type, content: { workload: { roothash } } } })
+  assert.deepEqual(await builderLimitsFor('1'.repeat(64), { roothashes, limits, fetch: answer(vprogram('ac'.repeat(32))) }), limits)
+  assert.equal(await builderLimitsFor('2'.repeat(64), { roothashes, limits, fetch: answer(vprogram('ff'.repeat(32))) }), null)
+  assert.equal(await builderLimitsFor('3'.repeat(64), { roothashes, limits, fetch: answer(vprogram('ac'.repeat(32), 'processed', 'INSTANCE')) }), null)
+  // Pending is not kept: the same VM asked again once processed gets the limits.
+  assert.equal(await builderLimitsFor('4'.repeat(64), { roothashes, limits, fetch: answer(vprogram('ac'.repeat(32), 'pending')) }), null)
+  assert.deepEqual(await builderLimitsFor('4'.repeat(64), { roothashes, limits, fetch: answer(vprogram('ac'.repeat(32))) }), limits)
+  // The answer is kept per VM: no second lookup.
+  let asked = 0
+  await builderLimitsFor('1'.repeat(64), { roothashes, limits, fetch: async () => { asked++; return { ok: false, status: 500, json: async () => null } } })
+  assert.equal(asked, 0)
 })

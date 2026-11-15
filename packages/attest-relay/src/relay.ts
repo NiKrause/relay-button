@@ -65,6 +65,13 @@ export interface RelayOptions {
   connectTimeoutMs?: number
   /** Tests only: allow loopback and private targets. */
   allowPrivateTargets?: boolean
+  /**
+   * Larger limits for some targets, decided per VM (e.g. an image builder
+   * whose measured workload the operator lists): returns `maxBytes` and
+   * `maxSeconds` for that connection, or null for the defaults. A failing
+   * lookup falls back to the defaults.
+   */
+  limitsFor?: (crn: string, vm: string) => Promise<{ maxBytes: number; maxSeconds: number } | null>
   /** WebSocket path (default /attest). */
   path?: string
   log?: (message: string) => void
@@ -151,6 +158,31 @@ function reject(socket: import('node:stream').Duplex, status: number, reason: st
   socket.destroy()
 }
 
+/**
+ * The larger limits when `vm` is a V-PROGRAM whose workload root hash is one
+ * of `roothashes` (an image builder the operator lists), else null. The
+ * answer is kept per VM: a VM's message does not change.
+ */
+const builderAnswers = new Map<string, boolean>()
+export async function builderLimitsFor(
+  vm: string,
+  args: { roothashes: Set<string>; limits: { maxBytes: number; maxSeconds: number }; fetch: FetchLike; apiHost?: string },
+): Promise<{ maxBytes: number; maxSeconds: number } | null> {
+  let builder = builderAnswers.get(vm)
+  if (builder === undefined) {
+    const api = (args.apiHost ?? 'https://api2.aleph.im').replace(/\/+$/, '')
+    const response = await args.fetch(`${api}/api/v0/messages/${vm}`, { signal: AbortSignal.timeout(10_000) })
+    if (!response.ok) return null
+    const body = (await response.json()) as { status?: string; message?: { type?: string; content?: { workload?: { roothash?: string } } } }
+    const roothash = String(body?.message?.content?.workload?.roothash ?? '').toLowerCase()
+    builder = body?.status === 'processed' && body?.message?.type === 'V-PROGRAM' && args.roothashes.has(roothash)
+    // Only a settled answer is kept: a message still pending may become a builder.
+    if (body?.status === 'processed' || body?.status === 'forgotten') builderAnswers.set(vm, builder)
+    if (builderAnswers.size > 1024) builderAnswers.delete(builderAnswers.keys().next().value as string)
+  }
+  return builder ? args.limits : null
+}
+
 /** Attach the relay to an HTTP server's upgrade event. */
 export function attachAttestRelay(server: Server, options: RelayOptions): { close(): void; open(): number } {
   const maxBytes = options.maxBytes ?? 4 * 1024 * 1024
@@ -192,9 +224,8 @@ export function attachAttestRelay(server: Server, options: RelayOptions): { clos
       else perClient.delete(client)
     }
 
-    options
-      .resolveTarget(crn, vm)
-      .then((target) => {
+    Promise.all([options.resolveTarget(crn, vm), options.limitsFor ? options.limitsFor(crn, vm).catch(() => null) : null])
+      .then(([target, limits]) => {
         const candidates = [{ host: target.host, port: target.port }, ...(target.fallbacks ?? [])].filter(
           (candidate) => options.allowPrivateTargets || isPublicIpv4(candidate.host) || isPublicIpv6(candidate.host),
         )
@@ -206,7 +237,8 @@ export function attachAttestRelay(server: Server, options: RelayOptions): { clos
             throw new Error(`invalid target port ${candidate.port}`)
           }
         }
-        wss.handleUpgrade(request, socket, head, (ws) => bridge(ws, candidates, crn, vm))
+        const own = limits ?? { maxBytes, maxSeconds }
+        wss.handleUpgrade(request, socket, head, (ws) => bridge(ws, candidates, crn, vm, own))
       })
       .catch((error: unknown) => {
         log(`[attest-relay] ${crn.slice(0, 12)}/${vm.slice(0, 12)}: ${error instanceof Error ? error.message : String(error)}`)
@@ -214,7 +246,13 @@ export function attachAttestRelay(server: Server, options: RelayOptions): { clos
         reject(socket, 502, 'Bad Gateway')
       })
 
-    const bridge = (ws: WebSocket, targets: Array<{ host: string; port: number }>, crnHash: string, vmHash: string) => {
+    const bridge = (
+      ws: WebSocket,
+      targets: Array<{ host: string; port: number }>,
+      crnHash: string,
+      vmHash: string,
+      { maxBytes, maxSeconds }: { maxBytes: number; maxSeconds: number },
+    ) => {
       let up = 0
       let down = 0
       let tcp: net.Socket | null = null
