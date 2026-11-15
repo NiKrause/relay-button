@@ -220,6 +220,13 @@ fallbacks as coupled `ALEPH_SITE_ENDPOINT_PAIRS` JSON:
 ```
 
 The same signed STORE envelope is reused across endpoint fallback attempts.
+Each upload is bounded by `ALEPH_SITE_UPLOAD_TIMEOUT_MS` (300000 ms): a host
+that takes the request and never answers fails after that and the next pair is
+tried. When a host has not answered after `ALEPH_SITE_UPLOAD_HEDGE_MS`
+(90000 ms), the next pair's upload starts alongside it, and the first answer
+wins; the others are aborted. `0` starts all pairs at once, `off` keeps them
+strictly one after the other. Since every host gets the same signed envelope,
+uploads to several hosts are still one STORE with one item hash.
 `api3.aleph.im` is unsupported and rejected before any request is made.
 
 Set `ALEPH_SITE_UPLOAD_DRIVER=gateway-relay` only for legacy diagnostics.
