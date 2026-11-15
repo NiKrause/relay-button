@@ -77,6 +77,7 @@ jobs:
       confidential: ${{ inputs.confidential }}
       confidential_rootfs_item_hash: ${{ inputs.confidential_rootfs_item_hash }}
       rootfs_contract_path: ${{ inputs.rootfs_contract_path }}
+      attest_relay_builder_roothashes: ${{ vars.ATTEST_RELAY_BUILDER_ROOTHASHES || '' }}
       project_repository: ${{ inputs.project_repository }}
       project_ref: ${{ inputs.project_ref }}
       rootfs_upload_driver: aleph-ipfs

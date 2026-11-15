@@ -126,3 +126,28 @@ test('an orbitdb-relay build first bundles the attest relay into the reference d
   const other = createHostRootfsExecutionPlan(await loadPlan('host'), { referenceRootfsDir: '/workspace/ref/uc-go-peer/rootfs' });
   assert.deepEqual(other.assetCommands, []);
 });
+
+test('an orbitdb-relay Docker build passes the attest relay builder root hashes into the container', async () => {
+  const contract = await readRootfsContractFile(referenceProfileContractPath('orbitdb-relay'));
+  const hashes = `${'a'.repeat(64)},${'b'.repeat(64)}`;
+  const plan = createRootfsBuildPlan(contract, {
+    projectDir: '/workspace/orbitdb-relay',
+    rootfsVersion: 'orbitdb-relay-v0.0.0',
+    driver: 'docker',
+    attestRelayBuilderRoothashes: ` ${hashes} `,
+  });
+  const docker = createDockerRootfsExecutionPlan(plan, { referenceRootfsDir: '/workspace/ref/orbitdb-relay/rootfs' });
+  const args = docker.runCommand.args;
+  const index = args.indexOf(`ATTEST_RELAY_BUILDER_ROOTHASHES=${hashes}`);
+  assert.ok(index > 0, 'docker run carries -e ATTEST_RELAY_BUILDER_ROOTHASHES');
+  assert.equal(args[index - 1], '-e');
+
+  const host = createHostRootfsExecutionPlan({ ...plan, driver: 'host' }, { referenceRootfsDir: '/workspace/ref/orbitdb-relay/rootfs' });
+  assert.equal(host.runCommand.env?.ATTEST_RELAY_BUILDER_ROOTHASHES, hashes);
+
+  const without = createDockerRootfsExecutionPlan(
+    createRootfsBuildPlan(contract, { projectDir: '/workspace/orbitdb-relay', rootfsVersion: 'orbitdb-relay-v0.0.0', driver: 'docker' }),
+    { referenceRootfsDir: '/workspace/ref/orbitdb-relay/rootfs' },
+  );
+  assert.ok(!without.runCommand.args.some((arg) => arg.startsWith('ATTEST_RELAY_BUILDER_ROOTHASHES=')));
+});

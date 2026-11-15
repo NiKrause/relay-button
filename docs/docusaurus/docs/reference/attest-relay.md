@@ -120,3 +120,11 @@ the list into the relay image instead: build it with
 `packages/rootfs/reference/orbitdb-relay/rootfs/build-rootfs.sh`, which writes
 that file into the image. A new builder publication then means a new relay
 image.
+
+Through GitHub Actions, set the repository variable
+`ATTEST_RELAY_BUILDER_ROOTHASHES` (a public value, not a secret) and run
+**Aleph Rootfs IPFS Publish** with the `orbitdb-relay` profile. The workflow
+passes the variable as the `attest_relay_builder_roothashes` input to the
+reusable build workflow, which hands it to the rootfs runner as
+`ALEPH_ROOTFS_ATTEST_RELAY_BUILDER_ROOTHASHES`; both the host and the Docker
+build driver forward it to `build-rootfs-image.sh`.

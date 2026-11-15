@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { emitRootfsOutputs, parseRootfsRunnerInputs, runRootfsMode } from '../src/rootfs-runner.ts'
+import { rootfsBuildShellEnv } from '../../rootfs/src/index.ts'
 
 const rootfsContractPath = fileURLToPath(new URL('../../rootfs/reference/uc-go-peer/contract.json', import.meta.url))
 const orbitdbRelayContractPath = fileURLToPath(
@@ -83,6 +84,20 @@ test('parseRootfsRunnerInputs derives orbitdb relay rootfs versions from the cal
     parsed.referenceRootfsDir,
     '/workspace/relay-button/packages/rootfs/reference/orbitdb-relay/rootfs',
   )
+})
+
+test('parseRootfsRunnerInputs carries the attest relay builder root hashes into the build env', async () => {
+  const { env } = await createActionEnv('shared-rootfs-builder-roothashes-')
+  const hash = 'ac72e745bca84a1644dc0379d43e282e3b36ed07281807a87b04c0c15ca815b6'
+  const parsed = await parseRootfsRunnerInputs({
+    ...env,
+    ALEPH_ROOTFS_ATTEST_RELAY_BUILDER_ROOTHASHES: hash,
+  })
+  assert.equal(parsed.buildPlan.attestRelayBuilderRoothashes, hash)
+  assert.equal(rootfsBuildShellEnv(parsed.buildPlan).ATTEST_RELAY_BUILDER_ROOTHASHES, hash)
+
+  const unset = await parseRootfsRunnerInputs({ ...env, ALEPH_ROOTFS_ATTEST_RELAY_BUILDER_ROOTHASHES: '' })
+  assert.equal(rootfsBuildShellEnv(unset.buildPlan).ATTEST_RELAY_BUILDER_ROOTHASHES, undefined)
 })
 
 test('parseRootfsRunnerInputs auto-detects docker and virt-customize when env flags are omitted', async () => {
