@@ -1,5 +1,22 @@
 # Roadmap
 
+## 0.12.8 — an orbitdb-relay announces only IPv6 addresses that answer
+
+An orbitdb-relay announced its VM's IPv6 address on the relay's internal
+ports (#57), on the assumption that IPv6 reaches an Aleph VM directly. Measured
+on 2026-11-15 inside a running relay on `vm4.alephvision.eu`: the relay
+listened on `[::]:9091` and `[::]:9092`, the guest had no firewall, and tcpdump
+on `ens3` saw IPv6 SYNs for 22 and 443 arrive while those for 9090, 9091 and
+9092 never did. On other CRNs nothing answered over IPv6 at all. GitHub runners
+have no IPv6, so the deploy probe reported these addresses as "not checked"
+and never caught it. Raw IPv6 is now opt-in (`ANNOUNCE_PUBLIC_IPV6=1`): by
+default the configure script leaves the `/ip6` entries out of
+`VITE_APPEND_ANNOUNCE` and sets `RELAY_DISABLE_IPV6=1`, because libp2p
+announces the global IPv6 of every interface it listens on. Browsers keep
+their IPv6 path through the 2n6 proxy (`/dns6/<name>.2n6.me/tcp/443/tls/ws`).
+The change is in the rootfs, so it reaches relays deployed from an image built
+after this release (#227).
+
 ## 0.12.7 — a CAR upload that hangs moves on to the next host
 
 On 2026-11-15 a Paperless anywhere release uploaded its CAR to api2, which
