@@ -31,6 +31,8 @@ Supported commands:
 - `rootfs-plan`
 - `rootfs-build`
 - `rootfs-publish`
+- `gh-runner` (see [Run GitHub Actions jobs on Aleph](../guides/aleph-github-runner.md))
+- `relay-reconfigure` (see [Bring back a relay that came back blank](../guides/relay-recovery.md))
 - `help`
 
 Examples:

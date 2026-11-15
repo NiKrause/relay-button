@@ -17,6 +17,7 @@ const sidebars = {
       items: [
         'guides/ai-agent-recipes',
         'guides/aleph-github-runner',
+        'guides/relay-recovery',
         'reference/ui',
         'reference/attest-relay',
         'reference/browser',
