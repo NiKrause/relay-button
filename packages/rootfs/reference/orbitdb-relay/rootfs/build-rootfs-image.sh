@@ -247,6 +247,16 @@ case "${ROOTFS_PROFILE}" in
         --run-command "cd /usr/local/lib/attest-relay && [ -f attest-relay.cjs ] || mv '$(basename "${ATTEST_RELAY_BUNDLE}")' attest-relay.cjs"
         --run-command "systemctl enable attest-relay.service"
       )
+      # Image builders the relay lets carry more per connection (relay-button#230,
+      # docs/reference/attest-relay.md): their workload root hashes, public
+      # values, baked into the image since a confidential relay has no shell.
+      if [ -n "${ATTEST_RELAY_BUILDER_ROOTHASHES:-}" ]; then
+        if ! printf '%s' "${ATTEST_RELAY_BUILDER_ROOTHASHES}" | grep -Eq '^[0-9a-fA-F]{64}(,[0-9a-fA-F]{64})*$'; then
+          echo "ATTEST_RELAY_BUILDER_ROOTHASHES: comma-separated 64-hex root hashes" >&2
+          exit 1
+        fi
+        attest_relay_args+=(--write "/etc/default/attest-relay:ATTEST_RELAY_BUILDER_ROOTHASHES=${ATTEST_RELAY_BUILDER_ROOTHASHES}")
+      fi
     else
       echo "WARNING: no attest relay bundle at ${ATTEST_RELAY_BUNDLE}; this image will not serve /attest." >&2
     fi

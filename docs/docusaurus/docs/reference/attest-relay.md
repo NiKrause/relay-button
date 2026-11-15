@@ -113,3 +113,10 @@ builders only* larger limits:
 The root hash belongs to the builder's published volumes, so it stays the same
 for every builder started from them. It changes when a new builder is
 published.
+
+A confidential relay has no shell to edit `/etc/default/attest-relay` on. Bake
+the list into the relay image instead: build it with
+`ATTEST_RELAY_BUILDER_ROOTHASHES=<hash>[,<hash>…]` in the environment of
+`packages/rootfs/reference/orbitdb-relay/rootfs/build-rootfs.sh`, which writes
+that file into the image. A new builder publication then means a new relay
+image.
