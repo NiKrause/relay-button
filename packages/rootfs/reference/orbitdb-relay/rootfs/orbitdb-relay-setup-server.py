@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import base64
 import hashlib
+import hmac
 import ipaddress
 import json
 import os
@@ -43,11 +44,120 @@ BOOTSTRAP_CHANNEL = os.environ.get("ALEPH_BOOTSTRAP_CHANNEL", "simple-todo")
 
 CONFIGURE_LOCK = threading.Lock()
 
+# Who may configure this guest. A deployment that leaves
+# `aleph-setup:<owner>:<sha256 of a setup secret>` in the SSH key accepts
+# `POST /configure` only from whoever holds that secret (the deployer, for the
+# duration of the deploy) or with an owner authorization signed by <owner>
+# that names the publisher key being installed (a later recovery, see
+# relay-button's relay-reconfigure). Guests deployed without the marker keep
+# accepting any request, as before.
+SETUP_MARKER_PREFIX = "aleph-setup:"
+SETUP_SECRET_HEADER = "X-Aleph-Setup-Secret"
+OWNER_AUTHORIZATION_KEYS = (
+    "ownerAddress",
+    "publisherAddress",
+    "peerId",
+    "registrationId",
+    "profile",
+    "version",
+    "instanceItemHash",
+    "issuedAt",
+    "expiresAt",
+)
+
+
+def _setup_markers() -> list[tuple[str, str]]:
+    """(owner, secret digest) for every setup marker in our SSH keys."""
+    markers: list[tuple[str, str]] = []
+    try:
+        with open(AUTHORIZED_KEYS_FILE, encoding="utf-8") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                for part in line.split():
+                    if not part.startswith(SETUP_MARKER_PREFIX):
+                        continue
+                    fields = part[len(SETUP_MARKER_PREFIX):].split(":")
+                    if len(fields) != 2:
+                        continue
+                    owner, digest = fields[0].strip().lower(), fields[1].strip().lower()
+                    if len(owner) == 42 and owner.startswith("0x") and len(digest) == 64:
+                        markers.append((owner, digest))
+    except FileNotFoundError:
+        return []
+    return markers
+
+
+def _owner_authorization_message(payload: dict) -> str:
+    """The text the owner signed: the deployer's key order, keys it left out stay out."""
+    ordered = {key: payload[key] for key in OWNER_AUTHORIZATION_KEYS if key in payload}
+    return json.dumps(ordered, separators=(",", ":"), ensure_ascii=False)
+
+
+def _recover_owner_authorization(encoded: str) -> tuple[str | None, dict | None]:
+    try:
+        from eth_account import Account
+        from eth_account.messages import encode_defunct
+    except ImportError:
+        return None, None
+    try:
+        authorization = json.loads(base64.b64decode(encoded).decode("utf-8"))
+        payload = authorization["payload"]
+        signer = Account.recover_message(
+            encode_defunct(text=_owner_authorization_message(payload)),
+            signature=authorization["signature"],
+        )
+        return signer, payload
+    except Exception:  # noqa: BLE001 - any malformed authorization is a refusal
+        return None, None
+
+
+def _publisher_address(private_key: object) -> str | None:
+    """The address of the publisher key this request installs, or of the current one."""
+    key = private_key.strip() if isinstance(private_key, str) else ""
+    if not key:
+        try:
+            with open(ENV_FILE, encoding="utf-8") as handle:
+                for line in handle:
+                    if line.startswith("ALEPH_BOOTSTRAP_PUBLISHER_PRIVATE_KEY="):
+                        key = line.split("=", 1)[1].strip()
+        except FileNotFoundError:
+            return None
+    if not key:
+        return None
+    try:
+        from eth_account import Account
+
+        return Account.from_key(key).address
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _configure_refusal(secret: str | None, payload: dict) -> str | None:
+    """Why this configure request is refused, or None when it may proceed."""
+    markers = _setup_markers()
+    if not markers:
+        return None
+    if secret:
+        digest = hashlib.sha256(secret.strip().encode("utf-8")).hexdigest()
+        if any(hmac.compare_digest(digest, expected) for _, expected in markers):
+            return None
+    encoded = payload.get("bootstrap_owner_authorization_b64")
+    if isinstance(encoded, str) and encoded.strip():
+        signer, authorization = _recover_owner_authorization(encoded)
+        if signer and signer.lower() in {owner for owner, _ in markers} and authorization:
+            expected = _publisher_address(payload.get("bootstrap_publisher_private_key"))
+            if expected and str(authorization.get("publisherAddress", "")).lower() == expected.lower():
+                return None
+            return "the owner authorization does not name the publisher key being installed"
+    return "missing or wrong setup secret"
+
 
 def _cors_headers(handler: BaseHTTPRequestHandler) -> None:
     handler.send_header("Access-Control-Allow-Origin", "*")
     handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-    handler.send_header("Access-Control-Allow-Headers", "content-type")
+    handler.send_header("Access-Control-Allow-Headers", f"content-type, {SETUP_SECRET_HEADER.lower()}")
 
 
 def _validate_port(value: object, field_name: str) -> str:
@@ -507,6 +617,15 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(content_length).decode("utf-8") or "{}")
         except json.JSONDecodeError as error:
             self._send_json(400, {"status": "bad-request", "error": f"Invalid JSON body: {error}"})
+            return
+        if not isinstance(payload, dict):
+            self._send_json(400, {"status": "bad-request", "error": "Expected a JSON object"})
+            return
+
+        refusal = _configure_refusal(self.headers.get(SETUP_SECRET_HEADER), payload)
+        if refusal:
+            _log(f"refused POST /configure: {refusal}")
+            self._send_json(403, {"status": "forbidden", "error": refusal})
             return
 
         try:

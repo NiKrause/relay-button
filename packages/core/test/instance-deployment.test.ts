@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -13,7 +14,10 @@ import {
   normalizeSshPublicKey,
   quoteRequiredBudgetUnits,
   selectedTier,
-  tierSpec
+  tierSpec,
+  appendSetupMarkerToSshPublicKey,
+  createSetupSecret,
+  setupSecretDigest,
 } from '../src/instance-deployment.ts'
 
 test('normalizeSshPublicKey collapses multiline and repeated whitespace', () => {
@@ -332,4 +336,22 @@ test('deployInstance can retry transient Aleph broadcast failures with backoff',
   assert.equal(result.itemHash, 'instanceHash')
   assert.equal(result.status, 'processed')
   assert.deepEqual(delays, [500, 500])
+})
+
+test('a setup marker carries the owner and the digest of the secret, never the secret', async () => {
+  const secret = createSetupSecret()
+  assert.match(secret, /^[0-9a-f]{64}$/)
+  assert.notEqual(createSetupSecret(), secret)
+
+  const digest = await setupSecretDigest(secret)
+  assert.equal(digest, createHash('sha256').update(secret).digest('hex'))
+
+  const key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample nico@example aleph-bootstrap-config:0xAbC:token'
+  const marked = appendSetupMarkerToSshPublicKey(key, '0x2bd014B41FEa490320187b5FAdf413dab88f7628', digest)
+  assert.equal(marked, `${key} aleph-setup:0x2bd014b41fea490320187b5fadf413dab88f7628:${digest}`)
+  assert.equal(marked.includes(secret), false)
+
+  // Nothing to append to, or nothing sensible to append: the key is left as is.
+  assert.equal(appendSetupMarkerToSshPublicKey('', '0x2bd0', digest), '')
+  assert.equal(appendSetupMarkerToSshPublicKey(key, '0x2bd0', 'not-a-digest'), key)
 })

@@ -5,6 +5,7 @@ import type {
 import type { UcanStoreBootstrapPackage } from "@le-space/shared-types";
 
 import type { FetchLike } from "./manifests.ts";
+import { SETUP_SECRET_HEADER } from "./instance-deployment.ts";
 
 export type TcpProbeResult = {
   ok: boolean | null;
@@ -245,6 +246,8 @@ export async function configureUcGoPeer(args: {
   bootstrapOwnerAuthorizationBase64?: string | null;
   bootstrapRegistrationId?: string | null;
   noStart?: boolean;
+  /** Sent as X-Aleph-Setup-Secret; required by guests deployed with a setup marker. */
+  setupSecret?: string | null;
   fetch: FetchLike;
   timeoutMs?: number;
 }): Promise<unknown> {
@@ -280,6 +283,7 @@ export async function configureUcGoPeer(args: {
         method: "POST",
         headers: {
           "content-type": "application/json",
+          ...(args.setupSecret ? { [SETUP_SECRET_HEADER]: args.setupSecret } : {}),
         },
         body: JSON.stringify(payload),
         signal: controller.signal,
@@ -315,6 +319,8 @@ export async function configureOrbitdbRelaySetup(args: {
   bootstrapOwnerAuthorizationBase64?: string | null;
   bootstrapRegistrationId?: string | null;
   noStart?: boolean;
+  /** Sent as X-Aleph-Setup-Secret; required by guests deployed with a setup marker. */
+  setupSecret?: string | null;
   fetch: FetchLike;
   timeoutMs?: number;
 }): Promise<unknown> {
@@ -351,6 +357,7 @@ export async function configureOrbitdbRelaySetup(args: {
         method: "POST",
         headers: {
           "content-type": "application/json",
+          ...(args.setupSecret ? { [SETUP_SECRET_HEADER]: args.setupSecret } : {}),
         },
         body: JSON.stringify(payload),
         signal: controller.signal,

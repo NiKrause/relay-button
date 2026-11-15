@@ -7,7 +7,10 @@ import {
   configureUcanStore,
   configureOrbitdbRelaySetup,
   configureUcGoPeer,
+  appendSetupMarkerToSshPublicKey,
   createRelayBootstrapRegistrationId,
+  createSetupSecret,
+  setupSecretDigest,
   createInstanceContent,
   deployInstance,
   enrichCrnsWithTee,
@@ -620,6 +623,14 @@ async function runDeployPlan(
 
   for (const [candidateIndex, placement] of placementCandidates.entries()) {
     const candidateCrn = placement.crn;
+    // The guest takes its configuration only from whoever holds this secret;
+    // the INSTANCE message carries just its digest, next to the SSH key.
+    const setupSecret = createSetupSecret();
+    const instanceSshPublicKey = appendSetupMarkerToSshPublicKey(
+      plan.sshPublicKey,
+      identity.address,
+      await setupSecretDigest(setupSecret),
+    );
     const placementLabel = placement.label;
     timingCrn = candidateCrn?.hash ?? null;
     log(
@@ -661,7 +672,7 @@ async function runDeployPlan(
       const content = createInstanceContent({
         address: identity.address,
         name: plan.name,
-        sshPublicKey: plan.sshPublicKey,
+        sshPublicKey: instanceSshPublicKey,
         rootfsItemHash: plan.rootfsItemHash,
         rootfsSizeMiB: plan.rootfsSizeMiB,
         vcpus: plan.vcpus,
@@ -1153,7 +1164,11 @@ async function runDeployPlan(
                       "utf8",
                     ).toString("base64")
                   : null,
-                bootstrapRegistrationId: `relay:${plan.profile}:${plan.name}`,
+                // With the instance hash, as the uc-go-peer branch and the
+                // second pass below use it: consumers such as paperless-anywhere
+                // match registrations by the hash at the end.
+                bootstrapRegistrationId: registrationId,
+                setupSecret,
                 fetch: fetchImpl,
                 timeoutMs: plan.configureTimeoutMs,
               })
@@ -1206,6 +1221,7 @@ async function runDeployPlan(
                     ).toString("base64")
                   : null,
                 bootstrapRegistrationId: registrationId,
+                setupSecret,
                 fetch: fetchImpl,
                 timeoutMs: plan.configureTimeoutMs,
               });
@@ -1517,6 +1533,7 @@ async function runDeployPlan(
                 bootstrapOwnerAuthorizationBase64: ownerAuthorizationBase64,
                 bootstrapRegistrationId: registrationId,
                 noStart: true,
+                setupSecret,
                 fetch: fetchImpl,
                 timeoutMs: plan.configureTimeoutMs,
               });
