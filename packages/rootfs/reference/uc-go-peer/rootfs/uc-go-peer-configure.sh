@@ -16,6 +16,14 @@ CADDY_SERVICE="${CADDY_SERVICE:-caddy.service}"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 BOOTSTRAP_SERVICE="${BOOTSTRAP_SERVICE:-uc-go-peer-bootstrap.service}"
 P2P_FORGE_DOMAIN="${P2P_FORGE_DOMAIN:-libp2p.direct}"
+# Aleph forwards ports for IPv4 only: the VM's IPv6 address is routed to it
+# without DNAT, so the mapped host ports this script announces do not exist on
+# IPv6, and inbound IPv6 does not reach the internal ports either (measured on
+# 2026-11-15 with tcpdump inside a relay; see relay-button#227). Raw IPv6 is
+# announced only when a CRN is known to pass it. LIBP2P_DISABLE_IPV6 also keeps
+# go-peer off [::], since go-libp2p announces every interface it listens on.
+# Browsers still reach the relay over IPv6 through the 2n6 proxy (/dns6/...).
+ANNOUNCE_PUBLIC_IPV6="${ANNOUNCE_PUBLIC_IPV6:-0}"
 PUBLIC_IPV4=""
 PUBLIC_IPV6=""
 TCP_PORT="9095"
@@ -247,7 +255,7 @@ if [ -n "${UDP_PORT}" ]; then
   )
 fi
 
-if [ -n "${PUBLIC_IPV6}" ]; then
+if [ -n "${PUBLIC_IPV6}" ] && [ "${ANNOUNCE_PUBLIC_IPV6}" = "1" ]; then
   announce+=("/ip6/${PUBLIC_IPV6}/tcp/${TCP_PORT}")
   if [ -n "${WS_PORT}" ]; then
     announce+=("/ip6/${PUBLIC_IPV6}/tcp/${WS_PORT}/tls/sni/*.${P2P_FORGE_DOMAIN}/ws")
@@ -265,6 +273,11 @@ announce_value="$(IFS=,; printf '%s' "${announce[*]}")"
 write_env_var "PUBLIC_IPV4" "${PUBLIC_IPV4}"
 if [ -n "${PUBLIC_IPV6}" ]; then
   write_env_var "PUBLIC_IPV6" "${PUBLIC_IPV6}"
+fi
+if [ "${ANNOUNCE_PUBLIC_IPV6}" = "1" ]; then
+  write_env_var "LIBP2P_DISABLE_IPV6" "0"
+else
+  write_env_var "LIBP2P_DISABLE_IPV6" "1"
 fi
 write_env_var "EXTERNAL_RELAY_TCP_PORT" "${TCP_PORT}"
 write_env_var "EXTERNAL_RELAY_WS_PORT" "${WS_PORT}"
