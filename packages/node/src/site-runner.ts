@@ -881,6 +881,7 @@ async function uploadStaticSiteCarAuthenticated(args: {
   car: StaticSiteCar
   apiHost: string
   message: Awaited<ReturnType<typeof buildSiteStoreMessage>>
+  signal?: AbortSignal
 }): Promise<{ itemHash: string; apiHost: string }> {
   const form = new FormData()
   const carBuffer = args.car.bytes.buffer.slice(
@@ -895,6 +896,7 @@ async function uploadStaticSiteCarAuthenticated(args: {
   const response = await fetch(new URL('/api/v0/ipfs/add_car', args.apiHost), {
     method: 'POST',
     body: form,
+    signal: args.signal,
   })
   const responseText = await response.text()
   if (!response.ok) {
@@ -913,42 +915,118 @@ async function uploadStaticSiteCarAuthenticated(args: {
   return { itemHash: args.message.item_hash, apiHost: args.apiHost }
 }
 
+/**
+ * Upload the CAR through the configured hosts. Each upload is bounded by
+ * ALEPH_SITE_UPLOAD_TIMEOUT_MS (default 5 min), so a host that takes the
+ * request and never answers cannot hold the release; the next host is tried
+ * when one fails. When a host has not answered after
+ * ALEPH_SITE_UPLOAD_HEDGE_MS (default 90 s; "off" = strictly one after the
+ * other, 0 = all at once), the next one starts alongside it, and the first
+ * that answers wins; the others are aborted.
+ *
+ * Every host gets the same signed STORE message, so its item_hash is the
+ * same: uploads to several hosts are one STORE on Aleph, never a second one.
+ */
 async function uploadStaticSiteCarAuthenticatedWithFallback(args: {
   car: StaticSiteCar
   env: NodeJS.ProcessEnv
 }): Promise<{ pinned: { itemHash: string; apiHost: string }; endpointPair: SiteEndpointPair }> {
   const endpointPairs = siteEndpointPairs(args.env)
   const message = await buildSiteStoreMessage(args.car.rootCidV1, args.env)
-  let lastError: unknown = null
+  const timeoutMs = positiveNumberEnv('ALEPH_SITE_UPLOAD_TIMEOUT_MS', 300_000, args.env)
+  const hedgeMs = siteUploadHedgeMs(args.env)
+  const errors = new Map<number, unknown>()
 
-  for (const [index, endpointPair] of endpointPairs.entries()) {
-    try {
+  return await new Promise((resolve, reject) => {
+    const controllers: AbortController[] = []
+    let next = 0
+    let running = 0
+    let settled = false
+    let hedge: ReturnType<typeof setTimeout> | undefined
+
+    const finish = () => {
+      settled = true
+      if (hedge) clearTimeout(hedge)
+      for (const controller of controllers) controller.abort()
+    }
+    const armHedge = () => {
+      if (hedge) clearTimeout(hedge)
+      hedge = undefined
+      if (hedgeMs === null || settled || next >= endpointPairs.length) return
+      hedge = setTimeout(() => {
+        const waiting = endpointPairs[next - 1]?.apiHost
+        console.warn(`Aleph authenticated CAR upload through ${waiting} has not answered after ${hedgeMs} ms; also trying ${endpointPairs[next]!.apiHost}.`)
+        start()
+      }, hedgeMs)
+    }
+    const start = () => {
+      if (settled || next >= endpointPairs.length) return
+      const index = next
+      next += 1
+      running += 1
+      const endpointPair = endpointPairs[index]!
+      const controller = new AbortController()
+      controllers.push(controller)
+      const timer = setTimeout(
+        () => controller.abort(new Error(`no answer within ${timeoutMs} ms`)),
+        timeoutMs,
+      )
       if (endpointPairs.length > 1) {
-        console.warn(
-          `Aleph authenticated CAR upload attempt ${index + 1}/${endpointPairs.length}: ${endpointPair.apiHost}`,
-        )
+        console.warn(`Aleph authenticated CAR upload attempt ${index + 1}/${endpointPairs.length}: ${endpointPair.apiHost}`)
       }
-      const pinned = await uploadStaticSiteCarAuthenticated({
+      uploadStaticSiteCarAuthenticated({
         car: args.car,
         apiHost: endpointPair.apiHost,
         message,
-      })
-      return { pinned, endpointPair }
-    } catch (error) {
-      lastError = error
-      if (index < endpointPairs.length - 1) {
-        const detail = error instanceof Error ? error.message : String(error)
-        console.warn(
-          `Aleph authenticated CAR upload through ${endpointPair.apiHost} failed; retrying with ${endpointPairs[index + 1]!.apiHost}. ${detail}`,
-        )
-      }
+        signal: controller.signal,
+      }).then(
+        (pinned) => {
+          clearTimeout(timer)
+          if (settled) return
+          finish()
+          resolve({ pinned, endpointPair })
+        },
+        (error: unknown) => {
+          clearTimeout(timer)
+          running -= 1
+          if (settled) return
+          const reason = controller.signal.aborted && controller.signal.reason instanceof Error
+            ? controller.signal.reason
+            : error
+          errors.set(index, reason)
+          const detail = reason instanceof Error ? reason.message : String(reason)
+          if (next < endpointPairs.length) {
+            console.warn(`Aleph authenticated CAR upload through ${endpointPair.apiHost} failed; retrying with ${endpointPairs[next]!.apiHost}. ${detail}`)
+            start()
+            armHedge()
+            return
+          }
+          if (running > 0) {
+            console.warn(`Aleph authenticated CAR upload through ${endpointPair.apiHost} failed; waiting for the upload still running. ${detail}`)
+            return
+          }
+          finish()
+          const last = errors.get(index)
+          const lastDetail = last instanceof Error ? last.message : String(last)
+          reject(new Error(
+            `Aleph authenticated CAR upload failed through all configured endpoint pairs (${endpointPairs.map((pair) => pair.apiHost).join(', ')}). Last error: ${lastDetail}`,
+          ))
+        },
+      )
     }
-  }
+    start()
+    armHedge()
+  })
+}
 
-  const detail = lastError instanceof Error ? lastError.message : String(lastError)
-  throw new Error(
-    `Aleph authenticated CAR upload failed through all configured endpoint pairs (${endpointPairs.map((pair) => pair.apiHost).join(', ')}). Last error: ${detail}`,
-  )
+/** ALEPH_SITE_UPLOAD_HEDGE_MS: null = no second upload while one runs. */
+function siteUploadHedgeMs(env: NodeJS.ProcessEnv): number | null {
+  const raw = optionalEnv('ALEPH_SITE_UPLOAD_HEDGE_MS', '', env).trim().toLowerCase()
+  if (!raw) return 90_000
+  if (raw === 'off') return null
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < 0) throw new Error('ALEPH_SITE_UPLOAD_HEDGE_MS must be a number of milliseconds or "off".')
+  return value
 }
 
 export async function runSitePublishMode(env: NodeJS.ProcessEnv = process.env, options: SiteRunnerOptions = {}): Promise<void> {

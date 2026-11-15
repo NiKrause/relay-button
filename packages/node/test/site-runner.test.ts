@@ -1429,3 +1429,93 @@ test('runSitePublishMode says the STORE was processed when no gateway and no lib
     globalThis.fetch = originalFetch
   }
 })
+
+function twoHostCarFetch(calls: string[], hosts: Record<string, 'hang' | 'slow' | 'ok'>) {
+  const storeHashes: string[] = []
+  return {
+    storeHashes,
+    fetch: (async (input, init) => {
+      const url = String(input)
+      calls.push(url)
+      const host = Object.keys(hosts).find((h) => url === `${h}/api/v0/ipfs/add_car`)
+      if (host) {
+        const metadata = (init?.body as FormData).get('metadata') as Blob
+        const envelope = JSON.parse(await metadata.text()) as { message?: Record<string, unknown> }
+        storeHashes.push(String(envelope.message?.item_hash ?? ''))
+        const answer = () => new Response(JSON.stringify({ status: 'success', hash: ONE_FILE_SITE_CID }), { status: 200 })
+        if (hosts[host] === 'ok') return answer()
+        // A host that takes the upload and answers late, or never: only the abort ends it.
+        return await new Promise<Response>((resolve, reject) => {
+          const late = hosts[host] === 'slow' ? setTimeout(() => resolve(answer()), 400) : undefined
+          init?.signal?.addEventListener('abort', () => {
+            if (late) clearTimeout(late)
+            reject(init.signal?.reason ?? new Error('aborted'))
+          })
+        })
+      }
+      const message = /\/api\/v0\/messages\/(\w+)$/u.exec(url)
+      if (message && storeHashes.includes(message[1]!)) {
+        return new Response(JSON.stringify({ status: 'processed' }), { status: 200 })
+      }
+      throw new Error(`Unexpected fetch call: ${url}`)
+    }) as typeof fetch,
+  }
+}
+
+const TWO_HOSTS = JSON.stringify([
+  { ipfsGateway: 'https://ipfs-2.aleph.im', apiHost: 'https://api2.aleph.im' },
+  { ipfsGateway: 'https://ipfs-2.aleph.im', apiHost: 'https://api3.aleph.im' },
+])
+
+async function publishThroughTwoHosts(prefix: string, hosts: Record<string, 'hang' | 'slow' | 'ok'>, extra: NodeJS.ProcessEnv) {
+  const { outputFile, env } = await oneFileSite(prefix)
+  const calls: string[] = []
+  const fake = twoHostCarFetch(calls, hosts)
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = fake.fetch
+  try {
+    await runSitePublishModeCar({
+      ...env,
+      ALEPH_SITE_ENDPOINT_PAIRS: TWO_HOSTS,
+      ALEPH_SITE_VERIFY: 'libp2p',
+      ALEPH_SITE_LIBP2P_PEERS: '/ip4/192.0.2.1/tcp/4001/p2p/12D3KooWHWNCn8t9NKQPBPZU61Fq6BoVw9XV37YsWTuMLwZXrEtj',
+      ...extra,
+    }, {
+      fetchDagOverLibp2p: async (options) => ({ cid: options.cid, blocks: 2, connectedPeers: 1, durationMs: 1 }),
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  return { calls, storeHashes: fake.storeHashes, outputs: await readFile(outputFile, 'utf8') }
+}
+
+test('a CAR upload that never answers times out and the next host takes it', async () => {
+  const { calls, storeHashes } = await publishThroughTwoHosts(
+    'site-upload-timeout-',
+    { 'https://api2.aleph.im': 'hang', 'https://api3.aleph.im': 'ok' },
+    { ALEPH_SITE_UPLOAD_TIMEOUT_MS: '50', ALEPH_SITE_UPLOAD_HEDGE_MS: 'off' },
+  )
+  assert.deepEqual(calls.filter((url) => url.endsWith('/add_car')), [
+    'https://api2.aleph.im/api/v0/ipfs/add_car',
+    'https://api3.aleph.im/api/v0/ipfs/add_car',
+  ])
+  assert.ok(calls.includes(`https://api3.aleph.im/api/v0/messages/${storeHashes[0]}`))
+})
+
+test('a slow host gets a second host alongside it; the first answer wins and both carry the same STORE', async () => {
+  const { calls, storeHashes } = await publishThroughTwoHosts(
+    'site-upload-hedge-',
+    { 'https://api2.aleph.im': 'slow', 'https://api3.aleph.im': 'ok' },
+    { ALEPH_SITE_UPLOAD_HEDGE_MS: '30' },
+  )
+  assert.equal(storeHashes.length, 2)
+  assert.equal(storeHashes[0], storeHashes[1])
+  assert.ok(calls.includes(`https://api3.aleph.im/api/v0/messages/${storeHashes[0]}`))
+})
+
+test('ALEPH_SITE_UPLOAD_HEDGE_MS rejects what is neither a number nor off', async () => {
+  await assert.rejects(
+    publishThroughTwoHosts('site-upload-hedge-bad-', { 'https://api2.aleph.im': 'ok', 'https://api3.aleph.im': 'ok' }, { ALEPH_SITE_UPLOAD_HEDGE_MS: 'soon' }),
+    /ALEPH_SITE_UPLOAD_HEDGE_MS must be/,
+  )
+})
