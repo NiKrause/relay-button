@@ -236,6 +236,10 @@ def build_probe_multiaddrs(env_values: dict[str, str], peer_id: str, listening_a
 
     public_ipv4 = env_values.get("PUBLIC_IPV4", "").strip()
     public_ipv6 = env_values.get("PUBLIC_IPV6", "").strip()
+    # Without IPv6 the certhash addresses must not be rebuilt on the VM's IPv6
+    # either; they would be as dead as the announce entries left out.
+    if env_values.get("LIBP2P_DISABLE_IPV6", "").strip().lower() in ("1", "true"):
+        public_ipv6 = ""
     udp_port = env_values.get("EXTERNAL_RELAY_UDP_PORT", "").strip()
     if udp_port:
         webtransport_multiaddrs.extend(

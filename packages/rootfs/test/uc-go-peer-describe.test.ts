@@ -75,3 +75,33 @@ print(json.dumps(result))
   assert.deepEqual(result.webtransport_multiaddrs, []);
   assert.deepEqual(result.webrtc_direct_multiaddrs, []);
 });
+
+test("uc-go-peer metadata builds no IPv6 browser address when LIBP2P_DISABLE_IPV6 is set", async () => {
+  const program = `
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("uc_go_peer_describe", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+result = module.build_probe_multiaddrs(
+    {
+        "PUBLIC_IPV4": "203.0.113.10",
+        "PUBLIC_IPV6": "2001:db8::10",
+        "EXTERNAL_RELAY_UDP_PORT": "40169",
+        "LIBP2P_DISABLE_IPV6": "1",
+    },
+    "12D3KooWTestPeer",
+    ["/ip4/127.0.0.1/udp/9095/webrtc-direct/certhash/uEiWebRtcHash"],
+)
+print(json.dumps(result))
+`;
+  const { stdout } = await execFileAsync("python3", [
+    "-c",
+    program,
+    describeScript,
+  ]);
+  const result = JSON.parse(stdout);
+
+  assert.deepEqual(result.webrtc_direct_multiaddrs, [
+    "/ip4/203.0.113.10/udp/40169/webrtc-direct/certhash/uEiWebRtcHash/p2p/12D3KooWTestPeer",
+  ]);
+});
