@@ -9,12 +9,22 @@
 
 import http from 'node:http'
 
-import { attachAttestRelay, resolveAttestationTarget } from './relay.ts'
+import { attachAttestRelay, builderLimitsFor, resolveAttestationTarget } from './relay.ts'
 
 const port = Number(process.env.ATTEST_RELAY_PORT ?? 8787)
 const host = process.env.ATTEST_RELAY_HOST ?? '0.0.0.0'
 const apiHost = process.env.ALEPH_API_HOST
 const allowedOrigins = (process.env.ATTEST_RELAY_ORIGINS ?? '').split(',').map((origin) => origin.trim()).filter(Boolean)
+// Image builders (paperless-anywhere#202) hand back a sealed image of about
+// 900 MiB. With the default 4 MiB per connection that is some 290 connections,
+// each attested anew. Workloads listed here (their dm-verity root hashes, from
+// the builder's V-PROGRAM) get larger limits; any other VM keeps the defaults,
+// so the relay stays no free tunnel to every VM on Aleph.
+const builderRoothashes = new Set((process.env.ATTEST_RELAY_BUILDER_ROOTHASHES ?? '').split(',').map((h) => h.trim().toLowerCase()).filter((h) => /^[0-9a-f]{64}$/.test(h)))
+const builderLimits = {
+  maxBytes: Number(process.env.ATTEST_RELAY_BUILDER_MAX_BYTES ?? 256 * 1024 * 1024),
+  maxSeconds: Number(process.env.ATTEST_RELAY_BUILDER_MAX_SECONDS ?? 600),
+}
 
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
@@ -33,6 +43,7 @@ const relay = attachAttestRelay(server, {
   maxSeconds: Number(process.env.ATTEST_RELAY_MAX_SECONDS ?? 120),
   maxPerClient: Number(process.env.ATTEST_RELAY_MAX_PER_CLIENT ?? 4),
   maxTotal: Number(process.env.ATTEST_RELAY_MAX_TOTAL ?? 256),
+  limitsFor: builderRoothashes.size ? (_crn, vm) => builderLimitsFor(vm, { roothashes: builderRoothashes, limits: builderLimits, fetch: globalThis.fetch, apiHost }) : undefined,
   trustProxy: process.env.ATTEST_RELAY_TRUST_PROXY === '1',
   log: (message) => console.log(message),
 })

@@ -88,6 +88,28 @@ attest.example.com {
 | `ATTEST_RELAY_MAX_SECONDS` | `120` | Seconds per connection |
 | `ATTEST_RELAY_MAX_PER_CLIENT` | `4` | Open connections per client |
 | `ATTEST_RELAY_MAX_TOTAL` | `256` | Open connections in total |
-| `ALEPH_API_HOST` | `https://api2.aleph.im` | Aleph API for the corechannel lookup |
+| `ATTEST_RELAY_BUILDER_ROOTHASHES` | none | Comma-separated workload root hashes of image builders (see below) |
+| `ATTEST_RELAY_BUILDER_MAX_BYTES` | `268435456` | Bytes per direction for a listed builder |
+| `ATTEST_RELAY_BUILDER_MAX_SECONDS` | `600` | Seconds per connection for a listed builder |
+| `ALEPH_API_HOST` | `https://api2.aleph.im` | Aleph API for the corechannel and message lookups |
 
 In the image, an operator overrides these in `/etc/default/attest-relay`.
+
+### Larger limits for image builders
+
+An image builder (paperless-anywhere's own image) hands back a sealed image of
+about 900 MiB. With 4 MiB per connection that takes some 290 connections, and
+the browser attests the builder again for each one. The relay can give *image
+builders only* larger limits:
+
+- `ATTEST_RELAY_BUILDER_ROOTHASHES` lists the dm-verity root hashes of the
+  builders' workloads, as their V-PROGRAM names them (`content.workload.roothash`).
+- For a connection to `vm`, the relay asks Aleph for that message. Only a
+  processed **V-PROGRAM** whose workload root hash is listed gets
+  `ATTEST_RELAY_BUILDER_MAX_BYTES` and `…_MAX_SECONDS`. Every other VM keeps
+  the defaults, so the relay does not become a free tunnel to any VM.
+- The answer is kept per VM. A lookup that fails falls back to the defaults.
+
+The root hash belongs to the builder's published volumes, so it stays the same
+for every builder started from them. It changes when a new builder is
+published.
