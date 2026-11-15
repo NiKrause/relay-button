@@ -231,6 +231,7 @@ build_with_docker() {
     "${uc_env[@]}" \
     -e OUT_DIR=/workspace/relay-deployer-pwa/dist-rootfs \
     -e BASE_URL="${BASE_URL:-}" \
+    -e ATTEST_RELAY_BUILDER_ROOTHASHES="${ATTEST_RELAY_BUILDER_ROOTHASHES:-}" \
     -e IMAGE_SIZE="${IMAGE_SIZE:-20G}" \
     -v "${REPO_DIR}:/workspace" \
     "${orbitdb_mount[@]}" \
