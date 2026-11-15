@@ -7,6 +7,7 @@ export type RootfsBuildDriver = 'auto' | 'host' | 'docker'
 export interface RootfsBuildOptions {
   projectDir: string
   orbitdbRelayDir?: string
+  attestRelayBuilderRoothashes?: string
   alephDir?: string
   outDir?: string
   contractPath?: string
@@ -35,6 +36,7 @@ export interface RootfsBuildPlan {
   contractPath: string
   projectDir: string
   orbitdbRelayDir?: string
+  attestRelayBuilderRoothashes?: string
   alephDir: string
   outDir: string
   driver: RootfsBuildDriver
@@ -103,6 +105,7 @@ export function createRootfsBuildPlan(contract: RootfsContract, options: RootfsB
   const orbitdbRelayDir = options.orbitdbRelayDir?.trim()
     ? path.resolve(options.orbitdbRelayDir)
     : undefined
+  const attestRelayBuilderRoothashes = options.attestRelayBuilderRoothashes?.trim() || undefined
   const subdirectory = sourceSubdirectory(contract)
   const defaultAlephDir = subdirectory ? path.join(projectDir, subdirectory, 'aleph') : projectDir
   const alephDir = path.resolve(options.alephDir ?? defaultAlephDir)
@@ -132,6 +135,7 @@ export function createRootfsBuildPlan(contract: RootfsContract, options: RootfsB
     contractPath,
     projectDir,
     orbitdbRelayDir,
+    attestRelayBuilderRoothashes,
     alephDir,
     outDir,
     driver: options.driver ?? 'auto',
@@ -184,6 +188,12 @@ export function rootfsBuildShellEnv(plan: RootfsBuildPlan): Record<string, strin
 
   if (plan.orbitdbRelayDir) {
     env.ORBITDB_RELAY_DIR = plan.orbitdbRelayDir
+  }
+
+  // Workload root hashes of image builders that get the attest relay's larger
+  // per-connection limits; build-rootfs-image.sh validates and bakes them in.
+  if (plan.attestRelayBuilderRoothashes) {
+    env.ATTEST_RELAY_BUILDER_ROOTHASHES = plan.attestRelayBuilderRoothashes
   }
 
   return env

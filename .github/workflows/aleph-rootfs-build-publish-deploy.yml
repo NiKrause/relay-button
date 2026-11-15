@@ -97,6 +97,11 @@ on:
         required: false
         default: ""
         type: string
+      attest_relay_builder_roothashes:
+        description: Optional comma-separated workload root hashes of image builders that get the attest relay's larger limits (orbitdb-relay only)
+        required: false
+        default: ""
+        type: string
       vm_api_hosts:
         description: Comma-separated Aleph API hosts to try for rootfs STORE publication and VM deployment
         required: false
@@ -514,6 +519,7 @@ jobs:
           ALEPH_ROOTFS_HELIA_PROVIDE_TIMEOUT_MS: ${{ inputs.rootfs_helia_provide_timeout_ms }}
           ALEPH_ROOTFS_HELIA_BOOTSTRAP_DIAL_TIMEOUT_MS: ${{ inputs.rootfs_helia_bootstrap_dial_timeout_ms }}
           ALEPH_ROOTFS_HELIA_BOOTSTRAP_MULTIADDRS: ${{ inputs.rootfs_helia_bootstrap_multiaddrs }}
+          ALEPH_ROOTFS_ATTEST_RELAY_BUILDER_ROOTHASHES: ${{ inputs.attest_relay_builder_roothashes }}
         run: |
           if [[ "${{ inputs.publish }}" == "true" ]]; then
             if [[ -n "${{ secrets.ALEPH_PRIVATE_KEY }}" ]]; then

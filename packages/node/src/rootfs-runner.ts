@@ -244,6 +244,10 @@ export async function parseRootfsRunnerInputs(env: NodeJS.ProcessEnv = process.e
   const buildPlan = createRootfsBuildPlan(contract, {
     projectDir: requiredEnv('ALEPH_ROOTFS_PROJECT_DIR', env),
     orbitdbRelayDir,
+    attestRelayBuilderRoothashes:
+      optionalEnv('ALEPH_ROOTFS_ATTEST_RELAY_BUILDER_ROOTHASHES', undefined, env) ||
+      optionalEnv('ATTEST_RELAY_BUILDER_ROOTHASHES', undefined, env) ||
+      undefined,
     contractPath,
     alephDir: optionalEnv('ALEPH_ROOTFS_ALEPH_DIR', undefined, env) || undefined,
     outDir: optionalEnv('ALEPH_ROOTFS_OUT_DIR', undefined, env) || undefined,
