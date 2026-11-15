@@ -1,0 +1,56 @@
+name: Aleph Credit Runway
+# Once a day, works out how many days of credits each Aleph account that pays
+# for relays has left, and opens or updates one issue per account (label
+# `aleph-credits`) while that is under RUNWAY_WARN_DAYS. The issue closes
+# itself once the account is topped up.
+#
+# At 0 credits Aleph tears an account's instances down, and a relay rebuilt
+# from its image comes back without its configuration.
+#
+# Read-only on Aleph: public API, no key, nothing bought or transferred.
+#
+# Repository variables (Settings → Secrets and variables → Actions → Variables):
+#   ALEPH_CREDIT_ACCOUNTS  "<name> <0x address>" entries, one per line or
+#                          separated by commas; the default below applies
+#                          while it is unset
+#   RUNWAY_WARN_DAYS       alert threshold in days (default 7)
+#   RUNWAY_TARGET_DAYS     the suggested top-up covers this many days (default 30)
+on:
+  schedule:
+    - cron: '7 6 * * *'
+  workflow_dispatch:
+    inputs:
+      warn_days:
+        description: Alert threshold in days for this run (empty = the repository variable, or 7)
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: aleph-credit-runway
+  cancel-in-progress: false
+
+jobs:
+  runway:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      - name: Check each account's runway
+        env:
+          ALEPH_CREDIT_ACCOUNTS: ${{ vars.ALEPH_CREDIT_ACCOUNTS || 'orbitdb-relay 0x2bd014B41FEa490320187b5FAdf413dab88f7628, relay-button 0x28129bdDa64310221480d4eF903446b0cdFD4BEb' }}
+          RUNWAY_WARN_DAYS: ${{ inputs.warn_days || vars.RUNWAY_WARN_DAYS || '7' }}
+          RUNWAY_TARGET_DAYS: ${{ vars.RUNWAY_TARGET_DAYS || '30' }}
+          ALEPH_API_HOSTS: https://api2.aleph.im,https://api.aleph.im
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/aleph-credit-runway.mjs

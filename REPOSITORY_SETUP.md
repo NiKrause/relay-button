@@ -48,6 +48,21 @@ For real npm publishing:
 
 This token must be able to publish to the `@le-space` npm scope.
 
+## Credit Runway Alerts
+
+`.github/workflows/aleph-credit-runway.yml` checks once a day how many days of
+credits each Aleph account that pays for relays has left, using only the public
+Aleph API. Under the threshold it opens (or updates) one issue per account,
+labelled `aleph-credits`, naming the balance, the burn per day, the days left
+and roughly what a 30-day top-up takes; it closes the issue once the account is
+topped up. Repository variables:
+
+- `ALEPH_CREDIT_ACCOUNTS`: `<name> <0x address>` entries, one per line or
+  comma-separated. Unset, it watches `orbitdb-relay` and `relay-button`.
+- `RUNWAY_WARN_DAYS` (default `7`) and `RUNWAY_TARGET_DAYS` (default `30`).
+
+Run it locally, report only: `ALEPH_CREDIT_ACCOUNTS="name 0x…" node scripts/aleph-credit-runway.mjs`.
+
 ## Current Package Scope
 
 The workspace and published package names now use the same scope:
