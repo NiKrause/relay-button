@@ -130,6 +130,26 @@ Two consequences worth knowing:
 - **The owner only ever hands over a signed authorization**, never the key
   behind it. The `/configure` payload no longer has a field for it.
 
+### Who may configure the guest
+
+The deployer generates a random setup secret for each deployment attempt. It
+keeps the secret to itself and puts only its SHA-256 next to the SSH key in
+the INSTANCE message: `aleph-setup:<owner>:<sha256>`.
+
+An orbitdb-relay guest that finds this marker accepts `POST /configure` in
+two cases only:
+
+- the request carries the secret in the `X-Aleph-Setup-Secret` header, which
+  is what the browser deploy and `deploy-executor` send;
+- `bootstrap_owner_authorization_b64` is signed by `<owner>` and names the
+  publisher key being installed, or the one already installed if the request
+  brings none. This is the recovery path of
+  [`relay-reconfigure`](../guides/relay-recovery.md), used after the
+  deployer's secret is long gone.
+
+Any other request gets `403`. The pull handoff is not affected: the guest
+applies its own record and does not call itself over HTTP.
+
 :::caution Still outstanding on the Actions path
 `deploy-executor` still sends two secrets to the setup endpoint:
 `bootstrapPublisherPrivateKey`, and the libp2p identity that seeds

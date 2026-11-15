@@ -77,6 +77,38 @@ export function appendDeploymentTokenToSshPublicKey(
   return `${algorithm} ${key} aleph-bootstrap-config:${owner}:${token}`
 }
 
+// A relay guest that finds `aleph-setup:<owner>:<sha256(secret)>` in its SSH
+// key accepts `POST /configure` only with that secret in the
+// `X-Aleph-Setup-Secret` header, or with an owner authorization signed by
+// <owner> for the publisher key it installs. The secret never leaves the
+// deployer; only its digest is in the (public) INSTANCE message.
+export const SETUP_SECRET_HEADER = 'x-aleph-setup-secret'
+
+export function createSetupSecret(): string {
+  const bytes = new Uint8Array(32)
+  globalThis.crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+export async function setupSecretDigest(secret: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret.trim()))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+export function appendSetupMarkerToSshPublicKey(
+  sshPublicKey: string,
+  ownerAddress: string,
+  secretDigest: string
+): string {
+  const normalized = normalizeSshPublicKey(sshPublicKey)
+  const owner = ownerAddress.trim().toLowerCase()
+  const digest = secretDigest.trim().toLowerCase()
+  if (!normalized || !owner || /[\s:]/.test(owner) || !/^[0-9a-f]{64}$/.test(digest)) {
+    return normalized
+  }
+  return `${normalized} aleph-setup:${owner}:${digest}`
+}
+
 export function createReleaseMetadata(name: string, rootfsVersion: string, deployer = 'relay-button') {
   return {
     name,

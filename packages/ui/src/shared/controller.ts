@@ -17,12 +17,15 @@ import {
 } from "../../../browser/src/index.ts";
 import {
   appendDeploymentTokenToSshPublicKey,
+  appendSetupMarkerToSshPublicKey,
   buildPaymentQuote,
   createRelayBootstrapRegistrationId,
   configureUcanStore,
   configureOrbitdbRelaySetup,
   createDeploymentToken,
   createInstanceContent,
+  createSetupSecret,
+  setupSecretDigest,
   VM_BOOTSTRAP_CONFIG_HISTORY_RETENTION_MS,
   deleteVmBootstrapConfig,
   deployInstance as deploySharedInstance,
@@ -1280,6 +1283,7 @@ export class SponsorRelayController {
     itemHash: string;
     runtime: Awaited<ReturnType<typeof waitForVmRuntime>>;
     deploymentToken?: string | null;
+    setupSecret?: string | null;
     crnUrl?: string | null;
   }): Promise<void> {
     const deploymentProfile = deploymentProfileForManifest(this.state.manifest);
@@ -1584,6 +1588,7 @@ export class SponsorRelayController {
         metricsHttpsPort: mappedPorts["443"]?.host ?? null,
         webrtcPort: mappedPorts["9093"]?.host ?? null,
         quicPort: mappedPorts["9094"]?.host ?? null,
+        setupSecret: args.setupSecret ?? null,
         fetch: (url, init) => fetch(url, init),
         timeoutMs: 180000,
       });
@@ -3212,6 +3217,7 @@ export class SponsorRelayController {
       for (const [candidateIndex, candidateCrn] of orderedCrns.entries()) {
         let attemptItemHash: string | null = null;
         let attemptDeploymentToken: string | null = null;
+        let attemptSetupSecret: string | null = null;
         let attemptProfile: ReturnType<typeof deploymentProfileForManifest> =
           null;
         const crnAttemptLabel = `CRN ${candidateIndex + 1}/${orderedCrns.length}`;
@@ -3228,13 +3234,21 @@ export class SponsorRelayController {
         try {
           const profile = deploymentProfileForManifest(this.state.manifest);
           attemptProfile = profile;
-          const sshPublicKey = usesBootstrapConfigAggregate(this.state.manifest)
+          const deploySshPublicKey = usesBootstrapConfigAggregate(this.state.manifest)
             ? appendDeploymentTokenToSshPublicKey(
                 this.state.sshPublicKey.trim(),
                 this.state.wallet.address,
                 (attemptDeploymentToken = createDeploymentToken()),
               )
             : this.state.sshPublicKey.trim();
+          // The guest takes its configuration only from whoever holds this
+          // secret; the INSTANCE message carries just its digest.
+          attemptSetupSecret = createSetupSecret();
+          const sshPublicKey = appendSetupMarkerToSshPublicKey(
+            deploySshPublicKey,
+            this.state.wallet.address,
+            await setupSecretDigest(attemptSetupSecret),
+          );
 
           const content = createInstanceContent({
             address: this.state.wallet.address,
@@ -3521,6 +3535,7 @@ export class SponsorRelayController {
             itemHash: result.itemHash,
             runtime,
             deploymentToken: attemptDeploymentToken,
+            setupSecret: attemptSetupSecret,
             crnUrl: candidateCrn.address ?? null,
           });
 

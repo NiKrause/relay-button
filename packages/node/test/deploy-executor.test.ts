@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -1145,6 +1146,8 @@ test('executeDeployPlan retries on the next CRN when a proxy-backed deployment e
 
 test('executeDeployPlan configures orbitdb relay after mapped ports appear', async () => {
   const configureBodies: string[] = []
+  const setupSecrets: string[] = []
+  const postedBodies: string[] = []
   const derivedBootstrapPublisherPrivateKey = deriveBootstrapPublisherPrivateKey({
     sourcePrivateKey: DEPLOY_PLAN.privateKey,
     profile: 'orbitdb-relay',
@@ -1178,6 +1181,7 @@ test('executeDeployPlan configures orbitdb relay after mapped ports appear', asy
       sleep: async () => undefined,
       tcpProbe: async () => ({ ok: true }),
       fetch: async (url, init) => {
+        if (init?.method === 'POST') postedBodies.push(String(init.body ?? ''))
         if (String(url).includes('crns-list.aleph.sh')) {
           return jsonResponse({
             crns: [{ hash: 'crn-1', name: 'CRN One', address: 'https://crn.example.com', score: 10, country_code: 'DE' }]
@@ -1235,6 +1239,7 @@ test('executeDeployPlan configures orbitdb relay after mapped ports appear', asy
 
         if (String(url).includes('/configure')) {
           configureBodies.push(String(init?.body ?? ''))
+          setupSecrets.push(String((init?.headers as Record<string, string> | undefined)?.['x-aleph-setup-secret'] ?? ''))
           return jsonResponse({ status: 'configured' })
         }
 
@@ -1296,8 +1301,16 @@ test('executeDeployPlan configures orbitdb relay after mapped ports appear', asy
     quic_port: 29094,
     // No key material: the setup endpoint is plain HTTP, and the guest
     // generates its own publisher key and libp2p identity.
-    bootstrap_registration_id: 'relay:orbitdb-relay:orbitdb-relay',
+    bootstrap_registration_id: 'relay:orbitdb-relay:orbitdb-relay:hash-o1',
   })
+  // The guest only takes its configuration with the secret whose digest the
+  // INSTANCE message carries next to the SSH key.
+  assert.match(setupSecrets[0] ?? '', /^[0-9a-f]{64}$/)
+  const digest = createHash('sha256').update(setupSecrets[0] ?? '').digest('hex')
+  assert.ok(
+    postedBodies.some((body) => body.includes(`aleph-setup:0x1234:${digest}`)),
+    'the INSTANCE message names the digest of the secret sent to /configure',
+  )
 })
 
 test('executeDeployPlan forgets the instance when a step after its start fails', async () => {
