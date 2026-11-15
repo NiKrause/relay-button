@@ -157,16 +157,27 @@ def wait_for_autotls_zone() -> str:
     raise RuntimeError(last_error)
 
 
+def announced_public_ipv6(env_values: dict[str, str]) -> str:
+    """The VM's IPv6 address, unless the relay is kept off raw IPv6.
+
+    orbitdb-relay-configure.sh sets RELAY_DISABLE_IPV6=1 by default (#227):
+    inbound IPv6 does not reach the relay's ports on Aleph, and a
+    `*.libp2p.direct` name for the VM's IPv6 resolves to that same address, so
+    its AutoTLS addresses are as dead as the raw ones.
+    """
+    if env_values.get("RELAY_DISABLE_IPV6", "").strip().lower() in ("1", "true"):
+        return ""
+    return env_values.get("PUBLIC_IPV6", "").strip()
+
+
 def build_secure_addrs(env_values: dict[str, str], zone: str) -> list[str]:
     ws_port = env_values.get("EXTERNAL_RELAY_WS_PORT", "").strip()
     if not ws_port:
         raise RuntimeError("missing EXTERNAL_RELAY_WS_PORT in environment file")
 
     # IPv4 is NAT/port-mapped, so it is advertised on the externally assigned
-    # host port. IPv6 is globally routed with no NAT on the Aleph VM — reachable
-    # directly on the internal listen port, while the mapped host port is closed
-    # over IPv6. Advertise the IPv6 libp2p.direct AutoTLS addresses on the
-    # internal WS port so AutoNAT/AutoTLS dial-backs actually reach the relay.
+    # host port. IPv6 has no port mapping: when it is announced at all
+    # (ANNOUNCE_PUBLIC_IPV6=1), it is on the internal listen port.
     ws_port_ipv6 = env_values.get("RELAY_WS_PORT", "").strip() or ws_port
 
     addrs: list[str] = []
@@ -177,7 +188,7 @@ def build_secure_addrs(env_values: dict[str, str], zone: str) -> list[str]:
         addrs.append(f"/ip4/{public_ipv4}/tcp/{ws_port}/tls/sni/{host4}/ws")
         addrs.append(f"/dns4/{host4}/tcp/{ws_port}/tls/ws")
 
-    public_ipv6 = env_values.get("PUBLIC_IPV6", "").strip()
+    public_ipv6 = announced_public_ipv6(env_values)
     if public_ipv6:
         host6 = ipv6_domain(public_ipv6, zone)
         addrs.append(f"/ip6/{public_ipv6}/tcp/{ws_port_ipv6}/tls/sni/{host6}/ws")
@@ -195,7 +206,7 @@ def secure_hosts(env_values: dict[str, str], zone: str) -> list[str]:
     if public_ipv4:
         hosts.append(ipv4_domain(public_ipv4, zone))
 
-    public_ipv6 = env_values.get("PUBLIC_IPV6", "").strip()
+    public_ipv6 = announced_public_ipv6(env_values)
     if public_ipv6:
         hosts.append(ipv6_domain(public_ipv6, zone))
 
@@ -207,7 +218,7 @@ def metrics_https_public_host(env_values: dict[str, str], zone: str) -> str | No
     if public_ipv4:
         return ipv4_domain(public_ipv4, zone)
 
-    public_ipv6 = env_values.get("PUBLIC_IPV6", "").strip()
+    public_ipv6 = announced_public_ipv6(env_values)
     if public_ipv6:
         return ipv6_domain(public_ipv6, zone)
 
