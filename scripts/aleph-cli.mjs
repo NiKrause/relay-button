@@ -11,6 +11,7 @@ const repoRoot = path.resolve(
 const nodeRunner = path.join(repoRoot, "packages/node/src/action-runner.ts");
 const rootfsRunner = path.join(repoRoot, "packages/node/src/rootfs-runner.ts");
 const githubRunner = path.join(repoRoot, "scripts/aleph-github-runner.mjs");
+const relayReconfigure = path.join(repoRoot, "scripts/aleph-relay-reconfigure.mjs");
 
 function printHelp() {
   console.log(`relay-button CLI
@@ -26,6 +27,7 @@ Commands:
   rootfs-build      Build a rootfs image without publishing it
   rootfs-publish    Build and optionally publish a rootfs image
   gh-runner         Ephemeral GitHub Actions runners on Aleph (gh-runner help)
+  relay-reconfigure Bring back a relay Aleph rebuilt blank (relay-reconfigure help)
   help              Show this help
 
 Examples:
@@ -100,6 +102,12 @@ function resolveCommand(argv) {
     case "gh-runner":
       return {
         script: githubRunner,
+        env: {},
+        args: argv.slice(1),
+      };
+    case "relay-reconfigure":
+      return {
+        script: relayReconfigure,
         env: {},
         args: argv.slice(1),
       };
