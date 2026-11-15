@@ -15,6 +15,13 @@ name: Aleph Credit Runway
 #                          while it is unset
 #   RUNWAY_WARN_DAYS       alert threshold in days (default 7)
 #   RUNWAY_TARGET_DAYS     the suggested top-up covers this many days (default 30)
+#
+# Mail (optional): while any account is low, each run also sends one mail.
+# Set these repository secrets to turn it on; without them the run only
+# notes that mail is off. The recipient is a secret so no address is public.
+#   SMTP_HOST, SMTP_PORT (465 = TLS, otherwise STARTTLS; default 587),
+#   SMTP_USERNAME, SMTP_PASSWORD, RUNWAY_MAIL_TO (comma-separated),
+#   RUNWAY_MAIL_FROM (default SMTP_USERNAME)
 on:
   schedule:
     - cron: '7 6 * * *'
@@ -47,10 +54,56 @@ jobs:
           node-version: 24.x
 
       - name: Check each account's runway
+        id: runway
         env:
+          RUNWAY_MAIL_FILE: ${{ runner.temp }}/runway-mail.txt
           ALEPH_CREDIT_ACCOUNTS: ${{ vars.ALEPH_CREDIT_ACCOUNTS || 'orbitdb-relay 0x2bd014B41FEa490320187b5FAdf413dab88f7628, relay-button 0x28129bdDa64310221480d4eF903446b0cdFD4BEb' }}
           RUNWAY_WARN_DAYS: ${{ inputs.warn_days || vars.RUNWAY_WARN_DAYS || '7' }}
           RUNWAY_TARGET_DAYS: ${{ vars.RUNWAY_TARGET_DAYS || '30' }}
           ALEPH_API_HOSTS: https://api2.aleph.im,https://api.aleph.im
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/aleph-credit-runway.mjs
+
+      # Also after a partly failed check: the accounts that were read still warn.
+      - name: Mail the alert
+        if: ${{ always() && steps.runway.outputs.low_count != '' && steps.runway.outputs.low_count != '0' }}
+        env:
+          RUNWAY_MAIL_FILE: ${{ runner.temp }}/runway-mail.txt
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          RUNWAY_MAIL_TO: ${{ secrets.RUNWAY_MAIL_TO }}
+          RUNWAY_MAIL_FROM: ${{ secrets.RUNWAY_MAIL_FROM }}
+        run: |
+          if [[ -z "$SMTP_HOST" || -z "$RUNWAY_MAIL_TO" ]]; then
+            echo "::notice::Mail is off: set the SMTP_* and RUNWAY_MAIL_TO secrets to turn it on. The issue is the alert."
+            exit 0
+          fi
+          python3 - <<'PY'
+          import os
+          import smtplib
+          import ssl
+          from email.message import EmailMessage
+
+          subject, _, body = open(os.environ["RUNWAY_MAIL_FILE"], encoding="utf-8").read().partition("\n")
+          user = os.environ.get("SMTP_USERNAME", "")
+          message = EmailMessage()
+          message["Subject"] = subject
+          message["From"] = os.environ.get("RUNWAY_MAIL_FROM") or user
+          message["To"] = os.environ["RUNWAY_MAIL_TO"]
+          message.set_content(body.lstrip("\n"))
+
+          host, port = os.environ["SMTP_HOST"], int(os.environ.get("SMTP_PORT") or 587)
+          context = ssl.create_default_context()
+          if port == 465:
+              smtp = smtplib.SMTP_SSL(host, port, context=context, timeout=30)
+          else:
+              smtp = smtplib.SMTP(host, port, timeout=30)
+              smtp.starttls(context=context)
+          with smtp:
+              if user:
+                  smtp.login(user, os.environ.get("SMTP_PASSWORD", ""))
+              smtp.send_message(message)
+          print(f"Sent: {subject}")
+          PY

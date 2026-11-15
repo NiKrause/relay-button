@@ -19,7 +19,10 @@
 //   ALEPH_API_HOSTS        comma-separated, tried in order (default api2, then api)
 //   GITHUB_TOKEN, GITHUB_REPOSITORY  manage issues; without them it only reports
 //   GITHUB_STEP_SUMMARY    a Markdown summary is appended here when set
-import { appendFileSync } from 'node:fs';
+//   RUNWAY_MAIL_FILE       when any account is low, a plain-text alert mail
+//                          (first line the subject) is written here, and
+//                          low_count goes to GITHUB_OUTPUT for the send step
+import { appendFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 export const ISSUE_LABEL = 'aleph-credits';
@@ -143,6 +146,33 @@ export function issueBody(account) {
 		'At 0 credits Aleph tears the instances down; a relay rebuilt from its image comes back without its configuration and has to be reconfigured by hand.',
 		'',
 		`Checked ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC by the [Aleph credit runway](../actions/workflows/aleph-credit-runway.yml) workflow. This issue closes itself once the runway is back above ${r.warnDays} days.`,
+	);
+	return lines.join('\n');
+}
+
+/**
+ * One plain-text mail for every low account of a run. The first line is the
+ * subject; the rest is the body.
+ */
+export function mailText(lowAccounts, issuesUrl) {
+	const names = lowAccounts.map((account) => account.name).join(', ');
+	const lines = [`Aleph credits low: ${names}`, ''];
+	for (const account of lowAccounts) {
+		const r = account.runway;
+		lines.push(
+			`${account.name} (${account.address})`,
+			`  Credit balance:  ${credits(r.creditBalance)}`,
+			`  Burn per day:    ${credits(r.burnPerDay)}`,
+			`  Days left:       ${days(r.runwayDays)}${r.runsOutAt ? ` (around ${r.runsOutAt.toISOString().slice(0, 16).replace('T', ' ')} UTC)` : ''}`,
+			`  For ${r.targetDays} days:     ${credits(r.creditsForTarget)} credits, a top-up of about ${credits(r.topUpForTarget)}`,
+			'',
+		);
+	}
+	lines.push(
+		'At 0 credits Aleph tears the instances down, and a relay rebuilt from its image loses its configuration.',
+		'',
+		issuesUrl ? `Open alerts: ${issuesUrl}` : '',
+		'This mail repeats daily while an account stays under the threshold.',
 	);
 	return lines.join('\n');
 }
@@ -271,11 +301,13 @@ async function main() {
 	}
 
 	const rows = [];
+	const low = [];
 	let failed = 0;
 	for (const account of accounts) {
 		try {
 			const checked = await checkAccount(hosts, account, options);
 			const r = checked.runway;
+			if (r.low) low.push(checked);
 			const action = api ? await syncIssue(api, openIssues, checked) : 'report only';
 			rows.push(`| ${account.name} | ${credits(r.creditBalance)} | ${credits(r.burnPerDay)} | ${days(r.runwayDays)}${r.low ? ' ⚠️' : ''} | ${credits(r.topUpForTarget)} | ${action} |`);
 			const line = `${account.name} (${account.address}): ${credits(r.creditBalance)} credits, ${credits(r.burnPerDay)}/day, ${days(r.runwayDays)} days left, ${credits(r.topUpForTarget)} more for ${r.targetDays} days — ${action}`;
@@ -300,6 +332,13 @@ async function main() {
 				'',
 			].join('\n'),
 		);
+	}
+	if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, `low_count=${low.length}\n`);
+	if (low.length && env.RUNWAY_MAIL_FILE) {
+		const issuesUrl = env.GITHUB_REPOSITORY
+			? `${env.GITHUB_SERVER_URL || 'https://github.com'}/${env.GITHUB_REPOSITORY}/issues?q=is%3Aopen+label%3A${ISSUE_LABEL}`
+			: '';
+		writeFileSync(env.RUNWAY_MAIL_FILE, mailText(low, issuesUrl));
 	}
 	if (failed) process.exitCode = 1;
 }

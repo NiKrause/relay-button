@@ -61,6 +61,12 @@ topped up. Repository variables:
   comma-separated. Unset, it watches `orbitdb-relay` and `relay-button`.
 - `RUNWAY_WARN_DAYS` (default `7`) and `RUNWAY_TARGET_DAYS` (default `30`).
 
+Mail is optional: while any account is low, each run also sends one mail once
+these repository secrets are set: `SMTP_HOST`, `SMTP_PORT` (465 for TLS,
+otherwise STARTTLS; default 587), `SMTP_USERNAME`, `SMTP_PASSWORD`,
+`RUNWAY_MAIL_TO` (comma-separated) and optionally `RUNWAY_MAIL_FROM`. The
+recipient is a secret so no address appears in this public repository.
+
 Run it locally, report only: `ALEPH_CREDIT_ACCOUNTS="name 0x…" node scripts/aleph-credit-runway.mjs`.
 
 ## Current Package Scope

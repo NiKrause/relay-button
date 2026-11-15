@@ -6,6 +6,7 @@ import {
 	computeRunway,
 	instanceCreditsPerSecond,
 	issueBody,
+	mailText,
 	marker,
 	parseAccounts,
 	storageCreditsPerHour,
@@ -120,4 +121,24 @@ test('the issue names the account, balance, burn, days left and the top-up for t
 	assert.match(body, /Days left \| 2\.0/);
 	assert.match(body, /Credits for 30 days \| 2,592,000 — a top-up of about \*\*2,419,200\*\*/);
 	assert.match(body, /1\.000 credits\/s = 3,600\/h/);
+});
+
+test('the mail names every low account with its figures, the subject first', () => {
+	const runway = computeRunway({ creditBalance: 86_400, instanceCreditsPerSecond: [1], warnDays: 7, targetDays: 30 });
+	const text = mailText(
+		[
+			{ name: 'alpha', address: '0x1111111111111111111111111111111111111111', runway },
+			{ name: 'beta', address: '0x2222222222222222222222222222222222222222', runway },
+		],
+		'https://example.invalid/issues',
+	);
+	const [subject, ...body] = text.split('\n');
+	assert.equal(subject, 'Aleph credits low: alpha, beta');
+	const rest = body.join('\n');
+	assert.match(rest, /alpha \(0x1{40}\)/);
+	assert.match(rest, /Credit balance: +86,400/);
+	assert.match(rest, /Burn per day: +86,400/);
+	assert.match(rest, /Days left: +1\.0/);
+	assert.match(rest, /a top-up of about 2,505,600/);
+	assert.match(rest, /Open alerts: https:\/\/example\.invalid\/issues/);
 });
