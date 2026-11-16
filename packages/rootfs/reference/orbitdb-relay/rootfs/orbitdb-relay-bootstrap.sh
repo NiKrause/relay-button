@@ -14,16 +14,33 @@ if [ ! -d "${INSTALL_DIR}" ]; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y ca-certificates curl gnupg python3 python3-pip build-essential caddy openssh-server
+
+# Every download below has a time limit. This script runs inside
+# virt-customize, which shows a command's output only when the command fails:
+# a download that hangs instead (2026-11-16: three image builds sat here for
+# 50+ minutes without a line of output) gives no clue which source it was.
+# With a limit the build fails within minutes, and the "[bootstrap] ..." line
+# before the failure names the step.
+step() {
+  echo "[bootstrap] $1" >&2
+}
+APT_OPTIONS=(-o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -o Acquire::Retries=3)
+export npm_config_fetch_timeout=60000 npm_config_fetch_retries=3
+
+step "apt-get update"
+timeout 600 apt-get "${APT_OPTIONS[@]}" update
+step "apt-get install base packages"
+timeout 900 apt-get "${APT_OPTIONS[@]}" install -y ca-certificates curl gnupg python3 python3-pip build-essential caddy openssh-server
 # The CRN injects the deployer's SSH key via the INSTANCE message, but the key
 # is useless without a running sshd — image generations without openssh-server
 # made live debugging impossible (connection refused on the mapped port 22).
 systemctl enable ssh || true
 
 if ! command -v node >/dev/null 2>&1 || [ "$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0)" -lt "${NODE_MIN_MAJOR}" ]; then
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-  apt-get install -y nodejs
+  step "NodeSource setup"
+  curl -fsSL --max-time 120 https://deb.nodesource.com/setup_22.x | timeout 600 bash -
+  step "apt-get install nodejs"
+  timeout 900 apt-get "${APT_OPTIONS[@]}" install -y nodejs
 fi
 
 rm -rf /var/lib/apt/lists/*
@@ -38,7 +55,8 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-python3 -m pip install --break-system-packages --no-cache-dir eth-account
+step "pip install eth-account"
+timeout 600 python3 -m pip install --timeout 60 --retries 3 --break-system-packages --no-cache-dir eth-account
 
 mkdir -p "${DATA_DIR}" "$(dirname "${ENV_FILE}")"
 
@@ -59,10 +77,15 @@ if [ -f "${INSTALL_DIR}/pnpm-lock.yaml" ] && command -v corepack >/dev/null 2>&1
   fi
 fi
 
+step "install relay dependencies: ${install_command}"
 if command -v runuser >/dev/null 2>&1; then
-  runuser -u "${SERVICE_USER}" -- env HOME="${DATA_DIR}" bash -lc "${install_command}"
+  timeout 1200 runuser -u "${SERVICE_USER}" -- env HOME="${DATA_DIR}" \
+    npm_config_fetch_timeout="${npm_config_fetch_timeout}" npm_config_fetch_retries="${npm_config_fetch_retries}" \
+    bash -lc "${install_command}"
 elif command -v sudo >/dev/null 2>&1; then
-  sudo -u "${SERVICE_USER}" env HOME="${DATA_DIR}" bash -lc "${install_command}"
+  timeout 1200 sudo -u "${SERVICE_USER}" env HOME="${DATA_DIR}" \
+    npm_config_fetch_timeout="${npm_config_fetch_timeout}" npm_config_fetch_retries="${npm_config_fetch_retries}" \
+    bash -lc "${install_command}"
 else
   echo "Need runuser or sudo to install dependencies as ${SERVICE_USER}." >&2
   exit 1
@@ -70,6 +93,7 @@ fi
 
 # Drop toolchains and caches after dependency installation so the prebaked
 # qcow2 reflects the runtime footprint rather than the build footprint.
+step "clean up build toolchain"
 apt-get purge -y build-essential
 apt-get autoremove -y
 apt-get clean
