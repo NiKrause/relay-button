@@ -250,6 +250,11 @@ on:
         required: false
       VM_SSH_PUBLIC_KEY:
         required: false
+      ALEPH_VM_BOOTSTRAP_OWNER_PRIVATE_KEY:
+        description: >-
+          Optional key of the relay's owner account. It signs the owner authorization, so the relay's
+          bootstrap posts name `ownerAddress`. Without it, apps that trust relays by owner don't find the relay.
+        required: false
       CONFIDENTIAL_LUKS_PASSPHRASE:
         required: false
     outputs:
@@ -769,6 +774,7 @@ jobs:
         uses: ./shared-aleph-tooling/.github/actions/aleph-vm-deploy
         with:
           aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          bootstrap_owner_private_key: ${{ secrets.ALEPH_VM_BOOTSTRAP_OWNER_PRIVATE_KEY }}
           profile: ${{ inputs.profile }}
           name: ${{ inputs.vm_name != '' && inputs.vm_name || inputs.profile }}
           ssh_public_key: ${{ inputs.vm_ssh_public_key != '' && inputs.vm_ssh_public_key || secrets.VM_SSH_PUBLIC_KEY }}

@@ -14,3 +14,15 @@ test('the rootfs publish workflows carry vars.ATTEST_RELAY_BUILDER_ROOTHASHES to
   assert.match(reusable, /\n {6}attest_relay_builder_roothashes:\n(?: {8}.*\n)*? {8}type: string/)
   assert.match(reusable, /ALEPH_ROOTFS_ATTEST_RELAY_BUILDER_ROOTHASHES: \$\{\{ inputs\.attest_relay_builder_roothashes \}\}/)
 })
+
+// Without an owner key a relay deployed from CI posts registrations with no
+// ownerAddress, and apps that trust relays by owner never find it.
+test('the reusable workflow hands an optional bootstrap owner key to the VM deploy action', async () => {
+  const reusable = await workflow('aleph-rootfs-build-publish-deploy.yml')
+  assert.match(reusable, /\n {6}ALEPH_VM_BOOTSTRAP_OWNER_PRIVATE_KEY:\n(?: {8}.*\n)*? {8}required: false/)
+  assert.match(reusable, /bootstrap_owner_private_key: \$\{\{ secrets\.ALEPH_VM_BOOTSTRAP_OWNER_PRIVATE_KEY \}\}/)
+
+  const action = await readFile(new URL('../../../.github/actions/aleph-vm-deploy/action.yml', import.meta.url), 'utf8')
+  assert.match(action, /\n {2}bootstrap_owner_private_key:\n/)
+  assert.match(action, /ALEPH_VM_BOOTSTRAP_OWNER_PRIVATE_KEY: \$\{\{ inputs\.bootstrap_owner_private_key \}\}/)
+})

@@ -1455,7 +1455,7 @@ test('executeDeployPlan forgets the instance when a step after its start fails',
   assert.ok(logs.some((line) => line.includes('failed after it started; cleaning up')))
 })
 
-test('executeDeployPlan pushes the bootstrap owner authorization after the guest reports metadata', async () => {
+async function assertOwnerAuthorizationPushed({ registrationVisible }: { registrationVisible: boolean }) {
   const configureBodies: string[] = []
   const derivedBootstrapPublisherPrivateKey = deriveBootstrapPublisherPrivateKey({
     sourcePrivateKey: DEPLOY_PLAN.privateKey,
@@ -1573,6 +1573,7 @@ test('executeDeployPlan pushes the bootstrap owner authorization after the guest
         }
 
         if (String(url).includes('/api/v0/posts.json')) {
+          if (!registrationVisible) return jsonResponse({ posts: [] })
           return jsonResponse({
             posts: [
               {
@@ -1652,6 +1653,14 @@ test('executeDeployPlan pushes the bootstrap owner authorization after the guest
   assert.match(String(authorization.payload?.publisherAddress ?? ''), /^0x/i)
   assert.match(String(authorization.payload?.ownerAddress ?? ''), /^0x/i)
   assert.match(String(authorization.signature ?? ''), /^0x/i)
+}
+
+test('executeDeployPlan pushes the bootstrap owner authorization after the guest reports metadata', async () => {
+  await assertOwnerAuthorizationPushed({ registrationVisible: true })
+})
+
+test('executeDeployPlan still pushes the owner authorization when Aleph does not show the registration in time', async () => {
+  await assertOwnerAuthorizationPushed({ registrationVisible: false })
 })
 
 test('executeDeployPlan publishes, waits for and reconciles bootstrap posts in the bootstrap channel, not the deploy channel', async () => {
