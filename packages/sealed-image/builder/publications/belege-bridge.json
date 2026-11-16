@@ -2,6 +2,7 @@
 	"app": "Le-Space/belege",
 	"note": "Published 2026-11-16 (workflow \"Sealed image builder on Aleph\", run 43912726371, V-PROGRAM 546e759c…, attested on the node below, then deleted in run 43914408701; its volumes stay) for the hosted bridge's plain image from Le-Space/belege's \"Bridge image\" workflow, run 43685886548 (belege#777).",
 	"claim": "sealed image build",
+	"vprogram": "546e759c3721ccee9678105f65e9c6461b0d99ab9d83a9c8cbd0d28cf6eae52f",
 	"program": {
 		"allow_amend": false,
 		"environment": {
