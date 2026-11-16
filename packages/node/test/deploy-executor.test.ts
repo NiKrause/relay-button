@@ -1457,6 +1457,7 @@ test('executeDeployPlan forgets the instance when a step after its start fails',
 
 async function assertOwnerAuthorizationPushed({ registrationVisible }: { registrationVisible: boolean }) {
   const configureBodies: string[] = []
+  const setupCalls: string[] = []
   const derivedBootstrapPublisherPrivateKey = deriveBootstrapPublisherPrivateKey({
     sourcePrivateKey: DEPLOY_PLAN.privateKey,
     profile: 'orbitdb-relay',
@@ -1553,11 +1554,13 @@ async function assertOwnerAuthorizationPushed({ registrationVisible }: { registr
         }
 
         if (String(url).includes('/configure')) {
+          setupCalls.push('configure')
           configureBodies.push(String(init?.body ?? ''))
           return jsonResponse({ status: 'configured' })
         }
 
         if (String(url).includes('/metadata')) {
+          setupCalls.push(new URL(String(url)).search ? `metadata${new URL(String(url)).search}` : 'metadata')
           return jsonResponse({
             status: 'ready',
             metadata: {
@@ -1653,6 +1656,15 @@ async function assertOwnerAuthorizationPushed({ registrationVisible }: { registr
   assert.match(String(authorization.payload?.publisherAddress ?? ''), /^0x/i)
   assert.match(String(authorization.payload?.ownerAddress ?? ''), /^0x/i)
   assert.match(String(authorization.signature ?? ''), /^0x/i)
+
+  // The setup server stays open for the authorization (keep_open=1 on the
+  // metadata the authorization is signed from) and is closed with a plain
+  // GET /metadata only after the authorization was configured.
+  assert.equal(setupCalls.find((call) => call.startsWith('metadata')), 'metadata?keep_open=1')
+  const authorizationIndex = setupCalls.lastIndexOf('configure')
+  assert.ok(authorizationIndex > setupCalls.indexOf('metadata?keep_open=1'))
+  assert.equal(setupCalls.at(-1), 'metadata')
+  assert.ok(setupCalls.lastIndexOf('metadata') > authorizationIndex)
 }
 
 test('executeDeployPlan pushes the bootstrap owner authorization after the guest reports metadata', async () => {
