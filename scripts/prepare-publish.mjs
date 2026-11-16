@@ -48,12 +48,23 @@ const publishTargets = [
   },
   {
     dir: 'attest-wasm'
+  },
+  {
+    dir: 'aleph-vm'
+  },
+  {
+    dir: 'sealed-image'
   }
 ]
 
 // attest-wasm ships its sources as they are (js/ and the wasm-bindgen web
 // build in pkg/), not a tsup bundle, so it keeps its own exports map.
 const ATTEST_WASM = '@le-space/attest-wasm'
+
+// Plain ES modules with JSDoc, shipped as they are (src/), with the exports
+// map and files list of their own package.json: they run unbuilt in a
+// browser and in Node.
+const SOURCE_PACKAGES = new Set(['@le-space/aleph-vm', '@le-space/sealed-image'])
 
 async function readJson(path) {
   return JSON.parse(await readFile(path, 'utf8'))
@@ -125,26 +136,29 @@ async function main() {
       description: packageJson.description,
       license: packageJson.license,
       type: packageJson.type,
-      files:
-        packageJson.name === '@le-space/ui'
+      files: SOURCE_PACKAGES.has(packageJson.name)
+        ? packageJson.files
+        : packageJson.name === '@le-space/ui'
           ? ['shared', 'react', 'svelte', 'styles.css', 'README.md']
           : packageJson.name === ATTEST_WASM
             ? ['js', 'pkg', 'README.md', 'LICENSE-aleph-rs', 'LICENSE-sev']
             : undefined,
-      main:
-        packageJson.name === '@le-space/ui'
+      main: SOURCE_PACKAGES.has(packageJson.name)
+        ? packageJson.main
+        : packageJson.name === '@le-space/ui'
           ? './shared/index.js'
           : packageJson.name === ATTEST_WASM
             ? packageJson.main
             : './index.js',
-      types:
-        packageJson.name === '@le-space/ui'
+      types: SOURCE_PACKAGES.has(packageJson.name)
+        ? undefined
+        : packageJson.name === '@le-space/ui'
           ? './shared/index.d.ts'
           : packageJson.name === ATTEST_WASM
             ? packageJson.types
             : './index.d.ts',
       exports:
-        packageJson.name === ATTEST_WASM
+        SOURCE_PACKAGES.has(packageJson.name) || packageJson.name === ATTEST_WASM
           ? packageJson.exports
           : packageJson.name === '@le-space/ui'
           ? {
@@ -208,6 +222,10 @@ async function main() {
       for (const license of ['LICENSE-aleph-rs', 'LICENSE-sev']) {
         await cp(join(packageRoot, license), join(distDir, license))
       }
+    }
+
+    if (SOURCE_PACKAGES.has(packageJson.name)) {
+      await cp(join(packageRoot, 'src'), join(distDir, 'src'), { recursive: true })
     }
 
     if (packageJson.name === '@le-space/rootfs') {

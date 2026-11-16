@@ -109,6 +109,15 @@ importers:
         specifier: ^2.53.1
         version: 2.53.1(typescript@5.9.3)
 
+  packages/aleph-vm:
+    dependencies:
+      '@le-space/core':
+        specifier: workspace:*
+        version: link:../core
+      viem:
+        specifier: ^2.53.1
+        version: 2.53.1(typescript@5.9.3)
+
   packages/attest-relay:
     dependencies:
       ws:
@@ -289,6 +298,19 @@ importers:
         version: 1.61.1
 
   packages/rootfs: {}
+
+  packages/sealed-image:
+    dependencies:
+      '@le-space/aleph-vm':
+        specifier: workspace:*
+        version: link:../aleph-vm
+      '@le-space/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      viem:
+        specifier: ^2.53.1
+        version: 2.53.1(typescript@5.9.3)
 
   packages/shared-types: {}
 

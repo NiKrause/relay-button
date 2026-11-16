@@ -1,0 +1,495 @@
+name: Sealed image builder on Aleph
+
+# Puts the sealed image builder (packages/sealed-image/builder) on Aleph as a
+# V-PROGRAM with Aleph's CLI, or looks at one that runs, or deletes it. One
+# builder code, published once per plain image (#225): each publication holds
+# one app's plain image and has a measurement of its own.
+# The steps and what each shows: packages/sealed-image/builder/vprogram/README.md.
+# Moved here from Le-Space/paperless-anywhere (.github/workflows/builder-publish.yml).
+#
+#   dry-run  builds the workload and computes the launch measurements; uploads
+#            and publishes nothing, costs nothing
+#   publish  the same, then uploads the workload and publishes the V-PROGRAM
+#            (on the node named in "crn", or where the scheduler puts it),
+#            and makes an attested call to it. If the call does not verify,
+#            for instance because the node's firmware is below the network's
+#            floor, the builder is deleted again, unless "keep" is set. A
+#            builder that verifies costs credits until it is deleted.
+#   check    shows a published V-PROGRAM and makes one attested call to it
+#   trial    has a published builder seal the image once, with a passphrase
+#            made for this run and thrown away, and fetches two pieces back:
+#            it shows that a whole image fits into the VM's memory, how long
+#            it takes, and that the result begins as a LUKS2 disk
+#   delete   forgets a published V-PROGRAM (the scheduler then stops the VM)
+#   pin      pins a file Aleph or IPFS still serves (its CID in "cid") with a
+#            new STORE of this account: an image forgotten by mistake comes
+#            back under a new item hash, with the same file and so the same
+#            passphrase. Nothing is uploaded.
+#   again    (with hash "fixed": the builder recorded in "publication",
+#            started as an app's build starts it, and kept for a round trip)
+#            publishes a second V-PROGRAM with the content of the running one
+#            in "hash" (new time, nothing uploaded: the same runtime and
+#            volumes) and makes an attested call to it: does a builder
+#            started again from the same volumes show the same measurement?
+#            It costs credits until it is deleted, like the first. Deleting
+#            a V-PROGRAM forgets the message only: its volumes (STOREs) stay.
+#
+# The plain image the builder seals is part of what is published: it goes
+# onto a verified volume, so "plain_store" and "plain_sha256" (both from the
+# app's image workflow) decide which image this builder is for, and a new
+# image needs a new builder. The unpacked plain image may have 992 MiB at
+# most (sealing adds 32 MiB; Aleph takes 1 GiB in one upload): checked before
+# anything is uploaded.
+#
+# Secret: ALEPH_PRIVATE_KEY signs and pays (publish, delete); a dry run also
+# signs with it, since the CLI builds the whole message. GitHub-hosted runner
+# only. What the summary shows is public on Aleph anyway: the message, its
+# sender, the measurements.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: '"dry-run": measure only. "publish": start the builder (costs credits until deleted). "check": show a builder and call it, attested. "trial": have it seal the image once. "delete": stop one.'
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - publish
+          - check
+          - trial
+          - delete
+          - again
+          - pin
+      cid:
+        description: 'For "pin": the IPFS CID of the file to pin again (Qm… or bafy…).'
+        required: false
+        default: ''
+      hash:
+        description: The V-PROGRAM's item hash (64 hex), for "check", "trial" and "delete".
+        required: false
+        default: ''
+      publication:
+        description: 'For "again" with hash "fixed": the publication file, e.g. packages/sealed-image/builder/publications/paperless-anywhere.json.'
+        required: false
+        default: ''
+      name:
+        description: 'For "dry-run" and "publish": the V-PROGRAM''s name, e.g. sealed-image-builder-belege-bridge.'
+        required: false
+        default: sealed-image-builder
+      plain_store:
+        description: 'For "dry-run" and "publish": the plain image on Aleph (its STORE hash, 64 hex), gzipped, from the app''s image workflow.'
+        required: false
+        default: ''
+      plain_sha256:
+        description: 'For "dry-run", "publish" and "trial": the SHA-256 of the plain image, unpacked (64 hex), from the image workflow.'
+        required: false
+        default: ''
+      crn:
+        description: 'For "publish": the compute node to run on (its hash, or a unique start of it). Empty leaves the choice to the scheduler.'
+        required: false
+        default: ''
+      keep:
+        description: 'For "publish": keep the builder even if the attested call to it fails (to look at it; it keeps costing).'
+        required: true
+        default: false
+        type: boolean
+      memory:
+        description: Memory in MiB. One image is built in memory; see packages/sealed-image/builder/vprogram/README.md.
+        required: true
+        default: '6144'
+      vcpus:
+        description: Virtual CPUs.
+        required: true
+        default: '2'
+      runtime:
+        description: Aleph's compose runtime (a name from the vm-images aggregate).
+        required: true
+        default: compose-1.4
+      forget_volumes:
+        description: 'For "delete": also forget the builder''s own volumes (workload, plain image volume, their hash trees). Not when another builder still runs on them.'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sealed-image-builder-on-aleph
+  cancel-in-progress: false
+
+env:
+  # Aleph's CLI, pinned: the release binary and its SHA-256 as GitHub lists it.
+  ALEPH_CLI_VERSION: v0.22.0
+  ALEPH_CLI_SHA256: 41b8ced717d9962683ce2d4409725774e826643be0bae1bfc623f6c0c7fb19d7
+
+jobs:
+  builder:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check the inputs
+        env:
+          ACTION: ${{ inputs.action }}
+          HASH: ${{ inputs.hash }}
+          MEMORY: ${{ inputs.memory }}
+          VCPUS: ${{ inputs.vcpus }}
+          RUNTIME: ${{ inputs.runtime }}
+          CRN: ${{ inputs.crn }}
+          PLAIN_STORE: ${{ inputs.plain_store }}
+          PLAIN_SHA256: ${{ inputs.plain_sha256 }}
+          NAME: ${{ inputs.name }}
+          PUBLICATION: ${{ inputs.publication }}
+          ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+        run: |
+          [[ "$NAME" =~ ^[a-z0-9][a-z0-9-]{2,62}$ ]] || { echo "::error::name: lowercase letters, digits and hyphens"; exit 1; }
+          case "$ACTION" in
+            dry-run|publish) [[ "$PLAIN_STORE" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::\"$ACTION\" needs plain_store, the plain image's STORE hash (64 hex)"; exit 1; } ;;
+          esac
+          case "$ACTION" in
+            dry-run|publish|trial) [[ "$PLAIN_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::\"$ACTION\" needs plain_sha256, the SHA-256 of the plain image (64 hex)"; exit 1; } ;;
+          esac
+          [[ -z "$CRN" || "$CRN" =~ ^[0-9a-f]{6,64}$ ]] || { echo "::error::crn: a node's hash or the start of it (hex)"; exit 1; }
+          [[ "$MEMORY" =~ ^[0-9]{4,6}$ ]] || { echo "::error::memory: MiB, a number"; exit 1; }
+          [[ "$VCPUS" =~ ^[1-9][0-9]?$ ]] || { echo "::error::vcpus: a number"; exit 1; }
+          [[ "$RUNTIME" =~ ^[a-z0-9.-]{3,40}$ ]] || { echo "::error::runtime: a name such as compose-1.4"; exit 1; }
+          case "$ACTION" in
+            check|trial|delete) [[ "$HASH" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::\"$ACTION\" needs the V-PROGRAM's item hash (64 hex)"; exit 1; } ;;
+            again) [[ "$HASH" =~ ^[0-9a-f]{64}$ || "$HASH" = fixed ]] || { echo "::error::\"again\" needs a V-PROGRAM's item hash (64 hex), or \"fixed\" with a publication file"; exit 1; } ;;
+          esac
+          if [ "$ACTION" = again ] && [ "$HASH" = fixed ]; then
+            [[ "$PUBLICATION" =~ ^packages/sealed-image/builder/publications/[a-z0-9-]+\.json$ && -f "$PUBLICATION" ]] || { echo "::error::publication: a file in packages/sealed-image/builder/publications"; exit 1; }
+          fi
+          case "$ACTION" in
+            dry-run|publish|delete|again|pin) [ -n "$ALEPH_PRIVATE_KEY" ] || { echo "::error::set the ALEPH_PRIVATE_KEY secret"; exit 1; } ;;
+          esac
+
+      - name: Aleph's CLI and the image tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq cryptsetup-bin e2fsprogs jq >/dev/null
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/aleph" \
+            "https://github.com/aleph-im/aleph-rs/releases/download/${ALEPH_CLI_VERSION}/aleph-cli-linux-x86_64"
+          echo "${ALEPH_CLI_SHA256}  $RUNNER_TEMP/aleph" | sha256sum -c - >/dev/null
+          sudo install -m 755 "$RUNNER_TEMP/aleph" /usr/local/bin/aleph
+          aleph --version
+
+      - name: The container image, as an archive
+        if: inputs.action == 'dry-run' || inputs.action == 'publish'
+        working-directory: packages/sealed-image/builder/vprogram
+        run: ./build-archive.sh "$RUNNER_TEMP/image-builder.tar" | tee "$RUNNER_TEMP/archive.txt"
+
+      # The plain image as the builder gets it: gzipped, as it lies on Aleph,
+      # in a small ext4 filesystem that Aleph's CLI turns into a verified
+      # volume. Checked first: what goes in is the image the inputs name.
+      - name: The plain image, as a volume
+        if: inputs.action == 'dry-run' || inputs.action == 'publish'
+        env:
+          PLAIN_STORE: ${{ inputs.plain_store }}
+          PLAIN_SHA256: ${{ inputs.plain_sha256 }}
+          ALEPH_API: https://api2.aleph.im
+        run: |
+          dir="$RUNNER_TEMP/plain-volume"
+          mkdir -p "$dir"
+          file="$(curl -fsS --retry 3 "$ALEPH_API/api/v0/messages/$PLAIN_STORE" | jq -r '(.message.content // .content).item_hash')"
+          [[ "$file" =~ ^[A-Za-z0-9]{40,64}$ ]] || { echo "::error::$PLAIN_STORE is no STORE message with a file"; exit 1; }
+          curl -fsSL --retry 3 -o "$dir/plain.img.gz" "$ALEPH_API/api/v0/storage/raw/$file"
+          got="$(gunzip -c "$dir/plain.img.gz" | sha256sum | cut -d' ' -f1)"
+          [ "$got" = "$PLAIN_SHA256" ] || { echo "::error::the plain image on Aleph has SHA-256 $got, not the one given"; exit 1; }
+          # The builder seals at most 992 MiB (builder.mjs, MAX_IMAGE_BYTES), in whole 4 KiB blocks.
+          unpacked="$(gunzip -c "$dir/plain.img.gz" | wc -c)"
+          [ "$unpacked" -le $(( 992 * 1048576 )) ] || { echo "::error::the plain image has $(( unpacked / 1048576 )) MiB unpacked; the builder seals 992 MiB at most"; exit 1; }
+          [ $(( unpacked % 4096 )) = 0 ] || { echo "::error::the plain image is no whole number of 4 KiB blocks"; exit 1; }
+          chmod 644 "$dir/plain.img.gz"
+          size_mib=$(( $(stat -c %s "$dir/plain.img.gz") / 1048576 + 24 ))
+          truncate -s "${size_mib}M" "$RUNNER_TEMP/plain-volume.ext4"
+          mkfs.ext4 -q -b 4096 -O ^has_journal -L plain -d "$dir" "$RUNNER_TEMP/plain-volume.ext4"
+          rm -rf "$dir"
+          {
+            echo "plain image (STORE): $PLAIN_STORE"
+            echo "plain image SHA-256: $PLAIN_SHA256"
+            echo "unpacked:            $(( unpacked / 1048576 )) MiB of 992 MiB"
+            echo "volume:              ${size_mib} MiB"
+          } | tee "$RUNNER_TEMP/plain.txt"
+
+      - name: Build and measure; publish if asked
+        if: inputs.action == 'dry-run' || inputs.action == 'publish'
+        working-directory: packages/sealed-image/builder/vprogram
+        env:
+          ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          ACTION: ${{ inputs.action }}
+          MEMORY: ${{ inputs.memory }}
+          VCPUS: ${{ inputs.vcpus }}
+          RUNTIME: ${{ inputs.runtime }}
+          CRN: ${{ inputs.crn }}
+          KEEP: ${{ inputs.keep }}
+          NAME: ${{ inputs.name }}
+        run: |
+          image="$(sed -n 's/^ *image: *//p' docker-compose.yml)"
+          create=(aleph vprogram create "$NAME" --compose docker-compose.yml
+            --image-archive "$image=$RUNNER_TEMP/image-builder.tar" --runtime "$RUNTIME"
+            --volume "$RUNNER_TEMP/plain-volume.ext4"
+            --vcpus "$VCPUS" --memory "$MEMORY" --chain eth --json)
+          # First without publishing, up to three times: fetching Aleph's
+          # runtime bundle (about 270 MB) sometimes runs into the CLI's timeout.
+          # Nothing is uploaded here, so a retry repeats nothing.
+          for try in 1 2 3; do
+            if "${create[@]}" --dry-run > "$RUNNER_TEMP/dry-run.json" 2> "$RUNNER_TEMP/dry-run.log"; then break; fi
+            tail -5 "$RUNNER_TEMP/dry-run.log"
+            [ "$try" = 3 ] && { echo "::error::the dry run failed three times"; exit 1; }
+            sleep 20
+          done
+          tail -20 "$RUNNER_TEMP/dry-run.log"
+          cat "$RUNNER_TEMP/dry-run.json"
+          [ "$ACTION" = publish ] || exit 0
+
+          # Once, without a retry: a second try after a half-done publication
+          # could start a second builder.
+          [ -n "$CRN" ] && create+=(--crn "$CRN")
+          "${create[@]}" --wait 600 > "$RUNNER_TEMP/publish.json" 2> >(tee "$RUNNER_TEMP/publish.log" >&2)
+          cat "$RUNNER_TEMP/publish.json"
+          hash="$(jq -rs '[.. | objects | .item_hash? | strings | select(test("^[0-9a-f]{64}$"))] | first // empty' "$RUNNER_TEMP/publish.json")"
+          [ -n "$hash" ] || { echo "::error::published, but no item hash in the CLI's answer: look at the account's V-PROGRAMs and delete by hand"; exit 1; }
+          echo "$hash" > "$RUNNER_TEMP/hash.txt"
+          echo "::notice::published as $hash"
+          aleph vprogram show "$hash" --json > "$RUNNER_TEMP/show.json" || true
+          cat "$RUNNER_TEMP/show.json"
+
+          # The attested call: only a builder that verifies is worth keeping.
+          # The workload needs a moment to load its image, so a refused
+          # connection or an answer that is not the builder's yet is tried
+          # again for ten minutes; a refused attestation is final.
+          verified=
+          for try in $(seq 1 20); do
+            if aleph vprogram call "$hash" / --verbose > "$RUNNER_TEMP/call.txt" 2> "$RUNNER_TEMP/call.log" \
+              && grep -qE '(sealed|paperless-anywhere) image builder' "$RUNNER_TEMP/call.txt"; then verified=1; break; fi
+            echo "--- try $try"; cat "$RUNNER_TEMP/call.log" "$RUNNER_TEMP/call.txt"
+            # Only a refused attestation ends the waiting. With --verbose a
+            # call that verified also prints its policy and TCB, so those
+            # words alone say nothing. A call that never reached the guest
+            # is reported as "attestation failed: … request failed" too
+            # (2026-11-13: the builder was deleted seconds after its start,
+            # before its workload was up); that one is waited for.
+            if grep -qiE 'attestation (challenge )?failed|below the required floor' "$RUNNER_TEMP/call.log" \
+              && ! grep -qiE 'error sending request|request failed|connection (refused|reset|closed)|timed out|timeout' "$RUNNER_TEMP/call.log"; then break; fi
+            sleep 30
+          done
+          if [ -n "$verified" ]; then
+            cat "$RUNNER_TEMP/call.log" "$RUNNER_TEMP/call.txt"
+            exit 0
+          fi
+          if [ "$KEEP" = true ]; then
+            echo "::error::the attested call failed; the builder $hash is kept and keeps costing"
+            exit 1
+          fi
+          aleph vprogram delete "$hash" --yes --chain eth --reason "attested call failed" --json > "$RUNNER_TEMP/delete.json" \
+            || { echo "::error::the attested call failed AND the delete failed: delete $hash by hand"; exit 1; }
+          echo "::error::the attested call failed; the builder $hash was deleted again"
+          exit 1
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        if: inputs.action == 'again'
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: inputs.action == 'again'
+        with:
+          node-version: 24.x
+
+      # The same content as the running V-PROGRAM (or the publication file), a
+      # new time: the volumes, the runtime and the measurements it names are
+      # that one's. The call that follows shows the measurement the hardware
+      # reports for it. No install scripts, and no secret in the step that installs.
+      - name: The packages' modules
+        if: inputs.action == 'again'
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter "@le-space/sealed-image..." > /dev/null
+      - name: Start it again from the same volumes, and call it attested
+        if: inputs.action == 'again'
+        env:
+          ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          FROM: ${{ inputs.hash }}
+          PUBLICATION: ${{ inputs.publication }}
+          AGAIN_RESULT: ${{ runner.temp }}/again.json
+        run: |
+          started=$(date +%s)
+          node packages/sealed-image/builder/scripts/vprogram-again.mjs
+          hash="$(jq -r .again "$AGAIN_RESULT")"
+          echo "$hash" > "$RUNNER_TEMP/hash.txt"
+          echo "::notice::published again as $hash"
+          verified=
+          for try in $(seq 1 30); do
+            if aleph vprogram call "$hash" / --verbose > "$RUNNER_TEMP/call.txt" 2> "$RUNNER_TEMP/call.log" \
+              && grep -qE '(sealed|paperless-anywhere) image builder' "$RUNNER_TEMP/call.txt"; then verified=1; break; fi
+            echo "--- try $try"; tail -3 "$RUNNER_TEMP/call.log"
+            sleep 30
+          done
+          cat "$RUNNER_TEMP/call.log" "$RUNNER_TEMP/call.txt"
+          {
+            echo "first:     $FROM"
+            echo "again:     $hash"
+            echo "declared:  $(jq -r '.measurements | join(" ")' "$AGAIN_RESULT")"
+            echo "reported:  $(sed -n 's/^measurement: //p' "$RUNNER_TEMP/call.log" | tail -1)"
+            echo "verified:  ${verified:-no}"
+            echo "seconds from publishing to the first verified call: $(( $(date +%s) - started ))"
+          } | tee "$RUNNER_TEMP/again.txt"
+          [ -n "$verified" ] || { echo "::error::the builder started again did not verify; delete $hash"; exit 1; }
+
+      - name: Pin a file again
+        if: inputs.action == 'pin'
+        env:
+          ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          CID: ${{ inputs.cid }}
+        run: |
+          [[ "$CID" =~ ^(Qm[1-9A-HJ-NP-Za-km-z]{44}|bafy[a-z2-7]{50,})$ ]] || { echo "::error::cid: an IPFS CID (Qm… or bafy…)"; exit 1; }
+          # Only a file that still comes back: its first bytes, from Aleph's gateway.
+          curl -fsS --retry 3 -r 0-15 "https://ipfs.aleph.im/ipfs/$CID" -o "$RUNNER_TEMP/head.bin"
+          [ -s "$RUNNER_TEMP/head.bin" ] || { echo "::error::$CID does not come back from IPFS"; exit 1; }
+          echo "first bytes: $(head -c 4 "$RUNNER_TEMP/head.bin" | tr -cd '[:print:]')"
+          aleph file pin "$CID" --payment-type credit --chain eth --json | tee "$RUNNER_TEMP/pin.json"
+          store="$(jq -r '.item_hash // .message.item_hash // .message_hash // empty' "$RUNNER_TEMP/pin.json" 2>/dev/null || true)"
+          [[ "$store" =~ ^[0-9a-f]{64}$ ]] || store="$(grep -oE '[0-9a-f]{64}' "$RUNNER_TEMP/pin.json" | head -1)"
+          [[ "$store" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::no STORE hash in the answer"; exit 1; }
+          for i in $(seq 1 30); do
+            s="$(curl -fsS "https://api2.aleph.im/api/v0/messages/$store" | jq -r .status || true)"
+            [ "$s" = processed ] && break
+            sleep 10
+          done
+          echo "STORE $store: $s"
+          [ "$s" = processed ] || { echo "::error::the STORE is $s"; exit 1; }
+          echo "### Pinned again" >> "$GITHUB_STEP_SUMMARY"
+          echo "STORE: \`$store\` (file $CID)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Show it and call it, attested
+        if: inputs.action == 'check'
+        env:
+          HASH: ${{ inputs.hash }}
+        run: |
+          aleph vprogram show "$HASH" --json | tee "$RUNNER_TEMP/show.json"
+          # Answers only if the AMD chain, the key binding, the pinned
+          # measurement, the policy and a fresh nonce all check out.
+          aleph vprogram call "$HASH" / --verbose > "$RUNNER_TEMP/call.txt" 2> "$RUNNER_TEMP/call.log" || { cat "$RUNNER_TEMP/call.log"; echo "::error::the attested call failed"; exit 1; }
+          cat "$RUNNER_TEMP/call.log" "$RUNNER_TEMP/call.txt"
+          grep -qE '(sealed|paperless-anywhere) image builder' "$RUNNER_TEMP/call.txt" || { echo "::error::the builder did not answer as the image builder"; exit 1; }
+
+      # One whole build on Aleph, with a passphrase nobody keeps. Each call is
+      # attested like the one in "check".
+      - name: Have it seal the image once
+        if: inputs.action == 'trial'
+        env:
+          HASH: ${{ inputs.hash }}
+          PLAIN_SHA256: ${{ inputs.plain_sha256 }}
+        run: |
+          call() { aleph vprogram call "$HASH" "$@" 2>> "$RUNNER_TEMP/trial.log"; }
+          pass="$(openssl rand -base64 32 | tr -d '\r\n')"
+          echo "::add-mask::$pass"
+          # The first signed request claims the builder (builder/claim.mjs):
+          # here with a key made for the run and thrown away.
+          (cd packages/sealed-image/builder && npm ci --ignore-scripts --omit=dev --no-audit --no-fund --loglevel=error)
+          claim="$(node --input-type=module -e "import { signClaim } from './packages/sealed-image/builder/claim.mjs'; console.log(JSON.stringify(signClaim(process.argv[1])))" "$PLAIN_SHA256")"
+          body="$(jq -cn --arg sha "$PLAIN_SHA256" --arg pass "$pass" --argjson claim "$claim" '{sha256: $sha, passphrase: $pass} + $claim')"
+          started=$(date +%s)
+          job="$(call /build -X POST -H 'Content-Type: application/json' -d "$body" | jq -r '.job // empty')"
+          unset pass body
+          [[ "$job" =~ ^[0-9a-f]{48}$ ]] || { tail -5 "$RUNNER_TEMP/trial.log"; echo "::error::the builder did not accept the build"; exit 1; }
+          state=building
+          for try in $(seq 1 60); do
+            sleep 15
+            answer="$(call "/job/$job" || true)"
+            state="$(jq -r '.state // empty' <<<"$answer")"
+            echo "[$try] ${answer:-no answer}"
+            [ "$state" = building ] || [ "$state" = queued ] || [ -z "$state" ] || break
+          done
+          built_after=$(( $(date +%s) - started ))
+          [ "$state" = built ] || { echo "::error::the build ended as \"${state:-unknown}\": $(jq -r '.error // empty' <<<"$answer")"; call "/job/$job" -X DELETE >/dev/null || true; exit 1; }
+          size="$(jq -r .size <<<"$answer")"
+          cid="$(jq -r .cid <<<"$answer")"
+
+          # Pieces of the sealed image, fetched back. Aleph's CLI prints an
+          # answer as text and replaces what is no valid UTF-8, so the bytes
+          # that arrive here are not the image's bytes and their count says
+          # nothing (first trial, 2026-11-12). What survives is ASCII: a
+          # LUKS2 header begins with "LUKS". The app reads the channel as
+          # bytes, and Aleph recomputes the content address on upload, so
+          # the image's integrity does not rest on this check.
+          call "/job/$job/image" -H 'Range: bytes=0-4095' > "$RUNNER_TEMP/first.bin"
+          magic="$(head -c 4 "$RUNNER_TEMP/first.bin")"
+          piece_started=$(date +%s%N)
+          call "/job/$job/image" -H 'Range: bytes=4194304-8388607' > "$RUNNER_TEMP/piece.bin"
+          piece_ms=$(( ( $(date +%s%N) - piece_started ) / 1000000 ))
+          call "/job/$job" -X DELETE > "$RUNNER_TEMP/removed.json" || true
+          {
+            echo "built after:        at most ${built_after} s (asked every 15 s)"
+            echo "sealed image:       $(( size / 1048576 )) MiB, $cid"
+            echo "first four bytes:   $magic (a LUKS2 header begins with LUKS)"
+            echo "a piece of 4 MiB:   fetched in ${piece_ms} ms, attestation included"
+            echo "removed afterwards: $(cat "$RUNNER_TEMP/removed.json")"
+          } | tee "$RUNNER_TEMP/trial.txt"
+          [ "$magic" = LUKS ] || { echo "::error::what came back does not begin as a LUKS2 disk"; exit 1; }
+          [ -s "$RUNNER_TEMP/piece.bin" ] || { echo "::error::a piece of the image did not come back"; exit 1; }
+
+      - name: Delete it
+        if: inputs.action == 'delete'
+        env:
+          ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          HASH: ${{ inputs.hash }}
+          FORGET_VOLUMES: ${{ inputs.forget_volumes }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The volumes, read before the V-PROGRAM is forgotten. Only the STOREs
+          # it names, of this account, smaller than any image, and not named in
+          # a publication file or a release (packages/sealed-image/src/forget-guard.mjs);
+          # one refusal forgets none of them and deletes nothing.
+          : > "$RUNNER_TEMP/stores.txt"
+          if [ "$FORGET_VOLUMES" = true ]; then
+            grep -ohE '[0-9a-f]{64}' packages/sealed-image/builder/publications/*.json > "$RUNNER_TEMP/kept.txt" || true
+            gh release list -R "$GITHUB_REPOSITORY" -L 200 --json tagName -q '.[].tagName' | while read -r t; do
+              gh release view "$t" -R "$GITHUB_REPOSITORY" --json body -q .body
+            done | grep -oE '[0-9a-f]{64}' >> "$RUNNER_TEMP/kept.txt" || true
+            node packages/sealed-image/builder/scripts/forget-builder-volumes.mjs "$HASH" "$RUNNER_TEMP/kept.txt" > "$RUNNER_TEMP/stores.txt"
+            echo "volumes to forget:"; cat "$RUNNER_TEMP/stores.txt"
+          fi
+          aleph vprogram delete "$HASH" --yes --chain eth --reason "image builder stopped" --json > "$RUNNER_TEMP/delete.json"
+          if [ -s "$RUNNER_TEMP/stores.txt" ]; then
+            aleph message forget $(cat "$RUNNER_TEMP/stores.txt") --reason "image builder volumes" --chain eth --yes
+          fi
+
+      - name: Summary
+        if: always()
+        env:
+          ACTION: ${{ inputs.action }}
+          HASH: ${{ inputs.hash }}
+        run: |
+          block() { # <title> <file>
+            [ -s "$2" ] || return 0
+            { echo; echo "### $1"; echo; echo '```'; cat "$2"; echo; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          }
+          {
+            echo "## Sealed image builder on Aleph: ${ACTION}"
+            if [ "$ACTION" = publish ] && [ -s "$RUNNER_TEMP/delete.json" ]; then
+              echo
+              echo "Published as \`$(cat "$RUNNER_TEMP/hash.txt")\`, but the attested call to it failed, so it was **deleted again**. The reason is under \"Attested call\"."
+            elif [ "$ACTION" = publish ] && [ -s "$RUNNER_TEMP/hash.txt" ]; then
+              echo
+              echo "The builder is published as \`$(cat "$RUNNER_TEMP/hash.txt")\` and **costs credits until it is deleted** (action \"delete\" with that hash)."
+            fi
+            if [ "$ACTION" = dry-run ]; then
+              echo
+              echo "Nothing was uploaded or published. The hash tree gets a new salt at every build, so a later publication has other measurements than this dry run."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          block "Container image" "$RUNNER_TEMP/archive.txt"
+          block "Published V-PROGRAM" "$RUNNER_TEMP/publish.json"
+          block "Started again from the same volumes" "$RUNNER_TEMP/again.txt"
+          [ "$ACTION" = dry-run ] && block "What would be published" "$RUNNER_TEMP/dry-run.json"
+          block "V-PROGRAM ${HASH:-$(cat "$RUNNER_TEMP/hash.txt" 2>/dev/null)}" "$RUNNER_TEMP/show.json"
+          block "Attested call" "$RUNNER_TEMP/call.log"
+          block "Answer" "$RUNNER_TEMP/call.txt"
+          block "Plain image" "$RUNNER_TEMP/plain.txt"
+          block "Trial build" "$RUNNER_TEMP/trial.txt"
+          block "Deleted" "$RUNNER_TEMP/delete.json"
+          exit 0

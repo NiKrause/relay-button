@@ -1,0 +1,28 @@
+{
+	"name": "@le-space/sealed-image",
+	"version": "0.12.8",
+	"description": "An image of one's own on Aleph: a measured builder seals a public plain image with a passphrase the caller derives; the caller fetches it in runs over an attested relay and stores it as a STORE.",
+	"license": "MIT",
+	"type": "module",
+	"main": "./src/index.mjs",
+	"exports": {
+		".": "./src/index.mjs",
+		"./build": "./src/build.mjs",
+		"./derive": "./src/derive.mjs",
+		"./versions": "./src/versions.mjs",
+		"./forget-guard": "./src/forget-guard.mjs",
+		"./package.json": "./package.json"
+	},
+	"files": ["src", "README.md"],
+	"scripts": {
+		"build": "node --check ./src/index.mjs && node --check ./src/build.mjs && node --check ./src/derive.mjs && node --check ./src/versions.mjs && node --check ./src/forget-guard.mjs",
+		"test": "node --test ./test/*.test.mjs"
+	},
+	"dependencies": {
+		"@le-space/aleph-vm": "workspace:*",
+		"@le-space/core": "workspace:*"
+	},
+	"devDependencies": {
+		"viem": "^2.53.1"
+	}
+}
