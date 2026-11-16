@@ -1458,9 +1458,14 @@ async function runDeployPlan(
               delayMs: 2500,
               sleep: sleepImpl,
             });
+            // Aleph's post index can lag well past this wait (2026-11-15: the
+            // post landed, the wait still missed it). Throwing here skipped
+            // persisting the owner authorization below, so the guest's own
+            // refresh posts named no owner and apps that trust relays by
+            // owner never found the relay. The post was sent; go on.
             if (!visibleRegistration) {
-              throw new Error(
-                "Relay bootstrap registration did not become visible on Aleph.",
+              log(
+                "[deploy] relay bootstrap registration not visible on Aleph yet; continuing so the guest still gets the owner authorization",
               );
             }
             const reconcileResult =

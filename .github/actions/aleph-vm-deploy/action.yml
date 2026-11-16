@@ -13,6 +13,13 @@ inputs:
   aleph_private_key:
     description: Hex EVM private key used to sign the Aleph INSTANCE message
     required: false
+  bootstrap_owner_private_key:
+    description: >-
+      Optional hex EVM private key of the account that owns the relay. It signs an owner authorization
+      for the guest's bootstrap publisher, so the relay's relay-bootstrap-v2 posts name `ownerAddress`.
+      Apps that trust relays by owner (paperless-anywhere, simple-todo) ignore posts without one.
+    required: false
+    default: ''
   api_host:
     description: Aleph API host
     required: false
@@ -377,6 +384,7 @@ runs:
         ALEPH_VM_MODE: ${{ inputs.mode }}
         ALEPH_VM_PROFILE: ${{ inputs.profile }}
         ALEPH_VM_PRIVATE_KEY: ${{ inputs.aleph_private_key }}
+        ALEPH_VM_BOOTSTRAP_OWNER_PRIVATE_KEY: ${{ inputs.bootstrap_owner_private_key }}
         ALEPH_VM_API_HOST: ${{ inputs.api_host }}
         ALEPH_VM_API_HOSTS: ${{ inputs.api_hosts }}
         ALEPH_VM_CRN_LIST_URL: ${{ inputs.crn_list_url }}
