@@ -11,7 +11,6 @@ RUN apt-get update \
     curl \
     jq \
     libguestfs-tools \
-    linux-image-amd64 \
     python3 \
     qemu-system-x86 \
     qemu-utils \
@@ -20,5 +19,27 @@ RUN apt-get update \
   && tar -C /usr/local -xzf /tmp/go.tgz \
   && rm -f /tmp/go.tgz \
   && rm -rf /var/lib/apt/lists/*
+
+# libguestfs boots its appliance with this container's kernel. Since Debian's
+# 6.1.0-55 (6.1.192-1, 2026-11-16) the appliance hangs inside virt-customize's
+# first --run-command, with no output, until the job is cancelled (orbitdb-relay
+# runs 43804562028, 43810273502, 43828475163; relay-button run 43816302515).
+# The last good builds used 6.1.0-54, so pin it: from bookworm-security while it
+# is listed there, else from snapshot.debian.org, checked against its SHA256.
+ARG KERNEL_ABI=6.1.0-54-amd64
+ARG KERNEL_DEB=linux-image-6.1.0-54-amd64_6.1.190-1_amd64.deb
+ARG KERNEL_SHA256=d788f148714b4cec6a9ff5e66282f56d9a7a0c2c12ac3e5093de12abaf47f56e
+ARG KERNEL_SNAPSHOT_URL=https://snapshot.debian.org/file/ebb6ea7154287f2dc71a98f79c0d38c7b19d0e7f
+RUN apt-get update \
+  && if ! apt-get install -y --no-install-recommends "linux-image-${KERNEL_ABI}=6.1.190-1"; then \
+       curl -fsSL --retry 3 --max-time 600 -o "/tmp/${KERNEL_DEB}" "${KERNEL_SNAPSHOT_URL}" \
+       && echo "${KERNEL_SHA256}  /tmp/${KERNEL_DEB}" | sha256sum -c - \
+       && apt-get install -y --no-install-recommends "/tmp/${KERNEL_DEB}" \
+       && rm -f "/tmp/${KERNEL_DEB}"; \
+     fi \
+  && test -f "/boot/vmlinuz-${KERNEL_ABI}" \
+  && rm -rf /var/lib/apt/lists/*
+ENV SUPERMIN_KERNEL=/boot/vmlinuz-6.1.0-54-amd64
+ENV SUPERMIN_MODULES=/lib/modules/6.1.0-54-amd64
 
 WORKDIR /workspace/universal-connectivity/go-peer/aleph
