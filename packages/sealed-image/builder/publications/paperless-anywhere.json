@@ -1,0 +1,75 @@
+{
+	"app": "Le-Space/paperless-anywhere",
+	"note": "Published 2026-11-16 (paperless-anywhere workflow \"Image builder on Aleph\", run 43863301110, V-PROGRAM d8046248…, then deleted) for the plain image of rootfs run 43862408421. Built from paperless-anywhere builder/, before the move here: it signs build requests with the older claim text.",
+	"claim": "paperless-anywhere image build",
+	"program": {
+		"allow_amend": false,
+		"environment": {
+			"internet": true
+		},
+		"metadata": {
+			"name": "paperless-image-builder"
+		},
+		"payment": {
+			"type": "credit"
+		},
+		"requirements": {
+			"node": {
+				"node_hash": "01a3143b384ca43a3af338031b03ae86c0a4e139a24b848475d3ddb9bfbce8fa"
+			}
+		},
+		"resources": {
+			"memory": 6144,
+			"seconds": 30,
+			"vcpus": 2
+		},
+		"runtime": {
+			"comment": "",
+			"ref": "b8e43148123e34f5f02ffd65bab62b716b74706ba77cf10cbe329af32f01f10a"
+		},
+		"verification": {
+			"backend": "sev_snp",
+			"measurements": [
+				{
+					"platform": "sev_snp",
+					"registers": {
+						"launch": "13c539723046ca636efed9381f67a5c1e576bf245770cc0b6356eb5e050c445d008aa28dbfb1a2ee44262f5fab869367"
+					},
+					"vcpu_type": "EPYC-Genoa"
+				},
+				{
+					"platform": "sev_snp",
+					"registers": {
+						"launch": "9f62ba76b36dd0acf35a69bbf15e765c2a96e9c708f3a3d98580beef063fdaf1f6ea940a4d1860eb3dd644279fa49aae"
+					},
+					"vcpu_type": "EPYC-v4"
+				}
+			],
+			"policy": 196608
+		},
+		"volumes": [
+			{
+				"comment": "",
+				"hash_tree": "785897daed1b0dd7620dce3ea94738a9aa421f1adbedf865ff8260943ad65e13",
+				"ref": "7cbfa3bee40842aff217be876a060295fcce9a7372f39e046248e35fb51d5fe3",
+				"roothash": "bdd092b466dc0697a5537cff45fda180ec8e1700eb3ad401259cde4e5022de20"
+			}
+		],
+		"workload": {
+			"hash_tree": "ec15d66050e620139de80522b814cba04ae06a68f600ff1abf2cd27a01947d04",
+			"ref": "48c8589a4695c131b5378f6a5f8600b92d9be04cadac0db1e47232645dacf95b",
+			"roothash": "a86558ef9da93c51770bf3b8198310e01c0921f0b816eb4e532a87f81286bab1"
+		}
+	},
+	"crn": "01a3143b384ca43a3af338031b03ae86c0a4e139a24b848475d3ddb9bfbce8fa",
+	"measurements": [
+		"13c539723046ca636efed9381f67a5c1e576bf245770cc0b6356eb5e050c445d008aa28dbfb1a2ee44262f5fab869367",
+		"9f62ba76b36dd0acf35a69bbf15e765c2a96e9c708f3a3d98580beef063fdaf1f6ea940a4d1860eb3dd644279fa49aae"
+	],
+	"policy": 196608,
+	"plain": {
+		"sha256": "f08aeec9d1d37bb9a79e4cbe8d7614d58dadca0b527fb4027503313a02610753",
+		"store": "143865e4b91f2cf642668aefc18c7ed680c4ff889ceb39ff07df480b273d8f7d",
+		"commit": "57456e7fefe939bee29ae96efc45e245bfab0eb1"
+	}
+}

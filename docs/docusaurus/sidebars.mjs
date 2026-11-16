@@ -20,6 +20,7 @@ const sidebars = {
         'guides/relay-recovery',
         'reference/ui',
         'reference/attest-relay',
+        'reference/sealed-images',
         'reference/browser',
         'reference/core',
         'reference/node-cli',

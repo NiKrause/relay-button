@@ -1,0 +1,11 @@
+# The sealed image builder as a container (vprogram/README.md). Pinned by digest where
+# it is used, because what runs here is what a person's app attests.
+FROM docker.io/library/node:22.21.0-bookworm-slim@sha256:f9f7f95dcf1f007b007c4dcd44ea8f7773f931b71dc79d57c216e731c87a090b
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends cryptsetup-bin ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/builder
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund --loglevel=error
+COPY builder.mjs claim.mjs server.mjs encrypt-image.sh ./
+ENV BUILDER_WORK=/work
+CMD ["node", "server.mjs"]

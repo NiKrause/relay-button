@@ -15,6 +15,9 @@ The currently maintained publishable packages are:
 - `@le-space/node`
 - `@le-space/rootfs`
 - `@le-space/ui`
+- `@le-space/attest-wasm`
+- `@le-space/aleph-vm`
+- `@le-space/sealed-image`
 
 ## Release Workflow
 
@@ -51,6 +54,9 @@ That means a normal release updates:
 - `packages/node/package.json`
 - `packages/rootfs/package.json`
 - `packages/ui/package.json`
+- `packages/attest-wasm/package.json`
+- `packages/aleph-vm/package.json`
+- `packages/sealed-image/package.json`
 
 to the same version.
 
@@ -74,6 +80,8 @@ pnpm --filter @le-space/core test
 pnpm --filter @le-space/rootfs test
 pnpm --filter @le-space/node test
 pnpm --filter @le-space/ui test
+pnpm --filter @le-space/aleph-vm test
+pnpm --filter @le-space/sealed-image test
 ```
 
 Optional live Aleph bootstrap round-trip:

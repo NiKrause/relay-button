@@ -1,0 +1,25 @@
+{
+	"name": "@le-space/aleph-vm",
+	"version": "0.12.8",
+	"description": "Start, attest and forget confidential Aleph INSTANCEs and measured V-PROGRAMs from the browser or Node, signed by an app's own key on behalf of a payer.",
+	"license": "MIT",
+	"type": "module",
+	"main": "./src/index.mjs",
+	"exports": {
+		".": "./src/index.mjs",
+		"./aleph": "./src/aleph.mjs",
+		"./attest": "./src/attest.mjs",
+		"./vm": "./src/vm.mjs",
+		"./vprogram": "./src/vprogram.mjs",
+		"./package.json": "./package.json"
+	},
+	"files": ["src", "README.md"],
+	"scripts": {
+		"build": "node --check ./src/index.mjs && node --check ./src/aleph.mjs && node --check ./src/attest.mjs && node --check ./src/vm.mjs && node --check ./src/vprogram.mjs",
+		"test": "node --test ./test/*.test.mjs"
+	},
+	"dependencies": {
+		"@le-space/core": "workspace:*",
+		"viem": "^2.53.1"
+	}
+}
