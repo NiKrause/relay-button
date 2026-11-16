@@ -11,7 +11,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 
@@ -43,6 +43,22 @@ BOOTSTRAP_CONFIG_SIGNAL_POST_TYPE = os.environ.get(
 BOOTSTRAP_CHANNEL = os.environ.get("ALEPH_BOOTSTRAP_CHANNEL", "simple-todo")
 
 CONFIGURE_LOCK = threading.Lock()
+
+# `GET /metadata` normally ends the setup phase: the server shuts down once a
+# deployer has the guest's metadata. A deployer that still has to hand over an
+# owner authorization (it can only sign one once it knows the peer ID and the
+# publisher address) asks with `?keep_open=1`, sends `POST /configure` with the
+# authorization, and closes with a plain `GET /metadata`. Before this, CI
+# deploys sent the authorization to a server that had already stopped, and the
+# guest's own registrations named no owner (orbitdb-relay run 43855152836).
+# A deployer that never comes back cannot keep the endpoint open forever.
+METADATA_KEEP_OPEN_SECONDS = float(os.environ.get("METADATA_KEEP_OPEN_SECONDS", "900"))
+_KEEP_OPEN_TIMER_LOCK = threading.Lock()
+_keep_open_timer: threading.Timer | None = None
+
+
+def _metadata_keeps_server_open(raw_path: str) -> bool:
+    return parse_qs(urlsplit(raw_path).query).get("keep_open") == ["1"]
 
 # Who may configure this guest. A deployment that leaves
 # `aleph-setup:<owner>:<sha256 of a setup secret>` in the SSH key accepts
@@ -583,13 +599,27 @@ class Handler(BaseHTTPRequestHandler):
             },
         )
 
+    def _end_setup(self) -> None:
+        threading.Thread(target=self.server.shutdown, daemon=True).start()  # type: ignore[arg-type]
+        threading.Thread(target=_stop_bootstrap_service, daemon=True).start()
+
+    def _end_setup_later(self) -> None:
+        global _keep_open_timer
+        with _KEEP_OPEN_TIMER_LOCK:
+            if _keep_open_timer is None:
+                _keep_open_timer = threading.Timer(METADATA_KEEP_OPEN_SECONDS, self._end_setup)
+                _keep_open_timer.daemon = True
+                _keep_open_timer.start()
+
     def _handle_metadata(self) -> None:
         if os.path.exists(METADATA_FILE):
             with open(METADATA_FILE, encoding="utf-8") as handle:
                 metadata = json.load(handle)
             self._send_json(200, {"status": "ready", "metadata": metadata})
-            threading.Thread(target=self.server.shutdown, daemon=True).start()  # type: ignore[arg-type]
-            threading.Thread(target=_stop_bootstrap_service, daemon=True).start()
+            if _metadata_keeps_server_open(self.path):
+                self._end_setup_later()
+                return
+            self._end_setup()
             return
 
         if os.path.exists(METADATA_ERROR_FILE):

@@ -1228,9 +1228,20 @@ async function runDeployPlan(
 
         mark("configured");
         log(`[deploy] polling guest /metadata until ready`);
+        // With an owner key, the authorization can only be signed once the
+        // guest reports its peer ID and publisher address, and it goes to the
+        // guest through the same setup server. A plain GET /metadata shuts
+        // that server down, so ask it to stay open and close it below.
+        const keepSetupOpen =
+          isOrbitdbRelayProfile && bootstrapOwnerIdentity != null;
         const metadataResult = await fetchUcGoPeerMetadata({
           hostIpv4: runtime.hostIpv4,
           setupPort,
+          ...(keepSetupOpen
+            ? {
+                metadataUrl: `http://${runtime.hostIpv4}:${setupPort}/metadata?keep_open=1`,
+              }
+            : {}),
           fetch: fetchImpl,
           attempts: plan.metadataAttempts,
           delayMs: plan.metadataDelayMs,
@@ -1564,6 +1575,24 @@ async function runDeployPlan(
               },
             };
           }
+        }
+        if (keepSetupOpen) {
+          // A plain GET /metadata ends the setup phase. After a configure with
+          // the authorization the guest regenerates its metadata, so wait for
+          // it; a guest that stays silent closes on its own timer.
+          await fetchUcGoPeerMetadata({
+            hostIpv4: runtime.hostIpv4,
+            setupPort,
+            fetch: fetchImpl,
+            attempts: 20,
+            delayMs: 3000,
+            timeoutMs: 15000,
+            sleep: sleepImpl,
+          }).catch((error: unknown) => {
+            log(
+              `[deploy] closing the guest setup endpoint failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          });
         }
       }
     }

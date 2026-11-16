@@ -146,3 +146,55 @@ print(json.dumps(results))
   // No key in the request: the publisher key already installed counts.
   assert.equal(results.second_pass, null);
 });
+
+// Runs `_handle_metadata` against a ready metadata file with a fake server and
+// reports when it would shut down: at once, after the keep-open timer, or not.
+async function metadataShutdown(paths: string[]): Promise<{ answers: number[]; shutdownAfter: (number | null)[] }> {
+  const dir = await mkdtemp(path.join(tmpdir(), "orbitdb-setup-meta-"));
+  try {
+    const metadataFile = path.join(dir, "metadata.json");
+    await writeFile(metadataFile, JSON.stringify({ peer_id: "12D3KooWExample" }));
+    const program = `
+import importlib.util, json, sys, time
+spec = importlib.util.spec_from_file_location("setup_server", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+module._stop_bootstrap_service = lambda: None
+events = []
+class FakeServer:
+    def shutdown(self):
+        events.append(time.monotonic())
+answers, shutdown_after = [], []
+handler = module.Handler.__new__(module.Handler)
+handler.server = FakeServer()
+handler._send_json = lambda status, payload: answers.append(status)
+for raw_path in json.loads(sys.argv[2]):
+    events.clear()
+    start = time.monotonic()
+    handler.path = raw_path
+    handler._handle_metadata()
+    time.sleep(0.5)
+    shutdown_after.append(round(events[0] - start, 1) if events else None)
+print(json.dumps({"answers": answers, "shutdownAfter": shutdown_after}))
+`;
+    const { stdout } = await execFileAsync(PYTHON, ["-c", program, SETUP_SERVER, JSON.stringify(paths)], {
+      env: { ...process.env, METADATA_FILE: metadataFile, METADATA_KEEP_OPEN_SECONDS: "0.2" },
+    });
+    return JSON.parse(stdout);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test("GET /metadata ends the setup phase at once", async () => {
+  const result = await metadataShutdown(["/metadata"]);
+  assert.deepEqual(result.answers, [200]);
+  assert.equal(result.shutdownAfter[0], 0);
+});
+
+test("GET /metadata?keep_open=1 leaves the setup server open for the owner authorization, on a timer", async () => {
+  const result = await metadataShutdown(["/metadata?keep_open=1"]);
+  assert.deepEqual(result.answers, [200]);
+  // Not at once: only when METADATA_KEEP_OPEN_SECONDS (0.2 s here) runs out.
+  assert.ok(result.shutdownAfter[0] !== null && result.shutdownAfter[0] >= 0.2, JSON.stringify(result));
+});
