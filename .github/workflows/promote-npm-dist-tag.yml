@@ -35,12 +35,14 @@ jobs:
         # packages advance and others lag.
         package_name:
           - '@le-space/aleph-bootstrap'
+          - '@le-space/aleph-vm'
           - '@le-space/attest-wasm'
           - '@le-space/browser'
           - '@le-space/core'
           - '@le-space/node'
           - '@le-space/playwright'
           - '@le-space/rootfs'
+          - '@le-space/sealed-image'
           - '@le-space/shared-types'
           - '@le-space/ui'
     steps:
