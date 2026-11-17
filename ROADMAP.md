@@ -1,5 +1,66 @@
 # Roadmap
 
+## 0.12.9 — relays that can be brought back, and an image build that no longer hangs
+
+**A relay that came back blank can be configured again.** When an account
+runs out of credits, aleph-vm retires the execution and purges its disk; the
+instance comes back from its parent image, unconfigured, on new ports. This
+took down the only attest relay paperless-anywhere could find on 2026-11-15.
+`pnpm relay-button relay-reconfigure prepare --instance <hash>` reads the CRN's
+current mapping, generates the relay's keys and prints the owner authorization
+to sign; `apply --signature 0x…` configures the guest, closes its setup server
+and waits for the new registration (#234, guide "Bring back a relay that came
+back blank"). A daily workflow now warns, one issue per account, while fewer
+than seven days of credits are left (#237). The plan to make recovery automatic
+is #233.
+
+**The setup endpoint takes its configuration only from the deployer.** Each
+deployment attempt generates a setup secret and puts only its SHA-256 next to
+the SSH key (`aleph-setup:<owner>:<sha256>`); an orbitdb-relay guest with that
+marker accepts `POST /configure` with the secret in `X-Aleph-Setup-Secret`, or
+with an owner authorization for the publisher key it installs (#235).
+
+**Relays deployed from CI name their owner.** The reusable workflow takes an
+optional `ALEPH_VM_BOOTSTRAP_OWNER_PRIVATE_KEY`, so registrations carry
+`ownerAddress` and consumers that trust relays by owner find them (#239); the
+owner authorization now also reaches the guest, which keeps its setup server
+open for it (`GET /metadata?keep_open=1`, #242). The first configure pass sends the
+registration ID with the instance hash.
+
+**IPv6, continued.** uc-go-peer stops announcing IPv6 on mapped ports that do
+not exist on IPv6 (#229; go-peer's own listeners in
+NiKrause/universal-connectivity#17), and an orbitdb-relay kept off IPv6 drops
+its IPv6 AutoTLS addresses too, whose `libp2p.direct` name resolves to the
+same unreachable address (#236). A correction to 0.12.8: the claim that
+nothing answered over IPv6 "on other CRNs" rested on one relay that was also
+down over IPv4. Measured since, NodeCity3 behaves like AlephVision4 (22 and 443
+reach the VM, the relay ports do not); in July (#57) port 9092 did answer on
+the CRN tested then. `ANNOUNCE_PUBLIC_IPV6=1` remains the switch for a CRN
+that passes IPv6.
+
+**Image builds no longer hang.** Since Debian's kernel 6.1.0-55 reached
+bookworm on 2026-11-16, the libguestfs appliance hung in `virt-customize`'s
+first `--run-command`, silently, until the job was cancelled. Every rootfs
+builder pins 6.1.0-54 (#241), and every download in the orbitdb-relay
+image bootstrap has a time limit and a step marker, so a hang fails within
+minutes and names its step (#240). The github-runner image goes to an API
+node's `add_file` with its STORE instead of an IPFS host (#238).
+
+**Attest relay limits for image builders.** An attest relay can give listed
+image builders (by workload root hash) larger limits; the list is baked into
+the orbitdb-relay image from the `ATTEST_RELAY_BUILDER_ROOTHASHES` repository
+variable (#230–#232).
+
+**New packages:** `@le-space/aleph-vm` (Aleph reads and broadcasts, the
+confidential INSTANCE lifecycle, a one-run V-PROGRAM, an attested channel over
+attest relays) and `@le-space/sealed-image` (sealing on a measured builder,
+attested fetch with resume, the STORE upload, the previous image as the way
+back), with the sealed image builder they serve (#225, #243); the Belege
+bridge has its own builder publication (#244).
+
+**Widget:** a GitHub mark next to the version links to the source; `sourceUrl`
+points it at a fork or hides it (#245).
+
 ## 0.12.8 — an orbitdb-relay announces only IPv6 addresses that answer
 
 An orbitdb-relay announced its VM's IPv6 address on the relay's internal
