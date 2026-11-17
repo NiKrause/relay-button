@@ -1,7 +1,7 @@
 <script>
   import { onDestroy, onMount } from 'svelte'
 
-  import { UI_PACKAGE_VERSION, anchorPanelToLauncher, clampToViewport, createSponsorRelayController, readStoredPosition, resolveCornerPlacement, writeStoredPosition, formatDateTime, formatNumber, formatTierSpecLabel, joinMappedPorts, joinRequiredPortForwards, formatCrnOptionLabel, shortHash } from '../shared/index'
+  import { GITHUB_MARK_PATH, UI_PACKAGE_VERSION, resolveSourceUrl, anchorPanelToLauncher, clampToViewport, createSponsorRelayController, readStoredPosition, resolveCornerPlacement, writeStoredPosition, formatDateTime, formatNumber, formatTierSpecLabel, joinMappedPorts, joinRequiredPortForwards, formatCrnOptionLabel, shortHash } from '../shared/index'
   import AccordionSection from './components/AccordionSection.svelte'
   import CopyButton from './components/CopyButton.svelte'
   import LauncherButton from './components/LauncherButton.svelte'
@@ -17,6 +17,8 @@ export let showInstances = true
 export let openByDefault = false
 export let launcherMode = 'floating'
 export let version = ''
+  /** Repository linked by the GitHub mark next to the version; '' or null hides it. */
+  export let sourceUrl = undefined
 export let apiHost = undefined
 export let apiHosts = undefined
   export let crnListUrl = undefined
@@ -50,6 +52,7 @@ export let apiHosts = undefined
 
   let state = controller.getState()
   const resolvedVersion = version.trim() || UI_PACKAGE_VERSION
+  $: resolvedSourceUrl = resolveSourceUrl(sourceUrl)
   const versionLabel = resolvedVersion.trim()
     ? (resolvedVersion.trim().startsWith('v') ? resolvedVersion.trim() : `v${resolvedVersion.trim()}`)
     : ''
@@ -266,6 +269,11 @@ export let apiHosts = undefined
           Aleph VM credit deployer
           {#if versionLabel}
             <span class="eyebrow-version">{versionLabel}</span>
+          {/if}
+          {#if resolvedSourceUrl}
+            <a class="source-link" href={resolvedSourceUrl} target="_blank" rel="noopener noreferrer" aria-label="Relay Button source on GitHub" title="Source on GitHub">
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d={GITHUB_MARK_PATH} /></svg>
+            </a>
           {/if}
         </p>
         <h2>{deploymentTitle()}</h2>
@@ -861,6 +869,18 @@ export let apiHosts = undefined
   }
 
   .eyebrow {
+    color: var(--relay-accent);
+  }
+
+  .source-link {
+    display: inline-flex;
+    margin-left: 0.4rem;
+    vertical-align: -1px;
+    color: var(--relay-comet);
+    line-height: 0;
+  }
+
+  .source-link:hover {
     color: var(--relay-accent);
   }
 

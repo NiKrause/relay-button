@@ -61,6 +61,8 @@ export interface SponsorRelayProps {
   openByDefault?: boolean
   launcherMode?: 'floating' | 'inline'
   version?: string
+  /** Repository linked by the GitHub mark next to the version; empty or null hides it. */
+  sourceUrl?: string | null
   apiHost?: string
   apiHosts?: string | readonly string[]
   crnListUrl?: string

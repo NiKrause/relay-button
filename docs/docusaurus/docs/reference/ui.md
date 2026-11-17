@@ -95,6 +95,7 @@ Every prop is optional. The full type is `SponsorRelayProps` in
 | `openByDefault` | `boolean` | `false` | Render the panel already expanded instead of collapsed behind the launcher. |
 | `launcherMode` | `'floating' \| 'inline'` | `'floating'` | `floating` pins the launcher to the bottom-right corner; `inline` renders it in normal document flow (for toolbars/headers) and anchors the panel below it. |
 | `version` | `string` | `UI_PACKAGE_VERSION` | Version label shown in the panel eyebrow. Leave unset to display the installed `@le-space/ui` version; a leading `v` is added if missing. |
+| `sourceUrl` | `string \| null` | `'https://github.com/NiKrause/relay-button'` | Repository linked by the small GitHub mark next to the version in the panel eyebrow. Point it at a fork, or pass `''` or `null` to hide the link. |
 | `debug` | `boolean` | `false` | Verbose `console.debug('[le-space/ui]', …)` tracing of the deployment state machine. Also enabled without a prop by setting `localStorage.LE_SPACE_UI_DEBUG = '1'`. **React only** — the Svelte component does not declare this prop, so use the `localStorage` switch there. |
 | `apiHost` | `string` | `'https://api2.aleph.im'` | Single Aleph Core Channel Node API host. Ignored when `apiHosts` is given. |
 | `apiHosts` | `string \| readonly string[]` | `['https://api2.aleph.im', 'https://api.aleph.im']` | Ordered Aleph API hosts with automatic failover on request errors. Accepts an array or a comma/whitespace-separated string. `api3.aleph.im` is filtered out. |
