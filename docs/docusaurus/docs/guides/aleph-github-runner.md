@@ -105,11 +105,26 @@ aggregate. The command keeps any other authorizations the wallet already has.
 
 ## 5. Choose the image
 
-Use the published image:
+Use the published image (built from `main` on 16 November 2026, run
+[43856623293](https://github.com/NiKrause/relay-button/actions/runs/43856623293)):
 
 ```bash
-export GH_RUNNER_ROOTFS_ITEM_HASH=9ddeabdb5a6ec23f5b6676f034a84d73a2bb3b2c912d3f736bab932fe33951cd
+export GH_RUNNER_ROOTFS_ITEM_HASH=7bbfc481b7292d370ac660cf7cd864e6873694a711561a4727a90278bb4a823b
 ```
+
+An image is a STORE message like any other: once it is forgotten, every
+`gh-runner up` with its hash is rejected with Aleph error 301 ("referenced
+message not found"), and no VM starts. The first published image
+(`9ddeabdb…`, 21 October 2026) went that way on 14 November 2026, in a clean-up
+of image-builder volumes. Before cleaning up STOREs, leave out the one this
+page names. To check that it still exists:
+
+```bash
+curl -s "https://api2.aleph.im/api/v0/messages/$GH_RUNNER_ROOTFS_ITEM_HASH" | jq -r .status
+```
+
+`processed` is fine; `forgotten` means: build a new one (below) and update the
+hash here.
 
 It is Ubuntu 24.04, like GitHub's own runners, with `actions-runner` 2.338.0, Node.js 24, Docker, git,
 jq, `qemu-utils`, `cryptsetup` and `debootstrap`, and it contains no credential.

@@ -223,8 +223,12 @@ Setup, step by step: [Run GitHub Actions jobs on Aleph](https://nikrause.github.
   `actions-runner` 2.338.0 (pinned, sha256-checked, updates off), Node.js 24,
   Docker and rootfs build tools. It carries no credential.
 - The published STORE is
+  `7bbfc481b7292d370ac660cf7cd864e6873694a711561a4727a90278bb4a823b`
+  (16 November 2026). The first one,
   `9ddeabdb5a6ec23f5b6676f034a84d73a2bb3b2c912d3f736bab932fe33951cd`
-  (963 MiB, close to Aleph's 1 GiB upload limit).
+  (963 MiB, close to Aleph's 1 GiB upload limit), was forgotten on
+  14 November 2026 in a clean-up of image-builder volumes; since then a
+  runner start with it fails with error 301.
 - Debian 12 lacked the glibc (2.38) the aleph CLI release binary needs.
   Debian 13's cloud image looped in GRUB on Aleph. Growing the root partition
   with `virt-resize` produced an image that never came up, so it is grown in
