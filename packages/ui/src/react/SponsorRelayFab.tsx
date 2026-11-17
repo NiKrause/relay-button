@@ -1,7 +1,9 @@
 import React from "react";
 
 import {
+  GITHUB_MARK_PATH,
   UI_PACKAGE_VERSION,
+  resolveSourceUrl,
   formatDateTime,
   formatNumber,
   formatTierSpecLabel,
@@ -481,6 +483,7 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
   const explicitVersion = typeof props.version === "string" ? props.version.trim() : "";
   const resolvedVersion = explicitVersion || UI_PACKAGE_VERSION;
   const versionLabel = resolvedVersion.startsWith("v") ? resolvedVersion : `v${resolvedVersion}`;
+  const sourceUrl = resolveSourceUrl(props.sourceUrl);
   const launcherMode = props.launcherMode ?? "floating";
   const indicator = launcherIndicator(state);
   const bootstrapUiEnabled = supportsBootstrapUi(state);
@@ -939,6 +942,24 @@ export function SponsorRelayFab(props: SponsorRelayProps) {
                   >
                     {versionLabel}
                   </span>
+                  {sourceUrl ? (
+                    <a
+                      href={sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Relay Button source on GitHub"
+                      title="Source on GitHub"
+                      style={{
+                        display: "inline-flex",
+                        color: "var(--rb-comet)",
+                        lineHeight: 0,
+                      }}
+                    >
+                      <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+                        <path d={GITHUB_MARK_PATH} />
+                      </svg>
+                    </a>
+                  ) : null}
                 </div>
                 <h2
                   style={{
