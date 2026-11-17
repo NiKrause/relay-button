@@ -1,5 +1,20 @@
 # Roadmap
 
+## 0.12.10 — a site is proven on any Aleph gateway, or on an API node
+
+On 2026-11-17 three Le-Space landing sites failed to publish, each after
+three uploads and about 50 minutes: `https://<CID>.ipfs.aleph.sh`
+(157.90.32.77) accepted connections and never answered, while
+`https://ipfs.aleph.cloud/ipfs/<CID>/` served the same CID. Those runs pinned
+0.12.3, before 0.12.6 started asking the path gateways too. Now the check also
+asks `ipfs.aleph.cloud` by default, and the raw-storage route of each
+endpoint pair's API node (`<apiHost>/api/v0/storage/raw/<CID>`), which
+answers a tar of the site from another host. The proof there is the tar's
+first entry, a directory named by the CID; the rest is not downloaded.
+The log names the URL that proved the site and what each URL before it
+answered; a check that fails lists every URL with its last answer, and
+`fetch failed` carries its cause (`ECONNRESET`, `ECONNREFUSED`, …).
+
 ## 0.12.9 — relays that can be brought back, and an image build that no longer hangs
 
 **A relay that came back blank can be configured again.** When an account
