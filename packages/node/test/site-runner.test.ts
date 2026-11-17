@@ -1315,21 +1315,29 @@ test('runSitePublishMode reaches api3 by default when api2 and api.aleph.im cann
   assert.equal(calls.filter((url) => url.startsWith('https://api2.aleph.im/api/v0/messages/')).length, 0)
 })
 
-test('siteVerifyUrls asks the subdomain gateway first, then each path gateway once', async () => {
+test('siteVerifyUrls asks the subdomain gateway first, then each path gateway once, then each API node', async () => {
   const { siteVerifyUrls } = await import('../src/site-runner.ts')
   assert.deepEqual(
     siteVerifyUrls('bafyroot', [
-      { ipfsGateway: 'https://ipfs-2.aleph.im' },
-      { ipfsGateway: 'https://ipfs.aleph.cloud/' },
-      { ipfsGateway: 'https://ipfs-2.aleph.im' },
+      { ipfsGateway: 'https://ipfs-2.aleph.im', apiHost: 'https://api2.aleph.im' },
+      { ipfsGateway: 'https://ipfs.aleph.cloud/', apiHost: 'https://api.aleph.im/' },
+      { ipfsGateway: 'https://ipfs-2.aleph.im', apiHost: 'https://api2.aleph.im' },
     ]),
     [
       'https://bafyroot.ipfs.aleph.sh',
       'https://ipfs-2.aleph.im/ipfs/bafyroot/',
       'https://ipfs.aleph.cloud/ipfs/bafyroot/',
       'https://ipfs.aleph.sh/ipfs/bafyroot/',
+      'https://api2.aleph.im/api/v0/storage/raw/bafyroot',
+      'https://api.aleph.im/api/v0/storage/raw/bafyroot',
     ],
   )
+  assert.deepEqual(siteVerifyUrls('bafyroot', [{ ipfsGateway: 'https://ipfs-2.aleph.im' }]), [
+    'https://bafyroot.ipfs.aleph.sh',
+    'https://ipfs-2.aleph.im/ipfs/bafyroot/',
+    'https://ipfs.aleph.cloud/ipfs/bafyroot/',
+    'https://ipfs.aleph.sh/ipfs/bafyroot/',
+  ])
 })
 
 test('runSitePublishMode verifies on a path gateway when the subdomain gateway does not answer', async () => {
@@ -1428,6 +1436,212 @@ test('runSitePublishMode says the STORE was processed when no gateway and no lib
   } finally {
     globalThis.fetch = originalFetch
   }
+})
+
+/** A 512-byte tar header for `name`, as an Aleph API node's raw route starts a directory. */
+function tarDirectoryHeader(name: string): Uint8Array<ArrayBuffer> {
+  const header = new Uint8Array(1024)
+  header.set(new TextEncoder().encode(name), 0)
+  header[156] = '5'.charCodeAt(0)
+  return header
+}
+
+/** A fetch that never answers until the caller's timeout aborts it, like 157.90.32.77 on 2026-11-17. */
+function hangingFetch(init?: RequestInit): Promise<Response> {
+  return new Promise((_resolve, reject) => {
+    const signal = init?.signal
+    if (!signal) return
+    // AbortSignal.timeout's timer is unref'd; a real open socket keeps the
+    // event loop alive while it waits, so this stands in for that socket.
+    const socket = setInterval(() => {}, 1_000)
+    signal.addEventListener('abort', () => {
+      clearInterval(socket)
+      reject(signal.reason)
+    }, { once: true })
+  })
+}
+
+const SUBDOMAIN_URL = `https://${ONE_FILE_SITE_CID}.ipfs.aleph.sh`
+const SITE_PAGE = '<!doctype html><title>blog</title>'
+
+async function withGatewayFetch(
+  gateways: (url: string, init?: RequestInit) => Promise<Response> | undefined,
+  run: (calls: string[]) => Promise<void>,
+) {
+  const calls: string[] = []
+  const upload = authenticatedCarFetch([])
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    const answer = gateways(url, init)
+    if (answer) {
+      calls.push(url)
+      return answer
+    }
+    return upload(input, init)
+  }) as typeof fetch
+  const originalLog = console.log
+  const logs: string[] = []
+  console.log = (...parts: unknown[]) => {
+    logs.push(parts.join(' '))
+  }
+  try {
+    await run(calls)
+  } finally {
+    globalThis.fetch = originalFetch
+    console.log = originalLog
+  }
+  return logs
+}
+
+const NO_LIBP2P = {
+  fetchDagOverLibp2p: async () => {
+    throw new Error('libp2p must not be needed')
+  },
+}
+
+test('runSitePublishMode verifies on the subdomain gateway alone when it answers', async () => {
+  const { outputFile, env } = await oneFileSite('site-publish-subdomain-ok-')
+  let gatewayCalls: string[] = []
+  const logs = await withGatewayFetch(
+    (url) => url === SUBDOMAIN_URL
+      ? Promise.resolve(new Response(SITE_PAGE, { status: 200, headers: { etag: `"${ONE_FILE_SITE_CID}"` } }))
+      : undefined,
+    async (calls) => {
+      await runSitePublishModeCar({ ...env, ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS: '1', ALEPH_SITE_GATEWAY_WAIT_DELAY_MS: '1' }, NO_LIBP2P)
+      gatewayCalls = calls
+    },
+  )
+  assert.deepEqual(gatewayCalls, [SUBDOMAIN_URL])
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, new RegExp(`verified_via=${SUBDOMAIN_URL.replaceAll('.', '\\.')}`))
+  assert.match(outputs, /direct_gateway_verified=true/)
+  assert.ok(logs.some((line) => line.startsWith(`Gateways: ${SUBDOMAIN_URL} served ${ONE_FILE_SITE_CID}`)), logs.join('\n'))
+})
+
+test('runSitePublishMode moves past a subdomain gateway that hangs and verifies on a path gateway', async () => {
+  const { outputFile, env } = await oneFileSite('site-publish-subdomain-hangs-')
+  const pathUrl = `https://ipfs.aleph.cloud/ipfs/${ONE_FILE_SITE_CID}/`
+  const started = Date.now()
+  let gatewayCalls: string[] = []
+  const logs = await withGatewayFetch(
+    (url, init) => {
+      if (url === SUBDOMAIN_URL) return hangingFetch(init)
+      if (url === `https://ipfs-2.aleph.im/ipfs/${ONE_FILE_SITE_CID}/`) return Promise.resolve(new Response('bad gateway', { status: 502 }))
+      if (url === pathUrl) {
+        return Promise.resolve(new Response(SITE_PAGE, { status: 200, headers: { 'x-ipfs-roots': ONE_FILE_SITE_CID } }))
+      }
+      return undefined
+    },
+    async (calls) => {
+      await runSitePublishModeCar({
+        ...env,
+        ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS: '3',
+        ALEPH_SITE_GATEWAY_WAIT_DELAY_MS: '1',
+        ALEPH_SITE_GATEWAY_FETCH_TIMEOUT_MS: '50',
+      }, NO_LIBP2P)
+      gatewayCalls = calls
+    },
+  )
+  assert.ok(Date.now() - started < 5_000, 'the hanging gateway must cost one timeout, not the whole wait')
+  assert.deepEqual(gatewayCalls, [SUBDOMAIN_URL, `https://ipfs-2.aleph.im/ipfs/${ONE_FILE_SITE_CID}/`, pathUrl])
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, new RegExp(`verified_via=https://ipfs\\.aleph\\.cloud/ipfs/${ONE_FILE_SITE_CID}/`))
+  assert.match(outputs, /direct_gateway_verified=false/)
+  assert.match(outputs, /libp2p_verified=false/)
+  const line = logs.find((entry) => entry.startsWith(`Gateways: ${pathUrl} served ${ONE_FILE_SITE_CID}`)) ?? ''
+  assert.match(line, /before it: .*\.ipfs\.aleph\.sh: .*timeout/i)
+  assert.match(line, /ipfs-2\.aleph\.im\/ipfs\/.*: HTTP 502/)
+})
+
+test('runSitePublishMode verifies on an API node\'s raw-storage route when every gateway fails', async () => {
+  const { outputFile, env } = await oneFileSite('site-publish-api-raw-')
+  const rawUrl = `https://api2.aleph.im/api/v0/storage/raw/${ONE_FILE_SITE_CID}`
+  await withGatewayFetch(
+    (url, init) => {
+      if (url === SUBDOMAIN_URL) return hangingFetch(init)
+      if (url.includes(`/ipfs/${ONE_FILE_SITE_CID}/`)) return Promise.reject(new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) }))
+      if (url === rawUrl) {
+        return Promise.resolve(new Response(tarDirectoryHeader(ONE_FILE_SITE_CID), { status: 200, headers: { 'content-type': 'application/x-tar' } }))
+      }
+      return undefined
+    },
+    async () => {
+      await runSitePublishModeCar({
+        ...env,
+        ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS: '1',
+        ALEPH_SITE_GATEWAY_WAIT_DELAY_MS: '1',
+        ALEPH_SITE_GATEWAY_FETCH_TIMEOUT_MS: '50',
+      }, NO_LIBP2P)
+    },
+  )
+  const outputs = await readFile(outputFile, 'utf8')
+  assert.match(outputs, new RegExp(`verified_via=https://api2\\.aleph\\.im/api/v0/storage/raw/${ONE_FILE_SITE_CID}`))
+})
+
+test('runSitePublishMode does not take a raw-storage tar of another root as proof', async () => {
+  const { env } = await oneFileSite('site-publish-api-raw-wrong-')
+  await withGatewayFetch(
+    (url) => {
+      if (url === SUBDOMAIN_URL || url.includes(`/ipfs/${ONE_FILE_SITE_CID}/`)) return Promise.resolve(new Response('bad gateway', { status: 502 }))
+      if (url.includes('/api/v0/storage/raw/')) return Promise.resolve(new Response(tarDirectoryHeader(TWO_FILE_SITE_CID), { status: 200 }))
+      return undefined
+    },
+    async () => {
+      await assert.rejects(
+        runSitePublishModeCar({
+          ...env,
+          ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS: '1',
+          ALEPH_SITE_GATEWAY_WAIT_DELAY_MS: '1',
+          ALEPH_SITE_VERIFY_LIBP2P_FALLBACK: 'false',
+        }, NO_LIBP2P),
+        new RegExp(`storage/raw/${ONE_FILE_SITE_CID}: HTTP 200, tarRoot=${TWO_FILE_SITE_CID}, directory=true`),
+      )
+    },
+  )
+})
+
+test('runSitePublishMode names every gateway and what it answered when none serves the site', async () => {
+  const { env } = await oneFileSite('site-publish-all-gateways-fail-')
+  await withGatewayFetch(
+    (url, init) => {
+      if (url === SUBDOMAIN_URL) return hangingFetch(init)
+      if (url === `https://ipfs-2.aleph.im/ipfs/${ONE_FILE_SITE_CID}/`) return Promise.resolve(new Response('bad gateway', { status: 502 }))
+      if (url === `https://ipfs.aleph.cloud/ipfs/${ONE_FILE_SITE_CID}/`) {
+        return Promise.resolve(new Response('<!doctype html><title>old</title>', { status: 200, headers: { etag: '"bafyold"' } }))
+      }
+      if (url === `https://ipfs.aleph.sh/ipfs/${ONE_FILE_SITE_CID}/`) {
+        return Promise.reject(new TypeError('fetch failed', { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }))
+      }
+      if (url.includes('/api/v0/storage/raw/')) return Promise.resolve(new Response(`No file found for hash ${ONE_FILE_SITE_CID}`, { status: 404 }))
+      return undefined
+    },
+    async () => {
+      await assert.rejects(
+        runSitePublishModeCar({
+          ...env,
+          ALEPH_SITE_GATEWAY_WAIT_ATTEMPTS: '1',
+          ALEPH_SITE_GATEWAY_WAIT_DELAY_MS: '1',
+          ALEPH_SITE_GATEWAY_FETCH_TIMEOUT_MS: '50',
+          ALEPH_SITE_VERIFY_LIBP2P_FALLBACK: 'false',
+        }, NO_LIBP2P),
+        (error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error)
+          assert.match(message, /^Site verification failed after the STORE was processed: Gateways did not serve expected CID/)
+          for (const evidence of [
+            new RegExp(`${ONE_FILE_SITE_CID}\\.ipfs\\.aleph\\.sh: [^;]*timeout`, 'i'),
+            new RegExp(`ipfs-2\\.aleph\\.im/ipfs/${ONE_FILE_SITE_CID}/: HTTP 502, cidMatches=false`),
+            new RegExp(`ipfs\\.aleph\\.cloud/ipfs/${ONE_FILE_SITE_CID}/: HTTP 200, cidMatches=false, usableIndex=true`),
+            new RegExp(`ipfs\\.aleph\\.sh/ipfs/${ONE_FILE_SITE_CID}/: fetch failed \\(ECONNRESET\\)`),
+            new RegExp(`api2\\.aleph\\.im/api/v0/storage/raw/${ONE_FILE_SITE_CID}: HTTP 404`),
+          ]) {
+            assert.match(message, evidence)
+          }
+          return true
+        },
+      )
+    },
+  )
 })
 
 function twoHostCarFetch(calls: string[], hosts: Record<string, 'hang' | 'slow' | 'ok'>) {

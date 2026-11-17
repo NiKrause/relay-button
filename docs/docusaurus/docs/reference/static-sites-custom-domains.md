@@ -147,16 +147,25 @@ link a pending target.
 | `store_status` | `processed`, `pending`, or `not-requested` |
 | `store_processed` | `true` only when the STORE is safe to link |
 | `libp2p_verified` | `true` when every block was fetched over libp2p (`verify: libp2p`, or the fallback below) |
-| `verified_via` | The gateway URL that served the site, or `libp2p` |
+| `verified_via` | The gateway or API URL that served the site, or `libp2p` |
 
 ## Checking without HTTP gateways
 
 By default the publisher checks a processed STORE over HTTP, on
 `https://<CID>.ipfs.aleph.sh` first, then on the path gateway
-(`<gateway>/ipfs/<CID>/`) of each endpoint pair and of `https://ipfs.aleph.sh`.
+(`<gateway>/ipfs/<CID>/`) of each endpoint pair, of `https://ipfs.aleph.cloud`
+and of `https://ipfs.aleph.sh`, then on the raw-storage route
+(`<apiHost>/api/v0/storage/raw/<CID>`) of each endpoint pair's API node. A
+gateway proves the site with the CID in `etag` or `x-ipfs-roots` and an HTML
+page; an API node answers a tar of the site, and proves it when the tar's first
+entry is a directory named by the CID (the rest is not downloaded). On
+2026-11-17 the subdomain gateway accepted connections and never answered while
+the path gateways served the same CID.
 Each round asks every URL in turn, each request bounded by
 `ALEPH_SITE_GATEWAY_FETCH_TIMEOUT_MS` (20000 ms), so one gateway that hangs does
-not hold up the others. If none of them serves the site, it fetches the site
+not hold up the others. The log names the URL that proved the site and what each
+URL before it answered; a check that fails names every URL and its last answer.
+If none of them serves the site, it fetches the site
 over libp2p as below; `ALEPH_SITE_VERIFY_LIBP2P_FALLBACK=false` turns that
 fallback off. A check that still fails says `Site verification failed after the
 STORE was processed`: the files are pinned, so a workflow should not upload

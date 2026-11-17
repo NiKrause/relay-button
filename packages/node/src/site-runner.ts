@@ -195,6 +195,86 @@ function responseMatchesCid(response: Response, cidV0: string): boolean {
   return etag === cidV0 || roots.includes(cidV0)
 }
 
+const ALEPH_RAW_STORAGE_PATH = '/api/v0/storage/raw/'
+
+/**
+ * An Aleph API node's raw-storage route answers a directory CID with a tar
+ * stream whose first header is the root directory itself, named by the CID
+ * (measured on api2, api and api3 on 2026-11-17). Reads just that header
+ * and drops the rest: the archive is the whole site.
+ */
+async function readTarRootHeader(response: Response): Promise<{ name: string; typeflag: string }> {
+  const reader = response.body?.getReader()
+  if (!reader) return { name: '', typeflag: '' }
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    while (size < 512) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      size += value.byteLength
+    }
+  } finally {
+    await reader.cancel().catch(() => {})
+  }
+  const header = new Uint8Array(Math.min(size, 512))
+  let offset = 0
+  for (const chunk of chunks) {
+    const part = chunk.subarray(0, header.byteLength - offset)
+    header.set(part, offset)
+    offset += part.byteLength
+    if (offset >= header.byteLength) break
+  }
+  if (header.byteLength < 512) return { name: '', typeflag: '' }
+  const nameEnd = header.subarray(0, 100).indexOf(0)
+  const name = new TextDecoder().decode(header.subarray(0, nameEnd === -1 ? 100 : nameEnd)).replace(/\/+$/u, '')
+  return { name, typeflag: String.fromCharCode(header[156] ?? 0) }
+}
+
+/** `fetch failed` alone hides the reason; undici puts it in `cause`. */
+function describeFetchError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error)
+  const cause = (error as Error & { cause?: unknown }).cause
+  const causeText = cause instanceof Error ? (cause as Error & { code?: string }).code ?? cause.message : ''
+  return causeText && !error.message.includes(causeText) ? `${error.message} (${causeText})` : error.message
+}
+
+/**
+ * Asks one URL whether it serves `cid`. A gateway proves it with the CID in
+ * `etag` or `x-ipfs-roots` and a body that is an HTML page; an Aleph API
+ * node's raw-storage route with a tar whose root directory is named by the
+ * CID. Answers the evidence either way.
+ */
+async function probePublicCid(url: string, cid: string, fetchTimeoutMs: number): Promise<{ ok: boolean; evidence: string }> {
+  try {
+    const response = await fetch(url, {
+      cache: 'no-cache',
+      redirect: 'follow',
+      signal: AbortSignal.timeout(fetchTimeoutMs),
+    })
+    if (url.includes(ALEPH_RAW_STORAGE_PATH)) {
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {})
+        return { ok: false, evidence: `HTTP ${response.status}` }
+      }
+      const root = await readTarRootHeader(response)
+      const ok = root.name === cid && root.typeflag === '5'
+      return { ok, evidence: `HTTP ${response.status}, tarRoot=${root.name || 'none'}, directory=${root.typeflag === '5'}` }
+    }
+    const body = response.ok ? await response.text() : ''
+    if (!response.ok) await response.body?.cancel().catch(() => {})
+    const cidMatches = responseMatchesCid(response, cid)
+    const usableIndex = /<(?:!doctype|html|head|body)\b/iu.test(body)
+    return {
+      ok: response.ok && cidMatches && usableIndex,
+      evidence: `HTTP ${response.status}, cidMatches=${cidMatches}, usableIndex=${usableIndex}`,
+    }
+  } catch (error) {
+    return { ok: false, evidence: describeFetchError(error) }
+  }
+}
+
 /**
  * Waits until one of `urls` serves the CID as a usable page; answers the URL
  * that did. Each round asks every URL in turn, each request bounded by
@@ -220,19 +300,17 @@ async function waitForPublicCid(args: {
   const evidence = new Map<string, string>(urls.map((url) => [url, 'no response']))
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     for (const url of urls) {
-      try {
-        const response = await fetch(url, {
-          cache: 'no-cache',
-          redirect: 'follow',
-          signal: AbortSignal.timeout(fetchTimeoutMs),
-        })
-        const body = response.ok ? await response.text() : ''
-        const cidMatches = responseMatchesCid(response, args.cidV0)
-        const usableIndex = /<(?:!doctype|html|head|body)\b/iu.test(body)
-        evidence.set(url, `HTTP ${response.status}, cidMatches=${cidMatches}, usableIndex=${usableIndex}`)
-        if (response.ok && cidMatches && usableIndex) return url
-      } catch (error) {
-        evidence.set(url, error instanceof Error ? error.message : String(error))
+      const probe = await probePublicCid(url, args.cidV0, fetchTimeoutMs)
+      evidence.set(url, probe.evidence)
+      if (probe.ok) {
+        if (urls.length > 1) {
+          const failed = urls.slice(0, urls.indexOf(url)).map((other) => `${other}: ${evidence.get(other)}`)
+          console.log(
+            `${args.label}: ${url} served ${args.cidV0} (round ${attempt}, ${probe.evidence})` +
+              (failed.length > 0 ? `; before it: ${failed.join('; ')}` : ''),
+          )
+        }
+        return url
       }
     }
     if (attempt >= attempts || Date.now() >= deadline) break
@@ -245,15 +323,23 @@ async function waitForPublicCid(args: {
 }
 
 /**
- * The gateways a published site is checked on: Aleph's subdomain gateway,
- * then the path gateway of each endpoint pair and Aleph's own, without
- * duplicates. A path gateway answers with the CID in `x-ipfs-roots` too.
+ * Where a published site is checked, in order: Aleph's subdomain gateway;
+ * the path gateway of each endpoint pair, of ipfs.aleph.cloud and of
+ * ipfs.aleph.sh; then the raw-storage route of each endpoint pair's API
+ * node, which reaches Aleph's IPFS from another host. No URL twice. On
+ * 2026-11-17 the subdomain gateway accepted connections and never answered,
+ * while ipfs.aleph.cloud served the same CID.
  */
-export function siteVerifyUrls(cidV1: string, pairs: readonly { ipfsGateway: string }[]): string[] {
+export function siteVerifyUrls(cidV1: string, pairs: readonly { ipfsGateway: string; apiHost?: string }[]): string[] {
   const urls = [`https://${cidV1}.ipfs.aleph.sh`]
-  for (const gateway of [...pairs.map((pair) => pair.ipfsGateway), 'https://ipfs.aleph.sh']) {
-    const url = `${gateway.replace(/\/+$/u, '')}/ipfs/${cidV1}/`
+  const add = (url: string) => {
     if (!urls.includes(url)) urls.push(url)
+  }
+  for (const gateway of [...pairs.map((pair) => pair.ipfsGateway), 'https://ipfs.aleph.cloud', 'https://ipfs.aleph.sh']) {
+    add(`${gateway.replace(/\/+$/u, '')}/ipfs/${cidV1}/`)
+  }
+  for (const pair of pairs) {
+    if (pair.apiHost) add(`${pair.apiHost.replace(/\/+$/u, '')}${ALEPH_RAW_STORAGE_PATH}${cidV1}`)
   }
   return urls
 }
