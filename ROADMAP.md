@@ -1,5 +1,22 @@
 # Roadmap
 
+## 0.12.11 — the build of a sealed image as a journey, in one package
+
+**`@le-space/build-journey`, new.** Paperless anywhere's first start and the
+Belege bridge's own image showed the same full-screen view while
+`@le-space/sealed-image` builds an image, from two copies. The package holds
+it once (#251): a pure model (the build's five stations and a start station an
+app may add, the facts reported on the way kept only when they look like what
+they claim, share done and time left with the fetch measured by its bytes and
+speed, small steps, what flows where, and the evidence with links: source
+commit, plain image, expected and measured measurement with "matches" only
+for a pinned value, V-PROGRAM, node, relay, content address, STORE) and a
+Svelte 5 view of it. Every word comes from the app through `text(key, vars)`;
+stations, places, pins, link bases and callbacks are props. The model is
+tested in Node, the view bundled for a browser and checked in Chromium; CI
+installs Chromium for it. It ships as source, like aleph-vm and sealed-image,
+and is promoted with the rest (#249 adds those two to the promotion).
+
 ## 0.12.10 — a site is proven on any Aleph gateway, or on an API node
 
 On 2026-11-17 three Le-Space landing sites failed to publish, each after
