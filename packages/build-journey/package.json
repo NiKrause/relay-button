@@ -1,0 +1,32 @@
+{
+	"name": "@le-space/build-journey",
+	"version": "0.12.10",
+	"description": "The build of a sealed image (@le-space/sealed-image) as a journey in stations: a pure model (stations, facts, time left, small steps, flow, evidence) and a Svelte 5 view of it, with each app's words, stations and pins handed in.",
+	"license": "MIT",
+	"type": "module",
+	"main": "./src/index.mjs",
+	"svelte": "./src/index.mjs",
+	"exports": {
+		".": "./src/index.mjs",
+		"./model": "./src/model.mjs",
+		"./BuildJourney.svelte": {
+			"svelte": "./src/BuildJourney.svelte",
+			"default": "./src/BuildJourney.svelte"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": ["src", "README.md"],
+	"sideEffects": ["*.svelte"],
+	"scripts": {
+		"build": "node --check ./src/index.mjs && node --check ./src/model.mjs",
+		"test": "node --test ./test/*.test.mjs"
+	},
+	"peerDependencies": {
+		"svelte": "^5.0.0"
+	},
+	"devDependencies": {
+		"@playwright/test": "1.61.1",
+		"esbuild": "^0.28.2",
+		"svelte": "5.37.2"
+	}
+}

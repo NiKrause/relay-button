@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process'
 
 const repoRoot = process.cwd()
 
-const targets = ['shared-types', 'aleph-bootstrap', 'core', 'rootfs', 'browser', 'playwright', 'ui', 'node', 'attest-wasm', 'aleph-vm', 'sealed-image']
+const targets = ['shared-types', 'aleph-bootstrap', 'core', 'rootfs', 'browser', 'playwright', 'ui', 'node', 'attest-wasm', 'aleph-vm', 'sealed-image', 'build-journey']
 
 function parseArgs(argv) {
   const options = {

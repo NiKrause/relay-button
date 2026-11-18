@@ -169,6 +169,7 @@ jobs:
             packages/attest-wasm/dist/*.tgz
             packages/aleph-vm/dist/*.tgz
             packages/sealed-image/dist/*.tgz
+            packages/build-journey/dist/*.tgz
 
       - name: Verify npm token is configured
         if: needs.decide.outputs.publish == 'true'

@@ -54,6 +54,9 @@ const publishTargets = [
   },
   {
     dir: 'sealed-image'
+  },
+  {
+    dir: 'build-journey'
   }
 ]
 
@@ -64,7 +67,7 @@ const ATTEST_WASM = '@le-space/attest-wasm'
 // Plain ES modules with JSDoc, shipped as they are (src/), with the exports
 // map and files list of their own package.json: they run unbuilt in a
 // browser and in Node.
-const SOURCE_PACKAGES = new Set(['@le-space/aleph-vm', '@le-space/sealed-image'])
+const SOURCE_PACKAGES = new Set(['@le-space/aleph-vm', '@le-space/sealed-image', '@le-space/build-journey'])
 
 async function readJson(path) {
   return JSON.parse(await readFile(path, 'utf8'))
@@ -199,7 +202,8 @@ async function main() {
         url: `${repositoryUrl}/issues`
       },
       dependencies: normalizeDependencies(packageJson.dependencies, versionsByName),
-      peerDependencies: normalizeDependencies(packageJson.peerDependencies, versionsByName)
+      peerDependencies: normalizeDependencies(packageJson.peerDependencies, versionsByName),
+      sideEffects: SOURCE_PACKAGES.has(packageJson.name) ? packageJson.sideEffects : undefined
     }
 
     await writeFile(join(distDir, 'package.json'), `${JSON.stringify(publishManifest, null, 2)}\n`)
