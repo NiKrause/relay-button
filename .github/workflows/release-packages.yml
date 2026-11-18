@@ -128,6 +128,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
 
+      # @le-space/build-journey checks its view in Chromium (CI fails without it).
+      - name: Install Chromium for Playwright
+        run: pnpm --filter @le-space/build-journey exec playwright install --with-deps chromium
+
       - name: Run tests
         run: pnpm test
 
