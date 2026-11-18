@@ -45,6 +45,7 @@
 	 *   hint?: string | null,
 	 *   uploadHosts?: number | null,
 	 *   simple?: boolean,
+	 *   finaleEvidence?: boolean,
 	 *   wakeLock?: boolean,
 	 *   miniAt?: 'top' | 'bottom',
 	 *   openHref?: string | null,
@@ -70,6 +71,7 @@
 		hint = null,
 		uploadHosts = null,
 		simple = false,
+		finaleEvidence = true,
 		wakeLock = true,
 		miniAt = 'bottom',
 		openHref = null,
@@ -108,6 +110,8 @@
 	const ends = $derived(new Date(j.ends).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }));
 	const proofs = $derived(evidence(facts, builder, links));
 	const hasReport = $derived(reported(proofs).length > 0);
+	// An app without these words (an empty text) shows nothing in their place.
+	const noneText = $derived(running ? text('evidenceNone') : text('evidenceNoneStopped'));
 	const mib = (/** @type {number} */ b) => Math.round(b / 1048576);
 	const st = (/** @type {string} */ key, /** @type {string} */ part) => text(`stations.${key}.${part}`);
 
@@ -244,7 +248,7 @@
 				</div>
 				<h2 id={ids.title}>{text('doneTitle')}</h2>
 				<p>{text('doneText')}</p>
-				{#if !simple && hasReport}
+				{#if !simple && finaleEvidence && hasReport}
 					<ul class="proofs-inline" data-testid="{testid}-done-evidence">
 						{#each reported(proofs) as p (p.key)}
 							<li>
@@ -420,8 +424,8 @@
 									{/each}
 								</ul>
 							{/if}
-							{#if !hasReport}
-								<p class="small">{running ? text('evidenceNone') : text('evidenceNoneStopped')}</p>
+							{#if !hasReport && noneText}
+								<p class="small">{noneText}</p>
 							{/if}
 							{#if hardware?.length}
 								<h4>{text('hardwareTitle')}</h4>
@@ -445,7 +449,7 @@
 							<span>{text('left', { minutes: minutes(j.left) })} · {text('endsAt', { time: ends })}</span>
 						</p>
 						<span class="bar"><span class="fill shimmer" style="width: {pct}%"></span></span>
-						{#if away}
+						{#if away && text('cameBack', { seconds: away })}
 							<p class="warn" role="status" data-testid="{testid}-away">{text('cameBack', { seconds: away })}</p>
 						{/if}
 						{#if hint}<p class="small" data-testid="{testid}-hint">{hint}</p>{/if}

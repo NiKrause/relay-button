@@ -42,6 +42,9 @@ const STATES = {
 		lines: [['browser', 'relay'], ['relay', 'node'], ['browser', 'aleph'], ['aleph', 'node'], ['filecoin', 'node']],
 		miniAt: 'top'
 	}),
+	// An app without some words and without the finale's evidence (Paperless anywhere).
+	quietDone: () => ({ view: { station: 'store', since: Date.now(), done: true, failed: false, facts: factsUpTo('confirm', Date.now()) }, finaleEvidence: false }),
+	quietWake: () => ({ view: { station: 'wake', since: Date.now(), done: false, failed: false, facts: {} }, text: (k, v) => (k === 'evidenceNone' ? '' : textOf(missing)(k, v)) }),
 	cover: () => ({ view: { station: 'store', since: Date.now(), done: true, failed: false, facts: {} }, cover: createRawSnippet(() => ({ render: () => '<p data-testid="cover">certificate</p>' })) })
 };
 

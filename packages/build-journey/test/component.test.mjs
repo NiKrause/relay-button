@@ -175,6 +175,13 @@ test('the view in Chromium: running, stopped, done, minimised, with a start stat
 		assert.ok(keysStart.includes('store'));
 		await shoot('start');
 
+		// Without the finale's evidence, and without a text: nothing in their place.
+		await show('quietDone');
+		await id('build-journey-done').waitFor();
+		assert.equal(await id('build-journey-done-evidence').count(), 0);
+		await show('quietWake');
+		assert.equal(await id('build-journey-evidence').locator('p.small').count(), 0);
+
 		// A cover (an app's certificate) takes the overlay.
 		await show('cover');
 		await id('cover').waitFor();

@@ -71,7 +71,7 @@ the tab's title carries the progress.
 Props: `view` (`{ station, since, done, failed, minimized, facts, fetchPct? }`),
 `text`, `stations`, `locale`, `builder`, `links`, `hardware` (null hides it),
 `places` and `lines` (the picture), `reason`, `hint` (e.g. a phone's), 
-`uploadHosts` (tries of the upload), `simple` (no small steps, no evidence),
+`uploadHosts` (tries of the upload), `simple` (no small steps, no evidence), `finaleEvidence` (the build's evidence in the finale, default on),
 `wakeLock`, `miniAt` (`'bottom'` fixed, `'top'` sticky), `openHref` and
 `oncertificate` (the finale's buttons), `cover` (a snippet shown in the
 overlay instead, e.g. a certificate), `testid` (prefix, default
@@ -96,6 +96,8 @@ Keys (`{var}` the values handed in):
   `matches`, `evidenceNone`, `evidenceNoneStopped`, `hardwareTitle`, `hardware.sev|epyc`
 - `share` `{pct}`, `left` `{minutes}`, `endsAt` `{time}`, `keepOpen`, `cameBack` `{seconds}`
 - `doneTitle`, `doneText`, and with the finale's buttons `open`, `showCertificate`
+
+An empty text for `evidenceNone`, `evidenceNoneStopped` or `cameBack` leaves that note out.
 
 Nothing a third party sends is rendered as HTML: facts are text, and only
 values that match their pattern become links, under the bases the app hands in.
