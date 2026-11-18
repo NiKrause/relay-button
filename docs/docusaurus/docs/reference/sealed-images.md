@@ -3,16 +3,19 @@
 An app that starts a confidential VM on Aleph (AMD SEV-SNP) from the browser
 unlocks it only after checking its attestation. Its root filesystem is an
 encrypted image, and the passphrase that opens it travels only over a channel
-the browser has attested. Two packages hold the code for that, so that each
+the browser has attested. Three packages hold the code for that, so that each
 app does not write it again:
 
 | Package | What it does |
 |---|---|
 | `@le-space/aleph-vm` | Starts, attests and forgets an Aleph INSTANCE or V-PROGRAM from the browser or Node, signed by the app's own key on behalf of the account that pays. |
 | `@le-space/sealed-image` | Has a measured builder seal a plain image with a passphrase the app derives, fetches it in runs over an attested relay, and stores it on Aleph as the app's own STORE. |
+| `@le-space/build-journey` | Shows that build as a journey in stations while it runs: a pure model of its progress, facts and evidence, and a Svelte 5 view with the app's own words, stations and pins. |
 
-Both run unbuilt in a browser and in Node: plain ES modules, signing, API host
+The first two run unbuilt in a browser and in Node: plain ES modules, signing, API host
 and `fetch` handed in, no app texts (errors carry a `code`, progress is data).
+`@le-space/build-journey` keeps every word with the app too: its view asks
+`text(key, vars)` for each one, and its model is plain ES modules as well.
 The attestation itself is [`@le-space/attest-wasm`](./attest-relay.md)'s;
 `attestedOpener` takes its `attestGuest` and the attest relays as arguments.
 

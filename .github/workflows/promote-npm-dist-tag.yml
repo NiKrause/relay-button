@@ -38,6 +38,7 @@ jobs:
           - '@le-space/aleph-vm'
           - '@le-space/attest-wasm'
           - '@le-space/browser'
+          - '@le-space/build-journey'
           - '@le-space/core'
           - '@le-space/node'
           - '@le-space/playwright'
