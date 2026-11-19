@@ -45,7 +45,7 @@ disk key all live in memory.
 **Size:** the plain image may have 992 MiB at most, unpacked
 (`MAX_IMAGE_BYTES`): sealing adds 32 MiB, and Aleph takes 1 GiB in one
 upload. Paperless anywhere's plain image has 836 MiB, the Belege bridge's
-959 MiB (33 MiB to spare). `/work` (1200 MiB) holds one sealed image of up
+960 MiB (32 MiB to spare). `/work` (1200 MiB) holds one sealed image of up
 to 1 GiB; the publish workflow refuses a larger plain image before it
 uploads anything.
 
