@@ -1,5 +1,17 @@
 # Roadmap
 
+## 0.12.12 — keys, checks and measurements in the build's picture
+
+**`@le-space/build-journey`.** The picture of what flows where showed dots,
+whatever they carried. Now the passphrase that seals the image and the key
+that unlocks a started VM travel as a key, an attestation report as a shield,
+and `marksNow()` puts what happened on the places: the measurement at the
+node and the browser's check of it (red when it is not a pinned value), the
+key in the node, the fetch's connections checked, the STORE signed and
+stored, a start station's VM measured, checked and unlocked (#256). On a
+narrow screen the notes stand as a list under the picture. New text keys:
+`flow.unlockKey`, `marks.*`.
+
 ## 0.12.11 — the build of a sealed image as a journey, in one package
 
 **`@le-space/build-journey`, new.** Paperless anywhere's first start and the
