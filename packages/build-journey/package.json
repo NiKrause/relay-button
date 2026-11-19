@@ -1,6 +1,6 @@
 {
 	"name": "@le-space/build-journey",
-	"version": "0.12.11",
+	"version": "0.12.12",
 	"description": "The build of a sealed image (@le-space/sealed-image) as a journey in stations: a pure model (stations, facts, time left, small steps, flow, evidence) and a Svelte 5 view of it, with each app's words, stations and pins handed in.",
 	"license": "MIT",
 	"type": "module",
