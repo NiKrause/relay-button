@@ -11,16 +11,28 @@ export const DEFAULT_BOOTSTRAP_MAX_PAGES = 5;
 export const DEFAULT_BOOTSTRAP_COMPACT_MULTIADDR_LIMIT = 3;
 export const RELAY_BOOTSTRAP_SIGNATURE_SCHEME = "personal_sign";
 
+/**
+ * An optional field of a signed payload, as it was recorded.
+ *
+ * `null` and "left out" mean the same thing to a reader, but they are two
+ * different signed texts: `{"version":null}` is not `{}`. The guest refresh
+ * scripts sign with Python's `json.dumps`, which writes an unset field as
+ * `null`; the helpers in this file sign with `JSON.stringify`, which leaves an
+ * `undefined` one out. A reader has to hand back whichever it was given, or
+ * the signature recovers somebody else's address.
+ */
+export type SignedOptional<T> = T | null | undefined;
+
 export interface RelayBootstrapAuthorizationPayload {
   ownerAddress: string;
   publisherAddress: string;
   peerId: string;
-  registrationId?: string;
-  profile?: string;
-  version?: string;
-  instanceItemHash?: string;
+  registrationId?: SignedOptional<string>;
+  profile?: SignedOptional<string>;
+  version?: SignedOptional<string>;
+  instanceItemHash?: SignedOptional<string>;
   issuedAt: number;
-  expiresAt?: number;
+  expiresAt?: SignedOptional<number>;
 }
 
 export interface RelayBootstrapAuthorizationRecord {
@@ -33,11 +45,11 @@ export interface RelayBootstrapProofPayload {
   peerId: string;
   multiaddrs?: string[];
   browserMultiaddrs?: string[];
-  multiaddrsHash?: string;
-  browserMultiaddrsHash?: string;
-  registrationId?: string;
-  profile?: string;
-  version?: string;
+  multiaddrsHash?: SignedOptional<string>;
+  browserMultiaddrsHash?: SignedOptional<string>;
+  registrationId?: SignedOptional<string>;
+  profile?: SignedOptional<string>;
+  version?: SignedOptional<string>;
   updatedAt: number;
 }
 
@@ -170,6 +182,11 @@ export interface CreateRelayBootstrapPostOptions {
 
 export type RelayBootstrapTrustMode = "wallet-signed" | "dual-key-attested";
 
+/**
+ * The exact text the owner signed. Key order is fixed here because the
+ * registry does not keep it; `null` versus "left out" is taken from the
+ * payload, because `JSON.stringify` writes the first and drops the second.
+ */
 function serializeOwnerAuthorizationPayload(
   payload: RelayBootstrapAuthorizationPayload,
 ): string {
@@ -186,6 +203,7 @@ function serializeOwnerAuthorizationPayload(
   });
 }
 
+/** The exact text the publisher signed; see the owner serializer above. */
 function serializeRelayProofPayload(
   payload: RelayBootstrapProofPayload,
 ): string {
@@ -295,6 +313,30 @@ function asNumber(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+/**
+ * Read an optional field of a signed payload without changing what was signed.
+ *
+ * Folding a recorded `null` into `undefined` looked harmless and made every
+ * registration the guest refresh scripts publish unverifiable: they sign
+ * `"version":null`, the reader rebuilt the text without the field, and the
+ * proof recovered a different address. Measured on 2026-11-20, when discovery
+ * returned one production relay of three for exactly this reason.
+ */
+function asSignedOptionalString(value: unknown): SignedOptional<string> {
+  if (value === null) return null;
+  return asTrimmedString(value) ?? undefined;
+}
+
+function asSignedOptionalNumber(value: unknown): SignedOptional<number> {
+  if (value === null) return null;
+  return asNumber(value) ?? undefined;
+}
+
+/** `null` and "left out" are one value once the signature has been checked. */
+function sameOptional(left: unknown, right: unknown): boolean {
+  return (left ?? undefined) === (right ?? undefined);
 }
 
 function normalizeHost(host: string): string {
@@ -501,7 +543,7 @@ function normalizeRelayBootstrapAuthorizationPayload(
   const publisherAddress = asTrimmedString(payload.publisherAddress);
   const peerId = asTrimmedString(payload.peerId);
   const issuedAt = asNumber(payload.issuedAt);
-  const expiresAt = asNumber(payload.expiresAt) ?? undefined;
+  const expiresAt = asSignedOptionalNumber(payload.expiresAt);
   if (!ownerAddress || !publisherAddress || !peerId || issuedAt == null) {
     return null;
   }
@@ -510,10 +552,10 @@ function normalizeRelayBootstrapAuthorizationPayload(
     ownerAddress,
     publisherAddress,
     peerId,
-    registrationId: asTrimmedString(payload.registrationId) ?? undefined,
-    profile: asTrimmedString(payload.profile) ?? undefined,
-    version: asTrimmedString(payload.version) ?? undefined,
-    instanceItemHash: asTrimmedString(payload.instanceItemHash) ?? undefined,
+    registrationId: asSignedOptionalString(payload.registrationId),
+    profile: asSignedOptionalString(payload.profile),
+    version: asSignedOptionalString(payload.version),
+    instanceItemHash: asSignedOptionalString(payload.instanceItemHash),
     issuedAt,
     expiresAt,
   };
@@ -557,12 +599,13 @@ function normalizeRelayBootstrapProofPayload(
     browserMultiaddrs: browserMultiaddrs
       ? dedupeMultiaddrs(browserMultiaddrs)
       : undefined,
-    multiaddrsHash: asTrimmedString(payload.multiaddrsHash) ?? undefined,
-    browserMultiaddrsHash:
-      asTrimmedString(payload.browserMultiaddrsHash) ?? undefined,
-    registrationId: asTrimmedString(payload.registrationId) ?? undefined,
-    profile: asTrimmedString(payload.profile) ?? undefined,
-    version: asTrimmedString(payload.version) ?? undefined,
+    multiaddrsHash: asSignedOptionalString(payload.multiaddrsHash),
+    browserMultiaddrsHash: asSignedOptionalString(
+      payload.browserMultiaddrsHash,
+    ),
+    registrationId: asSignedOptionalString(payload.registrationId),
+    profile: asSignedOptionalString(payload.profile),
+    version: asSignedOptionalString(payload.version),
     updatedAt,
   };
 }
@@ -941,15 +984,17 @@ export async function verifyRelayBootstrapDualKeyContent(
 
   const proofPayload = content.relayProof?.payload;
   if (proofPayload) {
-    if (proofPayload.registrationId !== content.registrationId) {
+    // The content is not part of the signed text, so its own `null`s are
+    // still folded away on read; compare by meaning, not by spelling.
+    if (!sameOptional(proofPayload.registrationId, content.registrationId)) {
       errors.push(
         "Relay proof registrationId does not match the bootstrap content.",
       );
     }
-    if (proofPayload.profile !== content.profile) {
+    if (!sameOptional(proofPayload.profile, content.profile)) {
       errors.push("Relay proof profile does not match the bootstrap content.");
     }
-    if (proofPayload.version !== content.version) {
+    if (!sameOptional(proofPayload.version, content.version)) {
       errors.push("Relay proof version does not match the bootstrap content.");
     }
     if (proofPayload.updatedAt !== content.updatedAt) {
