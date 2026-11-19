@@ -91,6 +91,8 @@ test('the view in Chromium: running, stopped, done, minimised, with a start stat
 				await page.setViewportSize({ width: /** @type {number} */ (w), height: /** @type {number} */ (h) });
 				await page.waitForTimeout(800);
 				await page.screenshot({ path: join(shots, `${name}-${tag}.png`), fullPage: true });
+				const flow = id('build-journey-flow');
+				if (await flow.count()) await flow.screenshot({ path: join(shots, `${name}-${tag}-flow.png`) });
 			}
 			await page.setViewportSize({ width: 1280, height: 900 });
 		};
@@ -109,6 +111,12 @@ test('the view in Chromium: running, stopped, done, minimised, with a start stat
 		assert.match(subs, /450 of 900 MiB · 1 MiB\/s/);
 		assert.equal(await id('build-journey-fetched').textContent(), '50 % fetched');
 		assert.equal(await id('build-journey-flow').getAttribute('data-what'), 'pieces');
+		assert.equal(await id('build-journey-mark-node-measure').getAttribute('data-state'), 'done');
+		assert.equal(await id('build-journey-mark-node-key').getAttribute('data-state'), 'done');
+		assert.equal(await id('build-journey-mark-browser-attest').getAttribute('data-state'), 'now');
+		assert.match(await id('build-journey-flow').innerText(), /21 connections checked ✓/);
+		assert.equal(await id('build-journey-carrier').count(), 0, 'pieces travel as dots');
+		assert.match((await id('build-journey-marks').textContent()) ?? '', /Your browser: 21 connections checked ✓/);
 		const ev = id('build-journey-evidence');
 		const keys = await ev.locator('li[data-key]').evaluateAll((li) => li.map((l) => l.getAttribute('data-key')));
 		assert.deepEqual(keys, ['commit', 'plain', 'expected', 'vprogram', 'node', 'relay', 'measured', 'cid']);
@@ -128,6 +136,25 @@ test('the view in Chromium: running, stopped, done, minimised, with a start stat
 			return e.defaultPrevented;
 		});
 		assert.equal(asked, true);
+
+		// The check: the hardware measures, a report travels to the browser.
+		await show('check');
+		assert.equal(await id('build-journey-carrier').getAttribute('data-kind'), 'report');
+		assert.equal(await id('build-journey-mark-node-measure').getAttribute('data-state'), 'now');
+		await shoot('check');
+
+		// The seal: the report was checked, the key travels to the node.
+		await show('seal');
+		assert.equal(await id('build-journey-carrier').getAttribute('data-kind'), 'key');
+		assert.equal(await id('build-journey-mark-browser-attest').getAttribute('data-state'), 'done');
+		assert.equal(await id('build-journey-mark-node-key').getAttribute('data-state'), 'now');
+		assert.match(await id('build-journey-flow').innerText(), /report checked ✓/);
+		await shoot('seal');
+
+		// A measurement the app does not pin shows as such.
+		await show('wrong');
+		assert.equal(await id('build-journey-mark-browser-attest').getAttribute('data-state'), 'bad');
+		assert.match(await id('build-journey-flow').innerText(), /does not match ✗/);
 
 		// The store with a second try: host and try shown, the note too.
 		await show('store');
@@ -173,7 +200,15 @@ test('the view in Chromium: running, stopped, done, minimised, with a start stat
 		assert.equal(await id('build-journey-flow').getAttribute('data-what'), 'vmReport');
 		const keysStart = await id('build-journey-evidence').locator('li[data-key]').evaluateAll((li) => li.map((l) => l.getAttribute('data-key')));
 		assert.ok(keysStart.includes('store'));
+		assert.equal(await id('build-journey-carrier').getAttribute('data-kind'), 'report');
 		await shoot('start');
+
+		// The VM's report checked: the key that unlocks it travels to the node.
+		await show('unlock');
+		assert.equal(await id('build-journey-flow').getAttribute('data-what'), 'unlockKey');
+		assert.equal(await id('build-journey-carrier').getAttribute('data-kind'), 'key');
+		assert.equal(await id('build-journey-mark-node-key').getAttribute('data-state'), 'now');
+		await shoot('unlock');
 
 		// Without the finale's evidence, and without a text: nothing in their place.
 		await show('quietDone');

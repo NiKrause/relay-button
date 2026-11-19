@@ -8,6 +8,7 @@ import {
 	fetchRate,
 	flowNow,
 	journey,
+	marksNow,
 	onPath,
 	pathOf,
 	PLACES,
@@ -125,7 +126,9 @@ test('substeps: done by report or by being past, the first open one active', () 
 });
 
 test('flowNow: the path of each station, the fetch with its share', () => {
-	assert.deepEqual(flowNow({ station: 'wake' }), { path: ['browser', 'aleph', 'node'], what: 'program', share: null });
+	assert.deepEqual(flowNow({ station: 'wake' }), { path: ['browser', 'aleph', 'node'], what: 'program', share: null, kind: 'data' });
+	assert.equal(flowNow({ station: 'check' }).kind, 'report');
+	assert.equal(flowNow({ station: 'seal' }).kind, 'key');
 	assert.equal(flowNow({ station: 'check' }).what, 'report');
 	assert.equal(flowNow({ station: 'seal' }).what, 'passphrase');
 	assert.equal(flowNow({ station: 'fetch', facts: { size: 4, got: 1 } }).share, 0.25);
@@ -135,6 +138,9 @@ test('flowNow: the path of each station, the fetch with its share', () => {
 	assert.equal(flowNow({ stations, station: 'paperless' }).what, 'instance');
 	assert.equal(flowNow({ stations, station: 'paperless', facts: { vmStep: 'unlock' } }).what, 'vmReport');
 	assert.deepEqual(flowNow({ stations, station: 'paperless', facts: { vmStep: 'ready' } }).path, ['filecoin', 'node']);
+	assert.deepEqual(flowNow({ stations, station: 'paperless', facts: { vmStep: 'unlock', vmMeasurement: MEASURE } }), {
+		path: ['browser', 'relay', 'node'], what: 'unlockKey', share: null, kind: 'key'
+	});
 	const noRestore = [...BUILD_STATIONS, startStation()];
 	assert.equal(flowNow({ stations: noRestore, station: 'start', facts: { vmStep: 'ready' } }).what, 'instance');
 });
@@ -190,4 +196,31 @@ test('the picture: path and lines', () => {
 	assert.equal(onPath(['node', 'relay', 'browser'], 'browser', 'relay'), true);
 	assert.equal(onPath(['node', 'relay', 'browser'], 'browser', 'aleph'), false);
 	assert.equal(short('x'.repeat(30)), `${'x'.repeat(10)}…${'x'.repeat(6)}`);
+});
+
+test('marksNow: keys, checks and measurements where they happened', () => {
+	const pin = { measurements: [MEASURE] };
+	const brief = (marks) => marks.map((m) => `${m.at}:${m.kind}:${m.now ? 'now' : m.ok === false ? 'bad' : m.ok ? 'ok' : 'done'}`);
+	assert.deepEqual(marksNow({ station: 'wake' }), []);
+	assert.deepEqual(brief(marksNow({ station: 'check', builder: pin })), ['node:measure:now']);
+	assert.deepEqual(brief(marksNow({ station: 'seal', facts: { measurement: MEASURE }, builder: pin })), [
+		'node:measure:ok', 'browser:attest:ok', 'node:key:now'
+	]);
+	const wrong = marksNow({ station: 'seal', facts: { measurement: 'cd'.repeat(48) }, builder: pin });
+	assert.equal(wrong.find((m) => m.kind === 'attest')?.label, 'marks.mismatch');
+	assert.deepEqual(brief(wrong).slice(0, 2), ['node:measure:bad', 'browser:attest:bad']);
+	const fetching = marksNow({ station: 'fetch', facts: { measurement: MEASURE, cid: 'b'.repeat(59), attested: 21 }, builder: pin });
+	assert.deepEqual(brief(fetching), ['node:measure:ok', 'node:key:done', 'browser:attest:now']);
+	assert.deepEqual(fetching.find((m) => m.kind === 'attest')?.vars, { count: 21 });
+	assert.deepEqual(brief(marksNow({ station: 'store', facts: { cid: 'b'.repeat(59) } })), ['node:key:done', 'browser:sign:now']);
+	const stored = marksNow({ station: 'store', done: true, facts: { measurement: MEASURE, cid: 'b'.repeat(59), storeHash: H('5'), processed: true } });
+	assert.deepEqual(brief(stored), ['node:measure:ok', 'browser:attest:ok', 'node:key:done', 'browser:sign:done', 'aleph:store:ok']);
+	const stations = [...BUILD_STATIONS, startStation()];
+	const f = { measurement: MEASURE, cid: 'b'.repeat(59), storeHash: H('5'), processed: true, vmStep: 'unlock' };
+	assert.equal(marksNow({ stations, station: 'start', facts: f }).find((m) => m.at === 'node' && m.kind === 'measure')?.label, 'marks.vmMeasuring');
+	const unlocking = marksNow({ stations, station: 'start', facts: { ...f, vmMeasurement: MEASURE } });
+	assert.equal(unlocking.find((m) => m.at === 'node' && m.kind === 'key')?.label, 'marks.unlocking');
+	assert.equal(unlocking.find((m) => m.at === 'browser' && m.kind === 'attest')?.label, 'marks.vmAttested');
+	const ready = marksNow({ stations, station: 'start', facts: { ...f, vmMeasurement: MEASURE, vmStep: 'ready' } });
+	assert.equal(ready.find((m) => m.at === 'node' && m.kind === 'key')?.label, 'marks.unlocked');
 });

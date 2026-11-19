@@ -22,8 +22,19 @@
 
 /**
  * What flows where right now: the path (place keys in order), what it
- * carries, and how far it is (0–1) when that is known.
- * @typedef {{ path: string[], what: string, share: number | null }} Flow
+ * carries, how far it is (0–1) when that is known, and its kind: `data`
+ * (pieces), `key` (a secret on its way, drawn as a key) or `report` (an
+ * attestation report, drawn as a shield).
+ * @typedef {{ path: string[], what: string, share: number | null, kind?: 'data' | 'key' | 'report' }} Flow
+ */
+
+/**
+ * Something that happened at a place, for the picture: a key arrived or
+ * signed (`key`, `sign`), a report was checked (`attest`), the hardware
+ * measured (`measure`), Aleph stored (`store`). `label` is a text key
+ * (`marks.<…>`) with `vars`; `ok` false when the check failed; `now` while
+ * it is happening.
+ * @typedef {{ at: string, kind: 'key' | 'sign' | 'attest' | 'measure' | 'store', label: string, vars?: Record<string, any>, ok?: boolean, now?: boolean }} Mark
  */
 
 /**
@@ -33,7 +44,8 @@
  *   key: string,
  *   typical: number,
  *   steps?: (f: Facts) => [string, boolean][],
- *   flow?: (f: Facts) => Flow
+ *   flow?: (f: Facts) => Flow,
+ *   marks?: (f: Facts, current: boolean) => Mark[]
  * }} Station
  */
 
@@ -62,8 +74,10 @@ export const START_STEPS = Object.freeze(['measure', 'instance', 'network', 'unl
 /**
  * A station after the build: the VM started from the sealed image. Its small
  * steps follow `facts.vmStep` (one of START_STEPS); its flow shows the order
- * for the VM, the VM's report, and at `ready` the restore from `restoreFrom`
- * when given (a place key, e.g. 'filecoin').
+ * for the VM, the VM's report, once the browser has checked it the key that
+ * unlocks the VM, and at `ready` the restore from `restoreFrom` when given (a
+ * place key, e.g. 'filecoin'). Its marks: the VM's measurement, checked in
+ * the browser, and the key in the VM.
  * @param {{ key?: string, typical?: number, restoreFrom?: string | null }} [o]
  * @returns {Station}
  */
@@ -78,10 +92,26 @@ export function startStation({ key = 'start', typical = 600, restoreFrom = null 
 			]),
 		flow: (f) =>
 			f.vmStep === 'unlock'
-				? { path: ['node', 'relay', 'browser'], what: 'vmReport', share: null }
+				? f.vmMeasurement
+					? { path: ['browser', 'relay', 'node'], what: 'unlockKey', share: null, kind: 'key' }
+					: { path: ['node', 'relay', 'browser'], what: 'vmReport', share: null, kind: 'report' }
 				: f.vmStep === 'ready' && restoreFrom
-					? { path: [restoreFrom, 'node'], what: 'backup', share: null }
-					: { path: ['browser', 'aleph', 'node'], what: 'instance', share: null }
+					? { path: [restoreFrom, 'node'], what: 'backup', share: null, kind: 'data' }
+					: { path: ['browser', 'aleph', 'node'], what: 'instance', share: null, kind: 'data' },
+		marks: (f, current) => {
+			const at = f.vmStep ? START_STEPS.indexOf(f.vmStep) : -1;
+			/** @type {Mark[]} */
+			const out = [];
+			if (f.vmMeasurement) {
+				out.push({ at: 'node', kind: 'measure', label: 'marks.vmMeasured', ok: true });
+				out.push({ at: 'browser', kind: 'attest', label: 'marks.vmAttested', ok: true });
+			} else if (current && f.vmStep === 'unlock')
+				out.push({ at: 'node', kind: 'measure', label: 'marks.vmMeasuring', now: true });
+			if (at > START_STEPS.indexOf('unlock')) out.push({ at: 'node', kind: 'key', label: 'marks.unlocked' });
+			else if (current && f.vmStep === 'unlock' && f.vmMeasurement)
+				out.push({ at: 'node', kind: 'key', label: 'marks.unlocking', now: true });
+			return out;
+		}
 	};
 }
 
@@ -243,14 +273,52 @@ export function substeps({ stations = BUILD_STATIONS, station, current = station
 export function flowNow({ stations = BUILD_STATIONS, station, facts = {}, fetchPct = null }) {
 	const own = stations.find((x) => x.key === station)?.flow;
 	if (own) return own(facts);
-	if (station === 'wake') return { path: ['browser', 'aleph', 'node'], what: 'program', share: null };
-	if (station === 'check') return { path: ['node', 'relay', 'browser'], what: 'report', share: null };
-	if (station === 'seal') return { path: ['browser', 'relay', 'node'], what: 'passphrase', share: null };
+	if (station === 'wake') return { path: ['browser', 'aleph', 'node'], what: 'program', share: null, kind: 'data' };
+	if (station === 'check') return { path: ['node', 'relay', 'browser'], what: 'report', share: null, kind: 'report' };
+	if (station === 'seal') return { path: ['browser', 'relay', 'node'], what: 'passphrase', share: null, kind: 'key' };
 	if (station === 'fetch') {
 		const pct = fetchPercent(facts) ?? fetchPct;
-		return { path: ['node', 'relay', 'browser'], what: 'pieces', share: pct == null ? null : pct / 100 };
+		return { path: ['node', 'relay', 'browser'], what: 'pieces', share: pct == null ? null : pct / 100, kind: 'data' };
 	}
-	return { path: ['browser', 'aleph'], what: 'image', share: facts.processed ? 1 : null };
+	return { path: ['browser', 'aleph'], what: 'image', share: facts.processed ? 1 : null, kind: 'data' };
+}
+
+/**
+ * What happened where so far, for the picture: the hardware's measurement at
+ * the node and the browser's check of it, the key that seals the image in the
+ * node, the connections of the fetch each checked, the STORE signed in the
+ * browser and stored on Aleph; then what a station of the app's own adds.
+ * Only what a report says happened, or what happens in the current station
+ * (`now`). One mark per place and kind, the latest wins.
+ * @param {{ stations?: Station[], station: string, facts?: Facts, builder?: BuilderPin, done?: boolean }} a
+ * @returns {Mark[]}
+ */
+export function marksNow({ stations = BUILD_STATIONS, station, facts: f = {}, builder = null, done = false }) {
+	const at = done ? stations.length : Math.max(0, indexOf(stations, station));
+	const past = (/** @type {string} */ key) => indexOf(stations, key) >= 0 && indexOf(stations, key) < at;
+	const here = (/** @type {string} */ key) => !done && key === station;
+	/** @type {Mark[]} */
+	const out = [];
+	if (f.measurement) {
+		const ok = !builder?.measurements?.length || builder.measurements.includes(f.measurement);
+		out.push({ at: 'node', kind: 'measure', label: 'marks.measured', ok });
+		out.push({ at: 'browser', kind: 'attest', label: ok ? 'marks.attested' : 'marks.mismatch', ok });
+	} else if (here('check')) out.push({ at: 'node', kind: 'measure', label: 'marks.measuring', now: true });
+	if (f.cid || past('seal')) out.push({ at: 'node', kind: 'key', label: 'marks.sealed' });
+	else if (here('seal')) out.push({ at: 'node', kind: 'key', label: 'marks.sealing', now: true });
+	if (f.attested && (here('fetch') || past('fetch')))
+		out.push({ at: 'browser', kind: 'attest', label: 'marks.lanes', vars: { count: f.attested }, ok: true, now: here('fetch') });
+	if (f.storeHash) out.push({ at: 'browser', kind: 'sign', label: 'marks.signed' });
+	else if (here('store')) out.push({ at: 'browser', kind: 'sign', label: 'marks.signing', now: true });
+	if (f.processed) out.push({ at: 'aleph', kind: 'store', label: 'marks.stored', ok: true });
+	for (const s of stations) if (s.marks && (s.key === station || past(s.key))) out.push(...s.marks(f, here(s.key)));
+	/** @type {Map<string, Mark>} */
+	const latest = new Map();
+	for (const m of out) {
+		latest.delete(`${m.at} ${m.kind}`);
+		latest.set(`${m.at} ${m.kind}`, m);
+	}
+	return [...latest.values()];
 }
 
 /**

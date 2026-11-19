@@ -22,6 +22,7 @@
 		fetchRate,
 		flowNow,
 		journey,
+		marksNow,
 		minutes,
 		onPath,
 		pathOf,
@@ -105,6 +106,17 @@
 	);
 	const steps = $derived(substeps({ stations: all, station: current, facts, done: view.done }));
 	const flow = $derived(flowNow({ stations: all, station: current, facts, fetchPct }));
+	// A key or a report travels alone, drawn as itself; pieces as dots.
+	const carried = $derived(flow.kind === 'key' || flow.kind === 'report');
+	// What happened where: keys, checks, measurements, signatures (marksNow).
+	const marks = $derived(marksNow({ stations: all, station: current, facts, builder, done: view.done }));
+	/** The marks of a place, and the one whose words stand under it: what happens now, else the latest. @param {string} p */
+	const marksAt = (p) => marks.filter((m) => m.at === p);
+	/** @param {string} p */
+	const noteAt = (p) => {
+		const here = marksAt(p);
+		return here.find((m) => m.now) ?? here[here.length - 1];
+	};
 	const fetched = $derived(current === 'fetch' ? (fetchPercent(facts) ?? fetchPct) : null);
 	const rate = $derived(fetchRate(facts, now));
 	const ends = $derived(new Date(j.ends).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }));
@@ -382,26 +394,72 @@
 											/>
 										{/if}
 									{/each}
-									{#key pathD}
-										{#each [0, 0.6, 1.2] as delay (delay)}
-											<circle r="6" class="packet" opacity="0"
-												><set attributeName="opacity" to="1" begin="{delay}s" /><animateMotion
-													dur="1.8s"
-													begin="{delay}s"
-													repeatCount="indefinite"
-													path={pathD}
-												/></circle
-											>
-										{/each}
+									{#key pathD + flow.kind}
+										{#if !carried}
+											{#each [0, 0.6, 1.2] as delay (delay)}
+												<circle r="6" class="packet" opacity="0"
+													><set attributeName="opacity" to="1" begin="{delay}s" /><animateMotion
+														dur="1.8s"
+														begin="{delay}s"
+														repeatCount="indefinite"
+														path={pathD}
+													/></circle
+												>
+											{/each}
+										{/if}
 									{/key}
 									{#each Object.entries(places) as [p, [cx, cy]] (p)}
+										{@const note = noteAt(p)}
 										<g class="place" class:hot={flow.path.includes(p)}>
 											<rect x={cx - 86} y={cy - 18} width="172" height="36" rx="10" />
 											<circle cx={cx - 70} {cy} r="5" class="lamp" class:blink={flow.path.includes(p)} />
 											<text x={cx - 58} y={cy + 5}>{text(`places.${p}`)}</text>
+											{#each marksAt(p) as m, i (m.kind)}
+												<g
+													transform="translate({cx + 72 - i * 27} {cy - 18})"
+													data-testid="{testid}-mark-{p}-{m.kind}"
+													data-state={m.now ? 'now' : m.ok === false ? 'bad' : 'done'}
+												>
+													<g class="mark {m.kind}" class:live={m.now} class:failed={m.ok === false}>
+														<title>{text(m.label, m.vars)}</title>
+														<circle r="11" />
+														{@render icon(m.kind)}
+													</g>
+												</g>
+											{/each}
+											{#if note && text(note.label, note.vars)}
+												<text class="note" class:live={note.now} class:failed={note.ok === false} x={cx} y={cy + 34} text-anchor="middle"
+													>{text(note.label, note.vars)}{note.ok === true ? ' ✓' : note.ok === false ? ' ✗' : ''}</text
+												>
+											{/if}
 										</g>
 									{/each}
+									{#if carried}
+										<!-- A key or a report travels alone, as itself, above the places. -->
+										{#key pathD + flow.kind}
+											<g class="carrier {flow.kind}" data-testid="{testid}-carrier" data-kind={flow.kind} opacity="0"
+												><set attributeName="opacity" to="1" begin="0s" /><circle r="13" />{@render icon(flow.kind === 'key' ? 'key' : 'attest')}<animateMotion
+													dur="2.4s"
+													repeatCount="indefinite"
+													path={pathD}
+												/></g
+											>
+										{/key}
+									{/if}
 								</svg>
+								{#if marks.length}
+									<!-- The same notes as words, for a narrow screen and for a screen reader. -->
+									<ul class="marks-list" data-testid="{testid}-marks">
+										{#each marks as m (m.at + m.kind)}
+											{#if text(m.label, m.vars)}
+												<li class:live={m.now} class:failed={m.ok === false} data-kind={m.kind}>
+													<svg viewBox="-12 -12 24 24" aria-hidden="true" class="mark {m.kind}"><circle r="11" />{@render icon(m.kind)}</svg>
+													<span>{text(`places.${m.at}`)}: {text(m.label, m.vars)}{m.ok === true ? ' ✓' : m.ok === false ? ' ✗' : ''}</span>
+												</li>
+											{/if}
+										{/each}
+									</ul>
+								{/if}
 								{#if flow.share != null}<span class="bar"
 										><span class="fill" style="width: {Math.round(flow.share * 100)}%"></span></span
 									>{/if}
@@ -460,6 +518,22 @@
 		{/if}
 	</div>
 {/if}
+
+{#snippet icon(/** @type {string} */ kind)}
+	<g class="glyph">
+		{#if kind === 'key'}
+			<circle cx="-3" cy="0" r="3.2" /><path d="M0.2 0H6.5M4.2 0v3M6.5 0v2.4" />
+		{:else if kind === 'attest'}
+			<path d="M0 -6.5L5.2 -4.4V0.4C5.2 3.6 2.6 5.6 0 6.6C-2.6 5.6 -5.2 3.6 -5.2 0.4V-4.4Z" /><path d="M-2.3 0.2L-0.6 1.9L2.5 -1.4" />
+		{:else if kind === 'measure'}
+			<path d="M-5.6 3A5.8 5.8 0 1 1 5.6 3" /><path d="M0 2.2L3 -3" /><circle cx="0" cy="2.2" r="1" />
+		{:else if kind === 'sign'}
+			<path d="M-4.6 4.6L-3.9 1.6L2.6 -4.9L4.9 -2.6L-1.6 3.9Z" />
+		{:else}
+			<path d="M-4.2 0.2L-1.2 3.2L4.6 -3" />
+		{/if}
+	</g>
+{/snippet}
 
 <style>
 	.bj-overlay {
@@ -716,6 +790,104 @@
 	.flow .packet {
 		fill: #f5c76b;
 		filter: drop-shadow(0 0 4px #f5c76b);
+	}
+	.carrier circle,
+	.mark > circle {
+		fill: #0f2a2e;
+		stroke: #f5c76b;
+		stroke-width: 1.6;
+	}
+	.carrier.key circle {
+		filter: drop-shadow(0 0 6px #f5c76b);
+	}
+	.carrier.report circle {
+		stroke: #5eead4;
+		filter: drop-shadow(0 0 6px #5eead4);
+	}
+	.glyph * {
+		fill: none;
+		stroke: #f6f2ea;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.carrier.key .glyph *,
+	.mark.key .glyph *,
+	.mark.sign .glyph * {
+		stroke: #f5c76b;
+	}
+	.carrier.report .glyph *,
+	.mark.attest .glyph *,
+	.mark.measure .glyph *,
+	.mark.store .glyph * {
+		stroke: #5eead4;
+	}
+	.mark > circle {
+		stroke: rgba(94, 234, 212, 0.7);
+	}
+	.mark.key > circle,
+	.mark.sign > circle {
+		stroke: rgba(245, 199, 107, 0.8);
+	}
+	.mark {
+		transform-box: fill-box;
+		transform-origin: center;
+		animation: pop 0.5s ease-out both;
+	}
+	.mark.live > circle {
+		animation: blink 1.2s ease-in-out infinite;
+	}
+	.mark.failed > circle {
+		stroke: #f87171;
+	}
+	.mark.failed .glyph * {
+		stroke: #f87171;
+	}
+	.place .note {
+		fill: rgba(94, 234, 212, 0.95);
+		font-size: 12px;
+		font-weight: 600;
+	}
+	.place .note.live {
+		fill: #f5c76b;
+	}
+	.place .note.failed {
+		fill: #f87171;
+	}
+	.marks-list {
+		display: none;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		flex-direction: column;
+		gap: 0.35rem;
+		font-size: 0.85rem;
+		color: rgba(94, 234, 212, 0.95);
+	}
+	.marks-list li {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.marks-list li.live {
+		color: #f5c76b;
+	}
+	.marks-list li.failed {
+		color: #f87171;
+	}
+	.marks-list svg {
+		width: 22px;
+		height: 22px;
+		flex: none;
+		overflow: visible;
+	}
+	@media (max-width: 640px) {
+		.marks-list {
+			display: flex;
+		}
+		.place .note {
+			display: none;
+		}
 	}
 	.place rect {
 		fill: #133a3f;
@@ -1055,10 +1227,13 @@
 		.shimmer,
 		.done .circle,
 		.led.blink,
-		.lamp.blink {
+		.lamp.blink,
+		.mark,
+		.mark.live > circle {
 			animation: none;
 		}
 		.packet,
+		.carrier,
 		.spark {
 			display: none;
 		}

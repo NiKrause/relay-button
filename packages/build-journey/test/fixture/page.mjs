@@ -31,6 +31,15 @@ function factsUpTo(upto, now) {
 const STATES = {
 	fetch: () => ({ view: { station: 'fetch', since: Date.now() - 60_000, done: false, failed: false, minimized: false, facts: factsUpTo('fetch', Date.now()) } }),
 	store: () => ({ view: { station: 'store', since: Date.now(), done: false, failed: false, facts: factsUpTo('upload', Date.now()) }, uploadHosts: 3 }),
+	check: () => ({ view: { station: 'check', since: Date.now(), done: false, failed: false, facts: factsUpTo('start', Date.now()) } }),
+	seal: () => ({ view: { station: 'seal', since: Date.now(), done: false, failed: false, facts: factsUpTo('attest', Date.now()) } }),
+	wrong: () => ({ view: { station: 'seal', since: Date.now(), done: false, failed: false, facts: factsUpTo('attest', Date.now()) }, builder: { ...BUILDER, measurements: ['cd'.repeat(48)] } }),
+	unlock: () => ({
+		view: { station: 'start', since: Date.now(), done: false, failed: false, facts: { ...factsUpTo('confirm', Date.now()), vmStep: 'unlock', vmMeasurement: 'ef'.repeat(48) } },
+		stations: [...BUILD_STATIONS, startStation({ key: 'start', restoreFrom: 'filecoin' })],
+		places: { browser: [100, 120], relay: [360, 44], node: [620, 120], aleph: [360, 196], filecoin: [620, 216] },
+		lines: [['browser', 'relay'], ['relay', 'node'], ['browser', 'aleph'], ['aleph', 'node'], ['filecoin', 'node']]
+	}),
 	wake: () => ({ view: { station: 'wake', since: Date.now(), done: false, failed: false, facts: {} }, hint: 'On a phone: stay here.' }),
 	stopped: () => ({ view: { station: 'check', since: Date.now(), done: false, failed: true, facts: {} }, reason: 'The builder did not answer.' }),
 	done: () => ({ view: { station: 'store', since: Date.now(), done: true, failed: false, facts: factsUpTo('confirm', Date.now()) }, openHref: 'https://example.com/open', oncertificate: () => calls.push('certificate') }),

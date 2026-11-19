@@ -36,7 +36,14 @@ export const EN = {
 	flowTitle: 'Flowing now',
 	flow: {
 		program: 'order', report: 'report', passphrase: 'passphrase', pieces: 'pieces', image: 'image',
-		instance: 'VM order', vmReport: 'VM report', backup: 'backup'
+		instance: 'VM order', vmReport: 'VM report', backup: 'backup', unlockKey: 'key to unlock'
+	},
+	marks: {
+		measuring: 'measuring…', measured: 'measured', attested: 'report checked', mismatch: 'does not match',
+		sealing: 'key arriving', sealed: 'sealed with your key', lanes: '{count} connections checked',
+		signing: 'signing…', signed: 'signed by you', stored: 'stored',
+		vmMeasuring: 'measuring the VM…', vmMeasured: 'VM measured', vmAttested: 'VM checked',
+		unlocking: 'key arriving', unlocked: 'unlocked'
 	},
 	places: { browser: 'Your browser', relay: 'Relay', node: 'Confidential node', aleph: 'Aleph', filecoin: 'Filecoin' },
 	evidenceTitle: 'Evidence',
