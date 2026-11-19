@@ -1,8 +1,8 @@
 {
 	"app": "Le-Space/belege",
-	"note": "Published 2026-11-16 (workflow \"Sealed image builder on Aleph\", run 43912726371, V-PROGRAM 546e759c…, attested on the node below, then deleted in run 43914408701; its volumes stay) for the hosted bridge's plain image from Le-Space/belege's \"Bridge image\" workflow, run 43685886548 (belege#777).",
+	"note": "Published 2026-11-19 (workflow \"Sealed image builder on Aleph\", run 44584342125, V-PROGRAM c622b325…, attested on the node below, a trial build in run 44586010658: 992 MiB sealed within 38 s; then deleted in run 44586443090; its volumes stay) for the hosted bridge's plain image from Le-Space/belege's \"Bridge image\" workflow, run 44580087897: the bridge at commit d0a1e73, the first plain image with the fix for a node that waits forever at its start when it listens at two relays (belege#828). Before: published 2026-11-16 (run 43912726371, V-PROGRAM 546e759c3721ccee9678105f65e9c6461b0d99ab9d83a9c8cbd0d28cf6eae52f, deleted in run 43914408701) for the plain image of run 43685886548 (belege#777; SHA-256 25f03bb56bc7d305790ae90d878a1d8b9cf71871b5899dc179deeac9ede8efa5, STORE 955d9a89252044708d301b2901af8c00d00715c3d25539ba1773fe4e6630f31e, commit 53a65aa). Released versions of Belege up to 0.42.1 still start their builds from that publication's volumes (workload 39775ea9e83e3e1a3d6263692d514dd296fce0111d4262c46f12c97f6b038d95, plain image volume f785d2ff21744b9e9742cee1283a38ef5cb0cf647dd9e2a68bc838f61bd988a2), so they are named here and must stay on Aleph.",
 	"claim": "sealed image build",
-	"vprogram": "546e759c3721ccee9678105f65e9c6461b0d99ab9d83a9c8cbd0d28cf6eae52f",
+	"vprogram": "c622b32589390ac66f938a1ba402662a0cd43e4ba97cd12d84c97a0c64f19091",
 	"program": {
 		"allow_amend": false,
 		"environment": {
@@ -34,14 +34,14 @@
 				{
 					"platform": "sev_snp",
 					"registers": {
-						"launch": "5da11fd2d742e92569953329775e3f66414bb03825731ffa5fd889cb1baefbc62228aea5ddf4437c7771c918c299d88b"
+						"launch": "f54e86dd271180430d7d594fe9f07c5e2ede0b171bfea1e22139676e2ee55666ad9623ded2e29d3a7b4d7a4537d2ca0f"
 					},
 					"vcpu_type": "EPYC-Genoa"
 				},
 				{
 					"platform": "sev_snp",
 					"registers": {
-						"launch": "cb5213bce94283fbfda642c716625b9034e007371159f9431043d5ccb379c7b6f42f35cca2511ee92595b2445436f705"
+						"launch": "335c224a3cc0e8680b0c4500b141304dedb909b85a4b94fdabaf92f0654e42ce0906ec641fdd9aac41eaa0c41d36377f"
 					},
 					"vcpu_type": "EPYC-v4"
 				}
@@ -51,26 +51,26 @@
 		"volumes": [
 			{
 				"comment": "",
-				"hash_tree": "6d5f85f0bcb9061394d82998a40f8942661bddc08a4bcb9acf9c942e2ddbedbd",
-				"ref": "f785d2ff21744b9e9742cee1283a38ef5cb0cf647dd9e2a68bc838f61bd988a2",
-				"roothash": "54bed2eebb1955b54b9a3dd1b6509cdbf13e57c849f8f950e10f043e626b0e8a"
+				"hash_tree": "4a2de0c324ea476b6f8d82feb9d2977bea14f8164898f6e0659c537722a06500",
+				"ref": "1ce3b735854888af9b5cf42a9cdbc022b43020802515926cc648794c90787899",
+				"roothash": "94fa70c29b1753404732e37b35c20c7949651111b468dc56e66cfa53119e43b6"
 			}
 		],
 		"workload": {
-			"hash_tree": "67d6294648f96d0f5c007fee3f974431518309a128cd24d1a11c81c982d4dbf8",
-			"ref": "39775ea9e83e3e1a3d6263692d514dd296fce0111d4262c46f12c97f6b038d95",
-			"roothash": "a1fe0c39f960e5470db1a7114909400b9b8a5a9a3c97f37c9ec70211eefc52b3"
+			"hash_tree": "5ea3043e9c264c6bfcaa9c668d55d8d27dd47e7dbeee93d42055c64231569fd2",
+			"ref": "ca8b89f3a0bccb3baa5c6c6854b7ad8e7f2026d1ff30d97285a2387f53d474a9",
+			"roothash": "2eb99c3400f838e8d00795f801081418ced7e37be3e7998e81bcca2815da620d"
 		}
 	},
 	"crn": "01a3143b384ca43a3af338031b03ae86c0a4e139a24b848475d3ddb9bfbce8fa",
 	"measurements": [
-		"5da11fd2d742e92569953329775e3f66414bb03825731ffa5fd889cb1baefbc62228aea5ddf4437c7771c918c299d88b",
-		"cb5213bce94283fbfda642c716625b9034e007371159f9431043d5ccb379c7b6f42f35cca2511ee92595b2445436f705"
+		"f54e86dd271180430d7d594fe9f07c5e2ede0b171bfea1e22139676e2ee55666ad9623ded2e29d3a7b4d7a4537d2ca0f",
+		"335c224a3cc0e8680b0c4500b141304dedb909b85a4b94fdabaf92f0654e42ce0906ec641fdd9aac41eaa0c41d36377f"
 	],
 	"policy": 196608,
 	"plain": {
-		"sha256": "25f03bb56bc7d305790ae90d878a1d8b9cf71871b5899dc179deeac9ede8efa5",
-		"store": "955d9a89252044708d301b2901af8c00d00715c3d25539ba1773fe4e6630f31e",
-		"commit": "53a65aa9c388dcbabc9a91eee376968831e31e1a"
+		"sha256": "c594b999d344dfb73d227626d2dad270ace74e52a3de8c7e3cfbeadafc259ab7",
+		"store": "a20838098975fde24d869a2a083dea3e69bd002aa370fe2ffc6836e3825ba527",
+		"commit": "d0a1e73a5587e89c91aac073be3790966a5e1556"
 	}
 }
