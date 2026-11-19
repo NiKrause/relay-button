@@ -27,7 +27,16 @@ Plain ES modules, no DOM, no network; runs in a browser and in Node.
 - `substeps({ stations, station, current, facts, done })`: the small steps,
   each `done`, `active` or `next`.
 - `flowNow({ stations, station, facts, fetchPct })`: the path through the
-  places and what it carries.
+  places, what it carries, and its `kind`: `data` (pieces, drawn as dots),
+  `key` (the passphrase that seals, the key that unlocks a VM) or `report`
+  (an attestation report), drawn as a key or a shield travelling alone.
+- `marksNow({ stations, station, facts, builder, done })`: what happened
+  where, as icons on the places with a note under each: the hardware's
+  measurement at the node and the browser's check of it (`ok` false when it
+  is not one the app pins), the key that seals the image in the node, the
+  fetch's connections each checked, the STORE signed in the browser and
+  stored on Aleph, and a start station's VM measured, checked and unlocked.
+  Only what a report says happened, or what happens now (`now`, blinking).
 - `fetchPercent`, `fetchRate` (MiB/s).
 - `evidence(facts, builder, links)`: the rows to check, with links: source
   commit, plain image SHA-256 (its STORE), expected measurement (where the
@@ -61,7 +70,8 @@ Plain ES modules, no DOM, no network; runs in a browser and in Node.
 ```
 
 Stations with their LEDs, the small steps of the current one, the animated
-picture of what flows where, the evidence with links and the hardware behind
+picture of what flows where (with keys, checks and measurements where they
+happen), the evidence with links and the hardware behind
 it, the total bar with the time left and when it ends, a slim bar when
 minimised, the finale, and when it stopped: where, and `reason`. While it
 runs it holds a Wake Lock (`wakeLock={false}` when the app holds one), asks
@@ -90,8 +100,11 @@ Keys (`{var}` the values handed in):
 - `attested` `{count}`, `mib` `{got, size}`, `rate` `{rate}`, `attempt` `{n, of}`,
   `retryNote`, `fetched` `{pct}`
 - `flowTitle`, `flow.program|report|passphrase|pieces|image` (a start:
-  `instance|vmReport|backup`), `places.<key>` (`browser relay node aleph`, and
+  `instance|vmReport|unlockKey|backup`), `places.<key>` (`browser relay node aleph`, and
   any the app adds)
+- `marks.measuring|measured|attested|mismatch|sealing|sealed|lanes` `{count}`
+  `|signing|signed|stored` (a start: `vmMeasuring|vmMeasured|vmAttested|unlocking|unlocked`):
+  the notes on the picture; on a narrow screen they stand as a list under it
 - `evidenceTitle`, `evidence.commit|plain|expected|vprogram|node|relay|measured|cid|store|instance|vmMeasured`,
   `matches`, `evidenceNone`, `evidenceNoneStopped`, `hardwareTitle`, `hardware.sev|epyc`
 - `share` `{pct}`, `left` `{minutes}`, `endsAt` `{time}`, `keepOpen`, `cameBack` `{seconds}`
