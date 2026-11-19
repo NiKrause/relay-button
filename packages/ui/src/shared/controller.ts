@@ -854,7 +854,7 @@ function relayBootstrapInstanceItemHash(
           publisherAddress?: string;
           authorization?: {
             payload?: {
-              instanceItemHash?: string;
+              instanceItemHash?: string | null;
               ownerAddress?: string;
               publisherAddress?: string;
             };
@@ -886,7 +886,7 @@ function relayBootstrapMatchesCurrentWallet(
             payload?: {
               ownerAddress?: string;
               publisherAddress?: string;
-              instanceItemHash?: string;
+              instanceItemHash?: string | null;
             };
           };
         } | null;

@@ -99,3 +99,18 @@ The intended stronger trust model is:
 - the Aleph bootstrap `POST` is published by `B`
 - readers verify both the owner authorization and relay proof before trusting
   the record
+
+### `null` is part of what was signed
+
+Both signatures are over a JSON text, and `{"version":null}` is a different
+text from `{}`. The guest refresh scripts sign with Python's `json.dumps`,
+which writes an unset field as `null`; `signRelayBootstrapAuthorization` and
+`signRelayBootstrapProof` sign with `JSON.stringify`, which leaves an
+`undefined` one out. Both kinds are in the registry.
+
+So the optional fields of the two signed payloads (`registrationId`, `profile`,
+`version`, `instanceItemHash`, `expiresAt`, and the multiaddr hashes) are read
+back as recorded: `null` stays `null`, a missing field stays missing. Treat the
+two as the same value when you read them, and never normalise one into the
+other before verifying. The unsigned `content` around them still folds `null`
+away.

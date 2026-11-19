@@ -8,6 +8,7 @@ import {
   createRelayBootstrapPost,
   dedupeMultiaddrs,
   discoverAlephBootstrapMultiaddrs,
+  fetchAlephBootstrapPosts,
   unsupportedRelayBootstrapReason,
   filterRelayBootstrapPostsByRegistration,
   filterPublicMultiaddrs,
@@ -1048,4 +1049,328 @@ test("discoverAlephBootstrapMultiaddrs can be scoped to one registration", async
     (await discoverAlephBootstrapMultiaddrs({ fetch, profile: "orbitdb-relay" })).length,
     2,
   );
+});
+
+// --- null versus "left out" in a signed payload ---------------------------
+//
+// The guest refresh scripts sign with Python's `json.dumps`, which writes an
+// unset field as `null`. The helpers in this package sign with
+// `JSON.stringify`, which leaves an `undefined` one out. Both are in the
+// registry, and a reader has to rebuild whichever text was signed.
+
+const REGISTRY_PEER_ID = "12D3KooWRegistry";
+const REGISTRY_ADDR = `/dns4/relay-registry.example.com/tcp/443/tls/ws/p2p/${REGISTRY_PEER_ID}`;
+const REGISTRY_ID = "relay:orbitdb-relay:registry";
+const registryOwner = privateKeyToAccount(
+  "0x8888888888888888888888888888888888888888888888888888888888888888",
+);
+const registryPublisher = privateKeyToAccount(
+  "0x9999999999999999999999999999999999999999999999999999999999999999",
+);
+const registrySigner = async (address, payload) => {
+  const account =
+    address.toLowerCase() === registryOwner.address.toLowerCase()
+      ? registryOwner
+      : registryPublisher;
+  return account.signMessage({ message: payload });
+};
+
+/**
+ * The registry does not keep key order — it hands objects back sorted by key
+ * length, then alphabetically — so a reader cannot lean on the order the
+ * signer wrote.
+ */
+function inRegistryKeyOrder(value) {
+  if (Array.isArray(value)) return value.map(inRegistryKeyOrder);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort((a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0))
+      .map((key) => [key, inRegistryKeyOrder(value[key])]),
+  );
+}
+
+/**
+ * A fetch that answers the one request this package makes and nothing else,
+ * with a real `Response` whose body went over the wire as JSON text: an
+ * `undefined` does not survive that, a `null` does.
+ */
+function alephRegistryFetch(contents) {
+  return async (input, init) => {
+    assert.equal(typeof input, "string");
+    const url = new URL(input);
+    assert.equal(url.origin, "https://api.aleph.im");
+    assert.equal(url.pathname, "/api/v0/posts.json");
+    assert.deepEqual(Object.fromEntries(url.searchParams), {
+      channels: "simple-todo",
+      refs: "simple-todo-bootstrap",
+      types: "relay-bootstrap-v2",
+      pagination: "50",
+      page: "1",
+    });
+    assert.equal(init?.method, "GET");
+    assert.equal(init?.headers?.accept, "application/json");
+
+    const posts = contents.map((content, index) => {
+      const itemContent = {
+        type: "relay-bootstrap-v2",
+        address: registryPublisher.address,
+        ref: "simple-todo-bootstrap",
+        content,
+        time: content.updatedAt / 1000,
+      };
+      return {
+        chain: "ETH",
+        item_hash: `item-registry-${index}`,
+        sender: registryPublisher.address,
+        type: "relay-bootstrap-v2",
+        channel: "simple-todo",
+        confirmed: true,
+        content: inRegistryKeyOrder(content),
+        item_content: JSON.stringify(itemContent),
+        item_type: "inline",
+        time: content.updatedAt / 1000,
+        hash: `item-registry-${index}`,
+        address: registryPublisher.address,
+        ref: "simple-todo-bootstrap",
+      };
+    });
+    return new Response(
+      JSON.stringify({
+        posts,
+        pagination_page: 1,
+        pagination_total: posts.length,
+        pagination_per_page: 50,
+        pagination_item: "posts",
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+}
+
+/**
+ * A registration as `orbitdb-relay-bootstrap-refresh.py` publishes it: the
+ * owner authorization comes from the deployer's wallet with `version` and
+ * `expiresAt` left out, the relay proof is signed in the guest over a payload
+ * that spells an unset version as `null`.
+ */
+async function guestSignedRegistration({ version = null, updatedAt = Date.now() } = {}) {
+  const authorizationPayload = {
+    ownerAddress: registryOwner.address,
+    publisherAddress: registryPublisher.address,
+    peerId: REGISTRY_PEER_ID,
+    registrationId: REGISTRY_ID,
+    profile: "orbitdb-relay",
+    instanceItemHash: "ab".repeat(32),
+    issuedAt: updatedAt - 60_000,
+  };
+  const proofPayload = {
+    peerId: REGISTRY_PEER_ID,
+    multiaddrs: [REGISTRY_ADDR],
+    registrationId: REGISTRY_ID,
+    profile: "orbitdb-relay",
+    version,
+    updatedAt,
+  };
+  return {
+    peerId: REGISTRY_PEER_ID,
+    multiaddrs: [REGISTRY_ADDR],
+    browserMultiaddrs: null,
+    registrationId: REGISTRY_ID,
+    profile: "orbitdb-relay",
+    version,
+    ownerAddress: registryOwner.address,
+    publisherAddress: registryPublisher.address,
+    authorization: {
+      scheme: "personal_sign",
+      payload: authorizationPayload,
+      signature: await registryOwner.signMessage({
+        message: JSON.stringify(authorizationPayload),
+      }),
+    },
+    relayProof: {
+      scheme: "personal_sign",
+      payload: proofPayload,
+      signature: await registryPublisher.signMessage({
+        message: JSON.stringify(proofPayload),
+      }),
+    },
+    updatedAt,
+  };
+}
+
+async function readFromRegistry(content) {
+  const posts = await fetchAlephBootstrapPosts({
+    fetch: alephRegistryFetch([content]),
+  });
+  assert.equal(posts.length, 1);
+  return posts[0].content;
+}
+
+test("a proof signed over version null verifies after it is read from the registry", async () => {
+  const published = await guestSignedRegistration({ version: null });
+  assert.match(
+    JSON.stringify(published.relayProof.payload),
+    /"version":null/,
+    "the fixture has to sign the text the guest script signs",
+  );
+
+  const content = await readFromRegistry(published);
+  assert.equal(content.relayProof.payload.version, null);
+
+  const verified = await verifyRelayBootstrapDualKeyContent(content);
+  assert.deepEqual(verified, { ok: true, errors: [] });
+
+  // A record a consumer cached as JSON has to verify again when it comes back.
+  const cached = JSON.parse(JSON.stringify(content));
+  assert.deepEqual(await verifyRelayBootstrapDualKeyContent(cached), {
+    ok: true,
+    errors: [],
+  });
+
+  assert.deepEqual(
+    await discoverAlephBootstrapMultiaddrs({
+      fetch: alephRegistryFetch([published]),
+    }),
+    [REGISTRY_ADDR],
+  );
+});
+
+test("a proof signed with the version left out verifies after it is read from the registry", async () => {
+  const updatedAt = Date.now();
+  const authorization = await signRelayBootstrapAuthorization({
+    ownerAddress: registryOwner.address,
+    publisherAddress: registryPublisher.address,
+    peerId: REGISTRY_PEER_ID,
+    registrationId: REGISTRY_ID,
+    profile: "orbitdb-relay",
+    issuedAt: updatedAt - 60_000,
+    signer: registrySigner,
+  });
+  const relayProof = await signRelayBootstrapProof({
+    publisherAddress: registryPublisher.address,
+    peerId: REGISTRY_PEER_ID,
+    multiaddrs: [REGISTRY_ADDR],
+    registrationId: REGISTRY_ID,
+    profile: "orbitdb-relay",
+    updatedAt,
+    signer: registrySigner,
+  });
+  const published = buildRelayBootstrapPostContent({
+    sender: registryPublisher.address,
+    peerId: REGISTRY_PEER_ID,
+    multiaddrs: [REGISTRY_ADDR],
+    registrationId: REGISTRY_ID,
+    profile: "orbitdb-relay",
+    ownerAddress: registryOwner.address,
+    publisherAddress: registryPublisher.address,
+    authorization,
+    relayProof,
+    now: updatedAt,
+  }).content;
+
+  const content = await readFromRegistry(published);
+  assert.equal(content.relayProof.payload.version, undefined);
+  assert.equal(content.authorization.payload.version, undefined);
+  assert.equal(content.authorization.payload.expiresAt, undefined);
+
+  assert.deepEqual(await verifyRelayBootstrapDualKeyContent(content), {
+    ok: true,
+    errors: [],
+  });
+  assert.deepEqual(
+    await discoverAlephBootstrapMultiaddrs({
+      fetch: alephRegistryFetch([published]),
+    }),
+    [REGISTRY_ADDR],
+  );
+});
+
+test("a proof signed over a version string verifies after it is read from the registry", async () => {
+  const published = await guestSignedRegistration({ version: "0.10.11" });
+
+  const content = await readFromRegistry(published);
+  assert.equal(content.version, "0.10.11");
+  assert.equal(content.relayProof.payload.version, "0.10.11");
+
+  assert.deepEqual(await verifyRelayBootstrapDualKeyContent(content), {
+    ok: true,
+    errors: [],
+  });
+});
+
+test("an owner authorization signed in the guest, nulls and all, verifies after it is read", async () => {
+  // The script's own fallback when it holds the owner key: every unset field
+  // is written out as `null`, `expiresAt` always.
+  const published = await guestSignedRegistration({ version: null });
+  const authorizationPayload = {
+    ownerAddress: registryOwner.address,
+    publisherAddress: registryPublisher.address,
+    peerId: REGISTRY_PEER_ID,
+    registrationId: REGISTRY_ID,
+    profile: "orbitdb-relay",
+    version: null,
+    instanceItemHash: null,
+    issuedAt: published.updatedAt,
+    expiresAt: null,
+  };
+  published.authorization = {
+    scheme: "personal_sign",
+    payload: authorizationPayload,
+    signature: await registryOwner.signMessage({
+      message: JSON.stringify(authorizationPayload),
+    }),
+  };
+
+  const content = await readFromRegistry(published);
+  assert.equal(content.authorization.payload.expiresAt, null);
+  assert.deepEqual(await verifyRelayBootstrapDualKeyContent(content), {
+    ok: true,
+    errors: [],
+  });
+});
+
+test("a registration changed after signing is still rejected", async () => {
+  const tampered = {
+    "a version written in where null was signed": (published) => {
+      published.version = "9.9.9";
+      published.relayProof.payload.version = "9.9.9";
+    },
+    "the signed null taken out again": (published) => {
+      delete published.version;
+      delete published.relayProof.payload.version;
+    },
+    "a null added to an authorization signed without one": (published) => {
+      published.authorization.payload.expiresAt = null;
+    },
+    "another address": (published) => {
+      const moved = REGISTRY_ADDR.replace("relay-registry", "relay-elsewhere");
+      published.multiaddrs = [moved];
+      published.relayProof.payload.multiaddrs = [moved];
+    },
+    "another publisher": (published) => {
+      published.publisherAddress = registryOwner.address;
+    },
+  };
+
+  for (const [what, change] of Object.entries(tampered)) {
+    const published = await guestSignedRegistration({ version: null });
+    change(published);
+
+    const content = await readFromRegistry(published);
+    const verified = await verifyRelayBootstrapDualKeyContent(content);
+    assert.equal(verified.ok, false, what);
+    assert.match(
+      verified.errors.join("\n"),
+      /does not recover|does not match/,
+      what,
+    );
+    assert.deepEqual(
+      await discoverAlephBootstrapMultiaddrs({
+        fetch: alephRegistryFetch([published]),
+      }),
+      [],
+      what,
+    );
+  }
 });
