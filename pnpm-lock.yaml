@@ -239,8 +239,8 @@ importers:
         specifier: ^4.2.13
         version: 4.2.13
       '@libp2p/crypto':
-        specifier: ^5.1.18
-        version: 5.1.18
+        specifier: ^5.1.22
+        version: 5.2.0
       '@libp2p/identify':
         specifier: ^4.1.8
         version: 4.1.8
@@ -2126,11 +2126,8 @@ packages:
   '@libp2p/config@1.1.37':
     resolution: {integrity: sha512-aapBnhItf4Zi1BV2k8iuUan4nIiPM9QwHu8r44DC/MlBvah/Wf7Gv37w0h6vQucwMi9dieg2EXbZHxEwfWA5ag==}
 
-  '@libp2p/crypto@5.1.18':
-    resolution: {integrity: sha512-sCm+dFFZmH4LJIHTCzPy7+EBRhzkndFUcIU8bui6iaxK6SDSRVa11+/O6DzW8hn/U9LgDXe6jXnzWM8bM7OoCA==}
-
-  '@libp2p/crypto@5.1.25':
-    resolution: {integrity: sha512-tgO6UrHMXQMfsc74j7LrjefOemdG4XGU2XtRAd074tbuOgkOCRauWmOpvskk5U8Wov2ObrdsIiMOGYpCNIprjw==}
+  '@libp2p/crypto@5.2.0':
+    resolution: {integrity: sha512-nLKTzyX6PKQoGFrb+OKds4NyFnedBcCgr50jYd5sIwFPVOEiQiCYBeQSdBbqjn9crFFca/l7dxBcFtXQ5qKiVw==}
 
   '@libp2p/dcutr@3.0.28':
     resolution: {integrity: sha512-ULbHSdedcLpCzXUB1BGwiKPs+sshaT+TuicDullCWwsdq6nhzpfg3KkGP/BmvzIwkEkNTRGWQ7AScI6rIHBT7g==}
@@ -2293,6 +2290,9 @@ packages:
   '@multiformats/dns@1.0.13':
     resolution: {integrity: sha512-yr4bxtA3MbvJ+2461kYIYMsiiZj/FIqKI64hE4SdvWJUdWF9EtZLar38juf20Sf5tguXKFUruluswAO6JsjS2w==}
 
+  '@multiformats/dns@1.0.15':
+    resolution: {integrity: sha512-W0zAMABtAn+3chgFcPGvllKND7M6GblMAAFcJQTy+iMmGiyFErZYPzAh2b50Y3SFf340iFV7+ckVgZkGfUyxzA==}
+
   '@multiformats/mafmt@12.1.6':
     resolution: {integrity: sha512-tlJRfL21X+AKn9b5i5VnaTD6bNttpSpcqwKVmDmSHLwxoz97fAHaepqFOk/l1fIu94nImIXneNbhsJx/RQNIww==}
 
@@ -2340,6 +2340,10 @@ packages:
     resolution: {integrity: sha512-T/BoHgFXirb0ENSPBquzX0rcjXeM6Lo892a2jlYJkqk83LqZx0l1Of7DzlKJ6jkpvMrkHSnAcgb5JegL8SeIkQ==}
     engines: {node: '>= 20.19.0'}
 
+  '@noble/curves@2.4.0':
+    resolution: {integrity: sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==}
+    engines: {node: '>= 20.19.0'}
+
   '@noble/ed25519@1.7.5':
     resolution: {integrity: sha512-xuS0nwRMQBvSxDa7UxMb61xTiH3MxTgUfhyPUALVIe0FlOAz4sjELwyDRyUvqeEYfRSG9qNjFIycqLZppg4RSA==}
 
@@ -2357,6 +2361,10 @@ packages:
 
   '@noble/hashes@2.2.0':
     resolution: {integrity: sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==}
+    engines: {node: '>= 20.19.0'}
+
+  '@noble/hashes@2.4.0':
+    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
     engines: {node: '>= 20.19.0'}
 
   '@node-datachannel/android-arm64@0.33.4':
@@ -6250,6 +6258,10 @@ packages:
     resolution: {integrity: sha512-7NED7xhQ74Ngp4JP/2e0VZHp7vSWfJfqeiR92jPgxsz6m0Se4P03YoTKa9dDXyZ3r6P616gUXttrB6nnHYKang==}
     engines: {node: '>=20'}
 
+  p-queue@9.3.5:
+    resolution: {integrity: sha512-Lki/zhXFVmDhesBUn/yHRLW9Bte7mE7xoFHzTR8sIomV7a2z+LxYAPkGvdfidNiu4fKSfjtawixxSHcZci5QcQ==}
+    engines: {node: '>=20'}
+
   p-retry@6.2.1:
     resolution: {integrity: sha512-hEt02O4hUct5wtwg4H4KcWgDdm+l1bOaEy/hWzd8xtXB9BqxTWBBhb+2ImAtH4Cv4rPjV76xN3Zumqk3k3AhhQ==}
     engines: {node: '>=16.17'}
@@ -6264,6 +6276,10 @@ packages:
 
   p-timeout@7.0.1:
     resolution: {integrity: sha512-AxTM2wDGORHGEkPCt8yqxOTMgpfbEHqF51f/5fJCmwFC3C/zNcGT63SymH2ttOAaiIws2zVg4+izQCjrakcwHg==}
+    engines: {node: '>=20'}
+
+  p-timeout@7.0.2:
+    resolution: {integrity: sha512-prbX4Z3YszrFNgH+MW5Zoeq3baXrMtP/MQnFeET90UB/GtGcGDQ5Usg9OCy6ETjTTntOw1SL2z9fMPUppN3Guw==}
     engines: {node: '>=20'}
 
   p-wait-for@6.0.0:
@@ -6835,6 +6851,9 @@ packages:
 
   protons-runtime@7.0.0:
     resolution: {integrity: sha512-r/e72006xoVND4Uvf1aIs4OQOkJaASBU3ip4DzOWAktoKAkTiOYqKoS3TYMBm8HnnYU8+h0uEzr5gIRwk/pmTg==}
+
+  protons-runtime@7.1.2:
+    resolution: {integrity: sha512-j7Y7MfCwPCxYwopyqDt8+CoJULzdajSBrFAzzfBHEhOTfdvOJ2z1QLK9aK34bSBz6V/9JAAlrsc/rFkIbqppuw==}
 
   proxy-addr@2.0.8:
     resolution: {integrity: sha512-5nnx0yGyVUcY6t9RnWcARWtwT9F1D8O9rt08htPvnd49W1IgZtmLkhu9WfMzQj1cFxjHIO6connUNVW5k7AVyQ==}
@@ -8985,7 +9004,7 @@ snapshots:
     dependencies:
       '@chainsafe/as-chacha20poly1305': 0.1.0
       '@chainsafe/as-sha256': 1.2.4
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/peer-id': 6.0.17
       '@libp2p/utils': 7.4.3
@@ -9020,7 +9039,7 @@ snapshots:
 
   '@chainsafe/libp2p-quic@2.1.5':
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/peer-id': 6.0.17
       '@libp2p/utils': 7.4.3
@@ -10539,7 +10558,7 @@ snapshots:
       multiformats: 13.4.2
       p-defer: 4.0.1
       progress-events: 1.1.0
-      protons-runtime: 7.0.0
+      protons-runtime: 7.1.2
       race-event: 1.6.1
       uint8-varint: 2.0.5
       uint8arraylist: 2.4.9
@@ -10702,7 +10721,7 @@ snapshots:
   '@ipshipyard/libp2p-auto-tls@2.0.2':
     dependencies:
       '@chainsafe/is-ip': 2.1.0
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/http': 2.0.6
       '@libp2p/interface': 3.4.0
       '@libp2p/interface-internal': 3.1.7
@@ -10923,7 +10942,7 @@ snapshots:
       any-signal: 4.2.0
       main-event: 1.0.5
       multiformats: 14.0.4
-      protons-runtime: 7.0.0
+      protons-runtime: 7.1.2
       uint8arraylist: 3.0.2
 
   '@libp2p/bootstrap@11.0.47':
@@ -10946,7 +10965,7 @@ snapshots:
 
   '@libp2p/circuit-relay-v2@4.2.13':
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/interface-internal': 3.1.13
       '@libp2p/peer-collections': 7.0.30
@@ -10967,29 +10986,19 @@ snapshots:
 
   '@libp2p/config@1.1.37':
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/keychain': 6.1.7
       '@libp2p/logger': 6.2.13
       interface-datastore: 10.0.1
 
-  '@libp2p/crypto@5.1.18':
+  '@libp2p/crypto@5.2.0':
     dependencies:
       '@libp2p/interface': 3.4.0
-      '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
-      multiformats: 13.4.2
-      protons-runtime: 7.0.0
-      uint8arraylist: 2.4.9
-      uint8arrays: 5.1.1
-
-  '@libp2p/crypto@5.1.25':
-    dependencies:
-      '@libp2p/interface': 3.4.0
-      '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
+      '@noble/curves': 2.4.0
+      '@noble/hashes': 2.4.0
       multiformats: 14.0.4
-      protons-runtime: 7.0.0
+      protons-runtime: 7.1.2
       uint8arraylist: 3.0.2
       uint8arrays: 6.1.1
 
@@ -11001,7 +11010,7 @@ snapshots:
       '@multiformats/multiaddr': 13.0.3
       '@multiformats/multiaddr-matcher': 3.0.2
       delay: 7.0.0
-      protons-runtime: 7.0.0
+      protons-runtime: 7.1.2
       uint8arraylist: 3.0.2
 
   '@libp2p/http-fetch@4.0.4':
@@ -11013,7 +11022,7 @@ snapshots:
 
   '@libp2p/http-peer-id-auth@2.0.3':
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/peer-id': 6.0.17
       uint8-varint: 3.0.0
@@ -11062,7 +11071,7 @@ snapshots:
 
   '@libp2p/identify@4.1.8':
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/interface-internal': 3.1.13
       '@libp2p/peer-id': 6.0.17
@@ -11111,7 +11120,7 @@ snapshots:
 
   '@libp2p/interface@3.4.0':
     dependencies:
-      '@multiformats/dns': 1.0.13
+      '@multiformats/dns': 1.0.15
       '@multiformats/multiaddr': 13.0.3
       main-event: 1.0.5
       multiformats: 14.0.4
@@ -11120,7 +11129,7 @@ snapshots:
 
   '@libp2p/kad-dht@16.3.3':
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/interface-internal': 3.1.13
       '@libp2p/peer-collections': 7.0.30
@@ -11154,9 +11163,9 @@ snapshots:
 
   '@libp2p/keychain@6.1.3':
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.4.0
       asn1js: 3.0.10
       interface-datastore: 10.0.1
       multiformats: 14.0.4
@@ -11165,9 +11174,9 @@ snapshots:
 
   '@libp2p/keychain@6.1.7':
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.4.0
       asn1js: 3.0.10
       interface-datastore: 10.0.1
       multiformats: 14.0.4
@@ -11239,14 +11248,14 @@ snapshots:
     dependencies:
       '@chainsafe/as-chacha20poly1305': 0.1.0
       '@chainsafe/as-sha256': 1.2.4
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/peer-id': 6.0.17
       '@libp2p/utils': 7.4.3
       '@noble/ciphers': 2.2.0
-      '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
-      protons-runtime: 7.0.0
+      '@noble/curves': 2.4.0
+      '@noble/hashes': 2.4.0
+      protons-runtime: 7.1.2
       uint8arraylist: 3.0.2
       uint8arrays: 6.1.1
       wherearewe: 2.0.1
@@ -11281,33 +11290,33 @@ snapshots:
 
   '@libp2p/peer-id@5.1.9':
     dependencies:
-      '@libp2p/crypto': 5.1.18
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 2.11.0
       multiformats: 13.4.2
       uint8arrays: 5.1.1
 
   '@libp2p/peer-id@6.0.17':
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       multiformats: 14.0.4
       uint8arrays: 6.1.1
 
   '@libp2p/peer-record@9.0.18':
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/peer-id': 6.0.17
       '@multiformats/multiaddr': 13.0.3
       multiformats: 14.0.4
-      protons-runtime: 7.0.0
+      protons-runtime: 7.1.2
       uint8-varint: 3.0.0
       uint8arraylist: 3.0.2
       uint8arrays: 6.1.1
 
   '@libp2p/peer-store@12.0.30':
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/peer-collections': 7.0.30
       '@libp2p/peer-id': 6.0.17
@@ -11318,7 +11327,7 @@ snapshots:
       main-event: 1.0.5
       mortice: 3.3.1
       multiformats: 14.0.4
-      protons-runtime: 7.0.0
+      protons-runtime: 7.1.2
       uint8arraylist: 3.0.2
       uint8arrays: 6.1.1
 
@@ -11333,7 +11342,7 @@ snapshots:
 
   '@libp2p/record@4.0.14':
     dependencies:
-      protons-runtime: 7.0.0
+      protons-runtime: 7.1.2
       uint8arraylist: 3.0.2
       uint8arrays: 6.1.1
 
@@ -11350,7 +11359,7 @@ snapshots:
 
   '@libp2p/tls@3.1.10':
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/peer-id': 6.0.17
       '@libp2p/utils': 7.4.3
@@ -11360,7 +11369,7 @@ snapshots:
       '@peculiar/x509': 2.1.0
       asn1js: 3.0.10
       p-event: 7.1.0
-      protons-runtime: 7.0.0
+      protons-runtime: 7.1.2
       reflect-metadata: 0.2.2
       uint8arraylist: 3.0.2
       uint8arrays: 6.1.1
@@ -11382,7 +11391,7 @@ snapshots:
     dependencies:
       '@chainsafe/is-ip': 2.1.0
       '@chainsafe/netmask': 2.0.0
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 2.11.0
       '@libp2p/logger': 5.2.0
       '@multiformats/multiaddr': 12.5.1
@@ -11453,7 +11462,7 @@ snapshots:
       p-defer: 4.0.1
       p-event: 7.1.0
       progress-events: 1.1.0
-      protons-runtime: 7.0.0
+      protons-runtime: 7.1.2
       race-signal: 2.0.0
       uint8-varint: 3.0.0
       uint8arraylist: 3.0.2
@@ -11462,7 +11471,7 @@ snapshots:
   '@libp2p/webrtc@6.0.32':
     dependencies:
       '@chainsafe/is-ip': 2.1.0
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/interface-internal': 3.1.13
       '@libp2p/keychain': 6.1.7
@@ -11595,6 +11604,15 @@ snapshots:
       progress-events: 1.1.0
       uint8arrays: 5.1.1
 
+  '@multiformats/dns@1.0.15':
+    dependencies:
+      '@dnsquery/dns-packet': 6.1.1
+      '@libp2p/interface': 3.4.0
+      hashlru: 2.3.0
+      p-queue: 9.3.5
+      progress-events: 1.1.0
+      uint8arrays: 6.1.1
+
   '@multiformats/mafmt@12.1.6':
     dependencies:
       '@multiformats/multiaddr': 12.5.1
@@ -11663,6 +11681,10 @@ snapshots:
     dependencies:
       '@noble/hashes': 2.2.0
 
+  '@noble/curves@2.4.0':
+    dependencies:
+      '@noble/hashes': 2.4.0
+
   '@noble/ed25519@1.7.5': {}
 
   '@noble/hashes@1.3.2': {}
@@ -11672,6 +11694,8 @@ snapshots:
   '@noble/hashes@1.8.0': {}
 
   '@noble/hashes@2.2.0': {}
+
+  '@noble/hashes@2.4.0': {}
 
   '@node-datachannel/android-arm64@0.33.4':
     optional: true
@@ -14868,18 +14892,18 @@ snapshots:
 
   ipfs-unixfs@12.0.2:
     dependencies:
-      protons-runtime: 7.0.0
+      protons-runtime: 7.1.2
       uint8arraylist: 2.4.9
 
   ipns@10.1.6:
     dependencies:
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/logger': 6.2.9
       cborg: 5.1.1
       interface-datastore: 9.0.3
       multiformats: 13.4.2
-      protons-runtime: 7.0.0
+      protons-runtime: 7.1.2
       timestamp-nano: 1.0.1
       uint8arraylist: 2.4.9
       uint8arrays: 5.1.1
@@ -15232,7 +15256,7 @@ snapshots:
     dependencies:
       '@chainsafe/is-ip': 2.1.0
       '@chainsafe/netmask': 2.0.0
-      '@libp2p/crypto': 5.1.25
+      '@libp2p/crypto': 5.2.0
       '@libp2p/interface': 3.4.0
       '@libp2p/interface-internal': 3.1.13
       '@libp2p/logger': 6.2.15
@@ -16158,6 +16182,11 @@ snapshots:
       eventemitter3: 5.0.4
       p-timeout: 7.0.1
 
+  p-queue@9.3.5:
+    dependencies:
+      eventemitter3: 5.0.4
+      p-timeout: 7.0.2
+
   p-retry@6.2.1:
     dependencies:
       '@types/retry': 0.12.2
@@ -16173,6 +16202,8 @@ snapshots:
       p-finally: 1.0.0
 
   p-timeout@7.0.1: {}
+
+  p-timeout@7.0.2: {}
 
   p-wait-for@6.0.0: {}
 
@@ -16783,6 +16814,12 @@ snapshots:
   proto-list@1.2.4: {}
 
   protons-runtime@7.0.0:
+    dependencies:
+      uint8-varint: 3.0.0
+      uint8arraylist: 3.0.2
+      uint8arrays: 6.1.1
+
+  protons-runtime@7.1.2:
     dependencies:
       uint8-varint: 3.0.0
       uint8arraylist: 3.0.2

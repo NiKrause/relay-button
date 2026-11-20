@@ -21,7 +21,7 @@
 		"@le-space/shared-types": "workspace:*",
 		"@libp2p/bootstrap": "^12.0.25",
 		"@libp2p/circuit-relay-v2": "^4.2.13",
-		"@libp2p/crypto": "^5.1.18",
+		"@libp2p/crypto": "^5.1.22",
 		"@libp2p/identify": "^4.1.8",
 		"@libp2p/kad-dht": "^16.3.3",
 		"@libp2p/peer-id": "^6.0.11",
