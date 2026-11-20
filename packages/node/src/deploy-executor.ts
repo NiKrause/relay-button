@@ -549,6 +549,30 @@ async function runDeployPlan(
       state.activeItemHash = null;
     }
   };
+  // Aleph's "rejected" is not always its last word. On 2026-11-19 the daily
+  // relay smoke saw every attempt rejected (error 6) within a second of the
+  // broadcast, moved on to the next CRN each time, and left eight INSTANCE
+  // messages that Aleph processed after all — running, charging credits, and
+  // known to nothing: the hash of a rejected attempt was never kept. So a
+  // rejected attempt is forgotten like any other failed one. When the
+  // rejection was final, the FORGET finds nothing to remove; that costs
+  // nothing, and cleanupFailedDeployment does not throw.
+  const forgetRejectedAttempt = async (
+    itemHash: string,
+    rejectionReason: string | null | undefined,
+  ): Promise<void> => {
+    log(`[deploy] forgetting rejected attempt ${itemHash} in case Aleph processes it after all`);
+    await forgetDeployment({
+      sender: identity.address,
+      instanceItemHash: itemHash,
+      reason: `Rejected attempt: ${rejectionReason ?? "no reason given"}`.slice(0, 500),
+      signer: identity.signer,
+      hasher,
+      fetch: fetchImpl,
+      channel: plan.channel,
+      apiHost: plan.apiHost,
+    });
+  };
   state.forget = (itemHash, reason) =>
     forgetDeployment({
       sender: identity.address,
@@ -733,6 +757,7 @@ async function runDeployPlan(
         log(
           `[deploy] ${placementLabel} rejected ${deployment.itemHash} because the rootfs STORE is not visible to the VM processor yet; retrying instance broadcast ${placementAttempt + 1}/${placementAttemptLimit}`,
         );
+        await forgetRejectedAttempt(deployment.itemHash, inspection.rejectionReason);
         await sleepImpl(plan.waitDelayMs);
         continue;
       }
@@ -760,6 +785,7 @@ async function runDeployPlan(
       lastError = new Error(
         `Deployment via ${placementLabel} was rejected: ${inspection.rejectionReason ?? "no additional rejection reason from Aleph"}.`,
       );
+      await forgetRejectedAttempt(deployment.itemHash, inspection.rejectionReason);
       continue;
     }
 

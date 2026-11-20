@@ -1,0 +1,148 @@
+name: Aleph Smoke Sweep
+# The daily relay smoke names every instance it starts
+# smoke-<profile>-<run id>-<attempt>, and forgets it before its job ends. It
+# cannot forget what it does not know of: on 2026-11-19 Aleph answered
+# "rejected" for eight broadcasts and processed them afterwards, and they ran —
+# charging credits — with nothing left that held their hashes.
+#
+# This finds instances of exactly that name on the smoke account whose run has
+# finished, and erases and forgets them with the cleanup the smoke itself uses.
+# Nothing else is touched: another name, a run that is still going or that this
+# repository does not know, or an instance younger than a quarter of an hour is
+# left alone.
+on:
+  schedule:
+    - cron: '41 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List what would be forgotten, and forget nothing
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: aleph-smoke-sweep
+  cancel-in-progress: false
+
+env:
+  ALEPH_API_HOST: https://api2.aleph.im
+  MIN_AGE_MINUTES: '15'
+
+jobs:
+  find:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      hashes: ${{ steps.find.outputs.hashes }}
+    steps:
+      # The account the smoke deploys with, from its key, so a new key does not
+      # leave this looking at the old account and finding nothing.
+      - name: The smoke account
+        id: account
+        env:
+          ALEPH_PRIVATE_KEY: ${{ secrets.ALEPH_PRIVATE_KEY }}
+        run: |
+          npm install --silent --no-audit --no-fund --prefix "$RUNNER_TEMP/eth" ethers@6
+          address=$(NODE_PATH="$RUNNER_TEMP/eth/node_modules" node -e \
+            'const { Wallet } = require("ethers"); console.log(new Wallet(process.env.ALEPH_PRIVATE_KEY).address)')
+          echo "address=$address" >> "$GITHUB_OUTPUT"
+
+      - name: Instances of finished smoke runs
+        id: find
+        env:
+          ADDRESS: ${{ steps.account.outputs.address }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import time
+          import urllib.error
+          import urllib.request
+
+          api = os.environ["ALEPH_API_HOST"]
+          address = os.environ["ADDRESS"]
+          min_age = int(os.environ["MIN_AGE_MINUTES"]) * 60
+          name_pattern = re.compile(r"^smoke-(uc-go-peer|orbitdb-relay)-(\d+)-(\d+)$")
+
+          def get(url, headers=None):
+              request = urllib.request.Request(url, headers={"User-Agent": "relay-button-smoke-sweep", **(headers or {})})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          messages, page = [], 1
+          while True:
+              batch = get(f"{api}/api/v0/messages.json?msgTypes=INSTANCE&addresses={address}&pagination=100&page={page}")
+              messages += batch.get("messages", [])
+              if len(batch.get("messages", [])) < 100:
+                  break
+              page += 1
+
+          def run_status(run_id, cache={}):
+              if run_id not in cache:
+                  try:
+                      headers = {"Accept": "application/vnd.github+json"}
+                      if os.environ.get("GH_TOKEN"):
+                          headers["Authorization"] = f"Bearer {os.environ['GH_TOKEN']}"
+                      run = get(f"https://api.github.com/repos/{os.environ['REPO']}/actions/runs/{run_id}", headers)
+                      cache[run_id] = run.get("status")
+                  except urllib.error.HTTPError as error:
+                      # Not a run of this repository: not ours to forget.
+                      cache[run_id] = f"unknown ({error.code})"
+              return cache[run_id]
+
+          now = time.time()
+          rows, leaked = [], []
+          for message in messages:
+              content = message.get("content") or {}
+              name = (content.get("metadata") or {}).get("name", "")
+              match = name_pattern.match(name)
+              if not match:
+                  continue
+              age = now - float(content.get("time", now))
+              status = run_status(match.group(2))
+              if status != "completed":
+                  verdict = f"left: run {status}"
+              elif age < min_age:
+                  verdict = "left: younger than the smoke's own cleanup needs"
+              else:
+                  verdict = "forget"
+                  leaked.append(message["item_hash"])
+              rows.append(f"| `{message['item_hash'][:16]}…` | `{name}` | {age / 3600:.1f} h | {verdict} |")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"hashes={json.dumps(leaked, separators=(',', ':'))}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"## Smoke instances on `{address}`\n\n")
+              if rows:
+                  summary.write("| INSTANCE | name | age | |\n|---|---|---|---|\n" + "\n".join(rows) + "\n")
+              else:
+                  summary.write("None.\n")
+          print(f"{len(rows)} smoke instance(s), {len(leaked)} of finished runs")
+          PY
+
+  forget:
+    needs: find
+    if: ${{ needs.find.outputs.hashes != '[]' && !inputs.dry_run }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        instance_item_hash: ${{ fromJSON(needs.find.outputs.hashes) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Erase and forget the instance
+        uses: ./.github/actions/aleph-playwright-runner-cleanup
+        with:
+          aleph_private_key: ${{ secrets.ALEPH_PRIVATE_KEY }}
+          instance_item_hash: ${{ matrix.instance_item_hash }}

@@ -294,6 +294,7 @@ test('executeDeployPlan uses scheduler placement without pinning a CRN by defaul
 test('executeDeployPlan rebroadcasts when Aleph rejects scheduler placement before the rootfs STORE is visible', async () => {
   let messageCount = 0
   let sleepCount = 0
+  const postedBodies: string[] = []
   const logs: string[] = []
 
   const result = await executeDeployPlan(
@@ -332,6 +333,7 @@ test('executeDeployPlan rebroadcasts when Aleph rejects scheduler placement befo
 
         if (String(url).endsWith('/api/v0/messages') && init?.method === 'POST') {
           messageCount += 1
+          postedBodies.push(String(init.body ?? ''))
           return jsonResponse({
             publication_status: { status: 'success' },
             message_status: 'pending'
@@ -355,7 +357,7 @@ test('executeDeployPlan rebroadcasts when Aleph rejects scheduler placement befo
           })
         }
 
-        if (String(url).includes('/api/v0/messages/hash-race-2') && !init?.method) {
+        if (String(url).includes('/api/v0/messages/hash-race-3') && !init?.method) {
           return jsonResponse({ status: 'processed', details: { rootfs: DEPLOY_PLAN.rootfsItemHash } })
         }
 
@@ -374,7 +376,7 @@ test('executeDeployPlan rebroadcasts when Aleph rejects scheduler placement befo
 
         if (String(url).includes('/v2/about/executions/list')) {
           return jsonResponse({
-            'hash-race-2': {
+            'hash-race-3': {
               networking: {
                 host_ipv4: '203.0.113.8',
                 mapped_ports: {
@@ -390,8 +392,13 @@ test('executeDeployPlan rebroadcasts when Aleph rejects scheduler placement befo
     }
   )
 
-  assert.equal(result.itemHash, 'hash-race-2')
-  assert.equal(messageCount, 2)
+  assert.equal(result.itemHash, 'hash-race-3')
+  // Two INSTANCE broadcasts and, between them, the FORGET of the rejected one:
+  // Aleph has processed a broadcast after answering "rejected" for it.
+  assert.equal(messageCount, 3)
+  const forgetBodies = postedBodies.filter((body) => body.includes('"type":"FORGET"'))
+  assert.equal(forgetBodies.length, 1)
+  assert.match(forgetBodies[0]!, /hash-race-1/)
   assert.equal(sleepCount, 1)
   assert.ok(logs.some((entry) => entry.includes('rootfs STORE is not visible to the VM processor yet')))
 })
@@ -784,6 +791,7 @@ test('executeDeployPlan configures ucan-store Caddy before reserved proxy activa
 test('executeDeployPlan retries on a rejected first CRN and succeeds on the next candidate', async () => {
   let messageCount = 0
   const logs: string[] = []
+  const postedBodies: string[] = []
   const result = await executeDeployPlan(
     {
       ...DEPLOY_PLAN,
@@ -824,6 +832,7 @@ test('executeDeployPlan retries on a rejected first CRN and succeeds on the next
 
         if (String(url).includes('/api/v0/messages') && init?.method === 'POST') {
           messageCount += 1
+          postedBodies.push(String(init.body ?? ''))
           return jsonResponse({ message_status: 'pending' }, 202)
         }
 
@@ -842,7 +851,7 @@ test('executeDeployPlan retries on a rejected first CRN and succeeds on the next
           })
         }
 
-        if (String(url).includes('/api/v0/messages/hash-r2') && !init?.method) {
+        if (String(url).includes('/api/v0/messages/hash-r3') && !init?.method) {
           return jsonResponse({ status: 'processed', details: {} })
         }
 
@@ -861,7 +870,7 @@ test('executeDeployPlan retries on a rejected first CRN and succeeds on the next
 
         if (String(url).includes('/v2/about/executions/list')) {
           return jsonResponse({
-            'hash-r2': {
+            'hash-r3': {
               networking: {
                 host_ipv4: '203.0.113.21',
                 ipv6_ip: '2001:db8::21',
@@ -878,9 +887,15 @@ test('executeDeployPlan retries on a rejected first CRN and succeeds on the next
     }
   )
 
-  assert.equal(result.itemHash, 'hash-r2')
+  assert.equal(result.itemHash, 'hash-r3')
   assert.equal(result.selectedCrn?.hash, 'crn-b')
-  assert.equal(messageCount, 2)
+  // The rejected attempt on CRN A is forgotten before CRN B is tried — the
+  // hash of a rejected attempt is otherwise known to nothing, and Aleph has
+  // processed such an attempt after all (2026-11-19, eight left running).
+  assert.equal(messageCount, 3)
+  const forgetBodies = postedBodies.filter((body) => body.includes('"type":"FORGET"'))
+  assert.equal(forgetBodies.length, 1)
+  assert.match(forgetBodies[0]!, /hash-r1/)
   assert.ok(logs.some((entry) => entry.includes('preflight balance for 0x1234: balance=12.5 credit_balance=7.25 locked_amount=1.5')))
   assert.ok(logs.some((entry) => entry.includes('raw rejection details for hash-r1')))
   assert.ok(logs.some((entry) => entry.includes('insufficient Aleph balance')))
