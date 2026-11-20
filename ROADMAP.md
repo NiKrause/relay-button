@@ -1,5 +1,29 @@
 # Roadmap
 
+## Unreleased — a deploy forgets the attempts Aleph rejected, and a sweep collects what a smoke run lost
+
+**`@le-space/node`, `aleph-vm-deploy`.** On 2026-11-19 the daily relay smoke
+left eight INSTANCE messages running on its account. Aleph answered every
+attempt `rejected` (error 6) within a second of the broadcast, and the deploy
+moved on to the next CRN, as it should — keeping no hash of a rejected attempt,
+because a rejected message was taken to be gone. Aleph processed all eight
+afterwards. The smoke's cleanup step had no hash to forget, reported success,
+and the instances kept running on credits. A rejected attempt is now forgotten
+like any other failed one before the next CRN is tried: both when the rootfs
+STORE was not visible yet and when a placement is given up. A FORGET for a
+rejection that was final finds nothing to remove.
+
+**`Aleph Smoke Sweep`.** A new hourly workflow forgets the instances named
+`smoke-<profile>-<run id>-<attempt>` on the smoke account whose GitHub run has
+finished and that are at least a quarter of an hour old, with the cleanup the
+smoke itself uses. A forget sent the moment Aleph says `rejected` can arrive
+before Aleph processes the message; the sweep is what bounds that to an hour.
+Dispatched with `dry_run`, it lists and forgets nothing.
+
+Unchanged, and worth knowing: the browser deploy reports a rejection to the
+user and stops. An attempt Aleph processes after rejecting it is not forgotten
+there, and the user is not told it is running.
+
 ## 0.12.13 — relays that sign a null are found again
 
 **`@le-space/aleph-bootstrap`.** On 2026-11-20
