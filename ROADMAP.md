@@ -1,5 +1,32 @@
 # Roadmap
 
+## 0.12.13 — relays that sign a null are found again
+
+**`@le-space/aleph-bootstrap`.** On 2026-11-20
+`discoverAlephBootstrapMultiaddrs()` returned one production relay of three.
+The guest refresh scripts sign their relay proof with Python's `json.dumps`,
+which writes an unset version as `"version":null`. The reader folded that
+`null` away and rebuilt the signed text without the field, so the signature
+recovered another address and the registration was dropped. Optional fields of
+the two signed payloads are now read back as recorded: `null` stays `null`, a
+missing field stays missing (#259). Registrations already in the registry
+verify again; nothing has to be republished.
+
+Those fields are typed `SignedOptional<T>` (`T | null | undefined`) now:
+`registrationId`, `profile`, `version`, `instanceItemHash`, `expiresAt` and the
+multiaddr hashes of an authorization or proof payload. A consumer that passes
+a read record into a type of its own declaring one of them without `null` no
+longer compiles; `@le-space/ui` had two such helpers. `RelayBootstrapContent`
+is unchanged.
+
+Unchanged, and worth knowing: a record without an owner authorization is still
+accepted unchecked unless `requireDualKeyAttestation` is set, and the guest
+scripts still sign `null`, so a reader older than this version cannot verify
+their proofs.
+
+**`@le-space/sealed-image`.** The Belege bridge's builder publication now names
+the plain image of Le-Space/belege with the relay fix (#258).
+
 ## 0.12.12 — keys, checks and measurements in the build's picture
 
 **`@le-space/build-journey`.** The picture of what flows where showed dots,
