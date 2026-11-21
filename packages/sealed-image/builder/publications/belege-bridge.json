@@ -1,8 +1,8 @@
 {
 	"app": "Le-Space/belege",
-	"note": "Published 2026-11-19 (workflow \"Sealed image builder on Aleph\", run 44584342125, V-PROGRAM c622b325…, attested on the node below, a trial build in run 44586010658: 992 MiB sealed within 38 s; then deleted in run 44586443090; its volumes stay) for the hosted bridge's plain image from Le-Space/belege's \"Bridge image\" workflow, run 44580087897: the bridge at commit d0a1e73, the first plain image with the fix for a node that waits forever at its start when it listens at two relays (belege#828). Before: published 2026-11-16 (run 43912726371, V-PROGRAM 546e759c3721ccee9678105f65e9c6461b0d99ab9d83a9c8cbd0d28cf6eae52f, deleted in run 43914408701) for the plain image of run 43685886548 (belege#777; SHA-256 25f03bb56bc7d305790ae90d878a1d8b9cf71871b5899dc179deeac9ede8efa5, STORE 955d9a89252044708d301b2901af8c00d00715c3d25539ba1773fe4e6630f31e, commit 53a65aa). Released versions of Belege up to 0.42.1 still start their builds from that publication's volumes (workload 39775ea9e83e3e1a3d6263692d514dd296fce0111d4262c46f12c97f6b038d95, plain image volume f785d2ff21744b9e9742cee1283a38ef5cb0cf647dd9e2a68bc838f61bd988a2), so they are named here and must stay on Aleph.",
+	"note": "Published 2026-11-21 (workflow \"Sealed image builder on Aleph\": dry run 44940342385, published in run 44940512285 as V-PROGRAM 8a56e085…, attested on the node below; a trial build in run 44941276337: 992 MiB sealed, beginning as a LUKS2 disk, a 4 MiB piece fetched in 1.4 s; deleted in run 44941427189, its volumes stay) for the hosted bridge's plain image from Le-Space/belege's \"Bridge image\" workflow, run 44939837112: the bridge at the tag v0.50.0 (commit 508293c), with the NEAR swap reader and the bookings it replaced (belege#898, #923). Before: published 2026-11-19 (run 44584342125, V-PROGRAM c622b32589390ac66f938a1ba402662a0cd43e4ba97cd12d84c97a0c64f19091, deleted in run 44586443090) for the plain image of run 44580087897 (SHA-256 c594b999d344dfb73d227626d2dad270ace74e52a3de8c7e3cfbeadafc259ab7, STORE a20838098975fde24d869a2a083dea3e69bd002aa370fe2ffc6836e3825ba527, commit d0a1e73); released versions of Belege before the one that pins this publication start their builds from its volumes (workload ca8b89f3a0bccb3baa5c6c6854b7ad8e7f2026d1ff30d97285a2387f53d474a9, plain image volume 1ce3b735854888af9b5cf42a9cdbc022b43020802515926cc648794c90787899). Before that: published 2026-11-16 (run 43912726371, V-PROGRAM 546e759c3721ccee9678105f65e9c6461b0d99ab9d83a9c8cbd0d28cf6eae52f, deleted in run 43914408701) for the plain image of run 43685886548 (belege#777; SHA-256 25f03bb56bc7d305790ae90d878a1d8b9cf71871b5899dc179deeac9ede8efa5, STORE 955d9a89252044708d301b2901af8c00d00715c3d25539ba1773fe4e6630f31e, commit 53a65aa). Released versions of Belege up to 0.42.1 still start their builds from that publication's volumes (workload 39775ea9e83e3e1a3d6263692d514dd296fce0111d4262c46f12c97f6b038d95, plain image volume f785d2ff21744b9e9742cee1283a38ef5cb0cf647dd9e2a68bc838f61bd988a2), so they are named here and must stay on Aleph.",
 	"claim": "sealed image build",
-	"vprogram": "c622b32589390ac66f938a1ba402662a0cd43e4ba97cd12d84c97a0c64f19091",
+	"vprogram": "8a56e0858f2150a0a1f751597a3d5331893014df7187f32fbb77c2ad6767cece",
 	"program": {
 		"allow_amend": false,
 		"environment": {
@@ -34,14 +34,14 @@
 				{
 					"platform": "sev_snp",
 					"registers": {
-						"launch": "f54e86dd271180430d7d594fe9f07c5e2ede0b171bfea1e22139676e2ee55666ad9623ded2e29d3a7b4d7a4537d2ca0f"
+						"launch": "bc34a86cfa9c680835158ef4f25f64b22223b9e2b5b01993b4a99cbd0ded43aaea77b23cfa3f51adb8b4a87a9b7d5eb6"
 					},
 					"vcpu_type": "EPYC-Genoa"
 				},
 				{
 					"platform": "sev_snp",
 					"registers": {
-						"launch": "335c224a3cc0e8680b0c4500b141304dedb909b85a4b94fdabaf92f0654e42ce0906ec641fdd9aac41eaa0c41d36377f"
+						"launch": "11a1c15239f9ab9e82991e09c1b6997b8bdd90539e9c367aca698387621116a36b628b905cfb6a18ecfe38fe8af5f7f8"
 					},
 					"vcpu_type": "EPYC-v4"
 				}
@@ -51,26 +51,26 @@
 		"volumes": [
 			{
 				"comment": "",
-				"hash_tree": "4a2de0c324ea476b6f8d82feb9d2977bea14f8164898f6e0659c537722a06500",
-				"ref": "1ce3b735854888af9b5cf42a9cdbc022b43020802515926cc648794c90787899",
-				"roothash": "94fa70c29b1753404732e37b35c20c7949651111b468dc56e66cfa53119e43b6"
+				"hash_tree": "40d0616c06e18f27b7c1827a37a53802ebae76ae6f0da86444329ab69d9ca435",
+				"ref": "b4bdbba564d6a0e8ca252161ca358be9c4b7fe91c3198d62fe3b1bafa7493c32",
+				"roothash": "ab5020cad218febe53b5bc5720dd2b28d5a29ac64450da04c9b859fece32640c"
 			}
 		],
 		"workload": {
-			"hash_tree": "5ea3043e9c264c6bfcaa9c668d55d8d27dd47e7dbeee93d42055c64231569fd2",
-			"ref": "ca8b89f3a0bccb3baa5c6c6854b7ad8e7f2026d1ff30d97285a2387f53d474a9",
-			"roothash": "2eb99c3400f838e8d00795f801081418ced7e37be3e7998e81bcca2815da620d"
+			"hash_tree": "a90bbcea7155d5b1ba69d096af6d1fd89feb5a7fcbf51f88dce1febba45b0fd1",
+			"ref": "d3764c0e00d153c5903f63ddbcd14da13436b69c3856a063448129a6c0213435",
+			"roothash": "a7b351655e01660d401a9de1eab84098c0d4d66c9a1de9ba1abb7c52bee11887"
 		}
 	},
 	"crn": "01a3143b384ca43a3af338031b03ae86c0a4e139a24b848475d3ddb9bfbce8fa",
 	"measurements": [
-		"f54e86dd271180430d7d594fe9f07c5e2ede0b171bfea1e22139676e2ee55666ad9623ded2e29d3a7b4d7a4537d2ca0f",
-		"335c224a3cc0e8680b0c4500b141304dedb909b85a4b94fdabaf92f0654e42ce0906ec641fdd9aac41eaa0c41d36377f"
+		"bc34a86cfa9c680835158ef4f25f64b22223b9e2b5b01993b4a99cbd0ded43aaea77b23cfa3f51adb8b4a87a9b7d5eb6",
+		"11a1c15239f9ab9e82991e09c1b6997b8bdd90539e9c367aca698387621116a36b628b905cfb6a18ecfe38fe8af5f7f8"
 	],
 	"policy": 196608,
 	"plain": {
-		"sha256": "c594b999d344dfb73d227626d2dad270ace74e52a3de8c7e3cfbeadafc259ab7",
-		"store": "a20838098975fde24d869a2a083dea3e69bd002aa370fe2ffc6836e3825ba527",
-		"commit": "d0a1e73a5587e89c91aac073be3790966a5e1556"
+		"sha256": "444782e9b2dcd85853dfc4e38ea99b69129679608a50018eb421532737ee82ae",
+		"store": "4c9bceb86b2620c5866698eed2ad64f637ca493f94b8989081459d11a8ef63c8",
+		"commit": "508293ca3ad43c57ca9aa63c7207f4ca8a4bb80f"
 	}
 }
