@@ -317,6 +317,30 @@ def load_owner_authorization(
     }
 
 
+def usable_owner_authorization(
+    owner_authorization: dict[str, object] | None,
+    publisher_address: str,
+    peer_id: str,
+) -> dict[str, object] | None:
+    """The owner authorization, if it is for this publisher and this peer ID.
+
+    One handed over at deploy names the peer ID and publisher of that time; a
+    relay that came back with a new identity cannot use it. Apps that trust a
+    relay by its owner verify the authorization, so a registration that names
+    an owner without one for this relay would only be ignored.
+    """
+    if not isinstance(owner_authorization, dict):
+        return None
+    payload = owner_authorization.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    if str(payload.get("peerId") or "") != peer_id:
+        return None
+    if normalize_address(payload.get("publisherAddress")) != normalize_address(publisher_address):
+        return None
+    return owner_authorization
+
+
 def resolve_owner_address(
     env_values: dict[str, str],
     owner_authorization: dict[str, object] | None,
@@ -337,6 +361,30 @@ def resolve_owner_address(
         return address_from_private_key(owner_private_key)
 
     return None
+
+
+def owner_fields(
+    env_values: dict[str, str],
+    owner_authorization: dict[str, object] | None,
+    publisher_address: str,
+    peer_id: str,
+) -> tuple[str | None, dict[str, object] | None]:
+    """The owner a registration names, with its authorization: both, or neither."""
+    configured_owner = resolve_owner_address(env_values, owner_authorization)
+    authorization = usable_owner_authorization(owner_authorization, publisher_address, peer_id)
+    if authorization is None:
+        if configured_owner:
+            print(
+                json_dumps(
+                    {
+                        "status": "warning",
+                        "warning": "owner configured but no owner authorization for this peer ID and publisher; the registration names no owner",
+                    }
+                ),
+                file=sys.stderr,
+            )
+        return None, None
+    return configured_owner, authorization
 
 
 def registration_fingerprint(
@@ -791,7 +839,9 @@ def attempt_publish(
         version,
         now_ms,
     )
-    owner_address = resolve_owner_address(env_values, owner_authorization)
+    owner_address, owner_authorization = owner_fields(
+        env_values, owner_authorization, publisher_address, peer_id
+    )
 
     fingerprint = registration_fingerprint(
         publisher_address,
