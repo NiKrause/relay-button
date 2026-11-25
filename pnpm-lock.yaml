@@ -105,6 +105,12 @@ importers:
       '@libp2p/bootstrap':
         specifier: ^11.0.46
         version: 11.0.47
+      '@libp2p/peer-id':
+        specifier: ^6.0.11
+        version: 6.0.17
+      '@multiformats/multiaddr':
+        specifier: ^13.0.3
+        version: 13.0.3
       viem:
         specifier: ^2.53.1
         version: 2.53.1(typescript@5.9.3)

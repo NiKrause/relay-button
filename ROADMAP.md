@@ -24,6 +24,26 @@ Unchanged, and worth knowing: the browser deploy reports a rejection to the
 user and stops. An attempt Aleph processes after rejecting it is not forgotten
 there, and the user is not told it is running.
 
+**`@le-space/aleph-bootstrap`.** An app found its relays only after Aleph
+answered, on every start. The relays found on one start are now remembered
+and dialled at once on the next, while Aleph is asked in the background
+(#266). `alephBootstrapDiscovery()` is a libp2p peer discovery service that
+announces the remembered relays, tags and dials them, and announces what Aleph
+lists later; `discoverAlephBootstrapMultiaddrsCached()` does the same without
+libp2p and reports what a refresh `added` and `removed`. `refresh` decides when
+Aleph is asked: when the cache is empty, older than six hours or none of its
+relays answers within 10 s (`'stale'`, the default), on every start
+(`'always'`) or never. The cache holds the signed registration records in
+`localStorage` (in memory where there is none), under a key that names the
+discovery's scope; every record is verified again when it is loaded, a relay
+that fails three dials in a row is dropped, and a failed or empty refresh
+keeps what was there. `discoverAlephBootstrapRecords()` returns the verified
+records behind `discoverAlephBootstrapMultiaddrs()`.
+
+Unchanged, and worth knowing: `discoverAlephBootstrapMultiaddrs()` and
+`createLibp2pAlephBootstrap()` still ask Aleph on every call and remember
+nothing.
+
 ## 0.12.13 — relays that sign a null are found again
 
 **`@le-space/aleph-bootstrap`.** On 2026-11-20

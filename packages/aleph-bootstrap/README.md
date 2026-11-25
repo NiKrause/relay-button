@@ -11,6 +11,11 @@ It is designed for two complementary jobs:
 ## Public API
 
 - `discoverAlephBootstrapMultiaddrs(options)`
+- `discoverAlephBootstrapRecords(options)`
+- `discoverAlephBootstrapMultiaddrsCached(options)` — see [Remembering relays between starts](#remembering-relays-between-starts)
+- `refreshAlephRelayCache(options, previous)`
+- `createAlephRelayCache(options?)`, `relayCacheKey(options?)`, `memoryRelayCacheStorage()`
+- `alephBootstrapDiscovery(init?)` — a libp2p peer discovery service
 - `createLibp2pAlephBootstrap(options)`
 - `filterRelayBootstrapPostsByProfile(posts, profile?)`
 - `unsupportedRelayBootstrapReason(post)`
@@ -89,6 +94,70 @@ const list = await discoverAlephBootstrapMultiaddrs({
   requireDualKeyAttestation: true,
 })
 ```
+
+## Remembering relays between starts
+
+Asking Aleph takes a round trip to `api.aleph.im`, and on a slow or blocked
+network that is the whole wait before an app has a relay to dial. The relays
+found on one start can be dialled at once on the next, with Aleph asked in the
+background (#266).
+
+```ts
+import { createLibp2p } from 'libp2p'
+import { alephBootstrapDiscovery } from '@le-space/aleph-bootstrap'
+
+const node = await createLibp2p({
+  peerDiscovery: [
+    alephBootstrapDiscovery({
+      profile: 'orbitdb-relay',
+      registrationId: 'relay:orbitdb-relay:orbitdb-relay',
+    }),
+  ],
+  // …
+})
+```
+
+The service announces the remembered relays as `peer` events, merges them into
+the peer store with the tag `aleph-bootstrap` (value 50) and dials them. A
+relay that answers is kept; one that fails three dials in a row
+(`maxFailures`) is dropped from the cache. What Aleph lists later is announced
+and dialled the same way, and replaces the cache.
+
+When Aleph is asked, set by `refresh`:
+
+- `'stale'` (default): when the cache is empty or older than `refreshAfterMs`
+  (default six hours), and when none of the remembered relays is connected
+  `refreshIfSilentMs` after they were announced (default 10 s, `0` turns it
+  off);
+- `'always'`: on every start, after the remembered relays are announced;
+- `'never'`: not at all; the cache is all there is.
+
+Without libp2p, `discoverAlephBootstrapMultiaddrsCached(options)` returns the
+remembered addresses at once and, when a refresh runs, a `refreshed` promise
+with the new list and what was `added` and `removed`:
+
+```ts
+const { addrs, refreshed } = await discoverAlephBootstrapMultiaddrsCached({
+  profile: 'orbitdb-relay',
+  registrationId: 'relay:orbitdb-relay:orbitdb-relay',
+})
+dial(addrs)
+refreshed?.then(({ added }) => dial(added))
+```
+
+What is stored, and how far it is trusted:
+
+- the signed registration records as Aleph returned them, the time they were
+  saved and a failure count per relay — no keys and nothing secret;
+- in `localStorage` under `relayCacheKey(options)`, which names the channel,
+  ref, profiles and registration ids, so differently scoped discoveries never
+  share an entry; where `localStorage` is unavailable, in memory for the
+  session; pass `cache: createAlephRelayCache({ storage })` for another store;
+- on every load each record is verified again like a fresh one
+  (`verifyDualKeyAttestation`, default on) and dropped when it is older than
+  `maxAgeMs` (default 24 h): an address edited in storage is not dialled;
+- a refresh that fails or finds nothing leaves the cache as it was, and a
+  storage that throws reads as empty.
 
 ## Dual-Key Model
 

@@ -1,5 +1,7 @@
 import { bootstrap } from "@libp2p/bootstrap";
 import { keccak256, recoverMessageAddress, stringToHex } from "viem";
+import { peerIdFromString } from "@libp2p/peer-id";
+import { multiaddr } from "@multiformats/multiaddr";
 
 export const DEFAULT_ALEPH_API_HOST = "https://api.aleph.im";
 export const DEFAULT_ALEPH_BOOTSTRAP_CHANNEL = "simple-todo";
@@ -1275,9 +1277,14 @@ async function filterTrustedRelayBootstrapPosts(
   return trusted;
 }
 
-export async function discoverAlephBootstrapMultiaddrs(
+/**
+ * The registrations discovery trusts: current, in scope (profile, registration)
+ * and verified. The records keep their signatures, so a cache can store them and
+ * verify them again later without asking Aleph.
+ */
+export async function discoverAlephBootstrapRecords(
   options: DiscoverAlephBootstrapOptions = {},
-): Promise<string[]> {
+): Promise<RelayBootstrapPostRecord[]> {
   const browserDialableOnly = options.browserDialableOnly ?? true;
   const pagination = options.pagination ?? DEFAULT_BOOTSTRAP_PAGINATION;
   const startPage = options.page ?? 1;
@@ -1312,7 +1319,7 @@ export async function discoverAlephBootstrapMultiaddrs(
       options.allowInsecureWebSockets ?? false,
     );
     if (addrs.length > 0) {
-      return addrs;
+      return trustedPosts;
     }
 
     if (pagePosts.length < pagination) {
@@ -1321,6 +1328,17 @@ export async function discoverAlephBootstrapMultiaddrs(
   }
 
   return [];
+}
+
+export async function discoverAlephBootstrapMultiaddrs(
+  options: DiscoverAlephBootstrapOptions = {},
+): Promise<string[]> {
+  const records = await discoverAlephBootstrapRecords(options);
+  return relayBootstrapPostsToMultiaddrs(
+    records,
+    options.browserDialableOnly ?? true,
+    options.allowInsecureWebSockets ?? false,
+  );
 }
 
 function relayBootstrapPostsToMultiaddrs(
@@ -1364,4 +1382,479 @@ export async function createLibp2pAlephBootstrap(
     timeout: options.timeout,
     tagName: options.tagName,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Relays remembered between starts (#266)
+//
+// Discovery asks Aleph and verifies every proof before an app can dial
+// anything: seconds in Node, up to a quarter of a minute in a browser on a slow
+// network, for a list that rarely changes between two visits. The cache keeps
+// the records discovery trusted, with their signatures, so the next start can
+// dial them at once and ask Aleph afterwards, or not at all while the cache is
+// fresh (the metadata rule of #119: talk to Aleph only when needed).
+// ---------------------------------------------------------------------------
+
+/** Where the cache keeps its JSON. `localStorage` fits; Node passes its own. */
+export interface RelayCacheStorage {
+  getItem(key: string): string | null | Promise<string | null>;
+  setItem(key: string, value: string): void | Promise<void>;
+  removeItem(key: string): void | Promise<void>;
+}
+
+export interface AlephRelayCacheOptions {
+  /** Defaults to `globalThis.localStorage` where it can be used, else memory. */
+  storage?: RelayCacheStorage | null;
+  /** Defaults to {@link relayCacheKey} of the discovery scope. */
+  key?: string;
+  /** A record older than this (by its `updatedAt`) is dropped on load. Default: the registration max age. */
+  maxAgeMs?: number;
+  /** A relay that failed this many connection attempts is dropped on load. Default 3. */
+  maxFailures?: number;
+  /** Verify dual-key records again on load. Default true. */
+  verifyDualKeyAttestation?: boolean;
+  now?: () => number;
+}
+
+export interface AlephRelayCache {
+  readonly key: string;
+  /** The remembered records that are still current, not failing, and verify again. */
+  load(): Promise<RelayBootstrapPostRecord[]>;
+  /** When the records were last saved, or null when nothing is stored. */
+  savedAt(): Promise<number | null>;
+  /** Replace the records with what discovery just trusted; failure counts start over. */
+  save(records: readonly RelayBootstrapPostRecord[]): Promise<void>;
+  recordFailure(peerId: string): Promise<void>;
+  recordSuccess(peerId: string): Promise<void>;
+  clear(): Promise<void>;
+}
+
+interface StoredRelayCache {
+  version: 1;
+  savedAt: number;
+  records: RelayBootstrapPostRecord[];
+  failures: Record<string, number>;
+}
+
+const RELAY_CACHE_KEY_PREFIX = "le-space:aleph-bootstrap:relays:v1";
+const DEFAULT_RELAY_CACHE_MAX_FAILURES = 3;
+
+function scopeList(value?: string | readonly string[]): string {
+  const list = (typeof value === "string" ? [value] : (value ?? []))
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .sort();
+  return list.length > 0 ? list.join(",") : "*";
+}
+
+/**
+ * One cache per discovery scope, so two apps on one origin (or one app with
+ * two scopes) never hand each other relays they did not ask for.
+ */
+export function relayCacheKey(
+  options: Pick<DiscoverAlephBootstrapOptions, "channel" | "ref" | "profile" | "registrationId"> = {},
+): string {
+  return [
+    RELAY_CACHE_KEY_PREFIX,
+    options.channel ?? DEFAULT_ALEPH_BOOTSTRAP_CHANNEL,
+    options.ref ?? DEFAULT_ALEPH_BOOTSTRAP_REF,
+    scopeList(options.profile),
+    scopeList(options.registrationId),
+  ].join(":");
+}
+
+/** A storage that lives as long as the process: for Node, tests, or browsers without `localStorage`. */
+export function memoryRelayCacheStorage(): RelayCacheStorage {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+    removeItem: (key) => {
+      values.delete(key);
+    },
+  };
+}
+
+function defaultRelayCacheStorage(): RelayCacheStorage {
+  try {
+    const storage = (globalThis as { localStorage?: RelayCacheStorage }).localStorage;
+    if (storage) {
+      // private modes and blocked site data throw on use, not on access
+      const probe = `${RELAY_CACHE_KEY_PREFIX}:probe`;
+      storage.setItem(probe, "1");
+      storage.removeItem(probe);
+      return storage;
+    }
+  } catch {
+    // fall through to memory
+  }
+  return memoryRelayCacheStorage();
+}
+
+function relayPeerId(record: RelayBootstrapPostRecord): string | null {
+  return record.content?.peerId ?? null;
+}
+
+/**
+ * Remember trusted relay records between starts.
+ *
+ * Relay addresses are public, so `localStorage` is a fine place for them. What
+ * the cache stores are the signed records, and dual-key records are verified
+ * again on every load, so an entry edited in storage is not dialled. A
+ * wallet-signed record cannot be checked offline (Aleph checked the sender);
+ * it is as trustworthy as the origin's storage.
+ *
+ * The cache never throws for storage trouble: a full, blocked or corrupt store
+ * reads as empty and refuses writes silently. It is an optimisation, never a
+ * reason for a start to fail.
+ */
+export function createAlephRelayCache(options: AlephRelayCacheOptions = {}): AlephRelayCache {
+  const storage = options.storage ?? defaultRelayCacheStorage();
+  const key = options.key ?? relayCacheKey();
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_BOOTSTRAP_MAX_AGE_MS;
+  const maxFailures = options.maxFailures ?? DEFAULT_RELAY_CACHE_MAX_FAILURES;
+  const now = options.now ?? Date.now;
+
+  async function read(): Promise<StoredRelayCache | null> {
+    try {
+      const raw = await storage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<StoredRelayCache>;
+      if (parsed?.version !== 1 || !Array.isArray(parsed.records)) return null;
+      return {
+        version: 1,
+        savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : 0,
+        records: parsed.records,
+        failures: parsed.failures && typeof parsed.failures === "object" ? parsed.failures : {},
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async function write(value: StoredRelayCache): Promise<void> {
+    try {
+      await storage.setItem(key, JSON.stringify(value));
+    } catch {
+      // quota or blocked storage: the next start asks Aleph instead
+    }
+  }
+
+  async function changeFailures(peerId: string, change: (count: number) => number): Promise<void> {
+    const stored = await read();
+    if (!stored || !stored.records.some((record) => relayPeerId(record) === peerId)) return;
+    const next = change(stored.failures[peerId] ?? 0);
+    if (next <= 0) delete stored.failures[peerId];
+    else stored.failures[peerId] = next;
+    await write(stored);
+  }
+
+  return {
+    key,
+    async load() {
+      const stored = await read();
+      if (!stored) return [];
+      const current = stored.records.filter((record) => {
+        const content = record?.content;
+        if (!content || typeof content.updatedAt !== "number") return false;
+        if (unsupportedRelayBootstrapReason(record)) return false;
+        if (now() - content.updatedAt > maxAgeMs) return false;
+        return (stored.failures[content.peerId] ?? 0) < maxFailures;
+      });
+      return filterTrustedRelayBootstrapPosts(current, {
+        verifyDualKeyAttestation: options.verifyDualKeyAttestation ?? true,
+      });
+    },
+    async savedAt() {
+      return (await read())?.savedAt ?? null;
+    },
+    async save(records) {
+      await write({ version: 1, savedAt: now(), records: [...records], failures: {} });
+    },
+    recordFailure: (peerId) => changeFailures(peerId, (count) => count + 1),
+    recordSuccess: (peerId) => changeFailures(peerId, () => 0),
+    async clear() {
+      try {
+        await storage.removeItem(key);
+      } catch {
+        // nothing to clear then
+      }
+    },
+  };
+}
+
+/**
+ * When cache-first discovery asks Aleph:
+ * - `stale`: only when the cache is empty or older than `refreshAfterMs` (and,
+ *   in {@link alephBootstrapDiscovery}, when no remembered relay answers)
+ * - `always`: in the background on every start
+ * - `never`: not at all
+ */
+export type RelayRefreshPolicy = "stale" | "always" | "never";
+
+export interface DiscoverAlephBootstrapCachedOptions extends DiscoverAlephBootstrapOptions {
+  /** Defaults to a {@link createAlephRelayCache} keyed by the discovery scope. */
+  cache?: AlephRelayCache;
+  /** Default `stale`. */
+  refresh?: RelayRefreshPolicy;
+  /** A cache saved longer ago than this is stale. Default 6 hours. */
+  refreshAfterMs?: number;
+  now?: () => number;
+}
+
+export interface RelayRefreshResult {
+  /** The relays Aleph lists now. */
+  addrs: string[];
+  /** Addresses Aleph lists that the cache did not have. */
+  added: string[];
+  /** Cached addresses Aleph no longer lists. */
+  removed: string[];
+}
+
+export interface CachedDiscoveryResult {
+  /** The remembered relays, available without asking Aleph. */
+  addrs: string[];
+  fromCache: boolean;
+  /**
+   * The refresh from Aleph, when the policy asks for one: it updates the cache
+   * and resolves with what changed. It rejects when Aleph cannot be read, and
+   * the cache then stays as it was.
+   */
+  refreshed: Promise<RelayRefreshResult> | null;
+}
+
+export const DEFAULT_RELAY_REFRESH_AFTER_MS = 6 * 60 * 60 * 1000;
+
+function cachedRecordsToMultiaddrs(
+  records: readonly RelayBootstrapPostRecord[],
+  options: DiscoverAlephBootstrapOptions,
+): string[] {
+  return relayBootstrapPostsToMultiaddrs(
+    filterRelayBootstrapPostsByRegistration(
+      filterRelayBootstrapPostsByProfile(records, options.profile),
+      options.registrationId,
+    ),
+    options.browserDialableOnly ?? true,
+    options.allowInsecureWebSockets ?? false,
+  );
+}
+
+function cacheFor(options: DiscoverAlephBootstrapCachedOptions): AlephRelayCache {
+  return (
+    options.cache ??
+    createAlephRelayCache({ key: relayCacheKey(options), maxAgeMs: options.maxAgeMs, now: options.now })
+  );
+}
+
+/**
+ * Ask Aleph now and replace the cache with what it lists. A lookup that finds
+ * nothing keeps the cache: an empty answer is more often a hiccup than every
+ * relay being gone, and the remembered relays still age out on their own.
+ */
+export async function refreshAlephRelayCache(
+  options: DiscoverAlephBootstrapCachedOptions = {},
+  previous: readonly string[] = [],
+): Promise<RelayRefreshResult> {
+  const cache = cacheFor(options);
+  const records = await discoverAlephBootstrapRecords(options);
+  if (records.length === 0) return { addrs: [...previous], added: [], removed: [] };
+  await cache.save(records);
+  const addrs = cachedRecordsToMultiaddrs(records, options);
+  const before = new Set(previous);
+  const now = new Set(addrs);
+  return {
+    addrs,
+    added: addrs.filter((addr) => !before.has(addr)),
+    removed: previous.filter((addr) => !now.has(addr)),
+  };
+}
+
+/**
+ * Relays to dial right away, from the cache, and the refresh from Aleph as a
+ * promise, so a start never waits for Aleph while it has relays it knows.
+ */
+export async function discoverAlephBootstrapMultiaddrsCached(
+  options: DiscoverAlephBootstrapCachedOptions = {},
+): Promise<CachedDiscoveryResult> {
+  const cache = cacheFor(options);
+  const now = options.now ?? Date.now;
+  const addrs = cachedRecordsToMultiaddrs(await cache.load(), options);
+  const savedAt = await cache.savedAt();
+  const stale =
+    addrs.length === 0 ||
+    savedAt == null ||
+    now() - savedAt > (options.refreshAfterMs ?? DEFAULT_RELAY_REFRESH_AFTER_MS);
+  const policy = options.refresh ?? "stale";
+  const refreshed =
+    policy === "always" || (policy === "stale" && stale)
+      ? refreshAlephRelayCache({ ...options, cache }, addrs)
+      : null;
+  return { addrs, fromCache: addrs.length > 0, refreshed };
+}
+
+// ---------------------------------------------------------------------------
+// libp2p peer discovery without waiting for Aleph
+// ---------------------------------------------------------------------------
+
+// The same global symbols @libp2p/interface exports, so the service works with
+// whichever libp2p version the app runs without importing its interfaces.
+const PEER_DISCOVERY_SYMBOL = Symbol.for("@libp2p/peer-discovery");
+const SERVICE_CAPABILITIES_SYMBOL = Symbol.for("@libp2p/service-capabilities");
+
+export interface AlephBootstrapDiscoveryInit extends DiscoverAlephBootstrapCachedOptions {
+  /** Peer store tag for the relays. Default `aleph-bootstrap`. */
+  tagName?: string;
+  tagValue?: number;
+  tagTTL?: number;
+  /**
+   * With `refresh: 'stale'`: when none of the remembered relays is connected
+   * this long after they were announced, ask Aleph after all. Default 10 s;
+   * 0 turns it off.
+   */
+  refreshIfSilentMs?: number;
+}
+
+/** What the service needs from libp2p's components. */
+interface AlephBootstrapDiscoveryComponents {
+  peerStore: { merge(peerId: unknown, data: unknown): Promise<unknown> };
+  connectionManager: {
+    openConnection(peerId: unknown): Promise<unknown>;
+    getConnections(peerId?: unknown): unknown[];
+  };
+  logger?: { forComponent(name: string): ((...args: unknown[]) => void) & { error?: (...args: unknown[]) => void } };
+}
+
+function groupMultiaddrsByPeer(addrs: readonly string[]): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const addr of addrs) {
+    const peerId = addr.split("/p2p/").at(-1);
+    if (!peerId) continue;
+    groups.set(peerId, [...(groups.get(peerId) ?? []), addr]);
+  }
+  return groups;
+}
+
+class AlephBootstrapDiscovery extends EventTarget {
+  readonly [PEER_DISCOVERY_SYMBOL] = this;
+  readonly [SERVICE_CAPABILITIES_SYMBOL] = ["@libp2p/peer-discovery"];
+  readonly [Symbol.toStringTag] = "@le-space/aleph-bootstrap-discovery";
+
+  private started = false;
+  private silenceTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly components: AlephBootstrapDiscoveryComponents;
+  private readonly init: AlephBootstrapDiscoveryInit;
+  private readonly cache: AlephRelayCache;
+  private readonly log: (...args: unknown[]) => void;
+
+  // no parameter properties: consumers load this file with Node's type stripping
+  constructor(components: AlephBootstrapDiscoveryComponents, init: AlephBootstrapDiscoveryInit) {
+    super();
+    this.components = components;
+    this.init = init;
+    this.cache = cacheFor(init);
+    this.log = components.logger?.forComponent("le-space:aleph-bootstrap") ?? (() => {});
+  }
+
+  isStarted(): boolean {
+    return this.started;
+  }
+
+  start(): void {
+    this.started = true;
+  }
+
+  afterStart(): void {
+    void this.discover().catch((error) => this.log("relay discovery failed - %s", String(error)));
+  }
+
+  stop(): void {
+    this.started = false;
+    clearTimeout(this.silenceTimer);
+    this.silenceTimer = undefined;
+  }
+
+  private async discover(): Promise<void> {
+    const options = { ...this.init, cache: this.cache };
+    const { addrs, refreshed } = await discoverAlephBootstrapMultiaddrsCached(options);
+    this.log("%d remembered relay addresses", addrs.length);
+    await this.announce(addrs);
+    if (refreshed) {
+      this.follow(refreshed);
+      return;
+    }
+    const silentMs = this.init.refreshIfSilentMs ?? 10_000;
+    if ((this.init.refresh ?? "stale") !== "stale" || silentMs <= 0 || addrs.length === 0) return;
+    this.silenceTimer = setTimeout(() => {
+      if (!this.started || this.connectedToAny(addrs)) return;
+      this.log("no remembered relay answered within %d ms; asking Aleph", silentMs);
+      this.follow(refreshAlephRelayCache(options, addrs));
+    }, silentMs);
+  }
+
+  private follow(refresh: Promise<RelayRefreshResult>): void {
+    refresh
+      .then((result) => {
+        this.log("Aleph lists %d relay addresses (%d new)", result.addrs.length, result.added.length);
+        return this.announce(result.addrs);
+      })
+      .catch((error) => this.log("refreshing relays from Aleph failed - %s", String(error)));
+  }
+
+  private connectedToAny(addrs: readonly string[]): boolean {
+    const wanted = new Set(groupMultiaddrsByPeer(addrs).keys());
+    return this.components.connectionManager
+      .getConnections()
+      .some((connection) => wanted.has(String((connection as { remotePeer?: unknown }).remotePeer)));
+  }
+
+  private async announce(addrs: readonly string[]): Promise<void> {
+    for (const [peerIdString, list] of groupMultiaddrsByPeer(addrs)) {
+      if (!this.started) return;
+      let id: ReturnType<typeof peerIdFromString>;
+      let multiaddrs: ReturnType<typeof multiaddr>[];
+      try {
+        id = peerIdFromString(peerIdString);
+        multiaddrs = list.map((addr) => multiaddr(addr));
+      } catch (error) {
+        this.log("skipping relay %s - %s", peerIdString, String(error));
+        continue;
+      }
+      await this.components.peerStore.merge(id, {
+        tags: {
+          [this.init.tagName ?? "aleph-bootstrap"]: {
+            value: this.init.tagValue ?? 50,
+            ttl: this.init.tagTTL,
+          },
+        },
+        multiaddrs,
+      });
+      if (!this.started) return;
+      this.dispatchEvent(new CustomEvent("peer", { detail: { id, multiaddrs } }));
+      this.components.connectionManager
+        .openConnection(id)
+        .then(() => this.cache.recordSuccess(peerIdString))
+        .catch((error) => {
+          this.log("could not dial relay %s - %s", peerIdString, String(error));
+          return this.cache.recordFailure(peerIdString);
+        });
+    }
+  }
+}
+
+/**
+ * libp2p peer discovery from Aleph that never holds up the start: it announces
+ * and dials the remembered relays at once, refreshes from Aleph according to
+ * `refresh`, and announces what the refresh finds. Use it in place of awaiting
+ * {@link createLibp2pAlephBootstrap}:
+ *
+ * ```ts
+ * createLibp2p({ peerDiscovery: [alephBootstrapDiscovery({ profile: 'orbitdb-relay' })] })
+ * ```
+ */
+export function alephBootstrapDiscovery(
+  init: AlephBootstrapDiscoveryInit = {},
+): (components: AlephBootstrapDiscoveryComponents) => AlephBootstrapDiscovery {
+  return (components) => new AlephBootstrapDiscovery(components, init);
 }
