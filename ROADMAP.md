@@ -1,5 +1,18 @@
 # Roadmap
 
+## 0.12.15 — a relay's registration is found again after it was redeployed
+
+**`@le-space/aleph-bootstrap`.** `registrationId` matched only an identical
+id. A deployed relay registers as `relay:<profile>:<name>:<instance hash>`,
+with a new hash on every deploy, so the documented scope
+`registrationId: 'relay:orbitdb-relay:orbitdb-relay'` found no production relay
+at all, and a consumer that named a full id lost the relay with the next
+deploy. An id now also matches itself followed by `:` and a suffix: the name
+finds the relay on whatever instance it runs, while another name
+(`…:orbitdb-relay-e2e-1:…`, `…:smoke-orbitdb-relay-1:…`) still never does, and
+a full id still names one instance. This reaches `alephBootstrapDiscovery()`
+and the relay cache too, whose scope is set the same way.
+
 ## 0.12.14 — apps remember their relays, and a deploy forgets the attempts Aleph rejected
 
 **`@le-space/aleph-bootstrap`.** An app found its relays only after Aleph

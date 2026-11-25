@@ -70,6 +70,13 @@ const list = await discoverAlephBootstrapMultiaddrs({
 })
 ```
 
+A deployed relay registers as `relay:<profile>:<name>:<instance hash>`, and
+every deploy brings a new hash. So `registrationId` matches the id itself and
+the id followed by `:` and a suffix: `relay:orbitdb-relay:orbitdb-relay` finds
+the production relay on whatever instance it runs, never
+`relay:orbitdb-relay:orbitdb-relay-e2e-1:…` or
+`relay:orbitdb-relay:smoke-orbitdb-relay-1:…`. A full id names one instance.
+
 `profile` keeps out relays a consumer cannot use at all — an orbitdb app that
 dials a `uc-go-peer` relay never gets a shared circuit and sits at
 `candidates: 0`. `registrationId` keeps out its own corpses: measured
