@@ -990,6 +990,35 @@ test("filterRelayBootstrapPostsByRegistration keeps only the named registrations
   assert.equal(filterRelayBootstrapPostsByRegistration(posts, "  ").length, 4);
 });
 
+test("filterRelayBootstrapPostsByRegistration finds a deployed relay by name, whatever its instance", () => {
+  // A deployed relay registers as relay:<profile>:<name>:<instance hash>, and
+  // every deploy brings a new hash: the name has to find all of them.
+  const posts = [
+    { hash: "deployed", content: { registrationId: "relay:orbitdb-relay:orbitdb-relay:98f942de" } },
+    { hash: "redeployed", content: { registrationId: "relay:orbitdb-relay:orbitdb-relay:0a1b2c3d" } },
+    { hash: "plain", content: { registrationId: "relay:orbitdb-relay:orbitdb-relay" } },
+    { hash: "e2e", content: { registrationId: "relay:orbitdb-relay:orbitdb-relay-e2e-1:5e6f7a8b" } },
+    { hash: "smoke", content: { registrationId: "relay:orbitdb-relay:smoke-orbitdb-relay-1:0f06aaac" } },
+    { hash: "other", content: { registrationId: "relay:orbitdb-relay:orbitdb-relayer:1234" } },
+    { hash: "none", content: { registrationId: null } },
+  ];
+
+  assert.deepEqual(
+    filterRelayBootstrapPostsByRegistration(posts, "relay:orbitdb-relay:orbitdb-relay").map(
+      (post) => post.hash,
+    ),
+    ["deployed", "redeployed", "plain"],
+  );
+
+  // A full id still names that one instance.
+  assert.deepEqual(
+    filterRelayBootstrapPostsByRegistration(posts, "relay:orbitdb-relay:orbitdb-relay:98f942de").map(
+      (post) => post.hash,
+    ),
+    ["deployed"],
+  );
+});
+
 test("discoverAlephBootstrapMultiaddrs can be scoped to one registration", async () => {
   // The case this exists for: an E2E run's throwaway relay is alive, fresh and
   // registered under the same profile as the production one. Profile alone

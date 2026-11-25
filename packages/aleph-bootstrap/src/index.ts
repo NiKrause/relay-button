@@ -133,7 +133,10 @@ export interface DiscoverAlephBootstrapOptions {
   profile?: string | readonly string[];
   /**
    * Restrict discovery further, to the registrations published under this id
-   * (e.g. `"relay:orbitdb-relay:orbitdb-relay"`). Profile is not fine enough:
+   * (e.g. `"relay:orbitdb-relay:orbitdb-relay"`). A deployed relay registers as
+   * `relay:<profile>:<name>:<instance hash>`, a new hash with every deploy, so
+   * an id also matches itself followed by `:` and a suffix; another name never
+   * does (`…:orbitdb-relay-e2e-1` is not `…:orbitdb-relay`). Profile is not fine enough:
    * an E2E run's throwaway relays register under the same profile as the
    * production one, and a registration outlives the machine it describes. Use
    * this for anything that bakes addresses into a build or dials them on
@@ -1219,6 +1222,13 @@ export function filterRelayBootstrapPostsByProfile(
  * outbound stream budget on dead addresses and wrote off the one healthy relay
  * along with the corpses, leaving both browsers with nothing to dial.
  *
+ * A deployed relay registers as `relay:<profile>:<name>:<instance hash>`
+ * (`createRelayBootstrapRegistrationId`), and every deploy brings a new hash.
+ * So a wanted id matches the registration of that id and of that id followed
+ * by `:<suffix>`: `relay:orbitdb-relay:orbitdb-relay` finds the production
+ * relay whatever instance it runs on, and never `relay:orbitdb-relay:
+ * orbitdb-relay-e2e-1:…` or `relay:orbitdb-relay:smoke-orbitdb-relay-1:…`.
+ *
  * Omitting the scope returns every registration, which is the previous
  * behaviour and the right default for a consumer that wants to see the channel
  * rather than its own corner of it.
@@ -1233,11 +1243,13 @@ export function filterRelayBootstrapPostsByRegistration(
     .map((entry) => entry.trim())
     .filter(Boolean);
   if (wanted.length === 0) return [...posts];
-  const allowed = new Set(wanted);
-  return posts.filter(
-    (post) =>
-      post.content != null && allowed.has(String(post.content.registrationId)),
-  );
+  return posts.filter((post) => {
+    const registrationId = post.content?.registrationId;
+    if (typeof registrationId !== "string") return false;
+    return wanted.some(
+      (id) => registrationId === id || registrationId.startsWith(`${id}:`),
+    );
+  });
 }
 
 async function filterTrustedRelayBootstrapPosts(
