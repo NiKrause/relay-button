@@ -1,8 +1,8 @@
 {
 	"app": "Le-Space/belege",
-	"note": "Published 2026-11-22 (workflow \"Sealed image builder on Aleph\": dry run 45023253855, published in run 45023490088 as V-PROGRAM 8c3d652f…, attested on the node below; a trial build in run 45024200705: 992 MiB sealed; deleted in run 45024356600, its volumes stay) for the hosted bridge's plain image from Le-Space/belege's \"Bridge image\" workflow, run 45022743690: the bridge at the tag v0.52.0 (commit 3935d93), with the NEAR storage deposits tied to their swap (belege#968) and the Bitcoin reading by extended key (belege#966). Before: published 2026-11-21 (run 44940512285, V-PROGRAM 8a56e0858f2150a0a1f751597a3d5331893014df7187f32fbb77c2ad6767cece, deleted in run 44941427189) for the plain image of run 44939837112 (SHA-256 444782e9b2dcd85853dfc4e38ea99b69129679608a50018eb421532737ee82ae, STORE 4c9bceb86b2620c5866698eed2ad64f637ca493f94b8989081459d11a8ef63c8, commit 508293c); released versions of Belege from 0.51.0 until the one that pins this publication start their builds from its volumes (workload d3764c0e00d153c5903f63ddbcd14da13436b69c3856a063448129a6c0213435, plain image volume b4bdbba564d6a0e8ca252161ca358be9c4b7fe91c3198d62fe3b1bafa7493c32). Before that: published 2026-11-19 (run 44584342125, V-PROGRAM c622b32589390ac66f938a1ba402662a0cd43e4ba97cd12d84c97a0c64f19091, deleted in run 44586443090) for the plain image of run 44580087897 (SHA-256 c594b999d344dfb73d227626d2dad270ace74e52a3de8c7e3cfbeadafc259ab7, STORE a20838098975fde24d869a2a083dea3e69bd002aa370fe2ffc6836e3825ba527, commit d0a1e73); released versions of Belege before the one that pins this publication start their builds from its volumes (workload ca8b89f3a0bccb3baa5c6c6854b7ad8e7f2026d1ff30d97285a2387f53d474a9, plain image volume 1ce3b735854888af9b5cf42a9cdbc022b43020802515926cc648794c90787899). Before that: published 2026-11-16 (run 43912726371, V-PROGRAM 546e759c3721ccee9678105f65e9c6461b0d99ab9d83a9c8cbd0d28cf6eae52f, deleted in run 43914408701) for the plain image of run 43685886548 (belege#777; SHA-256 25f03bb56bc7d305790ae90d878a1d8b9cf71871b5899dc179deeac9ede8efa5, STORE 955d9a89252044708d301b2901af8c00d00715c3d25539ba1773fe4e6630f31e, commit 53a65aa). Released versions of Belege up to 0.42.1 still start their builds from that publication's volumes (workload 39775ea9e83e3e1a3d6263692d514dd296fce0111d4262c46f12c97f6b038d95, plain image volume f785d2ff21744b9e9742cee1283a38ef5cb0cf647dd9e2a68bc838f61bd988a2), so they are named here and must stay on Aleph.",
+	"note": "Published 2026-11-24 (workflow \"Sealed image builder on Aleph\": dry run 45403793941, published in run 45404112219 as V-PROGRAM 0d0e324e…, attested on the node below; a trial build in run 45405732030: 992 MiB sealed within 34 s, beginning as a LUKS2 disk, a 4 MiB piece fetched in 1 s; deleted in run 45405991189, its volumes stay) for the hosted bridge's plain image from Le-Space/belege's \"Bridge image\" workflow, run 45402820756: the bridge at the tag v0.56.0 (commit af75b48), with the NEAR storage deposits by purpose (belege#1015) and the changes of 0.53.0 to 0.56.0. Before: published 2026-11-22 (run 45023490088, V-PROGRAM 8c3d652fad0654c1f6e8d7a423ea726abab8de69ee9b7adf32900ed8ad762167, deleted in run 45024356600) for the plain image of run 45022743690 (SHA-256 e3e2cd565300f9a1e55651c8f3b80a6084a935e07fec05204b99052be84f82fb, STORE 6f9e0fbe06367698e5f72de8dfc1efbab558ea2361d7a94942b1fed19740c4be, commit 3935d93); released versions of Belege from 0.53.0 until the one that pins this publication start their builds from its volumes (workload 8f5e722b6ac734b1c0fd287217339a14247be2952aa0960f03256a2a285ae68b, plain image volume f7bb9f7b747ff544c2b70be4b2c050c5b59f45cfea19d38d55445201f55bebe3). Before that: published 2026-11-21 (run 44940512285, V-PROGRAM 8a56e0858f2150a0a1f751597a3d5331893014df7187f32fbb77c2ad6767cece, deleted in run 44941427189) for the plain image of run 44939837112 (SHA-256 444782e9b2dcd85853dfc4e38ea99b69129679608a50018eb421532737ee82ae, STORE 4c9bceb86b2620c5866698eed2ad64f637ca493f94b8989081459d11a8ef63c8, commit 508293c); released versions of Belege 0.51.0 and 0.52.0 start their builds from its volumes (workload d3764c0e00d153c5903f63ddbcd14da13436b69c3856a063448129a6c0213435, plain image volume b4bdbba564d6a0e8ca252161ca358be9c4b7fe91c3198d62fe3b1bafa7493c32). Before that: published 2026-11-19 (run 44584342125, V-PROGRAM c622b32589390ac66f938a1ba402662a0cd43e4ba97cd12d84c97a0c64f19091, deleted in run 44586443090) for the plain image of run 44580087897 (SHA-256 c594b999d344dfb73d227626d2dad270ace74e52a3de8c7e3cfbeadafc259ab7, STORE a20838098975fde24d869a2a083dea3e69bd002aa370fe2ffc6836e3825ba527, commit d0a1e73); released versions of Belege from 0.44.0 to 0.50.0 start their builds from its volumes (workload ca8b89f3a0bccb3baa5c6c6854b7ad8e7f2026d1ff30d97285a2387f53d474a9, plain image volume 1ce3b735854888af9b5cf42a9cdbc022b43020802515926cc648794c90787899). Before that: published 2026-11-16 (run 43912726371, V-PROGRAM 546e759c3721ccee9678105f65e9c6461b0d99ab9d83a9c8cbd0d28cf6eae52f, deleted in run 43914408701) for the plain image of run 43685886548 (belege#777; SHA-256 25f03bb56bc7d305790ae90d878a1d8b9cf71871b5899dc179deeac9ede8efa5, STORE 955d9a89252044708d301b2901af8c00d00715c3d25539ba1773fe4e6630f31e, commit 53a65aa). Released versions of Belege up to 0.43.0 still start their builds from that publication's volumes (workload 39775ea9e83e3e1a3d6263692d514dd296fce0111d4262c46f12c97f6b038d95, plain image volume f785d2ff21744b9e9742cee1283a38ef5cb0cf647dd9e2a68bc838f61bd988a2), so they are named here and must stay on Aleph.",
 	"claim": "sealed image build",
-	"vprogram": "8c3d652fad0654c1f6e8d7a423ea726abab8de69ee9b7adf32900ed8ad762167",
+	"vprogram": "0d0e324e5c87c44343da3921cee8cbd735c7434da7012257817824f11cdcf340",
 	"program": {
 		"allow_amend": false,
 		"environment": {
@@ -34,14 +34,14 @@
 				{
 					"platform": "sev_snp",
 					"registers": {
-						"launch": "1393421dbe12c3ed0ffbbd457724714555ba2c24396baf2710601f639bf11c844b368169bc32bcef327725699d96d4d1"
+						"launch": "68927416f912304d04d3dd8162da907e813cd9cab31904fc27fa7e5d64b70cc716069fa0f195e9bccf4596f5dcb5a629"
 					},
 					"vcpu_type": "EPYC-Genoa"
 				},
 				{
 					"platform": "sev_snp",
 					"registers": {
-						"launch": "f81502bfdf09b9762f805a21d3a3c75d05e3a197e384484d43d9aa638e8f6c991d072da272cfb7d41d3af66c4b618185"
+						"launch": "aaafc38fa81abd6178ab01b14d9614d606e6e9a81b3608b2b5cee835ed83a557ad7da94faca4264135f38b8269ef6668"
 					},
 					"vcpu_type": "EPYC-v4"
 				}
@@ -51,26 +51,26 @@
 		"volumes": [
 			{
 				"comment": "",
-				"hash_tree": "41e761e95d5d9cb563e2b9edafaeaba479fbf34c4fbac722824972fc2c0d1b6b",
-				"ref": "f7bb9f7b747ff544c2b70be4b2c050c5b59f45cfea19d38d55445201f55bebe3",
-				"roothash": "504fd3cb5515e0db8e474f52191f571b1d5dcb9f04fa454e508120128dfe2692"
+				"hash_tree": "028e87cbf8d6677225f880f132b91dd255e286ec878979eeb51c579002c56711",
+				"ref": "82ab193251041cd1eec90afd945f2cb83ea7306c0f77bae3c19e7eb0f0c44028",
+				"roothash": "1a7bf17e1784d97d55194784f683ea65a3ad19bdaf76a0a2303138f58845da89"
 			}
 		],
 		"workload": {
-			"hash_tree": "6b51719cdfe8e7a4b4afa3c71d7fd773c7ce5167cb2aaabf8d6c4fbc721e7e3a",
-			"ref": "8f5e722b6ac734b1c0fd287217339a14247be2952aa0960f03256a2a285ae68b",
-			"roothash": "ff955d0f8ed3a3890d02a85fdbb2e29a7ac191e06cb267f14c077d98ae122df8"
+			"hash_tree": "1f75ac7a3501c0e9acbc6e78c41d2f8a150581d2d01ab14966ae59a509e4ba23",
+			"ref": "fa7828ed8788b8fcbed293321c8f7c0e1c72faefb68fb4c8c6a3332139ac2816",
+			"roothash": "1b546dc42327c2d2d9f12043d2385f5de849c274d83e7a8cea8be7a5a658f529"
 		}
 	},
 	"crn": "01a3143b384ca43a3af338031b03ae86c0a4e139a24b848475d3ddb9bfbce8fa",
 	"measurements": [
-		"1393421dbe12c3ed0ffbbd457724714555ba2c24396baf2710601f639bf11c844b368169bc32bcef327725699d96d4d1",
-		"f81502bfdf09b9762f805a21d3a3c75d05e3a197e384484d43d9aa638e8f6c991d072da272cfb7d41d3af66c4b618185"
+		"68927416f912304d04d3dd8162da907e813cd9cab31904fc27fa7e5d64b70cc716069fa0f195e9bccf4596f5dcb5a629",
+		"aaafc38fa81abd6178ab01b14d9614d606e6e9a81b3608b2b5cee835ed83a557ad7da94faca4264135f38b8269ef6668"
 	],
 	"policy": 196608,
 	"plain": {
-		"sha256": "e3e2cd565300f9a1e55651c8f3b80a6084a935e07fec05204b99052be84f82fb",
-		"store": "6f9e0fbe06367698e5f72de8dfc1efbab558ea2361d7a94942b1fed19740c4be",
-		"commit": "3935d93f453a7c0ecd03b79ebda53b2fc58661f7"
+		"sha256": "b9a80deac244d6683d2353716584a1ca477ae41ec88bedb0b28447c97a5a5484",
+		"store": "7eb4ae876bed33443ad7f9fc80eafc76733018c336e5eb94f86b0e7e99c2276c",
+		"commit": "af75b48eb13d31fb1339dc9205c618308540100b"
 	}
 }
